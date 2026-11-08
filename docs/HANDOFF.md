@@ -142,5 +142,5 @@ node scripts/verify-exe.mjs
 
 ## 13. 本轮 Commit
 
-- 待提交（本地，不 Push）
+- 本轮：`d314984` feat: record public YouTube Live chat without a developer key（本地，未 Push）
 - 上一轮：`7a86e58` docs: cite the primary YouTube authorization and policy sources

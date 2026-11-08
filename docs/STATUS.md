@@ -247,7 +247,7 @@ UI 截图：见 §2.8。
 
 ## 11. 最近 Commit
 
-- 本轮：待提交（`feat: record public YouTube Live chat without a developer key`）
+- 本轮：`d314984` feat: record public YouTube Live chat without a developer key（本地，未 Push）
 - 上一轮：`7a86e58` docs: cite the primary YouTube authorization and policy sources
 - 上一轮：`aa27417` feat: connect real YouTube Live chat with anonymous keys and Google OAuth
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
