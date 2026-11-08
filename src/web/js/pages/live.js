@@ -602,7 +602,13 @@ export const livePage = {
           line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
         }
       } else {
-        line.append(el('span', {className: 'feed-text', text: event.content ?? ''}));
+        // Raw chat text is rendered verbatim, including Unicode emoji and
+        // bracketed platform-emote labels. If the platform sent an emote with
+        // no text at all, fall back to its supplied name/id.
+        const emote = Array.isArray(event.emotes) ? event.emotes[0] : null;
+        const emoteName = emote?.name || emote?.code || emote?.id || null;
+        const text = event.content ?? (emoteName ? t('live.feed.emoteFallback', {name: emoteName}) : '');
+        line.append(el('span', {className: 'feed-text', text}));
       }
       return el('div', {className: 'feed-item'},
         tag ? el('span', {className: 'feed-tag', dataset: {kind: tag.kind}, text: tag.text}) : null,

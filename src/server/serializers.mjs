@@ -11,6 +11,7 @@ export function serializeEvent(event) {
     occurredAt: event.occurred_at,
     receivedAt: event.received_at,
     content: event.content,
+    emotes: Array.isArray(event.emotes) && event.emotes.length > 0 ? event.emotes : [],
     giftName: event.gift_name,
     giftQuantity: event.gift_quantity,
     amountMinor: event.amount_minor,

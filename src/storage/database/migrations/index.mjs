@@ -149,6 +149,15 @@ export const MIGRATIONS = Object.freeze([
     up(db) {
       db.exec(INITIAL_SQL);
     }
+  },
+  {
+    version: 2,
+    name: 'event-emote-metadata',
+    up(db) {
+      // Optional JSON array of platform emote metadata. Old rows stay NULL and
+      // old databases are upgraded in place; no table rewrite is required.
+      db.exec('ALTER TABLE events ADD COLUMN emotes TEXT');
+    }
   }
 ]);
 

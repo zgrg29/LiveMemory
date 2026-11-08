@@ -10,7 +10,7 @@ Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no A
 
 ### 这是什么
 
-LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析通过「导出分析包 → 手动交给 ChatGPT → 导入结果」完成，软件本身不连接任何 AI 服务。
+LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析通过「导出 AI 分析包 → 手动交给任意 AI 服务 → 导入结果」完成，软件本身不连接任何 AI 服务，也不绑定 AI 品牌。
 
 ### 现在能做什么（v0.1.0）
 
@@ -19,7 +19,8 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - 跟随系统 / 明亮 / 黑暗三种主题，独立设计，切换不闪烁、不丢失内容
 - 模拟直播：完整验证「事件 → SQLite → 统计 → 时间线 → 事件流」记录链路
 - 直播记录、直播历史（含单场详情与热度曲线）、观众档案、AI 分析中心、设置五个页面
-- 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、三语提示词与结果 Schema）
+- 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、三语 AI 分析指令与结果 Schema）
+- 普通文字、Unicode Emoji 与 Bilibili 平台表情正确保存；AI 包用文字名称/代码表达，不强制下载表情图片
 - 单场直播的所有金额按币种和「实际支付 / 展示价值」分别精确累计，重复事件不会翻倍
 
 ![直播记录（明亮 / 中文）](docs/screenshots/live-light-zh-CN.png)
@@ -28,7 +29,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ### 尚未完成
 
-哔哩哔哩与 YouTube 的真实连接、AI 结果导入与校验、可迁移备份（`.livememory`）、AI 长期画像、正式发布版 EXE 的干净环境验收。请以 [docs/STATUS.md](docs/STATUS.md) 为准。
+哔哩哔哩真实弹幕与平台表情已接入；YouTube 真实连接、AI 结果导入与校验、可迁移备份（`.livememory`）、AI 长期画像、正式发布版 EXE 的干净环境验收仍未完成。请以 [docs/STATUS.md](docs/STATUS.md) 为准。
 
 ### 开发运行
 
@@ -78,12 +79,12 @@ node scripts/build-windows.mjs
 
 ## 日本語
 
-LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「パッケージ出力 → ChatGPT に手動で渡す → 結果を取り込む」方式で、クラウドや API キーは使いません。
+LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「AI 分析パッケージ出力 → 任意の AI サービスに手動で渡す → 結果を取り込む」方式で、クラウドや API キーは使わず、特定の AI ブランドにも依存しません。
 
 - 対応 UI / コンソール: 简体中文・日本語・English（システム言語に追従、手動変更は保存されます）
 - テーマ: システムに従う / ライト / ダーク（個別設計・再起動後も維持）
-- 現在は M1 相当: 起動・設定・模擬配信の記録・履歴・視聴者一覧・分析パッケージ出力
-- 実際のビリビリ / YouTube 接続、AI 結果の取り込み、ポータブルバックアップは今後実装予定
+- 現在: 起動・設定・模擬配信の記録・履歴・視聴者一覧・AI 分析パッケージ出力・ビリビリ実配信のチャット/絵文字
+- YouTube の実接続、AI 結果の取り込み、ポータブルバックアップは今後実装予定
 
 開発時は Node.js 22.5 以降が必要です（SQLite は実行環境に内蔵）。詳細は [docs/STATUS.md](docs/STATUS.md) と [docs/WINDOWS_RUNTIME.md](docs/WINDOWS_RUNTIME.md) を参照してください。
 
@@ -91,9 +92,9 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 
 ## English
 
-LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis is a manual round trip: export a package, analyse it in ChatGPT, import the result. No cloud service, no API key, no vendor account.
+LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis is a manual round trip: export an AI analysis package, give it to any AI service you choose, import the result. No cloud service, no API key, no vendor account.
 
-Current build (v0.1.0) delivers the Windows launcher, tri-language Apple-style console, theme system, persistent settings, a simulated recording pipeline backed by SQLite, session history, viewer profiles and an analysis-package export. Real Bilibili/YouTube adapters, AI result import and portable backup are scheduled for later milestones — see [docs/STATUS.md](docs/STATUS.md).
+Current build (v0.1.0) delivers the Windows launcher, tri-language Apple-style console, theme system, persistent settings, a simulated recording pipeline backed by SQLite, real Bilibili chat with Unicode emoji and platform emotes, session history, viewer profiles and an analysis-package export. YouTube transport, AI result import and portable backup are scheduled for later milestones — see [docs/STATUS.md](docs/STATUS.md).
 
 ```bat
 start.cmd            :: development

@@ -107,7 +107,8 @@
       "guardLabel": "大航海",
       "membershipLabel": "会员",
       "anonymous": "未识别观众",
-      "paid": "付费"
+      "paid": "付费",
+      "emoteFallback": "平台表情：{name}"
     },
     "top": {
       "title": "最活跃观众",
@@ -183,7 +184,7 @@
       "topEmpty": "暂无观众数据。",
       "aiTitle": "AI 分析",
       "aiPendingTitle": "尚未导入分析结果",
-      "aiPendingBody": "导出分析包并交给 ChatGPT，可以补充讨论话题、情绪变化与切片建议。",
+      "aiPendingBody": "导出 AI 分析包并交给任意 AI 服务，可以补充讨论话题、情绪变化与切片建议。",
       "aiCta": "前往 AI 分析中心",
       "storageTitle": "已保存的数据",
       "eventsKept": "保留事件",
@@ -229,47 +230,58 @@
   },
   "ai": {
     "pageTitle": "AI 分析中心",
-    "pageSubtitle": "不需要 API Key，也不连接任何云端。你下载分析包，在 ChatGPT 中分析，再把结果导入回来。",
+    "pageSubtitle": "不需要 API Key，也不连接任何云端。你可以把分析包交给任何支持文件上传和结构化输出的 AI 服务，再把结果导入回来。",
     "steps": {
-      "exportTitle": "1 · 导出分析包",
-      "exportDesc": "生成一个 .zip，包含聊天记录、统计、提示词与结果 Schema。",
-      "promptTitle": "2 · 交给 ChatGPT",
-      "promptDesc": "上传分析包，并粘贴包内的任务说明。",
-      "importTitle": "3 · 导入结果",
+      "exportTitle": "1 · 导出 AI 分析包",
+      "exportDesc": "生成一个 .zip，包含聊天记录、统计、平台表情名称、AI 分析指令与结果 Schema。",
+      "promptTitle": "2 · 交给 AI",
+      "promptDesc": "上传分析包，并发送 AI 分析指令。",
+      "importTitle": "3 · 导入 AI 分析结果",
       "importDesc": "校验返回的 JSON 并合并进控制台。"
     },
     "export": {
-      "title": "创建分析包",
+      "title": "导出 AI 分析包",
       "sessionLabel": "场次",
       "languageLabel": "分析语言",
-      "button": "创建分析包",
+      "button": "导出 AI 分析包",
       "exporting": "正在生成…",
       "download": "下载分析包",
-      "successTitle": "分析包已生成",
+      "successTitle": "AI 分析包已生成",
       "successBody": "{messages} 条消息 · {viewers} 位观众 · {size}",
-      "hint": "压缩包包含聊天记录、场次统计、观众上下文、对应语言的提示词以及 JSON Schema。不包含 Cookie 或任何令牌。",
+      "hint": "压缩包包含聊天记录、场次统计、观众上下文、平台表情字典、对应语言的 AI 分析指令以及 JSON Schema。不包含 Cookie 或任何令牌。",
       "empty": "请先记录一场直播，目前还没有可分析的内容。",
       "needSession": "请选择一个场次。"
     },
     "prompt": {
-      "title": "给 ChatGPT 的任务说明",
-      "hint": "同样的内容也保存在压缩包的 instructions.md 中。",
-      "copy": "复制说明",
+      "title": "AI 分析指令",
+      "hint": "同样的内容也保存在分析包的 instructions.md 中。",
+      "copy": "复制 AI 分析指令",
       "copied": "说明已复制",
       "loading": "正在载入说明…"
     },
     "import": {
-      "title": "导入 AI 结果",
+      "title": "导入 AI 分析结果",
       "body": "导入与 Schema 校验将在 M6 阶段提供。当前分析包内已经包含完整 Schema，方便你先手动核对结果。",
       "badge": "计划于 M6 提供"
     },
     "packages": {
-      "title": "已导出的分析包",
+      "title": "已导出的 AI 分析包",
       "empty": "还没有导出过分析包。",
       "download": "下载",
       "meta": "{messages} 条消息 · {date}"
     },
-    "protocolLabel": "协议版本"
+    "protocolLabel": "协议版本",
+    "task": {
+      "title": "AI 将分析以下内容",
+      "topics": "整场直播的讨论主题与话题变化",
+      "timeline": "不同时间段的讨论变化与最热烈的时段",
+      "highlights": "值得回看的直播片段",
+      "newViewers": "新观众的初始画像",
+      "existingViewers": "既有观众的新信息、兴趣变化与画像更新",
+      "emoji": "文字、Unicode Emoji 与平台表情名称；未知表情会被明确标记，不会猜测含义。",
+      "serviceTitle": "使用你选择的 AI 服务",
+      "serviceBody": "LiveMemory 不绑定任何 AI 品牌。你可以使用任何支持文件上传与结构化输出的 AI 服务。不同服务的文件大小、ZIP 支持和上下文长度可能不同。"
+    }
   },
   "settings": {
     "pageTitle": "设置",

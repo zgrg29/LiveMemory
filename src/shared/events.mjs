@@ -2,6 +2,8 @@ import {AppError, ERROR_CODES} from './errors.mjs';
 import {normalizeCurrency, multiplyMinor} from './money.mjs';
 import {toEpochMs} from './time.mjs';
 import {sha256Hex} from './ids.mjs';
+import {cleanText} from './text.mjs';
+import {normalizeEmotes} from './emoticons.mjs';
 
 /**
  * Canonical internal event model.
@@ -65,13 +67,6 @@ export function buildViewerId(platform, platformUid) {
   const uid = platformUid === null || platformUid === undefined ? '' : String(platformUid).trim();
   if (!uid) return null;
   return `${platform}:${uid}`;
-}
-
-function cleanText(value, max = MAX_CONTENT_LENGTH) {
-  if (value === null || value === undefined) return null;
-  const text = String(value).replace(/\u0000/g, '').trim();
-  if (!text) return null;
-  return text.length > max ? text.slice(0, max) : text;
 }
 
 function defaultPaid(eventType) {
@@ -151,6 +146,11 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
     ? (draft.source_quality ?? draft.sourceQuality)
     : (platform === 'mock' ? SOURCE_QUALITY.MOCK : SOURCE_QUALITY.UNKNOWN);
 
+  // Emote metadata only belongs to messages with text. It never replaces the
+  // original `content`; it is a small, de-duplicated annotation for the UI and
+  // the AI package.
+  const emotes = isMessageEvent(eventType) ? normalizeEmotes(draft.emotes) : null;
+
   const event = {
     session_id: sessionId,
     platform,
@@ -161,7 +161,8 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
     display_name: cleanText(draft.display_name ?? draft.displayName, 120),
     occurred_at: occurredAt,
     received_at: receivedAt,
-    content: cleanText(draft.content),
+    content: cleanText(draft.content, MAX_CONTENT_LENGTH),
+    emotes,
     gift_id: cleanText(draft.gift_id ?? draft.giftId, 120),
     gift_name: cleanText(draft.gift_name ?? draft.giftName, 120),
     gift_type: giftType === 'free' || giftType === 'paid' ? giftType : null,
@@ -184,12 +185,16 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
  */
 export function buildDedupeKey(event) {
   if (event.external_id) return `ext:${event.external_id}`;
+  const emoteFingerprint = normalizeEmotes(event.emotes)
+    ?.map((emote) => emote.id ?? emote.code ?? emote.name)
+    .join(',') ?? '';
   const fingerprint = [
     event.platform,
     event.event_type,
     event.viewer_uid ?? '',
     event.occurred_at ?? '',
     event.content ?? '',
+    emoteFingerprint,
     event.gift_id ?? '',
     event.gift_name ?? '',
     event.gift_quantity ?? '',

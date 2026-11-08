@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**1**
+Schema 版本：**2**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -12,6 +12,8 @@ Schema 版本：**1**
 4. 事件以 `(session_id, dedupe_key)` 唯一，重复投递不产生第二行。
 5. 聚合值存表（场次/观众/币种），读模型不扫描全量事件。
 6. 删除遵循外键级联，避免孤儿数据。
+7. 聊天原文优先：`content` 永远保留平台原文；Unicode Emoji 不做转换。
+8. 平台表情只存最小元数据（id/code/name/source），不存图片、不猜情绪。
 
 ## 2. 表结构
 
@@ -58,6 +60,7 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | display_name | 事件发生时的昵称 |
 | occurred_at / received_at | 平台时间 / 本地接收时间 |
 | content | 文本（SC 含正文；礼物为空） |
+| emotes | 平台表情元数据 JSON 数组（可空）：`[{id?, code?, name?, source?}]`；不存图片 |
 | gift_id / gift_name / gift_type | 礼物信息；`gift_type` = `paid` / `free` |
 | gift_quantity | 数量 |
 | unit_amount_minor / amount_minor | 单价 / 总价（最小单位） |
@@ -69,6 +72,18 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | content_purged_at | 精简模式清理时间 |
 
 约束与索引：`UNIQUE(session_id, dedupe_key)`、`(session_id, occurred_at)`、`(viewer_id, occurred_at)`、`event_type`。
+
+### 表情元数据（schema v2）
+
+- 普通 Unicode Emoji 直接保存在 `content`，不新增行、不建图片表。
+- 平台表情只保存最小 JSON 数组，例如 Bilibili：
+  ```json
+  [{"id": "room_5050_96171", "name": "就这", "source": "bilibili.info13"}]
+  ```
+- `name` 仅来自平台提供的文字标签；没有名称时只保留 `id`，由 AI 包标记为未知，**绝不猜测情绪**。
+- 不保存表情图片 URL、宽度、高度或缓存；未来若做图片缓存，必须独立于长期聊天数据。
+- 去重键在原文之外加入表情 id/code/name，避免“同一用户同一时间不同表情”被误判为重复。
+- 精简模式清理时 `content` 与 `emotes` 一起清空，消息行、计数、金额、身份保留。
 
 ### viewers
 
@@ -136,7 +151,7 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | compact（默认） | 保留原文 | 校验成功后清理 `content`（保留行、计数、金额、身份） | 摘要/统计/画像 |
 | full | 保留原文 | 保留 | 保留，可重新分析 |
 
-清理函数：`purgeSessionContent()` 仅清空 `chat`/`super_chat` 的 `content` 并写 `content_purged_at`。**自动触发尚未接入**（M4/M6）。
+清理函数：`purgeSessionContent()` 清空 `chat`/`super_chat` 的 `content` 与 `emotes`，并写 `content_purged_at`。**自动触发尚未接入**（M4/M6）。
 
 删除场次：`DELETE FROM sessions` → 级联删除事件、`viewer_sessions`、币种合计、AI 包记录；观众本身保留（可能参与其他场次）。
 
@@ -146,7 +161,8 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 - 每个迁移在事务中执行并写入 `schema_migrations`。
 - 应用版本与 schema 版本独立；`/api/status` 暴露 schema 版本。
 - 迁移失败必须回滚，且不得让服务以半迁移状态启动。
-- 未来迁移需在 `tests/integration/storage.test.mjs` 增加升级路径测试。
+- **v1 → v2**：`ALTER TABLE events ADD COLUMN emotes TEXT`。旧记录保持 `emotes = NULL`，读取时按“无表情元数据”处理；不需要重写表，不丢失旧消息。
+- 未来迁移需在 `tests/integration/` 增加升级路径测试（v2 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
 
 ## 8. 备份相关（M5 设计）
 

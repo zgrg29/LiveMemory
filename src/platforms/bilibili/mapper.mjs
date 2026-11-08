@@ -1,4 +1,6 @@
 import {EVENT_TYPES, SOURCE_QUALITY, VALUE_KIND} from '../../shared/events.mjs';
+import {cleanText} from '../../shared/text.mjs';
+import {normalizeEmotes} from '../../shared/emoticons.mjs';
 import {normalizeCommand} from './protocol.mjs';
 
 /**
@@ -47,9 +49,7 @@ function number(value) {
 }
 
 function text(value, max = 4000) {
-  if (value === null || value === undefined) return null;
-  const clean = String(value).replace(/\u0000/g, '').trim();
-  return clean ? clean.slice(0, max) : null;
+  return cleanText(value, max);
 }
 
 /** Platform timestamps are Unix seconds; a few fields are milliseconds. */
@@ -96,16 +96,45 @@ export function readDanmu(info) {
   };
 }
 
+/**
+ * Platform emote metadata from `DANMU_MSG.info[0][13]`.
+ *
+ * Real-room observation (2026-11-08, room 5050): when a viewer sends a room
+ * emote, `info[1]` already contains the emote's text label (for example "就这"
+ * or "乐") and `info[0][13]` carries `emoticon_unique`, `url`, `width`,
+ * `height`, `is_dynamic`. We keep the label and the unique id; we do not
+ * download the image and we never guess the emote's emotion.
+ *
+ * `dm_v2` was empty in every sampled message. If a future platform version
+ * moves emote data there, this function will not invent an id; the raw text is
+ * still preserved.
+ */
+export function readBilibiliEmotes(info, content) {
+  const meta = info?.[0]?.[13];
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const id = text(meta.emoticon_unique, 200) ?? text(meta.emoticon_id, 200);
+  // Real room emotes send their label as the whole body ("就这"). When the
+  // body mixes text and a bracketed emote label, prefer the bracket token as
+  // the name; we only use text that the platform actually sent.
+  const bracket = typeof content === 'string' ? content.match(/\[[^\]\n]{1,32}\]/)?.[0] ?? null : null;
+  const name = bracket
+    ? bracket.slice(1, -1)
+    : text(content, 120);
+  return normalizeEmotes([{id, name, source: 'bilibili.info13'}]);
+}
+
 function mapChat(data, {receivedAt}) {
   const parsed = readDanmu(data?.info);
-  if (!parsed.content) return null;
+  const emotes = readBilibiliEmotes(data?.info, parsed.content);
+  if (!parsed.content && !emotes) return null;
   const person = identity(parsed.uid, parsed.name);
   return {
     platform: 'bilibili',
     event_type: EVENT_TYPES.CHAT,
     viewer_uid: person.viewer_uid,
     display_name: person.display_name,
-    content: parsed.content,
+    content: text(parsed.content, 4000),
+    emotes,
     occurred_at: toOccurredAt(parsed.timestamp, receivedAt),
     is_paid: false,
     gift_type: null,
@@ -282,4 +311,4 @@ export const IGNORED_COMMANDS = Object.freeze([
   'SUPER_CHAT_MESSAGE_DELETE'
 ]);
 
-export const __internal = {identity, guardFields, mapChat, mapGift, mapGuard, mapSuperChat};
+export const __internal = {identity, guardFields, mapChat, mapGift, mapGuard, mapSuperChat, readBilibiliEmotes};

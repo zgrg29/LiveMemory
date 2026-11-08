@@ -15,8 +15,10 @@ LiveMemory.exe (Node SEA)
          ├─ src/storage/                node:sqlite + 迁移 + 仓储
          ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
          ├─ src/platforms/mock/         模拟直播源
+         ├─ src/platforms/bilibili/     真实直播适配器
+         ├─ src/platforms/youtube/      离线 mapper（预留，未接入传输层）
          ├─ src/analytics/              只读读模型（时间线/汇总/画像）
-         └─ src/ai/export/              分析包生成
+         └─ src/ai/export/              分析包生成（含表情字典）
    └─ src/web/                          浏览器控制台（原生 ES Modules）
 ```
 
@@ -42,6 +44,8 @@ LiveMemory.exe (Node SEA)
 ```text
 平台适配器（Bilibili/YouTube/mock）
   └─ normalizeEvent()  → canonical event（shared/events.mjs）
+      ├─ content 原文 / Unicode Emoji 原样保留
+      └─ emotes 可选最小元数据（id/code/name/source）
       └─ EventIngest.record()  [单事务]
           ├─ ensureViewer()              先建身份（满足外键）
           ├─ insertEvent()               INSERT OR IGNORE（唯一去重键）
@@ -51,7 +55,7 @@ LiveMemory.exe (Node SEA)
       └─ commit → SSE 'event' 广播 → 控制台即时渲染
 ```
 
-**关键保证**：重复事件在 `insertEvent` 处返回 `changes=0`，后续聚合全部跳过，因此金额与计数不会翻倍。
+**关键保证**：重复事件在 `insertEvent` 处返回 `changes=0`，后续聚合全部跳过，因此金额与计数不会翻倍。表情元数据参与指纹去重，但不改变 `content` 原文。
 
 ## 4. 读模型
 
@@ -59,6 +63,14 @@ LiveMemory.exe (Node SEA)
 - `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众 + 存储统计。
 - `analytics/viewers/profile.mjs`：观众档案（身份、累计、昵称历史、参与场次）。
 - `analytics/payments/totals.mjs`：按币种合并 actual/display，绝不混加。
+
+### 4.1 AI 分析包（文本优先）
+
+- `messages.jsonl` 保留 `content` 原文；Unicode Emoji 不转换。
+- 平台表情进入 `session_context.emote_dictionary`，消息通过 `emote_refs` 引用；同一表情只存一份元数据。
+- 仅当原文不足以理解表情时，才增加 `content_ai`；未知表情标记 `[未知平台表情：emote_id=…]`，不猜情绪。
+- 不打包表情图片；包大小主要由文本和聚合决定。
+- `instructions.md` 由 `src/ai/prompts/instructions.mjs` 按 `locale` 生成，包含话题、观众画像、经济支持、Emoji/表情、数据可靠性与不可信数据规则。
 
 ## 5. HTTP API（v0.1.0）
 

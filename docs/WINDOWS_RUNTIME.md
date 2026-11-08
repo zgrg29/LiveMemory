@@ -148,6 +148,8 @@ Node SEA（Single Executable Application）+ postject 注入。
 已验证（本机，2026-11-08，普通权限 = 非管理员令牌，最终源码构建）：
 
 - 构建成功，PE 子系统 = 3（Console）
+- 本轮构建：89.9 MB，82 个资源文件，SHA-256 `9477dbcb6a6b80d909800e7fab43f71fd7d8c9de63eb5c4a3f8d63d20922cf2d`
+- 全新数据目录启动确认 SQLite schema=2、AI 指令含表情规则、`ai.js` 含任务说明卡
 - `LiveMemory.exe --version` → `LiveMemory 0.1.0`
 - `scripts/verify-exe.mjs` 自动矩阵：全新目录启动、HTTP API、SQLite 写入、重启保留、强制结束后恢复、端口占用顺延、第二实例、不可写目录报错、复制到 `Downloads` 运行、解压复用、`--version` / `--help --lang ja` / `--diagnose`
 - 默认数据目录不可写时自动回退到 `%TEMP%\LiveMemory` 并启动成功（本机沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，正好覆盖该分支）

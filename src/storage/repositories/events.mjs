@@ -7,12 +7,14 @@
  * twice in totals.
  */
 
+import {parseEmotesJson, serializeEmotes} from '../../shared/emoticons.mjs';
+
 const INSERT_SQL = `
   INSERT OR IGNORE INTO events (
     session_id, platform, external_id, event_type, viewer_id, viewer_uid, display_name,
-    occurred_at, received_at, content, gift_id, gift_name, gift_type, gift_quantity,
+    occurred_at, received_at, content, emotes, gift_id, gift_name, gift_type, gift_quantity,
     unit_amount_minor, amount_minor, currency, value_kind, is_paid, source_quality, dedupe_key
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 export function insertEvent(db, event) {
@@ -27,6 +29,7 @@ export function insertEvent(db, event) {
     event.occurred_at,
     event.received_at,
     event.content,
+    serializeEmotes(event.emotes),
     event.gift_id,
     event.gift_name,
     event.gift_type,
@@ -59,6 +62,7 @@ function mapEventRow(row) {
     occurred_at: row.occurred_at,
     received_at: row.received_at,
     content: row.content,
+    emotes: parseEmotesJson(row.emotes),
     gift_id: row.gift_id,
     gift_name: row.gift_name,
     gift_type: row.gift_type,
@@ -142,9 +146,10 @@ export function purgeSessionContent(db, sessionId, {now = Date.now()} = {}) {
   const result = db.prepare(`
     UPDATE events
        SET content = NULL,
+           emotes = NULL,
            content_purged_at = ?
      WHERE session_id = ?
-       AND content IS NOT NULL
+       AND (content IS NOT NULL OR emotes IS NOT NULL)
        AND event_type IN ('chat', 'super_chat')
   `).run(now, String(sessionId));
   return result.changes;

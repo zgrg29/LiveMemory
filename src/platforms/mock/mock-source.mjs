@@ -50,7 +50,9 @@ const TOPICS = [
       'that boss phase was insane',
       '第一次看直播，画面好清晰',
       '主播今天状态不错啊',
-      '这个配装思路学到了'
+      '这个配装思路学到了',
+      '这个剧情让我哭了😭😭',
+      '太强了👏👏👏'
     ]
   },
   {
@@ -65,7 +67,8 @@ const TOPICS = [
       '耳机党狂喜',
       '刚才高音稳得离谱',
       '这份歌单可以分享吗',
-      '唱到这段的时候有点想哭'
+      '唱到这段的时候有点想哭',
+      '今天太开心了😂❤️'
     ]
   },
   {
@@ -80,7 +83,8 @@ const TOPICS = [
       '这个背景音乐是新的吗',
       '明天还播吗',
       '周末有联动吗',
-      '辛苦了，记得喝水'
+      '辛苦了，记得喝水',
+      '今天也来了🙌'
     ]
   },
   {
@@ -260,6 +264,28 @@ export class MockLiveSource extends PlatformAdapter {
         currency: 'CNY',
         value_kind: 'actual',
         is_paid: true
+      };
+    }
+    // Emoji / platform-emote samples. The first keeps the platform text label
+    // and adds its metadata; the second has no text at all and exercises the
+    // UI/AI fallback for an emote-only message.
+    const emoteRoll = this.random();
+    if (emoteRoll < 0.06) {
+      return {
+        ...base,
+        ...identity,
+        event_type: EVENT_TYPES.CHAT,
+        content: '今天这个剧情太好笑了😂[猫猫鼓掌]',
+        emotes: [{id: 'mock_cat_clap', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'mock'}]
+      };
+    }
+    if (emoteRoll < 0.08) {
+      return {
+        ...base,
+        ...identity,
+        event_type: EVENT_TYPES.CHAT,
+        content: null,
+        emotes: [{id: 'mock_emote_wave', name: '挥手', source: 'mock'}]
       };
     }
     return {

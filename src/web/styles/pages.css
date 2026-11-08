@@ -191,11 +191,11 @@
   gap: 10px;
   padding: 10px var(--space-5);
   border-top: 1px solid var(--hairline);
-  animation: feed-in 220ms var(--ease);
 }
 
 .feed-item:first-child {
   border-top: 0;
+  animation: feed-in 220ms var(--ease);
 }
 
 @keyframes feed-in {
@@ -690,6 +690,66 @@
 @media (max-width: 820px) {
   .steps {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------- AI task card */
+
+.task-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-5);
+}
+
+.task-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.task-item:nth-child(-n + 2) {
+  border-top: 0;
+}
+
+.task-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.task-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+}
+
+.task-service {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.task-service-title {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 820px) {
+  .task-list {
+    grid-template-columns: 1fr;
+  }
+
+  .task-item:nth-child(2) {
+    border-top: 1px solid var(--hairline);
   }
 }
 

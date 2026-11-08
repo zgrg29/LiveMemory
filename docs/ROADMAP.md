@@ -51,13 +51,37 @@
 
 **交付**：不依赖真实平台和 AI 的可运行记录系统。
 
+## P1 聊天表情与 Emoji 兼容 ✅
+
+- ✅ Unicode Emoji / 组合 Emoji / ZWJ / 肤色修饰符完整保存，截断不破坏字形
+- ✅ Bilibili 真实表情元数据 `info[0][13]` 采样与映射（`emoticon_unique` + 文字标签）
+- ✅ 只有表情代码/无正文的消息仍入库；未知表情明确标记，不猜情绪
+- ✅ 统一事件模型与 SQLite schema v2（`events.emotes`，旧库安全迁移）
+- ✅ AI 包去重表情字典、`emote_refs`、按需 `content_ai`
+- ✅ YouTube 离线 mapper 预留（未真实接入）
+- ✅ 三语界面与 AI 指令中的表情语义规则
+
+**交付**：文字、Emoji 与平台表情可被正确记录、显示并传给任意 AI。
+
+## P2 AI 分析中心通用化 ✅
+
+- ✅ 界面与分析指令移除 ChatGPT 专属绑定，统一为 AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果
+- ✅ 自然语言任务说明（话题、时间变化、回看片段、新观众、既有观众画像）
+- ✅ 三语 AI 分析指令由软件生成，含 Emoji/平台表情、经济支持、数据可靠性规则
+- ✅ 导出/复制/下载流程保持平台无关；失败重试与导入仍按 M6 计划
+- ⬜ AI 结果导入与 Schema 校验（M6）
+
+**交付**：用户可把同一分析包交给任意 AI 服务。
+
 ## M3 真实平台接入 🟡
 
-- 🟡 Bilibili 扫码登录：生成/轮询/校验与加密存储完成；二维码由浏览器中的 Bilibili 页面显示
+- 🟡 Bilibili 扫码登录：生成/轮询/校验与加密存储完成；二维码由应用内 canvas 显示
 - ✅ Bilibili 直播间 WebSocket（分片/压缩/心跳/看门狗/断线重连）
-- 🟡 弹幕、付费/免费礼物、SC、大航海映射已实现；弹幕身份已真实验证，礼物/SC/大航海尚未在真实直播观测到
-- 🟡 身份字段完整性验证：弹幕 142/142 带 UID；UID=0 + 昵称打码场景已记录
-- ⬜ YouTube Live Chat 公开读取（API Key）与最小授权评估
+- 🟡 弹幕、付费/免费礼物、SC、大航海映射已实现；弹幕身份与平台表情元数据已真实验证，礼物/SC/大航海尚未在真实直播观测到
+- ✅ 身份字段完整性验证：弹幕 142/142 带 UID；UID=0 + 昵称打码场景已记录
+- ✅ Bilibili 平台表情：`info[0][13].emoticon_unique` + `info[1]` 文字标签；不下载图片
+- ✅ 普通文字 / Unicode Emoji / 平台表情统一进入 canonical event、SQLite、UI 与 AI 包
+- 🟡 YouTube：离线 mapper 预留（文本、Unicode Emoji、`:code:` 自定义表情）；传输层/OAuth/轮询未接入
 - ✅ 连接状态、错误提示（三语）
 - ✅ 真实直播间验收记录（`PLATFORM_INTEGRATIONS.md`）
 - ⬜ `SEND_GIFT_V2`、礼物/SC/大航海真实复核、真实断线长时间验证
@@ -86,6 +110,8 @@
 ## M6 AI 文件往返与直播分析 🟡
 
 - ✅ 分析包导出（`livememory-analysis-v1`，含三语说明与结果 Schema）
+- ✅ 文本优先的 Emoji/平台表情处理：`emote_dictionary`、`emote_refs`、`content_ai`、未知表情标记
+- ✅ AI 分析中心通用化：不绑定 AI 品牌、自然语言任务说明、可复制分析指令
 - ✅ 提示词复制
 - ⬜ JSON 导入与 Schema 校验
 - ⬜ 重复导入保护、任务状态追踪

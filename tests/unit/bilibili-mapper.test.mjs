@@ -171,3 +171,78 @@ test('readDanmu falls back to the older user-array position', () => {
   assert.equal(parsed.uid, 123);
   assert.equal(parsed.name, 'Legacy');
 });
+
+function danmuWithEmote({text = '就这', unique = 'room_5050_96171', extraMeta = {}} = {}) {
+  const message = danmu({text});
+  message.data.info[0][13] = {
+    emoticon_unique: unique,
+    url: 'https://i0.hdslb.com/bfs/live/example.png',
+    width: 162,
+    height: 162,
+    is_dynamic: 0,
+    bulge_display: 0,
+    in_player_area: 0,
+    ...extraMeta
+  };
+  return message;
+}
+
+test('a real-room emote keeps the platform text label and records its id', () => {
+  const mapped = mapBilibiliMessage({...danmuWithEmote({text: '就这'}), receivedAt: RECEIVED});
+  assert.equal(mapped.kind, 'chat');
+  assert.equal(mapped.draft.content, '就这', 'raw platform text is not replaced');
+  assert.deepEqual(mapped.draft.emotes, [{
+    id: 'room_5050_96171',
+    name: '就这',
+    source: 'bilibili.info13'
+  }]);
+  assert.equal(mapped.draft.viewer_uid, '12345');
+});
+
+test('text, Unicode emoji and a platform emote can coexist in one message', () => {
+  const mapped = mapBilibiliMessage({
+    ...danmuWithEmote({text: '今天这个剧情太好笑了😂[猫猫鼓掌]', unique: 'room_5050_cat'}),
+    receivedAt: RECEIVED
+  });
+  assert.equal(mapped.draft.content, '今天这个剧情太好笑了😂[猫猫鼓掌]');
+  assert.equal(mapped.draft.emotes.length, 1);
+  assert.equal(mapped.draft.emotes[0].id, 'room_5050_cat');
+  assert.equal(mapped.draft.emotes[0].name, '猫猫鼓掌');
+});
+
+test('an emote-only message is still recorded when the text body is empty', () => {
+  const mapped = mapBilibiliMessage({
+    ...danmuWithEmote({text: '', unique: 'room_5050_96171'}),
+    receivedAt: RECEIVED
+  });
+  assert.ok(mapped);
+  assert.equal(mapped.kind, 'chat');
+  assert.equal(mapped.draft.content, null);
+  assert.deepEqual(mapped.draft.emotes, [{id: 'room_5050_96171', source: 'bilibili.info13'}]);
+});
+
+test('ordinary bracketed text without emote metadata is kept as text, not classified', () => {
+  const mapped = mapBilibiliMessage({
+    ...danmu({text: '今天太有意思了[笑哭]'}),
+    receivedAt: RECEIVED
+  });
+  assert.equal(mapped.draft.content, '今天太有意思了[笑哭]');
+  assert.equal(mapped.draft.emotes, null);
+});
+
+test('an incomplete emote metadata object keeps only the id it actually has', () => {
+  const mapped = mapBilibiliMessage({
+    ...danmuWithEmote({text: '', unique: '', extraMeta: {emoticon_id: 12345}}),
+    receivedAt: RECEIVED
+  });
+  assert.ok(mapped);
+  assert.deepEqual(mapped.draft.emotes, [{id: '12345', source: 'bilibili.info13'}]);
+});
+
+test('a non-empty dm_v2 is not decoded or invented as an emote id', () => {
+  const message = danmu({text: 'hello'});
+  message.data.dm_v2 = 'CAESAggB';
+  const mapped = mapBilibiliMessage({...message, receivedAt: RECEIVED});
+  assert.equal(mapped.draft.content, 'hello');
+  assert.equal(mapped.draft.emotes, null);
+});

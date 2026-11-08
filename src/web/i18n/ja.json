@@ -107,7 +107,8 @@
       "guardLabel": "ギャラリー",
       "membershipLabel": "メンバー",
       "anonymous": "匿名の視聴者",
-      "paid": "有料"
+      "paid": "有料",
+      "emoteFallback": "プラットフォーム絵文字：{name}"
     },
     "top": {
       "title": "よく発言した視聴者",
@@ -183,7 +184,7 @@
       "topEmpty": "視聴者データがありません。",
       "aiTitle": "AI 分析",
       "aiPendingTitle": "分析結果はまだ取り込まれていません",
-      "aiPendingBody": "分析パッケージを出力して ChatGPT に渡すと、話題・感情の変化・切り抜き候補を追加できます。",
+      "aiPendingBody": "AI 分析パッケージを出力し、任意の AI サービスに渡すと、話題・感情の変化・切り抜き候補を追加できます。",
       "aiCta": "AI 分析を開く",
       "storageTitle": "保存されているデータ",
       "eventsKept": "保持イベント数",
@@ -229,47 +230,58 @@
   },
   "ai": {
     "pageTitle": "AI 分析",
-    "pageSubtitle": "API キーもクラウド接続も不要。パッケージをダウンロードし、ChatGPT で分析して、結果を取り込みます。",
+    "pageSubtitle": "API キーもクラウド接続も不要。パッケージを、ファイルアップロードと構造化出力に対応した任意の AI サービスに渡し、結果を取り込みます。",
     "steps": {
-      "exportTitle": "1 · パッケージ出力",
-      "exportDesc": "メッセージ・統計・プロンプト・結果 Schema をまとめた .zip を作成します。",
-      "promptTitle": "2 · ChatGPT に依頼",
-      "promptDesc": "パッケージをアップロードし、同梱の説明を貼り付けます。",
-      "importTitle": "3 · 結果を取り込む",
+      "exportTitle": "1 · AI 分析パッケージを出力",
+      "exportDesc": "チャット、統計、プラットフォーム絵文字名、AI 分析の指示、結果 Schema をまとめた .zip を作成します。",
+      "promptTitle": "2 · AI に渡す",
+      "promptDesc": "パッケージをアップロードし、AI 分析の指示を送ります。",
+      "importTitle": "3 · AI 分析結果を取り込む",
       "importDesc": "返された JSON を検証してコンソールへ統合します。"
     },
     "export": {
-      "title": "分析パッケージを作成",
+      "title": "AI 分析パッケージを出力",
       "sessionLabel": "配信",
       "languageLabel": "分析の言語",
-      "button": "パッケージを作成",
+      "button": "AI 分析パッケージを出力",
       "exporting": "作成しています…",
       "download": "パッケージをダウンロード",
-      "successTitle": "パッケージの準備ができました",
+      "successTitle": "AI 分析パッケージの準備ができました",
       "successBody": "{messages} 件のメッセージ · {viewers} 人 · {size}",
-      "hint": "アーカイブにはチャットログ、配信統計、視聴者コンテキスト、指定言語のプロンプト、JSON Schema が含まれます。Cookie やトークンは含まれません。",
+      "hint": "アーカイブにはチャットログ、配信統計、視聴者コンテキスト、プラットフォーム絵文字辞書、指定言語の AI 分析の指示、JSON Schema が含まれます。Cookie やトークンは含まれません。",
       "empty": "まず配信を記録してください。分析できる内容がまだありません。",
       "needSession": "配信を選択してください。"
     },
     "prompt": {
-      "title": "ChatGPT に渡す説明",
+      "title": "AI 分析の指示",
       "hint": "同じ内容がパッケージ内の instructions.md にも入っています。",
-      "copy": "説明をコピー",
+      "copy": "AI 分析の指示をコピー",
       "copied": "説明をコピーしました",
       "loading": "説明を読み込み中…"
     },
     "import": {
-      "title": "AI 結果を取り込む",
+      "title": "AI 分析結果を取り込む",
       "body": "取り込みと Schema 検証は M6 で提供します。現在のパッケージには完全な Schema が含まれているため、まずは手元で結果を確認できます。",
       "badge": "M6 で提供予定"
     },
     "packages": {
-      "title": "出力済みのパッケージ",
+      "title": "出力済みの AI 分析パッケージ",
       "empty": "出力したパッケージはまだありません。",
       "download": "ダウンロード",
       "meta": "{messages} 件 · {date}"
     },
-    "protocolLabel": "プロトコル"
+    "protocolLabel": "プロトコル",
+    "task": {
+      "title": "AI が分析する内容",
+      "topics": "配信全体の話題と話題の変化",
+      "timeline": "時間帯ごとの議論の変化と最も盛り上がった時間",
+      "highlights": "見返す価値のある配信場面",
+      "newViewers": "新しい視聴者の初期プロフィール",
+      "existingViewers": "既存視聴者の新しい情報・興味の変化・プロフィール更新",
+      "emoji": "テキスト、Unicode 絵文字、プラットフォーム絵文字名。不明な絵文字は明示され、意味を推測しません。",
+      "serviceTitle": "AI サービスは自分で選択",
+      "serviceBody": "LiveMemory は特定の AI ブランドに依存しません。ファイルアップロードと構造化出力に対応した任意の AI サービスを使えます。ファイルサイズ、ZIP 対応、コンテキスト長はサービスによって異なります。"
+    }
   },
   "settings": {
     "pageTitle": "設定",

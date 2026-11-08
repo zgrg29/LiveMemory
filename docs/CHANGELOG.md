@@ -1,5 +1,46 @@
 # 版本变化（CHANGELOG）
 
+## Unreleased — 2026-11-08（聊天表情兼容 + AI 分析中心通用化）
+
+### 新增
+
+- **Unicode Emoji 与平台表情**
+  - `cleanText` / `truncateText` 改为按 grapheme 截断，组合 Emoji、变体选择符、肤色修饰符与 ZWJ 序列不会再被截断成乱码。
+  - canonical event 新增可选 `emotes` 元数据（`id` / `code` / `name` / `source`），仅来自平台可靠字段。
+  - SQLite schema v2：`events.emotes TEXT`，v1 旧库原地升级，旧消息 `emotes=NULL`。
+  - Bilibili：识别 `DANMU_MSG.info[0][13]`，保存 `emoticon_unique` 与 `info[1]` 文字标签；无元数据时普通 `[文字]` 不误判。
+  - 只有表情、没有正文的消息也会入库；UI 与 AI 包使用名称/id 回退。
+  - 未知表情标记 `[未知平台表情：emote_id=…]`，不猜测情绪，不下载图片。
+  - YouTube 离线 mapper 预留：文本、Unicode Emoji、`:code:` 自定义表情、稳定 channelId；明确标记未真实接入。
+
+- **AI 分析包（文本优先）**
+  - `session_context.emote_dictionary` 去重表情字典；`messages.jsonl` 使用 `emote_refs`。
+  - 仅在原文不足时生成 `content_ai`，避免重复名称导致包膨胀。
+  - `manifest.counts` 增加 `messages_with_emotes` / `emote_kinds`。
+  - 三语 `instructions.md` 增加 Emoji/平台表情规则、未知表情禁止猜测、礼物不代表话题偏好、单表情不足以建立长期兴趣。
+
+- **AI 分析中心通用化**
+  - 界面统一为 AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果 / 导入 AI 分析结果，不再绑定 ChatGPT。
+  - 新增自然语言任务说明卡（整场话题、时间变化、回看片段、新观众、既有观众画像）。
+  - 三语 AI 分析指令由软件按任务生成，用户无需手写提示词。
+  - 明确“使用你选择的 AI 服务”，不假设通用 AI 网站。
+
+### 修复
+
+- 聊天文本截断可能切断 surrogate pair / ZWJ 序列的问题。
+- 精简清理现在同时清除 `content` 与 `emotes`，不残留聊天元数据。
+
+### 测试
+
+- 自动化测试从 165 增至 195，覆盖 Unicode Emoji、ZWJ、Bilibili 表情元数据、YouTube 预留 mapper、v1→v2 迁移、AI 包表情字典与大小控制。
+- 真实 Bilibili 房间 `5050` 采样：21/32 条 `DANMU_MSG` 带 `info[0][13]`，`info[1]` 为文字标签，`dm_v2` 为空。
+
+### 尚未包含
+
+- YouTube 真实传输层/OAuth/轮询。
+- AI 结果导入、Schema 校验、分批与长期画像（M6/M7）。
+- 表情图片下载、缓存与显示。
+
 ## 0.1.0 — 2026-11-08（首个可运行版本）
 
 ### 新增

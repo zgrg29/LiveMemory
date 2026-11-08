@@ -166,3 +166,49 @@ test('events are ignored for sessions that are no longer live', () => {
   assert.equal(listEvents(db, {sessionId: session.id}).length, 0);
   closeDatabase(db);
 });
+
+test('emote metadata is persisted with the raw message and survives duplicate delivery', () => {
+  const db = createDb();
+  const ingest = new EventIngest({db});
+  const session = createSession(db, {platform: 'bilibili', roomTitle: 'Emote', storageMode: 'compact', sourceQuality: 'estimated', simulated: false, startedAt: T});
+  const chat = chatEvent({
+    platform: 'bilibili',
+    session_id: session.id,
+    viewer_uid: '42',
+    display_name: '观众',
+    external_id: 'emote-1',
+    occurred_at: T,
+    content: '今天这个剧情太好笑了😂[猫猫鼓掌]',
+    emotes: [{id: 'room_5050_cat', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'bilibili.info13'}]
+  });
+  assert.equal(ingest.record(chat).inserted, true);
+  assert.equal(ingest.record(chat).duplicate, true);
+  const rows = listEvents(db, {sessionId: session.id});
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].content, '今天这个剧情太好笑了😂[猫猫鼓掌]');
+  assert.deepEqual(rows[0].emotes, [{id: 'room_5050_cat', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'bilibili.info13'}]);
+  assert.equal(getSession(db, session.id).message_count, 1);
+  closeDatabase(db);
+});
+
+test('compact cleanup removes emote metadata together with chat text', () => {
+  const db = createDb();
+  const ingest = new EventIngest({db});
+  const session = createSession(db, {platform: 'bilibili', roomTitle: 'Purge emote', storageMode: 'compact', sourceQuality: 'estimated', simulated: false, startedAt: T});
+  ingest.record(chatEvent({
+    platform: 'bilibili',
+    session_id: session.id,
+    viewer_uid: '42',
+    display_name: '观众',
+    external_id: 'emote-purge-1',
+    occurred_at: T,
+    content: '就这',
+    emotes: [{id: 'room_5050_96171', name: '就这', source: 'bilibili.info13'}]
+  }));
+  assert.equal(purgeSessionContent(db, session.id, {now: T + 1000}), 1);
+  const row = listEvents(db, {sessionId: session.id})[0];
+  assert.equal(row.content, null);
+  assert.equal(row.emotes, null);
+  assert.equal(getSession(db, session.id).message_count, 1, 'the message row still counts');
+  closeDatabase(db);
+});

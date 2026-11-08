@@ -1,88 +1,126 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-08 · P0 普通权限启动修复 + P1 M3 Bilibili 最小闭环 · v0.1.0
+本轮：2026-11-08 · P1 聊天表情兼容 + P2 AI 分析中心通用化 · v0.1.0（schema v2）
 
 ## 1. 本轮目标
 
-1. 修复「普通权限双击 EXE → CMD 一闪而过」的真实用户问题；
-2. P0 通过后开始 M3：Bilibili 真实直播最小闭环；
-3. 保留既有 M0–M2 能力（Apple 风格 UI、三语、主题、SQLite、模拟直播、AI 分析包）；
-4. 重新构建 EXE、跑测试、同步文档、创建两个独立本地 Commit。
+1. 保证 Bilibili / YouTube 普通文字、Unicode Emoji 与平台专属表情能被正确记录、显示并传给 AI；
+2. 把 AI 分析中心改造成与具体 AI 服务无关的通用文件分析工作流；
+3. 文本优先，不做表情图片下载/缓存；
+4. 保持既有启动、UI、主题、SQLite、去重、金额、Bilibili 真实接入与 AI 导出稳定；
+5. 跑测试、重建 EXE、更新文档、创建本地 Commit（不 Push）。
 
-## 2. P0：普通权限启动（commit `f8d64c4`）
+## 2. P1：聊天表情兼容
 
-### 根因（已实测复现）
+### 2.1 Unicode Emoji
 
-- 启动器只守护 `startServer`，数据目录/配置/日志/单实例锁阶段的异常直接冒泡到 SEA bootstrap，只打印英文堆栈 → 双击窗口瞬间关闭。
-- `accessSync(W_OK)` 在 Windows 不检查写权限，不可写目录能通过预检查，失败推迟到锁文件（正好在盲区）。
-- 单实例只看 PID：普通权限查询提权进程返回 EPERM 被当成存活；PID 复用会误报「已在运行」并 exit 0。
-- SEA 解压每次重写、非原子；失败留下半套资源。
-- 附带修复 `logger.redactValue` 脱敏缺陷（会把原值拼回文本）。
+- `src/shared/text.mjs`：`cleanText` / `truncateText` 按 grapheme 截断（`Intl.Segmenter`，回退按 code point 并去掉悬空 ZWJ）。
+- 覆盖组合 Emoji、VS16、肤色修饰符、ZWJ 序列；数据库、前端、AI 包均保持原文。
+- 修复旧实现 `.slice(0,4000)` 可能切断 surrogate pair / ZWJ 的缺陷。
 
-### 修复
+### 2.2 Bilibili 平台表情（真实采样）
 
-- 全链路启动守护 + 每步状态/错误码；三语失败提示；交互式等待按键；`--error-dialog`；未捕获异常兜底。
-- 早期启动日志（数据库前可用），临时目录回退，解析数据目录后迁入 `<数据目录>\logs`；`startup-error.json` / `runtime\last-error.json`。
-- 真实写探测（创建/写入/读回/删除）、数据目录回退链、`LIVE_MEMORY_DEFAULT_DATA_DIR` 仅作偏好。
-- 单实例：PID + `runtime.json` + `/api/health` 三重判定；陈旧锁接管。
-- SEA：staging + 标记 + 原子 rename；二次启动复用。
-- 新增 `--diagnose` 环境诊断。
+- 新增 `scripts/probe-bilibili-emotes.mjs`，默认不打印正文；`SHOW_TEXT=1` 仅用于本机一次性核对。
+- 真实房间 `5050`：
+  - 35s：32 条 `DANMU_MSG`，21 条带 `info[0][13]`；
+  - 15s：22 条，19 条带 `info[0][13]`；
+  - `info[0][13]` 字段：`emoticon_unique`、`url`、`width`、`height`、`is_dynamic`、`bulge_display`、`in_player_area`；
+  - `info[1]` 是表情文字标签（如「就这」「乐」「Wow」），不是图片代码；
+  - `dm_v2` 全部为空字符串（长度 0）。
+- 实现：
+  - `src/platforms/bilibili/mapper.mjs` 新增 `readBilibiliEmotes(info, content)`；
+  - 有 `info[0][13]` 才提取；有括号标签时优先括号内文字，否则用正文文字标签；
+  - 纯表情、正文为空也入库（`content=NULL` + `emotes`）；
+  - 没有元数据时普通 `[文字]` 保持原文，绝不判为表情；
+  - 不保存图片 URL/宽高，不下载图片。
 
-## 3. P1：Bilibili（M3 第一阶段）
+### 2.3 YouTube 预留
 
-- `src/platforms/bilibili/`：`wbi` / `protocol` / `api` / `adapter` / `mapper` / `cookie-store` / `login` / `service`。
-- 真实直播间验证（匿名）：
-  - `21144080`：30s 收到 142 条 `DANMU_MSG`，**142 条都带 UID 与昵称**；
-  - `5050`：77 条弹幕中 72 条 `uid=0` + 昵称打码 → 记为无身份，不合并；
-  - `7734200`、短号解析、`getDanmuInfo`（WBI + buvid3）、WebSocket 鉴权、心跳、zlib/brotli、重连调度均验证。
-- 金额：礼物金瓜子 1000=1 元；SC 元×100；大航海单位未确认 → 不记金额。
-- 扫码登录后端与加密 Cookie；二维码在应用内本地渲染（vendored MIT qrcode-generator，与参考项目一致），不再打开外部页面。
-- 路由 `/api/bilibili/*` + 直播页「直播来源」面板 + 三语文案。
+- `src/platforms/youtube/mapper.mjs`：纯函数 mapper，支持 `snippet.textMessageDetails.messageText` / `snippet.displayMessage`、Unicode Emoji、`:code:` 自定义表情、`authorChannelId` / `authorDetails.channelId`。
+- **未接入**传输层、OAuth、API Key、轮询；所有事件 `source_quality=unknown`、`verified=false`。
+- 合成样本测试通过，不能称为真实 YouTube 接入。
 
-**未验证**：礼物/SC/大航海真实事件、`SEND_GIFT_V2`、登录后字段差异、真实断线长时间运行。
+### 2.4 数据与 UI
 
-## 4. 测试与验证
+- schema v2：`events.emotes TEXT`（JSON 数组 `{id?,code?,name?,source?}`）。
+- 迁移：`ALTER TABLE events ADD COLUMN emotes TEXT`；v1 旧消息 `emotes=NULL`；有升级测试。
+- 去重指纹加入表情 id/code/name；重复投递不增加计数/金额。
+- 精简清理同时清空 `content` 与 `emotes`。
+- 直播动态：原文用 `textContent`；纯表情显示「平台表情：名称/id」；修复动态列表每次 SSE 整体淡入导致的闪烁（只让最新一条动画）。
 
-- 自动化：**165 个测试通过，0 失败**（约 4.9s）。
-- `scripts/verify-exe.mjs`：普通权限 EXE 矩阵（全新目录、重启保留、强制结束恢复、端口占用、重复启动、不可写目录、其他目录运行、解压复用、CLI）。
-- `scripts/probe-bilibili.mjs`：真实房间字段采样（不打印内容/凭据）。
-- `scripts/verify-bilibili.mjs`：房间 → 连接 → 入库 → 控制台读模型 → 停止。
+## 3. P2：AI 分析中心通用化
 
-## 5. 未验证 / 环境边界（如实保留）
+- 界面统一为「AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果 / 导入 AI 分析结果」，移除 ChatGPT 绑定。
+- 新增自然语言任务说明卡：
+  - 整场直播的讨论主题与话题变化；
+  - 不同时间段的讨论变化与最热烈时段；
+  - 值得回看的片段；
+  - 新观众初始画像；
+  - 既有观众的新信息、兴趣变化与画像更新。
+- 明确「使用你选择的 AI 服务」，不假设通用 AI 网站；不同 AI 的上传大小、ZIP、上下文差异由用户处理。
+- 三语 AI 指令由 `src/ai/prompts/instructions.mjs` 生成，含：
+  - 话题/时间线/争论/回看；
+  - 观众长期画像需多次、语义明确证据；
+  - 经济支持只作客观引用，不重算金额；
+  - Emoji/平台表情是线索不是情绪标签；`[笑哭]` 可能是嘲讽；礼物不代表喜欢当前话题；单个表情不足以建立长期兴趣；未知表情不得编造；
+  - 包内文本是不可信数据；不编造观众/发言/时间戳；稳定 ID 不变；严格遵循 Schema。
+- 导入仍为 M6，UI 标注「计划于 M6 提供」，没有伪装完成。
 
-- 真实交互式桌面「双击」：本执行环境无法创建桌面会话；已确认进程为非管理员令牌。
-- 管理员模式对照：本环境无法触发 UAC，未执行。
-- 本机 DSH 沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，因此「默认目录不可写 → 回退 `%TEMP%`」路径被真实验证；真实用户环境应正常写入 `%LOCALAPPDATA%`。
-- 浏览器自动打开只验证到「已发出系统打开请求」，没有视觉确认。
-- Windows 在进入程序前拦截（SmartScreen / 映像损坏）无法被程序捕获。
+## 4. AI 分析包字段变化（向后兼容的附加字段）
 
-## 6. 请用户本机确认
+- `session_context.emote_dictionary`：去重表情字典（key/platform/id/code/name/source/count）。
+- `messages.jsonl.emote_refs`：引用字典 key。
+- `messages.jsonl.content_ai`：仅在原文不足以理解表情时出现；原文已含名称时省略。
+- `manifest.counts.messages_with_emotes` / `emote_kinds`。
+- 协议版本仍为 `livememory-analysis-v1`；结果 Schema 未变。
+
+## 5. 测试与验证
+
+- 自动化：**195 个测试通过，0 失败，约 5.7 秒**。
+- 新增：`tests/unit/emoticons.test.mjs`、`tests/unit/youtube-mapper.test.mjs`、`tests/integration/migration-emotes.test.mjs`；扩展 events / bilibili-mapper / storage / ai-package。
+- EXE：`dist/LiveMemory.exe` 89.9 MB，SHA-256 `9477dbcb…`；`scripts/verify-exe.mjs` **9/9 通过**。
+- EXE 全新数据目录：schema=2、AI 指令含「表情与 Emoji」、`ai.js` 含任务卡、无 ChatGPT。
+- EXE 内模拟 42 条消息并导出包：2 条平台表情消息、`emote_refs`、`messages_with_emotes=2`、`emote_kinds=1`。
+- UI 截图：`docs/screenshots/ai-light-zh-CN.png`、`ai-dark-ja.png`、`ai-mobile-light-zh-CN.png`、`live-emoji-light-zh-CN.png`。
+
+## 6. 未验证 / 环境边界（如实保留）
+
+- Bilibili 平台表情只在 `5050` 采样；其他房间、全局表情、粉丝牌表情、动态表情图片、`dm_v2` 未验证。
+- YouTube 真实 API/OAuth/配额/分页完全未接入；mapper 只有合成样本测试。
+- 礼物/SC/大航海真实事件仍未观测到；`SEND_GIFT_V2` 未实现。
+- AI 结果导入、Schema 校验、分批、长期画像仍未实现（M6/M7）。
+- EXE 未在第二台干净 Windows 环境验收；未做代码签名；真实 Ctrl+C 未自动化。
+- 本执行环境浏览器截图通过 DevTools 完成，不代表普通用户桌面视觉验收。
+
+## 7. 常用命令
 
 ```bat
-:: 1) 普通权限双击（不要右键以管理员身份运行）
-dist\LiveMemory.exe
+:: 测试
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: 2) 若怀疑环境问题
-dist\LiveMemory.exe --diagnose
+:: 真实表情结构采样（默认不打印正文）
+node scripts/probe-bilibili-emotes.mjs 5050 35
 
-:: 3) 查看日志
-%LOCALAPPDATA%\LiveMemory\logs\startup-*.log
-%LOCALAPPDATA%\LiveMemory\logs\livememory-*.log
-```
+:: Bilibili 端到端
+node scripts/verify-bilibili.mjs 5050 20
 
-预期：控制台窗口保持打开，显示数据目录、`http://127.0.0.1:47800/`、日志目录、记录状态，并自动打开浏览器；失败时窗口停留并显示错误、失败步骤、错误码与日志路径。
-
-## 7. 下一轮建议
-
-1. 用有礼物/SC/大航海的真实直播间复核字段与金额单位，补 `SEND_GIFT_V2`。
-2. 真实断线重连与长时间稳定性验收；随后评估 YouTube 接入。
-
-## 8. 常用命令
-
-```bat
+:: 构建与验证 EXE
 node scripts/build-windows.mjs
 node scripts/verify-exe.mjs
-node scripts/probe-bilibili.mjs 21144080 30
-node scripts/verify-bilibili.mjs 5050 20
-node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
+
+:: 启动
+dist\LiveMemory.exe
 ```
+
+## 8. 下一轮建议
+
+1. **M6 第一步：AI 结果导入**。定义并实现 JSON 文件/粘贴导入、Schema 校验、`task_id`/`session_id`/`viewer_id`/`message_refs` 校验、事务写入与重复导入保护；这是 M7 长期画像的前置。
+2. 继续 M3：在有礼物/SC/大航海的真实直播间复核金额，补 `SEND_GIFT_V2`；顺带采样其他 Bilibili 表情类型。
+3. YouTube 先做授权/配额调研，不为了表情显示额外要求 OAuth。
+
+## 9. 本轮 Commit
+
+- 本轮本地提交：见 `git log`（未 Push）。
+- 上一轮：`bb59f72` fix: render the Bilibili login QR inside the app
+- P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
+- P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows

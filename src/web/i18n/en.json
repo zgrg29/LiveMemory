@@ -107,7 +107,8 @@
       "guardLabel": "Guard",
       "membershipLabel": "Membership",
       "anonymous": "Anonymous viewer",
-      "paid": "paid"
+      "paid": "paid",
+      "emoteFallback": "Platform emote: {name}"
     },
     "top": {
       "title": "Most active viewers",
@@ -183,7 +184,7 @@
       "topEmpty": "No viewer data.",
       "aiTitle": "AI analysis",
       "aiPendingTitle": "No analysis imported yet",
-      "aiPendingBody": "Export an analysis package and paste it into ChatGPT to get topics, sentiment and clip suggestions.",
+      "aiPendingBody": "Export an AI analysis package and give it to any AI service to add topics, sentiment shifts and clip suggestions.",
       "aiCta": "Open AI analysis",
       "storageTitle": "Stored data",
       "eventsKept": "Events kept",
@@ -229,32 +230,32 @@
   },
   "ai": {
     "pageTitle": "AI analysis",
-    "pageSubtitle": "No API keys and no cloud connection. You download a package, analyse it in ChatGPT, then import the answer.",
+    "pageSubtitle": "No API keys and no cloud connection. Give the package to any AI service that supports file upload and structured output, then import the answer.",
     "steps": {
-      "exportTitle": "1 · Export package",
-      "exportDesc": "Build one .zip with messages, aggregates, the prompt and the result schema.",
-      "promptTitle": "2 · Ask ChatGPT",
-      "promptDesc": "Upload the package and paste the included instructions.",
-      "importTitle": "3 · Import result",
+      "exportTitle": "1 · Export AI analysis package",
+      "exportDesc": "Build one .zip with messages, aggregates, platform emote names, AI instructions and the result schema.",
+      "promptTitle": "2 · Ask your AI",
+      "promptDesc": "Upload the package and send the AI analysis instructions.",
+      "importTitle": "3 · Import the AI result",
       "importDesc": "Validate the JSON answer and merge it into the console."
     },
     "export": {
-      "title": "Create an analysis package",
+      "title": "Export AI analysis package",
       "sessionLabel": "Session",
       "languageLabel": "Analysis language",
-      "button": "Create package",
+      "button": "Export AI analysis package",
       "exporting": "Building package…",
       "download": "Download package",
-      "successTitle": "Package ready",
+      "successTitle": "AI analysis package ready",
       "successBody": "{messages} messages · {viewers} viewers · {size}",
-      "hint": "The archive contains the chat log, session statistics, viewer context, the localized prompt and the JSON schema. No cookies or tokens are included.",
+      "hint": "The archive contains the chat log, session statistics, viewer context, the platform emote dictionary, the localized AI instructions and the JSON schema. No cookies or tokens are included.",
       "empty": "Record a session first — there is nothing to analyse yet.",
       "needSession": "Choose a session."
     },
     "prompt": {
-      "title": "Instructions to give ChatGPT",
+      "title": "AI analysis instructions",
       "hint": "The same text is inside the package as instructions.md.",
-      "copy": "Copy instructions",
+      "copy": "Copy AI analysis instructions",
       "copied": "Instructions copied",
       "loading": "Loading instructions…"
     },
@@ -264,12 +265,23 @@
       "badge": "Planned for M6"
     },
     "packages": {
-      "title": "Exported packages",
+      "title": "Exported AI analysis packages",
       "empty": "No packages exported yet.",
       "download": "Download",
       "meta": "{messages} messages · {date}"
     },
-    "protocolLabel": "Protocol"
+    "protocolLabel": "Protocol",
+    "task": {
+      "title": "What the AI will analyse",
+      "topics": "The topics discussed across the session and how they changed",
+      "timeline": "How discussion shifted over time and which periods were most active",
+      "highlights": "Moments worth rewatching",
+      "newViewers": "Initial profiles for new viewers",
+      "existingViewers": "New information, interest changes and profile updates for existing viewers",
+      "emoji": "Text, Unicode emoji and platform emote names; unknown emotes are marked explicitly and never guessed.",
+      "serviceTitle": "Use the AI service you choose",
+      "serviceBody": "LiveMemory is not tied to any AI brand. You can use any AI service that supports file upload and structured output. File size, ZIP support and context length differ between services."
+    }
   },
   "settings": {
     "pageTitle": "Settings",

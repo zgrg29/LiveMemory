@@ -133,3 +133,44 @@ test('dedupe key builder is stable for an event object', () => {
   const event = normalizeEvent(base, {now: 1});
   assert.equal(buildDedupeKey(event), event.dedupe_key);
 });
+
+test('canonical events keep normalized emote metadata and include it in the fingerprint', () => {
+  const withEmote = normalizeEvent({
+    ...base,
+    external_id: null,
+    content: '今天这个剧情太好笑了😂',
+    emotes: [
+      {id: 'room_5050_cat', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'bilibili.info13'},
+      {id: 'room_5050_cat', name: 'duplicate should be dropped'},
+      {name: ''}
+    ]
+  }, {now: 1});
+  assert.deepEqual(withEmote.emotes, [{
+    id: 'room_5050_cat',
+    code: '[猫猫鼓掌]',
+    name: '猫猫鼓掌',
+    source: 'bilibili.info13'
+  }]);
+  const withoutEmote = normalizeEvent({...base, external_id: null, content: '今天这个剧情太好笑了😂'}, {now: 1});
+  assert.notEqual(withEmote.dedupe_key, withoutEmote.dedupe_key);
+  assert.match(withEmote.dedupe_key, /^fp:[0-9a-f]{32}$/);
+});
+
+test('emote metadata is only attached to message events', () => {
+  const gift = normalizeEvent({
+    ...base,
+    event_type: 'gift',
+    gift_name: '礼物',
+    emotes: [{id: 'x', name: 'x'}]
+  }, {now: 1});
+  assert.equal(gift.emotes, null);
+});
+
+test('over-long emoji text is truncated on a grapheme boundary', () => {
+  const family = '👨‍👩‍👧‍👦';
+  const event = normalizeEvent({...base, content: `${'a'.repeat(3998)}${family}`}, {now: 1});
+  assert.ok(event.content.isWellFormed());
+  assert.ok(!event.content.endsWith('\u200D'));
+  assert.ok(event.content.length <= 4000);
+  assert.equal(event.content, 'a'.repeat(3998), 'the full family emoji does not fit');
+});

@@ -119,3 +119,139 @@ test('an unknown session produces no package', async () => {
   closeDatabase(db);
   temp.cleanup();
 });
+
+test('the AI package keeps raw text + emoji, uses one emote dictionary and marks unknown emotes', async () => {
+  const temp = createTempDir();
+  const db = openDatabase({memory: true});
+  migrate(db);
+  const session = createSession(db, {
+    platform: 'bilibili',
+    roomTitle: 'Emoji and emotes',
+    storageMode: 'compact',
+    sourceQuality: 'estimated',
+    simulated: false,
+    startedAt: Date.parse('2026-11-08T10:00:00.000Z')
+  });
+  const ingest = new EventIngest({db});
+  const base = {platform: 'bilibili', session_id: session.id, viewer_uid: '42', display_name: '观众', occurred_at: Date.parse('2026-11-08T10:00:01.000Z')};
+  ingest.record(chatEvent({...base, external_id: 'emoji-1', content: '今天太开心了😂❤️'}));
+  ingest.record(chatEvent({
+    ...base,
+    external_id: 'emote-1',
+    content: '就这',
+    emotes: [{id: 'room_5050_96171', name: '就这', source: 'bilibili.info13'}]
+  }));
+  ingest.record(chatEvent({
+    ...base,
+    external_id: 'emote-2',
+    content: '今天这个剧情太好笑了😂[猫猫鼓掌]',
+    emotes: [{id: 'room_cat', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'bilibili.info13'}]
+  }));
+  ingest.record(chatEvent({
+    ...base,
+    external_id: 'emote-3',
+    content: '今天太有意思了',
+    emotes: [{id: 'room_cat', code: '[猫猫鼓掌]', name: '猫猫鼓掌', source: 'bilibili.info13'}]
+  }));
+  ingest.record(chatEvent({
+    ...base,
+    external_id: 'emote-4',
+    content: null,
+    emotes: [{id: 'room_unknown', source: 'bilibili.info13'}]
+  }));
+  // Same emote again: the dictionary count grows, the metadata is not repeated.
+  ingest.record(chatEvent({
+    ...base,
+    external_id: 'emote-5',
+    content: '就这',
+    emotes: [{id: 'room_5050_96171', name: '就这', source: 'bilibili.info13'}]
+  }));
+
+  const result = await buildAnalysisPackage({
+    db,
+    sessionId: session.id,
+    locale: 'zh-CN',
+    exportsDir: join(temp.dir, EXPORTS_DIR),
+    now: Date.parse('2026-11-08T10:00:10.000Z')
+  });
+  const archive = readFileSync(result.absolutePath);
+  const sessionContext = JSON.parse(readZipEntry(archive, 'session_context.json').toString('utf8'));
+  const messages = readZipEntry(archive, 'messages.jsonl').toString('utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const instructions = readZipEntry(archive, 'instructions.md').toString('utf8');
+
+  assert.equal(result.messageCount, 6);
+  assert.equal(sessionContext.counts.messages_with_emotes, 5);
+  assert.equal(sessionContext.counts.emote_kinds, 3);
+  assert.equal(sessionContext.emote_dictionary.length, 3);
+  const dict = Object.fromEntries(sessionContext.emote_dictionary.map((entry) => [entry.key, entry]));
+  assert.equal(dict['bilibili:id:room_5050_96171'].count, 2);
+  assert.equal(dict['bilibili:id:room_cat'].count, 2);
+  assert.equal(dict['bilibili:id:room_unknown'].id, 'room_unknown');
+
+  // Raw text is never rewritten; emoji survive the trip through SQLite, ZIP and JSONL.
+  assert.equal(messages[0].content, '今天太开心了😂❤️');
+  assert.equal(messages[1].content, '就这');
+  assert.equal(messages[2].content, '今天这个剧情太好笑了😂[猫猫鼓掌]');
+
+  assert.equal(messages[1].content_ai, undefined, 'label already in text: no duplicate annotation');
+  assert.equal(messages[2].content_ai, undefined, 'bracketed label already in text');
+  assert.equal(messages[3].content_ai, '今天太有意思了[平台表情：猫猫鼓掌]');
+  assert.equal(messages[4].content, null);
+  assert.equal(messages[4].content_ai, '[未知平台表情：emote_id=room_unknown]');
+  assert.deepEqual(messages[1].emote_refs, ['bilibili:id:room_5050_96171']);
+  assert.deepEqual(messages[3].emote_refs, ['bilibili:id:room_cat']);
+
+  assert.match(instructions, /## 表情与 Emoji/);
+  assert.match(instructions, /未知平台表情/);
+  assert.match(instructions, /\[笑哭\]/);
+  assert.match(instructions, /不是确定的情绪标签/);
+
+  closeDatabase(db);
+  temp.cleanup();
+});
+
+test('repeating one emote does not inflate the package with per-message metadata', async () => {
+  const temp = createTempDir();
+  const db = openDatabase({memory: true});
+  migrate(db);
+  const session = createSession(db, {
+    platform: 'bilibili',
+    roomTitle: 'Repeated emote',
+    storageMode: 'compact',
+    sourceQuality: 'estimated',
+    simulated: false,
+    startedAt: Date.parse('2026-11-08T10:00:00.000Z')
+  });
+  const ingest = new EventIngest({db});
+  for (let index = 0; index < 200; index += 1) {
+    ingest.record(chatEvent({
+      platform: 'bilibili',
+      session_id: session.id,
+      viewer_uid: String(index % 10),
+      display_name: `观众${index % 10}`,
+      external_id: `repeat-${index}`,
+      occurred_at: Date.parse('2026-11-08T10:00:00.000Z') + index * 1000,
+      content: '太强了[鼓掌]',
+      emotes: [{id: 'room_clap', code: '[鼓掌]', name: '鼓掌', source: 'bilibili.info13'}]
+    }));
+  }
+  const result = await buildAnalysisPackage({
+    db,
+    sessionId: session.id,
+    locale: 'zh-CN',
+    exportsDir: join(temp.dir, EXPORTS_DIR)
+  });
+  const archive = readFileSync(result.absolutePath);
+  const sessionContext = JSON.parse(readZipEntry(archive, 'session_context.json').toString('utf8'));
+  const raw = readZipEntry(archive, 'messages.jsonl').toString('utf8');
+  const lines = raw.split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  assert.equal(sessionContext.emote_dictionary.length, 1);
+  assert.equal(sessionContext.emote_dictionary[0].count, 200);
+  assert.equal(lines.length, 200);
+  assert.ok(lines.every((line) => Array.isArray(line.emote_refs) && line.emote_refs.length === 1));
+  assert.ok(lines.every((line) => line.content_ai === undefined), 'the label is already in the text');
+  assert.ok(!raw.includes('"emotes"'), 'messages only reference the dictionary');
+  assert.ok(Buffer.byteLength(raw, 'utf8') < 64 * 1024, `messages.jsonl is ${Buffer.byteLength(raw, 'utf8')} bytes`);
+  closeDatabase(db);
+  temp.cleanup();
+});

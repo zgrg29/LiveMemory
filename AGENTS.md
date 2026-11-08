@@ -51,13 +51,13 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 ```text
 src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行三语、退出
 src/server/          HTTP 服务、路由、设置存储、日志、SSE
-src/platforms/       平台适配器（mock 已实现；bilibili/youtube 计划中）
+src/platforms/       平台适配器（mock、bilibili 已实现；youtube 仅有离线 mapper）
   shared/            adapter 契约、ingest 写入管线、session manager
 src/storage/         database（连接/迁移）、repositories（SQL 访问）
 src/analytics/       sessions（时间线/汇总）、payments（币种合计）、viewers（画像读模型）
 src/ai/              export（分析包）、prompts（三语说明）、schemas（结果 JSON Schema）
 src/web/             index.html、js/（app、pages、i18n、chart、theme）、styles/、i18n/*.json
-src/shared/          跨层纯逻辑：事件模型、金额、语言、主题、时间、zip、错误
+src/shared/          跨层纯逻辑：事件模型、Emoji/表情、文本安全截断、金额、语言、主题、时间、zip、错误
 tests/               unit / integration / helpers / fixtures
 scripts/             构建 EXE、SEA bootstrap、UI 截图、冒烟脚本
 docs/                产品、状态、架构、协议、发布等文档
@@ -105,6 +105,8 @@ node scripts/build-windows.mjs
 6. **时间**：数据库统一存 epoch 毫秒整数（INTEGER），展示层本地化。
 7. **读模型与分析分离**：`analytics/` 只读数据库生成展示数据，不写库。
 8. **AI 不记账**：AI 输出永远不能修改本地金额与计数。
+9. **文本优先**：聊天原文 `content` 永不替换；Unicode Emoji 原样保存。平台表情只在有可靠元数据时写入 `emotes`，保留平台提供的名称/代码；没有名称就保留 id 并标记未知。不要为还原表情图片引入下载/缓存，也不要猜测未知表情的情绪。
+10. **AI 平台无关**：界面与提示词使用「AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果」，不得绑定某个 AI 品牌；不集成需要付费密钥的 AI API。
 
 ---
 
