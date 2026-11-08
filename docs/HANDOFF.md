@@ -120,7 +120,7 @@ dist\LiveMemory.exe
 
 ## 9. 本轮 Commit
 
-- 本轮本地提交：见 `git log`（未 Push）。
+- 本轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre（本地，未 Push）
 - 上一轮：`bb59f72` fix: render the Bilibili login QR inside the app
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
 - P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows

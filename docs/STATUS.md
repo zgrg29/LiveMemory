@@ -218,7 +218,7 @@ UI 验证：无头 Edge 截图（`docs/screenshots/`）：
 
 ## 10. 最近 Commit
 
-- 本轮：见 `git log`（代码 + 文档，本地提交未 Push）
+- 本轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre
 - 上一轮：`bb59f72` fix: render the Bilibili login QR inside the app
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
 - P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows

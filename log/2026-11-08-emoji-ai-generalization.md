@@ -91,7 +91,12 @@ fresh data-dir: schema=2, AI instructions contain emoji rules
 EXE end-to-end: 42 messages, 2 platform emotes, emote_refs verified
 ```
 
-## 5. 未验证
+## 6. 提交
+
+- `02d3101` feat: preserve chat emoji and generalize the AI analysis centre
+- 本地提交，未 Push。
+
+## 7. 未验证
 
 - Bilibili 其他房间/全局表情/粉丝牌表情/动态表情图片、`dm_v2`。
 - 礼物/SC/大航海真实事件、`SEND_GIFT_V2`。
