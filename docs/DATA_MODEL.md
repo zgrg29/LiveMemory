@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**2**
+Schema 版本：**3**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -37,7 +37,9 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | storage_mode | TEXT | `compact` / `full`（场次级覆盖） |
 | source_quality | TEXT | `verified` / `estimated` / `unknown` / `mock` |
 | simulated | INTEGER | 1 = 模拟数据 |
-| started_at / ended_at / last_event_at | INTEGER | 毫秒 |
+| started_at | INTEGER | 本地开始记录的时间（毫秒） |
+| platform_started_at | INTEGER | 平台侧直播开始时间（YouTube `actualStartTime`，可空；schema v3） |
+| ended_at / last_event_at | INTEGER | 毫秒 |
 | message_count | INTEGER | 聊天 + SC 条数 |
 | gift_event_count | INTEGER | 礼物事件数 |
 | payment_event_count | INTEGER | 所有付费事件数 |
@@ -132,8 +134,17 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 - `unit_amount_minor * gift_quantity = amount_minor`（整数乘法）。
 - `value_kind=actual`：平台报告的真实支付；`display`：礼物展示价值；`unknown`：未知金额（不参与合计）。
 - 只累计 `is_paid=1 AND amount_minor>0` 的事件。
+- 付费事件**计数**（`payment_event_count`）同样要求 `is_paid=1`：赠送会员的接收者、免费礼物不算付费事件。
 - 同一事件重复投递 → 唯一键冲突 → 不累计。
 - 不同币种分别返回，不做汇率换算。
+- 没有金额的事件（YouTube 会员）`currency` 保持 `NULL`，不臆造默认币种。
+
+## 4.1 YouTube 金额换算
+
+- Super Chat / Super Sticker 的官方字段是 `amountMicros`（字符串，1 单位 = 1e-6 货币单位）。
+- 换算用 BigInt：`minor = round(amountMicros / 10^(6 - currencyDigits))`，半进位；不经过浮点。
+- `JPY` 等零小数币种按整数日元保存；`USD`/`EUR` 等保存为分。
+- 会员等级、会员月数、赠送会员数量**永远不换算成金额**。
 
 ## 5. 去重键
 
@@ -153,6 +164,19 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 
 清理函数：`purgeSessionContent()` 清空 `chat`/`super_chat` 的 `content` 与 `emotes`，并写 `content_purged_at`。**自动触发尚未接入**（M4/M6）。
 
+### 6.1 YouTube 平台保留策略（已接入）
+
+| 项目 | 说明 |
+| --- | --- |
+| 依据 | YouTube API Services Developer Policies：非授权数据（含公开直播聊天）保存不超过 30 个日历日 |
+| 默认 | 30 天，`settings.youtubeRawRetentionDays`（1–3650） |
+| 实现 | `src/storage/retention.mjs`：`runRetention(db, {days})` / `purgeExpiredRawEvents` |
+| 触发 | 启动、YouTube 场次结束、`POST /api/youtube/retention/apply` |
+| 清理 | `events.content`、`events.emotes` + `content_purged_at` |
+| 保留 | 行、计数、`viewers`、`viewer_nicknames`、币种合计、`ai_packages` |
+| 范围 | `platform='youtube'`；Bilibili 不清理 |
+| 记录 | `app_meta['retention.lastRun'] = {at, days, platforms, purged, cutoff}` |
+
 删除场次：`DELETE FROM sessions` → 级联删除事件、`viewer_sessions`、币种合计、AI 包记录；观众本身保留（可能参与其他场次）。
 
 ## 7. 迁移策略
@@ -162,7 +186,8 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 - 应用版本与 schema 版本独立；`/api/status` 暴露 schema 版本。
 - 迁移失败必须回滚，且不得让服务以半迁移状态启动。
 - **v1 → v2**：`ALTER TABLE events ADD COLUMN emotes TEXT`。旧记录保持 `emotes = NULL`，读取时按“无表情元数据”处理；不需要重写表，不丢失旧消息。
-- 未来迁移需在 `tests/integration/` 增加升级路径测试（v2 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
+- **v2 → v3**：`ALTER TABLE sessions ADD COLUMN platform_started_at INTEGER`。旧场次为 `NULL`，UI/AI 包按「未知直播开始时间」处理，不推断。
+- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v3 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
 
 ## 8. 备份相关（M5 设计）
 

@@ -119,7 +119,11 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
     ? Math.min(Math.trunc(giftQuantityRaw), 100000)
     : 1;
 
-  const currency = normalizeCurrency(draft.currency);
+  // A platform that reports no amount also reports no currency (e.g. YouTube
+  // memberships): keep it NULL instead of inventing a default currency.
+  const currency = draft.currency === null || draft.currency === undefined
+    ? null
+    : normalizeCurrency(draft.currency);
   const rawUnit = draft.unit_amount_minor ?? draft.unitAmountMinor ?? null;
   const unitAmountMinor = rawUnit === null || rawUnit === undefined ? null : Math.trunc(Number(rawUnit));
   const rawAmount = draft.amount_minor ?? draft.amountMinor ?? null;

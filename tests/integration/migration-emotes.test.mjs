@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openDatabase, closeDatabase} from '../../src/storage/database/connection.mjs';
 import {currentSchemaVersion, migrate, MIGRATIONS} from '../../src/storage/database/migrations/index.mjs';
-import {createSession} from '../../src/storage/repositories/sessions.mjs';
 import {listEvents} from '../../src/storage/repositories/events.mjs';
 import {EventIngest} from '../../src/platforms/shared/ingest.mjs';
 
@@ -26,20 +25,25 @@ function v1Database() {
   return db;
 }
 
-test('schema v1 databases upgrade to v2 without losing old messages', () => {
+test('schema v1 databases upgrade to the current schema without losing old messages', () => {
   const db = v1Database();
   assert.equal(currentSchemaVersion(db), 1);
   const columnsBefore = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(!columnsBefore.includes('emotes'));
+  const sessionColumnsBefore = db.prepare('PRAGMA table_info(sessions)').all().map((row) => row.name);
+  assert.ok(!sessionColumnsBefore.includes('platform_started_at'));
 
-  const session = createSession(db, {
-    platform: 'bilibili',
-    roomTitle: 'Old database',
-    storageMode: 'compact',
-    sourceQuality: 'estimated',
-    simulated: false,
-    startedAt: T
-  });
+  // Simulate a session and event written by the old application (v1 schema has
+  // no `platform_started_at`, no `emotes`).
+  const sessionId = 'ses_old_database';
+  db.prepare(`
+    INSERT INTO sessions (
+      id, platform, platform_room_id, room_title, broadcaster_name, status,
+      storage_mode, source_quality, simulated, started_at, ended_at, last_event_at,
+      message_count, gift_event_count, payment_event_count, ai_status, created_at, updated_at
+    ) VALUES (?, 'bilibili', NULL, 'Old database', NULL, 'live', 'compact', 'estimated', 0, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
+  `).run(sessionId, T, T, T);
+  const session = {id: sessionId};
   // Simulate a row written by the old application (no emotes column).
   db.prepare(`
     INSERT INTO events (
@@ -52,10 +56,13 @@ test('schema v1 databases upgrade to v2 without losing old messages', () => {
   );
 
   const result = migrate(db, {now: T + 1000});
-  assert.deepEqual(result.applied, [2]);
-  assert.equal(currentSchemaVersion(db), 2);
+  // v2 added emote metadata, v3 added the platform broadcast start time.
+  assert.deepEqual(result.applied, [2, 3]);
+  assert.equal(currentSchemaVersion(db), 3);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
+  const sessionColumnsAfter = db.prepare('PRAGMA table_info(sessions)').all().map((row) => row.name);
+  assert.ok(sessionColumnsAfter.includes('platform_started_at'));
 
   const oldRows = listEvents(db, {sessionId: session.id});
   assert.equal(oldRows.length, 1);

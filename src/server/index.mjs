@@ -1,4 +1,5 @@
 import {writeFileSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {openDatabase, closeDatabase} from '../storage/database/connection.mjs';
 import {migrate} from '../storage/database/migrations/index.mjs';
 import {createPaths, ensureDirectories, assertWritable} from './paths.mjs';
@@ -6,6 +7,9 @@ import {SettingsStore} from './settings-store.mjs';
 import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
+import {YouTubeService} from '../platforms/youtube/service.mjs';
+import {OAUTH_CONFIG_FILE_NAME, API_KEY_FILE_NAME} from '../platforms/youtube/oauth-config.mjs';
+import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
 import {serializeEvent} from './serializers.mjs';
@@ -45,7 +49,8 @@ export async function startServer({
   logger = null,
   now = () => Date.now(),
   webRoot = null,
-  systemLocale = null
+  systemLocale = null,
+  youtubeApiBase = null
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
   const paths = ensureDirectories(createPaths(dataDir));
@@ -73,6 +78,24 @@ export async function startServer({
     logger,
     now
   });
+  const youtube = new YouTubeService({
+    secretsDir: paths.secrets,
+    sessionManager,
+    db,
+    settings: settingsStore,
+    logger,
+    now,
+    configFile: join(paths.config, OAUTH_CONFIG_FILE_NAME),
+    apiKeyConfigFile: join(paths.config, API_KEY_FILE_NAME),
+    apiBase: youtubeApiBase
+  });
+  // YouTube raw chat content is subject to the platform retention policy; run it
+  // once per start so a long-unused installation also converges.
+  runRetention(db, {
+    now: now(),
+    days: settingsStore.get().youtubeRawRetentionDays,
+    logger
+  });
 
   const startedAt = now();
   const state = {port: 0};
@@ -82,6 +105,7 @@ export async function startServer({
     settingsStore,
     sessionManager,
     bilibili,
+    youtube,
     hub,
     logger,
     startedAt,
@@ -154,6 +178,11 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.bilibili.failed', code: error?.code ?? 'unknown'});
     }
+    try {
+      await youtube.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.youtube.failed', code: error?.code ?? 'unknown'});
+    }
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 3000);
       timer.unref?.();
@@ -179,6 +208,7 @@ export async function startServer({
     settings: settingsStore,
     sessionManager,
     bilibili,
+    youtube,
     hub,
     recovered,
     migration,

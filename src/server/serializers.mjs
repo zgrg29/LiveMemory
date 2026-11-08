@@ -35,6 +35,7 @@ export function serializeSessionRow(row) {
     sourceQuality: row.source_quality,
     simulated: row.simulated === 1,
     startedAt: row.started_at,
+    platformStartedAt: row.platform_started_at ?? null,
     endedAt: row.ended_at,
     lastEventAt: row.last_event_at,
     messageCount: Number(row.message_count ?? 0),

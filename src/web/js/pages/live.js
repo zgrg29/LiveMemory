@@ -44,6 +44,13 @@ export const livePage = {
     let qrWrapRef = null;
     let sourceHost = null;
     let loginHintHost = null;
+    let youtubeStatus = null;
+    let checkedVideo = null;
+    let ytHintText = '';
+    let ytHintHost = null;
+    let ytPollTimer = null;
+    let ytStatusTimer = null;
+    let ytLinks = [];
 
     const [currentPayload, sessionsPayload] = await Promise.all([
       api.get('/api/sessions/current'),
@@ -55,6 +62,11 @@ export const livePage = {
       biliStatus = await api.get('/api/bilibili/status');
     } catch {
       biliStatus = null;
+    }
+    try {
+      youtubeStatus = await api.get('/api/youtube/status');
+    } catch {
+      youtubeStatus = null;
     }
 
     /* ------------------------------------------------------------- building */
@@ -72,6 +84,8 @@ export const livePage = {
     function buildIdle() {
       chart?.destroy();
       chart = null;
+      clearInterval(ytStatusTimer);
+      ytStatusTimer = null;
       refs = {};
       loginHintHost = null;
       clear(container);
@@ -103,8 +117,15 @@ export const livePage = {
           if (sourceMode === mode) return;
           sourceMode = mode;
           checkedRoom = null;
+          checkedVideo = null;
+          ytHintText = '';
           onSelect?.();
           renderSource();
+          if (mode === 'youtube') {
+            refreshYoutubeStatus().then(() => {
+              if (!destroyed && sourceMode === 'youtube') renderSource();
+            }).catch(() => {});
+          }
         }
       });
     }
@@ -113,6 +134,8 @@ export const livePage = {
       if (!sourceHost) return;
       clear(sourceHost);
       loginHintHost = null;
+      ytHintHost = null;
+      ytLinks = [];
       qrCanvasRef = null;
       qrWrapRef = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
@@ -122,10 +145,13 @@ export const livePage = {
 
       const tabs = el('div', {className: 'source-tabs'},
         tabButton(t('live.source.mockTab'), 'mock'),
-        tabButton(t('live.source.biliTab'), 'bilibili'));
+        tabButton(t('live.source.biliTab'), 'bilibili'),
+        tabButton(t('live.source.youtubeTab'), 'youtube'));
 
       const body = el('div', {className: 'card-body'}, tabs);
-      body.append(sourceMode === 'mock' ? buildMockPanel() : buildBiliPanel());
+      if (sourceMode === 'mock') body.append(buildMockPanel());
+      else if (sourceMode === 'bilibili') body.append(buildBiliPanel());
+      else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
     }
@@ -236,6 +262,317 @@ export const livePage = {
       panel.append(el('p', {className: 'source-note', text: t('live.source.identityNote')}));
       panel.append(el('p', {className: 'source-note', text: t('live.source.moneyNote')}));
       return panel;
+    }
+
+    /**
+     * YouTube panel.
+     *
+     * The streamer never sees developer configuration: either the build can read
+     * public chat anonymously with an application key, or one click signs the
+     * streamer in with Google (system browser + loopback callback). When neither
+     * is available the panel says so instead of failing later.
+     */
+    function buildYouTubePanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeIntro')}));
+
+      const status = youtubeStatus;
+      if (!status || status.configured === false) {
+        panel.append(el('div', {className: 'source-status'}, chip(t('live.source.youtubeModeNone'), 'neutral')));
+        panel.append(el('div', {className: 'source-status', text: t('live.source.youtubeNotConfiguredTitle')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeNotConfiguredBody')}));
+        return panel;
+      }
+
+      const signedIn = status.login?.signedIn === true;
+      const apiKeyMode = status.authMode === 'api-key';
+      const expired = status.login?.state === 'expired';
+      const statusText = signedIn
+        ? t('live.source.youtubeLoginSignedIn', {name: status.login?.channel?.title || 'Google'})
+        : (apiKeyMode ? t('live.source.youtubeModeAnonymous') : (status.oauthConfigured
+          ? t('live.source.youtubeLoginSignedOut')
+          : t('live.source.youtubeModeNone')));
+
+      const actions = [];
+      if (signedIn) {
+        actions.push(el('button', {
+          className: 'button button--ghost button--small',
+          type: 'button',
+          text: t('live.source.youtubeLogout'),
+          onClick: (event) => logoutYouTube(event.currentTarget)
+        }));
+      } else if (status.oauthConfigured) {
+        actions.push(el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: expired ? t('live.source.youtubeReLogin') : t('live.source.youtubeLoginButton'),
+          onClick: (event) => startYouTubeLogin(event.currentTarget)
+        }));
+      }
+
+      panel.append(el('div', {className: 'source-row'},
+        el('div', {className: 'field', style: {flex: '1 1 240px'}},
+          el('span', {className: 'label', text: t('live.source.youtubeLoginTitle')}),
+          el('div', {className: 'source-status'},
+            expired ? chip(t('live.source.youtubeLoginExpired'), 'neutral') : null,
+            el('span', {text: statusText}))),
+        actions.length ? el('div', {className: 'source-row-actions'}, ...actions) : null));
+
+      ytHintHost = el('div', {className: 'source-status', text: ytHintText});
+      panel.append(ytHintHost);
+
+      if (status.oauthConfigured && !apiKeyMode) {
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeLoginHint')}));
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.youtubeLinkPlaceholder'),
+          'aria-label': t('live.source.youtubeLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedVideo?.input ?? '';
+      refs.ytInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.youtubeLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.youtubeCheck'),
+          onClick: (event) => checkYouTube(event.currentTarget)
+        })));
+
+      if (checkedVideo) panel.append(buildVideoMeta(checkedVideo));
+
+      const quota = status.quota;
+      if (quota) {
+        panel.append(el('p', {
+          className: 'source-note',
+          text: `${t('live.source.youtubeQuota')}: ${t('live.source.youtubeQuotaValue', {
+            used: formatInteger(quota.used, ctx.locale),
+            limit: formatInteger(quota.limit, ctx.locale)
+          })}`
+        }));
+      }
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.youtubePolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.youtubePolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.youtubeApplyRetention'),
+            onClick: (event) => applyYouTubeRetention(event.currentTarget)
+          })));
+      }
+      return panel;
+    }
+
+    function videoReasonText(reason) {
+      const key = {
+        YOUTUBE_NOT_LIVE_UPCOMING: 'errors.youtubeUpcoming',
+        YOUTUBE_NOT_LIVE_ENDED: 'errors.youtubeEnded',
+        YOUTUBE_NOT_LIVE_VIDEO: 'errors.youtubeNotLive',
+        YOUTUBE_NOT_LIVE: 'errors.youtubeNotLive',
+        YOUTUBE_CHAT_DISABLED: 'errors.youtubeChatDisabled',
+        YOUTUBE_CHAT_NOT_FOUND: 'errors.youtubeChatUnavailable',
+        YOUTUBE_AUTH_REQUIRED: 'errors.youtubeAuthRequired',
+        YOUTUBE_QUOTA_EXCEEDED: 'errors.youtubeQuota'
+      }[reason];
+      return key ? t(key) : null;
+    }
+
+    function buildVideoMeta(video) {
+      const meta = el('div', {className: 'source-meta'});
+      const head = el('div', {className: 'source-status'});
+      if (video.recordable) head.append(chip(t('live.source.youtubeLiveNow'), 'live', {dot: true}));
+      else if (video.state === 'upcoming') head.append(chip(t('live.source.youtubeUpcoming'), 'neutral'));
+      else if (video.state === 'ended') head.append(chip(t('live.source.youtubeEnded'), 'neutral'));
+      else head.append(chip(t('live.source.youtubeNotLive'), 'neutral'));
+      if (video.title) head.append(el('span', {className: 'row-title-text', text: video.title}));
+      meta.append(head);
+
+      const details = [];
+      if (video.channelTitle) details.push(`${t('live.source.youtubeChannel')}: ${video.channelTitle}`);
+      if (Number.isFinite(video.concurrentViewers)) {
+        details.push(`${t('live.source.youtubeViewers')}: ${formatInteger(video.concurrentViewers, ctx.locale)}`);
+      }
+      if (video.actualStartTime) details.push(`${t('live.hero.startedAt')} ${formatDateTime(Date.parse(video.actualStartTime), ctx.locale)}`);
+      if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+
+      if (video.recordable) {
+        meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+          el('button', {
+            className: 'button button--primary',
+            type: 'button',
+            text: t('live.source.youtubeStart'),
+            onClick: (event) => connectYouTube(event.currentTarget)
+          })));
+      } else {
+        const reason = videoReasonText(video.reason);
+        if (reason) meta.append(el('p', {className: 'source-note', text: reason}));
+      }
+      return meta;
+    }
+
+    function setYtHint(text) {
+      ytHintText = text;
+      if (!ytHintHost) return;
+      clear(ytHintHost);
+      ytHintHost.textContent = text;
+      // A blocked popup still lets the user continue: show the official link.
+      for (const url of ytLinks) {
+        ytHintHost.append(' ');
+        ytHintHost.append(el('a', {
+          text: url,
+          attrs: {href: url, target: '_blank', rel: 'noopener noreferrer'}
+        }));
+      }
+    }
+
+    async function refreshYoutubeStatus() {
+      try {
+        youtubeStatus = await api.get('/api/youtube/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
+      return youtubeStatus;
+    }
+
+    async function startYouTubeLogin(button) {
+      button.disabled = true;
+      // Open the tab synchronously so the browser does not treat it as a popup
+      // blocked after an await.
+      let popup = null;
+      try {
+        popup = window.open('about:blank', '_blank');
+      } catch {
+        popup = null;
+      }
+      try {
+        const result = await api.post('/api/youtube/login/start', {locale: ctx.locale});
+        if (popup && !popup.closed) {
+          popup.location.href = result.authUrl;
+          try {
+            popup.opener = null;
+          } catch {
+            /* cross-origin, ignore */
+          }
+        } else {
+          ytLinks = [result.authUrl];
+        }
+        setYtHint(t('live.source.youtubeLoginWaiting'));
+        pollYouTubeLogin(result.expiresAt ?? Date.now() + 300000);
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    function pollYouTubeLogin(expiresAt) {
+      clearInterval(ytPollTimer);
+      ytPollTimer = window.setInterval(async () => {
+        if (destroyed) {
+          clearInterval(ytPollTimer);
+          return;
+        }
+        if (Date.now() > expiresAt) {
+          clearInterval(ytPollTimer);
+          setYtHint(t('live.source.youtubeLoginExpired'));
+          return;
+        }
+        try {
+          const login = await api.get('/api/youtube/login/status');
+          if (login.signedIn) {
+            clearInterval(ytPollTimer);
+            await refreshYoutubeStatus();
+            setYtHint(t('live.source.youtubeLoginSuccess'));
+            renderSource();
+            ctx.toast(t('live.source.youtubeLoginSuccess'));
+          } else if (login.state === 'expired') {
+            clearInterval(ytPollTimer);
+            setYtHint(t('live.source.youtubeLoginExpired'));
+          }
+        } catch {
+          /* transient: keep polling until the deadline */
+        }
+      }, 2000);
+    }
+
+    async function logoutYouTube(button) {
+      button.disabled = true;
+      try {
+        await api.post('/api/youtube/login/logout', {});
+        await refreshYoutubeStatus();
+        checkedVideo = null;
+        ytHintText = '';
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    async function checkYouTube(button) {
+      const input = refs.ytInput;
+      const url = String(input?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.youtubeLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      button.textContent = t('live.source.youtubeChecking');
+      try {
+        const result = await api.post('/api/youtube/video', {url});
+        checkedVideo = result.video;
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = t('live.source.youtubeCheck');
+      }
+    }
+
+    async function connectYouTube(button) {
+      if (!checkedVideo) return;
+      button.disabled = true;
+      button.textContent = t('live.source.youtubeStarting');
+      try {
+        await api.post('/api/youtube/connect', {url: checkedVideo.input});
+        const payload = await api.get('/api/sessions/current');
+        summary = payload.session ?? null;
+        if (summary) {
+          mode = 'live';
+          feedEvents = [];
+          buildLive(summary);
+          await loadFeed(summary.session.id);
+          await ctx.refreshStatus();
+        }
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = t('live.source.youtubeStart');
+      }
+    }
+
+    async function applyYouTubeRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/youtube/retention/apply', {});
+        await refreshYoutubeStatus();
+        renderSource();
+        ctx.toast(t('live.source.youtubeRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
     }
 
     function setLoginHint(text) {
@@ -460,7 +797,8 @@ export const livePage = {
               next.session.simulated ? chip(t('live.hero.simulatedChip'), 'neutral') : null,
               next.session.platform === 'mock' ? null : chip(platformLabel(next.session.platform, t), 'neutral')),
             el('h1', {className: 'hero-title', text: next.session.roomTitle || platformLabel(next.session.platform, t)}),
-            el('p', {className: 'hero-sub', text: `${t('live.hero.startedAt')} ${formatDateTime(next.session.startedAt, ctx.locale)}`}),
+            el('p', {className: 'hero-sub', text: `${t('live.hero.startedAt')} ${formatDateTime(next.session.platformStartedAt ?? next.session.startedAt, ctx.locale)}`}),
+            next.session.platform === 'youtube' ? el('div', {className: 'source-status', dataset: {role: 'yt-status'}}) : null,
             el('div', {className: 'hero-clock'},
               elapsedValue,
               el('span', {className: 'hero-clock-label', text: t('live.hero.elapsed')}),
@@ -476,6 +814,7 @@ export const livePage = {
             }))));
       refs.elapsedValue = elapsedValue;
       refs.heroMessages = hero.querySelector('[data-role="hero-messages"]');
+      refs.ytStatusLine = hero.querySelector('[data-role="yt-status"]');
 
       const messages = statRef({label: t('live.stats.messages'), sub: t('live.stats.messagesSub')});
       const viewers = statRef({label: t('live.stats.viewers'), sub: t('live.stats.viewersSub')});
@@ -521,6 +860,57 @@ export const livePage = {
       renderTop(next.top?.speakers ?? []);
       updateLive(next);
       startElapsedTimer(next.session.startedAt);
+      startYoutubeStatusPolling(next.session.platform === 'youtube');
+    }
+
+    /**
+     * YouTube-only live indicators: connection state, current concurrent
+     * viewers and API quota. Polled slowly (10 s) so the console never becomes
+     * a source of API load.
+     */
+    function startYoutubeStatusPolling(active) {
+      clearInterval(ytStatusTimer);
+      ytStatusTimer = null;
+      if (!active) return;
+      renderYoutubeConnection();
+      ytStatusTimer = window.setInterval(async () => {
+        if (destroyed) {
+          clearInterval(ytStatusTimer);
+          return;
+        }
+        await refreshYoutubeStatus();
+        renderYoutubeConnection();
+      }, 10000);
+    }
+
+    function renderYoutubeConnection() {
+      const host = refs.ytStatusLine;
+      if (!host) return;
+      clear(host);
+      const connection = youtubeStatus?.connection;
+      if (!connection) return;
+      const state = connection.state;
+      const stateText = state === 'connected'
+        ? t('live.source.youtubeConnectionConnected')
+        : state === 'reconnecting'
+          ? t('live.source.youtubeConnectionReconnecting')
+          : state === 'failed' || state === 'stopped'
+            ? t('live.source.youtubeConnectionError')
+            : t('live.source.youtubeConnection');
+      host.append(chip(stateText, state === 'connected' ? 'live' : 'neutral', {dot: state === 'connected'}));
+      if (Number.isFinite(connection.viewers) && connection.viewers !== null) {
+        host.append(chip(t('live.source.youtubeHotness', {n: formatInteger(connection.viewers, ctx.locale)}), 'neutral'));
+      }
+      const quota = youtubeStatus?.quota;
+      if (quota) {
+        host.append(el('span', {
+          className: 'source-note',
+          text: t('live.source.youtubeQuotaValue', {
+            used: formatInteger(quota.used, ctx.locale),
+            limit: formatInteger(quota.limit, ctx.locale)
+          })
+        }));
+      }
     }
 
     function startElapsedTimer(startedAt) {
@@ -576,6 +966,7 @@ export const livePage = {
     function feedTagFor(type) {
       if (type === 'gift') return {text: t('live.feed.giftTag'), kind: 'gift'};
       if (type === 'super_chat') return {text: t('live.feed.scLabel'), kind: 'super_chat'};
+      if (type === 'super_sticker') return {text: t('live.feed.stickerLabel'), kind: 'super_chat'};
       if (type === 'guard') return {text: t('live.feed.guardLabel'), kind: 'guard'};
       if (type === 'membership') return {text: t('live.feed.membershipLabel'), kind: 'guard'};
       return null;
@@ -596,8 +987,19 @@ export const livePage = {
       } else if (event.type === 'super_chat') {
         if (event.content) line.append(el('span', {className: 'feed-text feed-text--sc', text: event.content}));
         line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+      } else if (event.type === 'super_sticker') {
+        // A Super Sticker can have no comment at all: keep the payer, the sticker
+        // name/alt text and the amount visible.
+        const label = event.giftName ? `${t('live.feed.stickerLabel')} · ${event.giftName}` : t('live.feed.stickerLabel');
+        line.append(el('span', {className: 'feed-text', text: label}));
+        if (event.isPaid && Number(event.amountMinor) > 0) {
+          line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        }
       } else if (event.type === 'guard' || event.type === 'membership') {
         line.append(el('span', {className: 'feed-text', text: event.giftName ?? t('live.feed.guardLabel')}));
+        // A membership milestone can carry a comment; show it without turning
+        // the membership into a chat message count.
+        if (event.content) line.append(el('span', {className: 'feed-text', text: event.content}));
         if (event.isPaid && Number(event.amountMinor) > 0) {
           line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
         }
@@ -670,7 +1072,11 @@ export const livePage = {
 
     async function handleStop(button) {
       if (!button) return;
-      const endpoint = summary?.session?.platform === 'bilibili' ? '/api/bilibili/disconnect' : '/api/simulate/stop';
+      const endpoint = summary?.session?.platform === 'bilibili'
+        ? '/api/bilibili/disconnect'
+        : summary?.session?.platform === 'youtube'
+          ? '/api/youtube/disconnect'
+          : '/api/simulate/stop';
       button.disabled = true;
       button.textContent = t('live.hero.stopping');
       try {
@@ -736,6 +1142,8 @@ export const livePage = {
       offSummary();
       clearInterval(elapsedTimer);
       clearInterval(loginTimer);
+      clearInterval(ytPollTimer);
+      clearInterval(ytStatusTimer);
       chart?.destroy();
       chart = null;
     };

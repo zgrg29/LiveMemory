@@ -158,6 +158,16 @@ export const MIGRATIONS = Object.freeze([
       // old databases are upgraded in place; no table rewrite is required.
       db.exec('ALTER TABLE events ADD COLUMN emotes TEXT');
     }
+  },
+  {
+    version: 3,
+    name: 'session-platform-start',
+    up(db) {
+      // The platform's own broadcast start time (e.g. YouTube
+      // `liveStreamingDetails.actualStartTime`), distinct from the moment the
+      // user started recording. Used to show time relative to the stream.
+      db.exec('ALTER TABLE sessions ADD COLUMN platform_started_at INTEGER');
+    }
   }
 ]);
 

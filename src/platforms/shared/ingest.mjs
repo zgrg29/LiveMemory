@@ -61,7 +61,9 @@ export class EventIngest {
       incrementSessionCounters(this.db, event.session_id, {
         messages: isMessageEvent(event.event_type) ? 1 : 0,
         gifts: event.event_type === 'gift' ? 1 : 0,
-        payments: isPaymentEvent(event.event_type) ? 1 : 0,
+        // A payment event must actually have been paid: a received gifted
+        // membership or a free gift is a membership/gift event, not a payment.
+        payments: isPaymentEvent(event.event_type) && event.is_paid ? 1 : 0,
         lastEventAt: event.occurred_at,
         now: receivedNow
       });

@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 仅有离线 mapper 预留，未接入传输层。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube Live 的传输层、授权、映射、保留策略与界面已完成，端到端通过本地假 API 验证；真实凭据下的直播采样尚未完成（见 §3.7）。** 模拟平台（mock）保持可用。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -153,39 +153,118 @@ node scripts/probe-bilibili-emotes.mjs 5050 35
 node scripts/verify-bilibili.mjs 5050 20
 ```
 
-## 3. YouTube（M3 后续）
+## 3. YouTube Live（本轮已实现）
 
-### 3.1 授权层级（必须区分）
+### 3.1 授权边界（一手文档结论）
 
-| 方案 | 需要观众登录 | 需要主播 OAuth | 需要 API Key | 可获取 |
-| --- | --- | --- | --- | --- |
-| Live Chat 只读（公开直播） | 否 | 否 | **是** | 聊天、作者名、时间戳、部分付费事件 |
-| OAuth 主播授权 | — | 是 | 是 | 私有直播、频道信息 |
-| 官方 Data API + 直播聊天轮询 | 否 | 否 | 是 | 公开直播聊天（分页/polling） |
+必须先区分四件常被混为一谈的事：
 
-第一版优先实现 **API Key + 公开直播读取**，不要求用户登录 YouTube。若某些事件（如会员赠送）无法通过公开接口获得，则标记为不可用，而不是伪造。
+| 问题 | 结论 |
+| --- | --- |
+| 完全不需要任何凭据？ | **不可以**。官方 API 要求调用方身份；ToS 与 Developer Policies 禁止抓取与使用未公开接口 |
+| 需要 Google 账号登录？ | **不需要**（公开数据路径） |
+| 需要 OAuth？ | **不需要**（公开数据路径）；只有读主播自己的频道信息才必须 OAuth |
+| 需要应用级 API Key？ | **是**（公开数据路径）；或者用 OAuth access token 代替 |
 
-### 3.2 待验证清单
+依据：Live Streaming 授权文档写明 API Key 用于 *"requests that only retrieve public data, such as public live chat messages"*；`liveChatMessages.list` 参考页没有 Authorization/scope 小节（对比 `insert`/`delete` 明确列出 scope）；`liveBroadcasts.list` 才是必须 OAuth 的方法，而本轮用 `videos.list.activeLiveChatId` 完全绕开了它。
 
-- [ ] 公开直播聊天是否仍需 OAuth（YouTube 近年收紧 liveChatMessages 权限）
-- [ ] API Key 配额与轮询频率限制
-- [ ] 观众稳定 ID（channelId）是否在聊天消息中始终可见
-- [ ] 会员/赠送会员事件的可获取性
-- [ ] 多币种 SC 的金额单位
-- [ ] 聊天分页 `nextPageToken` 的断点续传
+`liveChatMessages.streamList` 确实存在，但它是 **gRPC server-streaming RPC**，不在 `youtube/v3` REST discovery 文档中，没有 REST 路径。因此实现使用文档化的 `liveChatMessages.list` + `nextPageToken` 轮询，并严格遵守服务端返回的 `pollingIntervalMillis`。
 
-### 3.3 已预留的离线 mapper（未真实接入）
+### 3.2 两种运行模式
 
-`src/platforms/youtube/mapper.mjs` 是纯函数 mapper，没有任何网络请求、OAuth 或轮询：
+| 模式 | 凭据 | 主播操作 | 能做什么 |
+| --- | --- | --- | --- |
+| `api-key`（公开直播模式） | 应用级 API Key（部署方提供） | 直接粘贴直播链接 | 定位直播、读公开聊天、Super Chat / Super Sticker / 会员事件 |
+| `oauth` | Google OAuth（主播本人） | 点一次「登录 Google」 | 同上 + 读主播自己的频道信息（登录后显示账号名） |
 
-- `snippet.textMessageDetails.messageText` 作为原文；`snippet.displayMessage` 作为回退。
-- 普通 Unicode Emoji 原样保留。
-- 自定义表情按 `:code:` 形式识别为 `{code, name, source: 'youtube.messageText'}`；不解析图片，也不要求 OAuth。
-- `snippet.authorChannelId.value` / `authorDetails.channelId` 作为稳定身份；缺失时为 `null`，不按昵称合并。
-- 所有事件 `source_quality=unknown`、`verified=false`，因为**没有用真实 YouTube 直播采样验证**。
-- Super Chat / 会员事件不会被误标为普通聊天；等 M3 后续实现。
+- 运行时自动选择：已登录 → `oauth`；否则有 Key → `api-key`；都没有 → `none`（界面明确说明缺少开发者配置）。
+- **仓库与默认构建不包含任何凭据。**
+  - 环境变量：`LIVE_MEMORY_YOUTUBE_API_KEY`、`LIVE_MEMORY_YOUTUBE_CLIENT_ID`、`LIVE_MEMORY_YOUTUBE_CLIENT_SECRET`；
+  - 或数据目录私有文件：`<数据目录>\config\youtube-api-key.json`、`<数据目录>\config\youtube-oauth.json`；
+  - 或发布时写入 `src/platforms/youtube/oauth-config.mjs` 的常量。
+- 合规提醒（见 §3.8）：Developer Policies III.D.1.d 禁止在开源项目中嵌入 API 凭据；桌面端 API Key 也无法限制到具体应用。发布者必须自行完成一次性配置与合规判断，不能把凭据提交到 Git。
 
-> 这部分只证明“统一数据结构能容纳 YouTube 文本/Emoji/自定义表情”，**不能称为 YouTube 真实接入通过**。
+### 3.3 代码结构（`src/platforms/youtube/`）
+
+| 文件 | 职责 |
+| --- | --- |
+| `link.mjs` | 解析 `watch?v=`、`/live/`、`youtu.be`、`embed`、`shorts`、裸 11 位 ID；拒绝播放列表/频道/其他主机 |
+| `api.mjs` | Data API v3：`videos.list`、`liveChatMessages.list`、`channels.list`；API Key 与 Bearer 双凭据；配额计费；Google `reason` → 稳定错误码 |
+| `oauth.mjs` | PKCE(S256)、授权 URL、回环回调接收器、code 交换、refresh、revoke、本地化回调页 |
+| `oauth-manager.mjs` | `signed_out → pending → signed_in | expired → signed_out`；重启恢复、提前 60s 刷新、并发合并、`invalid_grant` → `expired` |
+| `token-store.mjs` | AES-256-GCM 加密保存 refresh/access token；`status()` 不返回令牌 |
+| `oauth-config.mjs` | 解析开发者一次性配置（环境变量 → 数据目录 → 内置常量） |
+| `mapper.mjs` | 原生事件 → canonical event（含金额换算、表情、会员语义） |
+| `adapter.mjs` | 轮询、分页、退避重连、结束检测、配额守卫 |
+| `service.mjs` | 路由 ↔ OAuth ↔ API ↔ `SessionManager` 的粘合层 |
+
+### 3.4 直播定位与状态判定
+
+`videos.list?part=snippet,liveStreamingDetails,status` 返回后判定：
+
+| 平台字段 | LiveMemory 判定 |
+| --- | --- |
+| `snippet.liveBroadcastContent=live` 且无 `actualEndTime` | `state=live`，可记录 |
+| `liveBroadcastContent=upcoming` 或只有 `scheduledStartTime` | `state=upcoming`，提示「尚未开始」 |
+| 有 `actualEndTime` | `state=ended`，提示「已经结束」 |
+| `liveBroadcastContent=none` 且无 `activeLiveChatId` | `state=video`，提示「不是正在进行的直播」，不抓评论 |
+| 正在直播但无 `activeLiveChatId` | 聊天关闭，提示「该直播没有开放聊天」 |
+
+`platform_started_at` 取 `liveStreamingDetails.actualStartTime`，用于「相对直播时间」，与「开始记录的时间」区分。
+
+### 3.5 聊天传输
+
+- 首屏请求会返回近期历史（官方行为），这些消息属于当前直播聊天，正常入库；**不做事后历史回填**。
+- 每次请求携带上一页 `nextPageToken`；间隔取 `max(2s, min(30s, pollingIntervalMillis))`。
+- 去重：`dedupe_key = ext:<message.id>`，分页重叠或重复投递不会重复计数。
+- 网络错误 / 5xx / 429：指数退避（1→2→4…30s）重连，**不结束场次**；恢复后 UI 显示「已连接」。
+- `chatEnded` / `chatNotFound` / `chatDisabled` / `offlineAt`：判定直播聊天结束，自动结束场次并保留数据。
+- 配额：每次聊天请求 5 单位，`videos.list` 1 单位；本地守卫在剩余不足时以 `errors.youtubeQuota` 停止轮询，界面显示已用/上限。
+
+### 3.6 身份与经济支持
+
+| 事件 | 来源 | LiveMemory 处理 |
+| --- | --- | --- |
+| 聊天 | `textMessageEvent` | `content` 原文 + Unicode Emoji + `:code:` 自定义表情代码；身份 `youtube:<channelId>` |
+| Super Chat | `superChatDetails` | `event_type=super_chat`，`amountMicros` → 最小单位，`value_kind=actual`，保留留言 |
+| Super Sticker | `superStickerDetails` | `event_type=super_sticker`，无留言也保留付款者、金额、币种、`stickerId`、`altText` |
+| 新会员 | `newSponsorDetails` | `membership`，记录等级；**不换算金额** |
+| 会员里程碑 | `memberMilestoneChatDetails` | `membership`，记录等级与月数，留言存入 `content` |
+| 赠送会员 | `membershipGiftingDetails` | `membership`，`gift_quantity=数量`；**不换算金额** |
+| 收到赠送会员 | `giftMembershipReceivedDetails` | `membership`，`is_paid=false`、`gift_type=free`，记录赠予者 channelId |
+| 删除/封禁/公告 | `messageDeletedEvent` 等 | 有意丢弃，不猜测成聊天 |
+
+身份规则：
+
+- `youtube:<channelId>`，昵称只作展示；`authorChannelId.value` 与 `authorDetails.channelId` 都能用。
+- 只有昵称时 `viewer_uid=null`、`identity_complete=false`，不创建档案、不按昵称合并。
+- 不同平台的相同昵称不合并。
+
+### 3.7 未验证（如实保留）
+
+- **没有真实 Google 凭据**：未对真实直播采样。真实消息条数、真实身份完整率、真实 Super Chat / 会员样本**均无数据**。
+- OAuth 只在本地回环 + 假 token 端点验证；未验证真实同意屏、未验证 Testing 应用 refresh token 7 天过期、未验证未验证应用 100 用户上限。
+- 真实断网、真实配额耗尽的长时行为未验证（自动化测试覆盖了逻辑分支）。
+- 会员事件评论保存在 `content`，但**不计入消息数**、不进入 AI 包 `messages.jsonl`（保守取舍，避免把会员事件当聊天）。
+
+### 3.8 合规要点（一手条款）
+
+- **数据保留**：公开直播聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 **30 个日历日**；III.E.4.c 对 Authorized Data 同样是 30 天。主播的 OAuth **不能**为其他观众的数据授权无限期保存。本轮实现默认 30 天清理原始文本（保留统计与身份），见 §7。
+- **不得抓取 / 不得用未公开接口**：ToS 与 Developer Policies 明确禁止 scraper 与 undocumented APIs，因此没有实现任何绕过。
+- **凭据分发**：III.D.1.d 禁止在开源项目中嵌入 API 凭据；OAuth 安装型客户端的 secret 虽然「不视为机密」，但公开仓库仍不应提交。默认常量留空是刻意的。
+- **外部 AI**：分析包由用户手动交给自选 AI 服务；软件不自动上传。包内不包含凭据；保留策略先于导出生效（允许用户在导出前手动执行清理）。
+
+### 3.9 复现方法
+
+```bat
+:: 仅验证本地链路（假 API，不需要任何真实凭据）
+node --test --test-isolation=none "tests/unit/youtube-*.test.mjs" "tests/integration/youtube-session.test.mjs"
+
+:: 有真实凭据时（不要提交这些值）
+set LIVE_MEMORY_YOUTUBE_API_KEY=AIza...
+node src/launcher/launcher.mjs
+:: 打开「直播记录 → YouTube 直播」，粘贴 https://www.youtube.com/live/<VIDEO_ID>
+```
 
 ## 4. 统一事件模型
 
@@ -203,7 +282,7 @@ is_paid, source_quality, dedupe_key
 适配器职责：
 
 1. 解析原生消息；
-2. 生成稳定 `external_id`（礼物 `tid`、SC `id`、大航海 `payflow_id` 或 `uid:level:time:count`；弹幕不设 external_id，由指纹去重）；
+2. 生成稳定 `external_id`（Bilibili 礼物 `tid`、SC `id`、大航海 `payflow_id` 或 `uid:level:time:count`；YouTube 一律使用 `message.id`；Bilibili 弹幕不设 external_id，由指纹去重）；
 3. 确认金额单位与币种，否则 `amount_minor=null`、`value_kind=unknown`；
 4. 标注 `source_quality`（`verified` 仅用于字段实测确认后）；
 5. 提取平台表情元数据（有可靠依据时）并写入 `emotes`；没有依据时不要猜测；
@@ -213,6 +292,31 @@ is_paid, source_quality, dedupe_key
 
 - `mock` 平台永远 `source_quality=mock`，UI 显示「模拟」。
 - Bilibili 真实会话 `source_quality=estimated`（会话级）；单条事件：弹幕/礼物/SC 身份完整时为 `verified`，身份缺失为 `unknown`，大航海为 `estimated`。
+- YouTube 事件 `source_quality=estimated`：字段来自官方文档，但**尚未在真实直播中采样**；`verified` 只在真实样本后使用。
 - 字段未逐项验证的平台事件标 `unknown` 或 `estimated`。
 - 不得把模拟测试通过描述为真实平台接入完成。
 - 真实直播间验收记录：`21144080`（2026-11-08，弹幕 142 条全部带 UID/昵称）、`7734200`、`5050`（72/77 条 UID=0 + 昵称打码；另有 21/32 条 `DANMU_MSG` 带 `info[0][13]` 表情元数据）。房间号、时间与结论已记入 `docs/TEST_PLAN.md`。
+
+## 6. 付费事件计数口径（2026-11-08 修正）
+
+`payment_event_count`（观众级与场次级）现在只在 `is_paid=true` 时累加：
+
+- 赠送会员的**接收者**不是付款者 → `is_paid=false`，不计数；
+- 免费礼物（Bilibili 银瓜子/免费）不是付费事件 → 不计数；
+- Super Chat / Super Sticker / 新会员 / 赠送会员的**赠送者** → `is_paid=true`，计数。
+
+金额合计原本就只统计 `is_paid=1 AND amount_minor>0`，因此金额口径不变，变的是「付费事件数量」不再虚高。
+
+## 7. YouTube 数据保留（合规实现）
+
+| 项目 | 处理 |
+| --- | --- |
+| 依据 | YouTube API Services Developer Policies III.E.4.c / III.E.4.d：Authorized Data 与其他数据保存不超过 30 个日历日 |
+| 默认窗口 | 30 天（`settings.youtubeRawRetentionDays`，1–3650，可在设置 JSON 调整） |
+| 触发 | 应用启动；YouTube 场次结束；`POST /api/youtube/retention/apply`（面板按钮） |
+| 清理内容 | `events.content`、`events.emotes`，并写 `content_purged_at` |
+| 保留内容 | 行、计数、观众身份、昵称历史、币种合计、AI 包记录 |
+| 作用范围 | 仅 `platform='youtube'`（Bilibili 不受 Google 政策约束，未改动） |
+| 审计 | `app_meta['retention.lastRun']` 记录时间、天数、清理条数 |
+
+主播登录 Google **不代表**获得无限期保存其他观众数据的授权；统计与身份保留是对产品长期记忆价值的最小妥协，原始文本按窗口删除。

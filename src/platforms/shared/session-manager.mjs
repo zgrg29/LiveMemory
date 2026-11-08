@@ -95,6 +95,7 @@ export class SessionManager {
     broadcasterName = null,
     sourceQuality = null,
     simulated = false,
+    platformStartedAt = null,
     createAdapter
   }) {
     const live = findLiveSession(this.db);
@@ -111,6 +112,7 @@ export class SessionManager {
       sourceQuality,
       simulated,
       startedAt,
+      platformStartedAt,
       now: startedAt
     });
     const adapter = createAdapter({sessionId: session.id});
@@ -173,6 +175,7 @@ export class SessionManager {
           platform: live.platform,
           roomTitle: live.room_title,
           startedAt: live.started_at,
+          platformStartedAt: live.platform_started_at ?? null,
           simulated: live.simulated === 1,
           messageCount: Number(live.message_count ?? 0),
           uniqueViewerCount: Number(live.unique_viewer_count ?? 0)

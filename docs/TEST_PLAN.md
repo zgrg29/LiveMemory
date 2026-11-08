@@ -55,24 +55,31 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `bilibili-cookie.test.mjs` | Set-Cookie/URL 双来源、SESSDATA 必需、白名单、加密存储、篡改返回 null、状态不含 Cookie |
 | `bilibili-adapter.test.mjs` | 鉴权包内容、立即心跳、事件映射、鉴权失败、close 后重连调度 |
 | `bilibili-qr.test.mjs` | vendored MIT QR 库可用、登录 URL 生成矩阵、定位图案、确定性、长 URL 容量 |
-| `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:` 自定义表情、URL/时间不误判、channelId 身份、缺失身份、Super Chat/会员不误标、明确 `unverified` |
+| `youtube-link.test.mjs` | 全部官方链接形式（watch / `/live/` / youtu.be / embed / shorts / 裸 ID / 移动域名）、播放列表/频道/外站/javascript 拒绝、错误键与 400 |
+| `youtube-api.test.mjs` | API Key 查询参数 vs Bearer 头、无凭据本地失败、官方配额计费、Google reason → 稳定错误码、网络错误、视频状态判定（live/upcoming/ended/video）、分页字段 |
+| `youtube-oauth.test.mjs` | PKCE S256、授权 URL 参数、state 常量时间比较、本地化回调页无外部资源、回环接收器只接受指定路径、拒绝授权、code 交换与刷新错误映射、完整登录流程、state 不匹配、未配置拒绝、过期令牌 → `expired` |
+| `youtube-token-store.test.mjs` | 加密往返、明文不落盘、`status()` 不含令牌、频道信息更新、空凭据拒绝、篡改检测、退出删除 |
+| `youtube-adapter.test.mjs` | 非直播拒绝、分页与轮询间隔、`offlineAt` 结束、网络错误重连不结束、配额守卫、停止后不再请求 |
+| `youtube-retention.test.mjs` | 天数钳制、只清理过期 YouTube 原文、Bilibili 不动、金额/计数/身份保留、`app_meta` 记录 |
+| `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
 
 ### 3.2 集成
 
 | 文件 | 覆盖 |
 | --- | --- |
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
-| `migration-emotes.test.mjs` | v1 旧库（无 `emotes` 列）升级到 v2；旧消息保留且 `emotes=NULL`；升级后可写表情 |
+| `migration-emotes.test.mjs` | v1 旧库（无 `emotes`、无 `platform_started_at`）升级到 v3；旧消息保留且 `emotes=NULL`；升级后可写表情 |
+| `youtube-session.test.mjs` | 本地假 YouTube API 的端到端：匿名 API Key 模式、直播定位、普通视频 409、非法链接零请求、连接 → 8 条事件入库（含重复消息去重）、多币种分账、按 channelId 建档案、赠送会员接收者不计付费、停止后进入历史、手动保留清理 |
 | `api.test.mjs` | health/bootstrap、CSP、设置校验与持久化、模拟记录、事件列表、重复开始 409、停止、历史与详情、分析包下载与校验和、观众列表/档案/关注、SSE、Host/Origin/路径穿越/404、runtime 文件、重启后设置保持 |
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
 
-## 4. 本轮结果（2026-11-08）
+## 4. 本轮结果（2026-11-08，v0.2.0）
 
 ```text
-tests 195
-pass  195
+tests 259
+pass  259
 fail  0
-duration ≈ 5.7s
+duration ≈ 6.5s
 ```
 
 无跳过、无 todo。
@@ -93,23 +100,27 @@ duration ≈ 5.7s
 | 明亮/黑暗/跟随系统 | 截图 + 设置持久化测试 | ✅ |
 | 中文/日语界面 | 截图 | ✅ |
 | 390px 响应式 | 截图 | ✅ 无横向溢出 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 89.9 MB，SHA-256 `9477dbcb…`，82 个资源文件 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.1 MB，SHA-256 `a1becfb6…`，92 个资源文件 |
 | EXE 普通权限完整启动 | `scripts/verify-exe.mjs` | ✅ 9/9 场景通过，0 失败 |
-| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=2、AI 指令含表情规则、`ai.js` 含任务卡、无 ChatGPT |
+| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=3、version=0.2.0、`/api/youtube/status` 未配置状态清晰、`live.js` 含 YouTube 入口 |
 | EXE 端到端表情导出 | EXE 内模拟记录 42 条 → 导出包 | ✅ 2 条平台表情消息、`emote_refs` 正确、manifest `messages_with_emotes=2`、`emote_kinds=1` |
+| YouTube 本地端到端 | 假 API + `startServer` | ✅ 连接 → 8 条事件 → 4 条消息 / 5 个付费事件 → 多币种 → 历史 |
+| YouTube 界面 | 无头 Edge 截图 | ✅ 明亮/黑暗/390px/录制中/未配置 5 张 |
 
 ## 6. 尚未验证（必须如实保留）
 
 1. 真实 Ctrl+C 优雅退出（自动化无法发送控制台信号）。
 2. 干净 Windows 10/11 虚拟机（非管理员、无 Node）。
 3. EXE 代码签名/杀毒误报。
-4. YouTube 真实 Live Chat API：**完全没有连接**，只有离线 mapper 的合成样本测试。
-5. 跨电脑备份迁移（M5）。
-6. AI 结果导入与 Schema 校验（M6）。
-7. 长时间（>4h）直播的稳定性与内存占用。
-8. 多显示器 / 高 DPI 控制台字体。
-9. Bilibili 其他房间、全局表情、粉丝牌表情、动态表情图片；`dm_v2` 解码。
-10. 礼物 / SC / 大航海真实事件字段复核。
+4. **YouTube 真实 Live Chat API**：链路已实现并用本地假 API 验证，但**没有真实 Google 凭据**，因此没有真实直播采样、真实消息条数、真实稳定身份比例。
+5. YouTube 真实 OAuth：同意屏、refresh token 过期（Testing 应用 7 天）、未验证应用 100 用户上限均未在线验证。
+6. YouTube 真实断网 / 配额耗尽的长时行为（只有逻辑分支测试）。
+7. 跨电脑备份迁移（M5）。
+8. AI 结果导入与 Schema 校验（M6）。
+9. 长时间（>4h）直播的稳定性与内存占用。
+10. 多显示器 / 高 DPI 控制台字体。
+11. Bilibili 其他房间、全局表情、粉丝牌表情、动态表情图片；`dm_v2` 解码。
+12. 礼物 / SC / 大航海真实事件字段复核。
 
 ## 7. M3 起需补充的测试
 
@@ -131,3 +142,23 @@ duration ≈ 5.7s
 | 5050 | 15s | 22 条 `DANMU_MSG` | 19 条带 `info[0][13]`；文字标签示例「就这」「乐」「Wow」；无 `[xxx]` 括号文本 |
 
 未观测到 `SEND_GIFT` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` / `USER_TOAST_MSG` / `SEND_GIFT_V2`，因此这些事件的真实字段与金额单位仍标记为未验证。平台表情只在 `5050` 采样，不能代表所有房间/所有表情类型。
+
+## 9. YouTube 端到端（2026-11-08，**本地假 API，非真实平台**）
+
+> 这一节的数据来自 `tests/integration/youtube-session.test.mjs` 中的本地假 API 服务器（按官方响应结构返回固定样本）。它证明「传输 → 映射 → 去重 → SQLite → 读模型 → 历史」链路可运行，**不是真实 YouTube 采样**，不能计入真实平台验收。
+
+| 项目 | 结果 |
+| --- | --- |
+| 输入 | `https://www.youtube.com/live/<ID>`、`youtu.be/<ID>`、裸 ID |
+| 首次请求 | `videos.list`（1 配额）+ `liveChatMessages.list`（5 配额） |
+| 投递消息 | 10 条（其中 1 条 `messageDeletedEvent` 忽略，1 条重复 `message.id`） |
+| 入库事件 | **8 条**（去重后） |
+| 消息类（chat + super_chat） | 4 条（其中 2 条 Super Chat） |
+| 经济事件（`is_paid=true`） | 5 个：Super Chat ×2（USD 5.00、JPY 1500）、Super Sticker（EUR 2.00）、新会员、赠送会员 ×3 |
+| 稳定身份 | 7 位观众全部由 `channelId` 建立，昵称只作展示 |
+| 币种分账 | USD 500 / JPY 1500 / EUR 200（最小单位，互不相加） |
+| 赠送会员接收者 | `is_paid=false`、`payment_event_count=0` |
+| 停止 | `POST /api/youtube/disconnect` → 场次 `ended`，出现在直播历史 |
+| 保留清理 | `pendingPurge=0`，`app_meta['retention.lastRun']` 已写入 |
+
+真实环境仍需补测：真实消息条数、真实身份完整率、真实 Super Chat / 会员样本、真实断网与配额行为。**在拿到开发者凭据之前，这些数字不能填写。**

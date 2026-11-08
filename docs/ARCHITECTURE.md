@@ -15,8 +15,9 @@ LiveMemory.exe (Node SEA)
          ├─ src/storage/                node:sqlite + 迁移 + 仓储
          ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
          ├─ src/platforms/mock/         模拟直播源
-         ├─ src/platforms/bilibili/     真实直播适配器
-         ├─ src/platforms/youtube/      离线 mapper（预留，未接入传输层）
+         ├─ src/platforms/bilibili/     真实直播适配器（WebSocket）
+         ├─ src/platforms/youtube/      真实直播适配器（OAuth / API Key + 轮询）
+         ├─ src/storage/retention.mjs   YouTube 原始内容保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像）
          └─ src/ai/export/              分析包生成（含表情字典）
    └─ src/web/                          浏览器控制台（原生 ES Modules）
@@ -57,6 +58,33 @@ LiveMemory.exe (Node SEA)
 
 **关键保证**：重复事件在 `insertEvent` 处返回 `changes=0`，后续聚合全部跳过，因此金额与计数不会翻倍。表情元数据参与指纹去重，但不改变 `content` 原文。
 
+## 3.1 YouTube 凭据与数据流
+
+```text
+凭据解析（oauth-config.mjs）
+  ├─ 环境变量 / <数据目录>/config/*.json / 内置常量（默认空）
+  ├─ api-key 模式：YouTubeApi 把 key 放在查询参数，无 Authorization 头
+  └─ oauth 模式：YouTubeOAuthManager 提供 Bearer token（提前 60s 刷新）
+
+连接流程
+  parseYouTubeInput(link) → videos.list → checkRecordable()
+    ├─ 非直播/未开始/已结束/聊天关闭 → 明确错误码（三语）
+    └─ 可记录 → SessionManager.startPlatform({platformStartedAt})
+                 → YouTubeLiveChatAdapter.start()
+                     → liveChatMessages.list(pageToken)  ← 轮流询
+                     → mapper.mjs → canonical draft
+                     → EventIngest（去重/观众/金额/计数）
+                     → SSE → 控制台
+```
+
+- OAuth：`startLogin()` 启动单次回环接收器（`127.0.0.1` 随机端口）→ 系统浏览器打开 Google 官方授权页 → 回调校验 `state` → code + PKCE verifier 换 token → AES-256-GCM 加密保存。UI 轮询 `/api/youtube/login/status`。
+- 令牌只存在于加密文件与内存；`status()`、日志、AI 包、备份都不含令牌。
+- 适配器只负责传输：任何平台事件都必须经过 `EventIngest`。
+
+## 3.2 保留策略
+
+`src/storage/retention.mjs` 在启动、YouTube 场次结束与手动调用时清理 `platform='youtube'` 且超过窗口的聊天原文与表情元数据，保留行、计数、身份与金额。目的见 `PRIVACY_SECURITY.md` §12。
+
 ## 4. 读模型
 
 - `analytics/sessions/hotness.mjs`：按场次时长选择 10s–1h 的桶；输出消息数、独立观众、按币种支付；直播中不绘制未完成的桶。
@@ -89,6 +117,21 @@ LiveMemory.exe (Node SEA)
 | GET | `/api/viewers` | 观众列表（`query`、`limit`） |
 | GET | `/api/viewers/:id` | 观众档案 |
 | PATCH | `/api/viewers/:id` | 关注标记 |
+| GET | `/api/bilibili/status` | Bilibili 登录与连接状态 |
+| POST | `/api/bilibili/login/qrcode` | 生成扫码二维码 |
+| POST | `/api/bilibili/login/poll` | 轮询扫码结果 |
+| POST | `/api/bilibili/login/logout` | 退出 Bilibili 登录 |
+| POST | `/api/bilibili/room` | 校验直播间 |
+| POST | `/api/bilibili/connect` | 开始记录 Bilibili 直播 |
+| POST | `/api/bilibili/disconnect` | 停止记录 |
+| GET | `/api/youtube/status` | YouTube 模式、登录、连接、配额、保留策略 |
+| POST | `/api/youtube/login/start` | 启动 Google 授权（返回授权 URL） |
+| GET | `/api/youtube/login/status` | 登录状态（供页面轮询） |
+| POST | `/api/youtube/login/logout` | 撤销授权并删除本地令牌 |
+| POST | `/api/youtube/video` | 解析直播链接并返回可记录性 |
+| POST | `/api/youtube/connect` | 开始记录 YouTube 直播 |
+| POST | `/api/youtube/disconnect` | 停止记录 |
+| POST | `/api/youtube/retention/apply` | 立即执行 YouTube 原文保留清理 |
 | GET | `/api/events` | 场次事件（倒序、分页） |
 | GET | `/api/events/stream` | SSE（`event`、`status`） |
 | GET | `/api/storage` | 数据目录、占用、计数 |

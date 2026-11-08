@@ -93,7 +93,9 @@ export function ensureViewer(db, event, {now = Date.now()} = {}) {
 export function recordViewerActivity(db, event, {now = Date.now(), sessionId = event.session_id} = {}) {
   if (!event.viewer_id) return false;
   const messageDelta = isMessageEvent(event.event_type) ? 1 : 0;
-  const paymentDelta = isPaymentEvent(event.event_type) ? 1 : 0;
+  // Only an actually paid event counts towards a viewer's payment history. The
+  // recipient of a gifted membership must never look like a payer.
+  const paymentDelta = isPaymentEvent(event.event_type) && event.is_paid ? 1 : 0;
   db.prepare(UPSERT_VIEWER).run(
     event.viewer_id,
     event.platform,

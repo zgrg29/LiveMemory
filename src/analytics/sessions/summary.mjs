@@ -44,6 +44,7 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
       sourceQuality: session.source_quality,
       simulated: session.simulated === 1,
       startedAt: session.started_at,
+      platformStartedAt: session.platform_started_at ?? null,
       endedAt: session.ended_at,
       lastEventAt: session.last_event_at,
       aiStatus: session.ai_status,

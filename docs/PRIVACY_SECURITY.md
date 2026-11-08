@@ -84,7 +84,7 @@
 - 上传给 AI 服务即离开本机，由用户自行判断；
 - 不要公开分享含观众信息的备份。
 
-## 8. Bilibili 凭据（2026-11-08 起）
+## 12. Bilibili 凭据（2026-11-08 起）
 
 - 扫码登录得到的 Cookie 只保存在 `<数据目录>\secrets\bilibili-login.json`（AES-256-GCM 加密）；密钥在同目录 `.bilibili-key`，尽力用 `icacls` 限制为当前 Windows 用户。同账户的进程仍可读取，因此这是「用户目录 + 加密」级别的保护，不是 DPAPI。
 - 状态 API（`/api/bilibili/status`）只返回 `loggedIn`、`uid`、`name`、时间，不返回 Cookie。
@@ -92,3 +92,23 @@
 - 二维码登录页在系统默认浏览器中打开 Bilibili 自己的页面；应用不截屏、不上传、不把登录参数写入日志。
 - AI 分析包不包含登录信息与 Cookie（导出只读取数据库事件与统计）。
 - 观众身份来自平台 UID；平台不提供 UID（UID=0）时不猜测、不按昵称合并，也不会因此把观众写进别人的档案。
+
+## 13. YouTube 凭据（2026-11-08 起）
+
+- **两种官方凭据模式**：
+  - 公开直播模式（`api-key`）：应用级 API Key 放在查询参数里，只能读公开数据；不涉及任何用户账号；
+  - OAuth 模式：主播本人授权，access/refresh token 存在本地。
+- **凭据不进入仓库、不进入默认构建**。可用环境变量或 `<数据目录>\config\` 下的私有文件提供；`src/platforms/youtube/oauth-config.mjs` 的常量默认为空。
+- **令牌存储**：`<数据目录>\secrets\youtube-oauth.json`，AES-256-GCM 加密，密钥同目录 `.youtube-oauth-key`，尽力用 `icacls` 限制为当前 Windows 用户。与 Bilibili 一样，这是「用户目录 + 加密」级别，不是 DPAPI。
+- **令牌可见面**：`/api/youtube/status` 只返回 `signedIn`、频道名、过期时间、`hasRefreshToken`；任何 API、日志、AI 包、备份都不含令牌。
+- **撤销与删除**：退出登录会先调用 Google revoke 端点（尽力而为），再删除本地加密文件；跨电脑迁移需要重新登录（密钥不导出，这是刻意设计）。
+- **日志**：脱敏规则覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值；YouTube `code`/`state` 不写日志。
+- **回调安全**：回环接收器只绑定 `127.0.0.1`、只接受一次性随机端口与固定路径、校验 `state`、5 分钟超时、回调页无外部资源。
+
+## 14. YouTube 数据保留与外部 AI
+
+- YouTube 公开直播聊天属于 Non-Authorized Data。Developer Policies 要求保存不超过 **30 个日历日**；主播 OAuth 不能为其他观众的数据授权无限期保存。
+- 实现：默认 30 天后自动清理 YouTube 聊天原文与表情元数据；发言计数、稳定身份（channelId）、昵称历史、币种合计保留。清理在启动、场次结束与手动操作时执行。
+- Bilibili 数据不受该政策约束，未被自动清理。
+- AI 分析包由用户手动导出并交给自选 AI 服务，软件不自动上传；包内不含凭据。导出前建议先执行保留清理，确保包内只有仍在允许窗口内的原文。
+- 不为了「长期画像」而绕过平台政策，也不改用抓取。

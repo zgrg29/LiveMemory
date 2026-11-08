@@ -21,6 +21,7 @@ import {buildInstructions} from '../ai/prompts/instructions.mjs';
 import {currentSchemaVersion} from '../storage/database/migrations/index.mjs';
 import {databaseSizeBytes} from '../storage/database/connection.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
+import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
 
 /**
  * Route table. Every handler is async, returns void and writes the response
@@ -48,7 +49,8 @@ function statusPayload(deps) {
     data: {dir: paths.root},
     storage: {mode: settingsStore.get().storageMode},
     ai: {export: true, import: false, protocol: ANALYSIS_PROTOCOL},
-    bilibili: deps.bilibili ? deps.bilibili.status() : null
+    bilibili: deps.bilibili ? deps.bilibili.status() : null,
+    youtube: deps.youtube ? deps.youtube.status() : null
   };
 }
 
@@ -149,8 +151,13 @@ export function buildRoutes() {
           capabilities: {
             platforms: [
               {id: 'mock', label: 'Simulation', state: 'available'},
-              {id: 'bilibili', label: 'Bilibili Live', state: 'planned'},
-              {id: 'youtube', label: 'YouTube Live', state: 'planned'}
+              {id: 'bilibili', label: 'Bilibili Live', state: 'available'},
+              {
+                id: 'youtube',
+                label: 'YouTube Live',
+                state: deps.youtube?.status().configured ? 'available' : 'needs_setup',
+                authMode: deps.youtube?.status().authMode ?? 'none'
+              }
             ],
             ai: {export: true, import: false},
             backup: {export: false, import: false}
@@ -498,6 +505,94 @@ export function buildRoutes() {
         await readOptionalJson(req);
         const result = await deps.bilibili.disconnect();
         sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/youtube/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.youtube.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/login/start',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const requested = body.locale ? normalizeLocale(body.locale) : null;
+        const locale = requested && requested !== 'system'
+          ? requested
+          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        try {
+          const result = await deps.youtube.startLogin({locale});
+          sendJson(res, 201, result);
+        } catch (error) {
+          throw youtubeError(error);
+        }
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/youtube/login/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.youtube.status().login);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/login/logout',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = await deps.youtube.logout();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/video',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const video = await deps.youtube.checkVideo(body.url ?? body.videoId ?? body.input);
+          sendJson(res, 200, {video});
+        } catch (error) {
+          throw youtubeError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.youtube.connect(body.url ?? body.videoId ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            video: result.video,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw youtubeError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/disconnect',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = await deps.youtube.disconnect();
+        sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/youtube/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.youtube.applyRetention();
+        sendJson(res, 200, result);
       }
     },
     {

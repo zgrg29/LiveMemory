@@ -74,7 +74,7 @@ function waitForEvent(method, timeoutMs = 15000) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function capture(name, {width = 1440, height = 1040, path = '/live', wait = 1800, mobile = false} = {}) {
+async function capture(name, {width = 1440, height = 1040, path = '/live', wait = 1800, mobile = false, script = null, preScript = null, reload = false} = {}) {
   await send('Emulation.setDeviceMetricsOverride', {
     width,
     height,
@@ -88,6 +88,23 @@ async function capture(name, {width = 1440, height = 1040, path = '/live', wait 
   await send('Page.navigate', {url});
   await loaded;
   await sleep(wait);
+  if (preScript) {
+    await send('Runtime.evaluate', {expression: preScript, awaitPromise: true});
+    const reloaded = waitForEvent('Page.loadEventFired').catch(() => null);
+    await send('Page.reload', {ignoreCache: true});
+    await reloaded;
+    await sleep(wait);
+  }
+  if (script) {
+    await send('Runtime.evaluate', {expression: script, awaitPromise: true});
+    await sleep(900);
+  }
+  if (reload) {
+    const reloaded = waitForEvent('Page.loadEventFired').catch(() => null);
+    await send('Page.reload', {ignoreCache: true});
+    await reloaded;
+    await sleep(wait);
+  }
   const {data} = await send('Page.captureScreenshot', {format: 'png', captureBeyondViewport: false});
   const file = join(outDir, `${name}.png`);
   writeFileSync(file, Buffer.from(data, 'base64'));

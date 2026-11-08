@@ -63,17 +63,39 @@ result.schema.json     livememory-analysis-result-v1
 {"seq":2,"at":"...","type":"chat","viewer_id":"bilibili:123","name":"昵称","content":"就这","emote_refs":["bilibili:id:room_5050_96171"]}
 {"seq":3,"at":"...","type":"chat","viewer_id":"bilibili:123","name":"昵称","content":"今天太有意思了","emote_refs":["bilibili:id:room_cat"],"content_ai":"今天太有意思了[平台表情：猫猫鼓掌]"}
 {"seq":4,"at":"...","type":"super_chat","viewer_id":"...","name":"...","content":"...","amount_minor":3000,"currency":"CNY"}
+{"seq":5,"at":"...","offset_seconds":754,"type":"chat","viewer_id":"youtube:UC_...","name":"...","content":"这个背景音乐好棒 🎵"}
 ```
 
 - 只包含 `chat` 与 `super_chat`（带正文或表情元数据）。
 - `content` 是**原文**，不翻译、不覆盖、不把 Emoji 转成图片。
 - `content_ai` 只在原文不足以理解表情时出现：补充平台表情名称，或标记未知表情 `[未知平台表情：emote_id=…]`。原文已包含名称时省略，避免重复。
 - `emote_refs` 引用 `session_context.emote_dictionary`；同一条消息可引用多个表情。
+- `offset_seconds`（2026-11-08 起，可选）：相对**平台直播开始时间**的秒数，只在 `session.broadcast_started_at` 存在时出现（目前是 YouTube）。用于回答「第几分钟在聊什么」。
 - 上限 20,000 条（M6 实现分批）。
+
+### 平台字段（YouTube）
+
+- `viewer_id` 形如 `youtube:UC_xxxx`，来自 `authorDetails.channelId` / `authorChannelId.value`，不是昵称。
+- Super Chat / Super Sticker 只出现在 `session_context.economic_support` 与 `local_stats`，并保留 `currency` + `value_kind=actual`。
+- 会员事件（新会员、里程碑、赠送/收到赠送）**不在 `messages.jsonl` 中**：它们不是聊天消息，且没有金额；可在 `local_stats.paymentEvents` 与观众上下文中看到计数。
+- 未知/缺失身份的消息 `viewer_id` 为 `null`，不得据此建立画像。
 
 ### session_context.json
 
 场次信息、`local_stats`、`economic_support`（按币种/`value_kind`）、`top_viewers`、`timeline`、`counts`、`notes`（不可信内容、金额不重算、表情语义规则、未录制视频/音频）。
+
+`session` 内的平台时间字段（2026-11-08 起）：
+
+```json
+{
+  "platform": "youtube",
+  "started_at": "2026-11-08T10:00:00.000Z",
+  "broadcast_started_at": "2026-11-08T09:35:00.000Z",
+  "ended_at": "2026-11-08T11:20:00.000Z"
+}
+```
+
+`started_at` 是**本地开始记录**的时间；`broadcast_started_at` 是平台侧的直播开始时间（YouTube `liveStreamingDetails.actualStartTime`），两者可能相差几十分钟。旧场次该字段为 `null`。
 
 当消息含平台表情时增加去重字典：
 

@@ -51,8 +51,8 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 ```text
 src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行三语、退出
 src/server/          HTTP 服务、路由、设置存储、日志、SSE
-src/platforms/       平台适配器（mock、bilibili 已实现；youtube 仅有离线 mapper）
-  shared/            adapter 契约、ingest 写入管线、session manager
+src/platforms/       平台适配器（mock、bilibili、youtube 均已实现真实直播接入）
+  shared/            adapter 契约、ingest 写入管线、session manager、加密凭据存储
 src/storage/         database（连接/迁移）、repositories（SQL 访问）
 src/analytics/       sessions（时间线/汇总）、payments（币种合计）、viewers（画像读模型）
 src/ai/              export（分析包）、prompts（三语说明）、schemas（结果 JSON Schema）
@@ -107,6 +107,10 @@ node scripts/build-windows.mjs
 8. **AI 不记账**：AI 输出永远不能修改本地金额与计数。
 9. **文本优先**：聊天原文 `content` 永不替换；Unicode Emoji 原样保存。平台表情只在有可靠元数据时写入 `emotes`，保留平台提供的名称/代码；没有名称就保留 id 并标记未知。不要为还原表情图片引入下载/缓存，也不要猜测未知表情的情绪。
 10. **AI 平台无关**：界面与提示词使用「AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果」，不得绑定某个 AI 品牌；不集成需要付费密钥的 AI API。
+11. **只接直播**：平台 URL/ID 只用于定位正在进行的直播。不得抓取普通视频、视频评论、字幕或历史回放；非直播输入必须明确拒绝。
+12. **平台官方接口优先**：不得使用抓取、未公开接口或任何绕过访问控制的方式获取平台数据。YouTube 只能用官方 Data API v3；`liveChatMessages.streamList` 是 gRPC，REST 路径不存在，不得臆造。
+13. **凭据不进仓库**：任何 API Key、OAuth client secret、access/refresh token 都不得提交，也不得默认打进 EXE。凭据由发布者通过环境变量或数据目录私有文件一次性配置；缺少配置时必须明确提示，不得伪造登录或成功。
+14. **数据保留合规**：YouTube 公开聊天属于 Non-Authorized Data，超过保留窗口（默认 30 天）必须清理原文；主播 OAuth 不能为其他观众的数据授权无限期保存。清理只删原文，不删计数、身份与金额。
 
 ---
 
@@ -178,6 +182,8 @@ fix: prevent duplicate payment events
 - 不得为了让测试通过而修改断言掩盖真实缺陷。
 - 不得引入云服务、账号体系、遥测或任何形式上传播音数据的依赖。
 - 不得在未验证的情况下宣称 EXE 已在“干净 Windows 环境”通过验收。
+- 不得为了绕过平台的授权或配额限制而改用抓取、未公开接口或共享凭据。
+- 不得在文档或界面中把「模拟/假 API 验证」描述为「真实平台验收」。缺少真实凭据时必须如实写「阻塞」。真实凭据与 API Key 不得出现在代码、测试、文档、截图或提交中。
 
 ---
 

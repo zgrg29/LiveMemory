@@ -100,6 +100,11 @@ export async function buildAnalysisPackage({
     const refs = Array.isArray(message.emotes)
       ? message.emotes.map((emote) => emoteKey(message.platform, emote)).filter(Boolean)
       : [];
+    // Time relative to the platform's own broadcast start, when known. This is
+    // what makes "which topic was discussed at 00:12:30" answerable.
+    if (session.platformStartedAt) {
+      line.offset_seconds = Math.max(0, Math.round((message.occurred_at - session.platformStartedAt) / 1000));
+    }
     if (refs.length > 0) {
       line.emote_refs = refs;
       messagesWithEmotes += 1;
@@ -152,6 +157,7 @@ export async function buildAnalysisPackage({
       status: session.status,
       simulated: session.simulated,
       started_at: isoFromEpochMs(session.startedAt),
+      broadcast_started_at: session.platformStartedAt ? isoFromEpochMs(session.platformStartedAt) : null,
       ended_at: session.endedAt ? isoFromEpochMs(session.endedAt) : null,
       storage_mode: session.storageMode,
       source_quality: session.sourceQuality

@@ -31,15 +31,16 @@ export function createSession(db, {
   sourceQuality = 'unknown',
   simulated = false,
   startedAt = Date.now(),
+  platformStartedAt = null,
   now = startedAt
 }) {
   const sessionId = id ?? createId('ses');
   db.prepare(`
     INSERT INTO sessions (
       id, platform, platform_room_id, room_title, broadcaster_name, status,
-      storage_mode, source_quality, simulated, started_at, ended_at, last_event_at,
+      storage_mode, source_quality, simulated, started_at, platform_started_at, ended_at, last_event_at,
       message_count, gift_event_count, payment_event_count, ai_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'live', ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
   `).run(
     sessionId,
     String(platform),
@@ -50,6 +51,7 @@ export function createSession(db, {
     String(sourceQuality),
     simulated ? 1 : 0,
     startedAt,
+    platformStartedAt === null || platformStartedAt === undefined ? null : Math.trunc(Number(platformStartedAt)),
     now,
     now
   );

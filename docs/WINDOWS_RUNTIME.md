@@ -148,9 +148,10 @@ Node SEA（Single Executable Application）+ postject 注入。
 已验证（本机，2026-11-08，普通权限 = 非管理员令牌，最终源码构建）：
 
 - 构建成功，PE 子系统 = 3（Console）
-- 本轮构建：89.9 MB，82 个资源文件，SHA-256 `9477dbcb6a6b80d909800e7fab43f71fd7d8c9de63eb5c4a3f8d63d20922cf2d`
-- 全新数据目录启动确认 SQLite schema=2、AI 指令含表情规则、`ai.js` 含任务说明卡
-- `LiveMemory.exe --version` → `LiveMemory 0.1.0`
+- 本轮构建：90.1 MB，92 个资源文件，SHA-256 `a1becfb6e18606c5db59dc4f8c218dd473d08dab931116a310887ec1a76b2d2d`
+- 全新数据目录启动确认 SQLite schema=3、`platform_started_at` 列存在、`live.js` 含 YouTube 来源标签
+- `/api/youtube/status` 在未配置构建中返回 `configured=false`、`authMode=none`、`policy.days=30`，界面显示「这个构建没有包含开发者凭据」，不提供伪造登录
+- `LiveMemory.exe --version` → `LiveMemory 0.2.0`
 - `scripts/verify-exe.mjs` 自动矩阵：全新目录启动、HTTP API、SQLite 写入、重启保留、强制结束后恢复、端口占用顺延、第二实例、不可写目录报错、复制到 `Downloads` 运行、解压复用、`--version` / `--help --lang ja` / `--diagnose`
 - 默认数据目录不可写时自动回退到 `%TEMP%\LiveMemory` 并启动成功（本机沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，正好覆盖该分支）
 - 不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`
@@ -158,6 +159,8 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 解压目录带标记，第二次启动不再重写
 - `/api/health`、`/api/bootstrap`、`index.html`、`js/app.js` 均 200
 - 控制台输出中文/日文正常（UTF-8）
+
+**YouTube 凭据与 EXE 的关系**：EXE 内嵌的是 `src/**` 源码，默认不包含任何 Google 凭据；发布者若要提供「匿名公开直播模式」，必须在构建/部署时注入 API Key（环境变量或数据目录私有文件），并且需要自行评估 Developer Policies III.D.1.d 对开源项目内嵌凭据的限制。EXE 内不含 OAuth 客户端时，主播只能看到「尚未配置」说明，不能登录。
 
 未验证：
 

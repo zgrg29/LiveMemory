@@ -1,52 +1,72 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-08（P1 聊天表情兼容 + P2 AI 分析中心通用化，版本 0.1.0）
+最后更新：2026-11-08（YouTube Live 真实接入，版本 0.2.0，schema 3）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 完成，M1 完成，M2 核心完成，P0 完成，P1/P2 完成，M3 进行中，M6 导出侧增强**
-- 版本：`0.1.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**2**（v2 新增 `events.emotes`）
+- 里程碑：**M0 / M1 / M2 核心 / P0 / P1 / P2 完成；M3 进行中（Bilibili 真实接入 + YouTube Live 接入）**
+- 版本：`0.2.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**3**（v2 新增 `events.emotes`，v3 新增 `sessions.platform_started_at`）
 - 分支：`main`，本地提交，未 Push
 
-## 2. 本轮完成（2026-11-08）
+## 2. 本轮完成（2026-11-08）：YouTube Live
 
-### 聊天表情与 Emoji（P1）✅
+### 2.1 授权结论（先回答最重要的问题）
 
-- **Unicode Emoji**：原文直接保存；支持 UTF-8、组合 Emoji、变体选择符、肤色修饰符与 ZWJ 序列。
-- **安全截断**：`src/shared/text.mjs` 按 grapheme 截断，不再切断 surrogate pair / ZWJ 序列；事件写入、Bilibili mapper、AI 包统一使用。
-- **Bilibili 平台表情**：真实采样确认 `DANMU_MSG.info[0][13]` 携带 `emoticon_unique` / `url` / 宽高 / `is_dynamic`，`info[1]` 已经是可读文字标签（如「就这」「乐」「Wow」）。
-  - 保存最小元数据 `{id, name, source}`；不下载、不缓存、不打包图片。
-  - 有 `info[0][13]` 才认定平台表情；普通 `[文字]` 不误判。
-  - 纯表情消息（正文为空）仍入库；未知 id 标记为未知，不猜情绪。
-  - `dm_v2` 采样为空，未解码；不伪造 id。
-- **YouTube 预留**：`src/platforms/youtube/mapper.mjs` 纯函数 mapper，支持文本、Unicode Emoji、`:code:` 自定义表情、channelId 身份；**未接入传输层/OAuth/轮询**，全部标记 `source_quality=unknown`、`verified=false`。
-- **数据模型**：`events.emotes TEXT`（JSON 数组），schema v2 迁移；v1 旧库原地升级，旧消息 `emotes=NULL`；精简清理同时清空 `content` 与 `emotes`。
-- **界面**：直播动态保留原文与 Emoji；纯表情用「平台表情：名称/id」回退；修复动态列表每次 SSE 都整体淡入导致的闪烁。
-- **AI 包**：`session_context.emote_dictionary` 去重字典；`messages.jsonl` 使用 `emote_refs`；只有原文不足时才生成 `content_ai`；未知表情标记 `[未知平台表情：emote_id=…]`。
+| 能力 | 是否需要 Google 账号 | 是否需要 OAuth | 是否需要应用级 API Key | 结论 |
+| --- | --- | --- | --- | --- |
+| 定位直播（`videos.list` + `liveStreamingDetails`） | 否 | 否 | 是 | 官方支持 |
+| 读取公开直播聊天（`liveChatMessages.list`） | 否 | 否 | 是 | 官方文档明确允许 API Key 读取公开数据（含公开直播聊天） |
+| 主播自己的频道信息（`channels.list?mine=true`） | 是 | 是 | 否 | 只有 OAuth 可用 |
+| 私有/会员限定直播、`liveBroadcasts.list` | 是 | 是 | 否 | 本轮不实现 |
 
-### AI 分析中心通用化（P2）✅
+- **完全不需要任何凭据的官方通道不存在。** YouTube ToS 与 Developer Policies 禁止抓取与使用未公开接口；本轮没有实现任何绕过。
+- 本轮实现 **两种官方模式**，运行时自动选择：
+  1. **公开直播模式（api-key）**：应用级 API Key，匿名读取公开直播与公开聊天，主播零登录、零配置；
+  2. **OAuth 模式（oauth）**：主播点一次「登录 Google」，PKCE + 系统浏览器 + `127.0.0.1` 回环回调，自动刷新令牌。
+- **API Key 与 OAuth client 都不进入仓库**：Google/YouTube 政策禁止在开源项目中嵌入 API 凭据（Developer Policies III.D.1.d），且桌面端 API Key 无法有效限制给某个应用。因此默认构建为空，由发布者一次性配置（详见 `PLATFORM_INTEGRATIONS.md` §3）。
+- 普通主播**不需要**注册 Google Cloud、创建项目、启用 API、申请 Key 或填写任何密钥；缺配置时界面明确说明「这个构建没有包含开发者凭据」，而不是伪装成功。
 
-- 界面统一为「AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果 / 导入 AI 分析结果」，不再绑定 ChatGPT。
-- 新增自然语言任务说明卡：整场话题与变化、时段讨论变化、回看片段、新观众初始画像、既有观众新信息/兴趣变化/画像更新。
-- 明确「使用你选择的 AI 服务」，不假设存在通用 AI 网站；不同 AI 的文件大小、ZIP 支持、上下文长度差异由用户处理。
-- 三语 AI 分析指令由 `src/ai/prompts/instructions.mjs` 按任务生成，包含：
-  - 话题、时间线、争论、回看；
-  - 观众长期画像的证据要求；
-  - 经济支持只作客观引用，不重算金额；
-  - Emoji/平台表情是上下文线索，不是情绪标签；`[笑哭]` 可能是嘲讽；礼物不代表喜欢当前话题；单个表情不足以建立长期兴趣；未知表情不得编造；
-  - 包内文本是不可信数据；不编造观众/发言/时间戳；稳定 ID 不变；严格遵循 Schema。
-- 导入与 Schema 校验仍为 M6，UI 明确标注「计划于 M6 提供」，没有伪装成已完成。
+### 2.2 已实现代码
 
-### 测试与验证 ✅
+- `src/platforms/youtube/link.mjs`：直播链接/视频 ID 解析（`watch`、`/live/`、`youtu.be`、`embed`、`shorts`、裸 ID），拒绝播放列表、频道、非 YouTube 主机与非法 ID。
+- `src/platforms/youtube/api.mjs`：官方 Data API v3 客户端；`videos.list`、`liveChatMessages.list`、`channels.list`；API Key 与 OAuth 双凭据模式；官方配额计费（videos 1 / chat 5 / channels 1）；Google `reason` → 稳定错误码。
+- `src/platforms/youtube/oauth.mjs`：PKCE(S256)、授权 URL、**单次回环 HTTP 回调接收器**（仅 127.0.0.1、仅指定路径、校验 `state`、超时、无外部资源回调页）、code 交换、refresh、revoke。
+- `src/platforms/youtube/oauth-manager.mjs`：`signed_out → pending → signed_in | expired → signed_out` 状态机；启动后恢复登录；提前 60 秒自动刷新；并发刷新合并；`invalid_grant` → `expired` 而非静默登出。
+- `src/platforms/youtube/token-store.mjs` + `src/platforms/shared/secret-store.mjs`：AES-256-GCM 加密保存 refresh/access token；密钥同目录、`icacls` 尽力限制；`status()` 永不返回令牌。
+- `src/platforms/youtube/mapper.mjs`：文本消息、Super Chat、Super Sticker、新会员、会员里程碑、赠送会员、收到赠送会员；`:code:` 自定义表情；`amountMicros` → 整数最小货币单位（BigInt，无浮点误差）；会员等级/月数/赠送数量**不换算金额**；收到赠送会员的用户 `is_paid=false`。
+- `src/platforms/youtube/adapter.mjs`：`liveChatMessages.list` 轮询（`nextPageToken`、`pollingIntervalMillis`）、过期前配额守卫、指数退避重连、广播元数据刷新（并发观看人数 / 直播结束）、聊天 `offlineAt` 结束检测、`chatEnded/chatDisabled=真结束`、网络错误**不结束场次**。
+- `src/platforms/youtube/service.mjs` + 路由 `/api/youtube/*`：状态、登录、退出、检查直播、开始/停止记录、手动执行保留清理。
+- 统一写入路径不变：所有事件仍经过 `EventIngest`（去重、观众聚合、按币种累计、场次计数）。
 
-- 自动化：**195 个测试全部通过，0 失败，约 5.7 秒**。
-- 新增覆盖：Unicode Emoji/ZWJ、grapheme 截断、Bilibili `info[0][13]`、纯表情消息、未知表情、YouTube 预留 mapper、v1→v2 迁移、AI 包表情字典与大小控制。
-- 真实 Bilibili 房间 `5050` 表情采样：35s 32 条 `DANMU_MSG` 中 21 条带 `info[0][13]`；15s 22 条中 19 条带；`dm_v2` 全为空。
-- EXE：`dist/LiveMemory.exe` 89.9 MB，SHA-256 `9477dbcb6a6b80d909800e7fab43f71fd7d8c9de63eb5c4a3f8d63d20922cf2d`；`scripts/verify-exe.mjs` **9/9 通过**；全新数据目录启动确认 schema=2、AI 指令含表情规则；EXE 内模拟 42 条消息并导出包，2 条平台表情、`emote_refs` 正确。
-- UI 截图：`docs/screenshots/ai-light-zh-CN.png`、`ai-dark-ja.png`、`ai-mobile-light-zh-CN.png`、`live-emoji-light-zh-CN.png`。
+### 2.3 数据与策略
+
+- schema **v3**：`sessions.platform_started_at` 保存平台侧的直播开始时间（YouTube `liveStreamingDetails.actualStartTime`），用于「相对直播时间」。
+- **保留策略（默认 30 天）**：YouTube 公开聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 30 个日历日。`src/storage/retention.mjs` 在启动、场次结束与手动操作时清理 `content`/`emotes`；发言计数、观众身份、昵称历史与经济支持统计保留。Bilibili 数据不受该政策约束，未被清理。
+- 金额：Super Chat / Super Sticker 使用官方 `amountMicros` + `currency`，`value_kind=actual`；不同币种分别累计（USD / JPY / EUR 各自独立）。
+- 付款者统计修正：`payment_event_count` 现在只在 `is_paid=true` 时累加；赠送会员的**接收者**不再被算作付款者，免费礼物也不再计入付费事件。
+
+### 2.4 界面
+
+- 直播记录页新增第三个来源标签「YouTube 直播」：账号/模式状态、登录/重新登录/退出、直播链接输入、检查结果（正在直播 / 未开始 / 已结束 / 非直播 / 聊天关闭）、频道、当前观看、API 配额、数据保留说明与「立即清理过期原文」。
+- 直播中新增 YouTube 专属指示：连接状态（已连接 / 网络中断重连）、当前观看人数、配额消耗；`Super Sticker`、会员里程碑留言在动态流中正确显示。
+- 三语（zh-CN / ja / en）键完全对齐（自动化校验），明亮 / 黑暗 / 跟随系统均验证；窄屏 390px 无横向溢出。
+
+### 2.5 测试与 EXE
+
+- 自动化：**259 个测试全部通过，0 失败，约 6.5 秒**。
+- 新增覆盖：链接解析、官方错误映射、配额计费、PKCE/回调/令牌交换与刷新、登录状态机与重启恢复、令牌加密存储与篡改检测、全部经济事件映射、`amountMicros` 多币种、轮询/重连/结束/配额守卫、保留策略、v1→v3 迁移、以及**本地假 API 的端到端**（连接 → 入库 → 观众 → 多币种 → 历史 → 保留）。
+- EXE：`dist/LiveMemory.exe` **90.1 MB**，SHA-256 `a1becfb6e18606c5db59dc4f8c218dd473d08dab931116a310887ec1a76b2d2d`；`scripts/verify-exe.mjs` **9/9 通过**；EXE 内 `/api/youtube/status` 返回未配置状态、schema=3、`live.js` 含 YouTube 入口。
+- UI 截图：`docs/screenshots/live-youtube-light-zh-CN.png`、`live-youtube-dark-zh-CN.png`、`live-youtube-mobile-light-zh-CN.png`、`live-youtube-recording-zh-CN.png`（本地假 API 的端到端录制）、`live-youtube-unconfigured-zh-CN.png`。
+
+### 2.6 未完成的真实验收（必须如实保留）
+
+- **没有真实 Google 凭据**：本轮没有可用的 API Key 或 OAuth 客户端，因此**未对真实 YouTube 直播做端到端采样**，也没有「真实消息条数 / 稳定身份比例」数据。
+- 端到端验证使用**本地假 API 服务器**（严格按官方响应结构返回），证明链路可运行，但不能称为真实平台验收。
+- OAuth 流程在本地回环与假 token 端点上验证；未与 Google 真实授权页、真实 refresh token 过期规则（Testing 状态 7 天）做在线验证。
+- 30 天保留策略依据文本条款实现，未获得 Google 的书面确认。
 
 ## 3. 已完成（有代码与验证）
 
@@ -56,170 +76,114 @@
 - `AGENTS.md`、`README.md`、MIT `LICENSE`、`start.cmd`
 - 全部 `docs/*` 文档与 `log/` 开发记录
 
-### Windows 启动器
-- 环境检查（Node ≥ 22.5、`node:sqlite` 可用）
-- 数据目录解析：`--data-dir` / `LIVE_MEMORY_DATA_DIR` / `%LOCALAPPDATA%\LiveMemory` / `%APPDATA%` / 用户目录，逐级可写探测
-- 单实例锁（PID + 存活检测 + 陈旧锁接管）
-- 端口选择：默认 47800，冲突自动 +1…+9，最后使用系统分配端口
-- 服务就绪后才打开系统默认浏览器；失败时打印可复制地址
-- 三语命令行（zh-CN / ja / en），读取已保存语言偏好；`--lang` 可临时覆盖
-- UTF-8 控制台（`chcp 65001`），中文/日文输出已实测
-- 优雅退出：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件
-- 崩溃恢复：启动时把遗留 `live` 场次标记为 `interrupted`，结束时间取最后事件时间
+### Windows 启动器与 EXE
+- 环境检查（Node ≥ 22.5、`node:sqlite` 可用）、数据目录解析与写探测、单实例锁、端口顺延、服务就绪后打开浏览器
+- 三语命令行、UTF-8 控制台、优雅退出、崩溃恢复
+- Node SEA 打包，PE 子系统 Console，首次运行解压到 `<数据目录>\app\<hash>\`
 
 ### 数据层
-- `node:sqlite`，WAL，schema 版本 2，迁移可重复执行
+- `node:sqlite`，WAL，schema 3，迁移可重复执行
 - 表：`sessions`、`events`、`viewers`、`viewer_nicknames`、`viewer_sessions`、`viewer_currency_totals`、`session_currency_totals`、`ai_packages`、`app_meta`
-- `events.emotes` 保存平台表情最小 JSON 元数据；普通 Emoji 留在 `content`
 - 唯一写入管线 `EventIngest`：去重 → 观众聚合 → 场次金额 → 场次计数，单事务
-- `UNIQUE(session_id, dedupe_key)` 防止重复投递导致金额/计数翻倍；表情元数据参与指纹
-- 金额：整数最小货币单位，按 `currency` + `value_kind`（actual/display/unknown）分账
-- 观众身份：`platform:uid`，昵称历史独立保存，跨平台不合并
+- 观众身份 `platform:uid`；昵称历史独立保存；跨平台不合并
+- 金额整数最小单位，按 `currency` + `value_kind` 分账
 
 ### 服务器与 API
-- 仅监听 `127.0.0.1`；Host 校验（DNS rebinding 防护）、Origin 校验、CSP、nosniff、无 framing
-- 静态资源路径穿越防护；JSON body 1 MB 限制与 Content-Type 校验
-- 路由：health、bootstrap、status、settings、sessions（列表/当前/详情/停止）、simulate（开始/停止）、viewers（列表/详情/关注）、events + SSE、storage、AI instructions、AI packages（创建/列表/下载）
-- 设置持久化 `config/settings.json`（原子写入，损坏自动备份并回退默认）
+- 仅监听 `127.0.0.1`；Host/Origin 校验、CSP、nosniff、无 framing；路径穿越与 1 MB JSON 限制
+- 路由：health、bootstrap、status、settings、sessions、simulate、bilibili、youtube、viewers、events + SSE、storage、AI 包
+- 设置持久化 `config/settings.json`（原子写入；新增 `youtubeRawRetentionDays`）
 
-### 记录引擎与模拟平台
-- 模拟适配器：24 位中/日/英观众、话题漂移、弹幕、免费/付费礼物、SC、大航海
-- 模拟数据包含 Unicode Emoji、带元数据的平台表情、纯表情消息
-- 3% 概率故意重复投递同一事件，验证去重
-- 场次生命周期：live → ended / interrupted
-- 统计：消息、付费事件、独立观众、峰值/均值、按币种支持
-- 时间线：10 秒–1 小时自适应粒度，当前未完成的时间段不绘制
+### 平台
+- 模拟直播（中/日/英 24 位观众、话题漂移、Emoji、平台表情、3% 重复投递）
+- Bilibili 真实直播：WebSocket、鉴权、心跳/看门狗/重连、弹幕/礼物/SC/大航海映射、扫码登录、平台表情元数据（真实采样：弹幕 142/142 带 UID）
+- YouTube Live：见 §2（代码完成，真实直播未采样）
 
 ### 网页控制台（Apple 风格）
-- 5 个页面：直播记录、直播历史（含详情）、观众档案（含详情）、AI 分析中心、设置
-- 明亮 / 黑暗 / 跟随系统，token 化设计，首帧无闪烁，随系统主题实时切换
-- 三语 JSON 文案，键一致性与占位符有自动化测试
-- 响应式：≤860px 侧边栏抽屉、统计卡重排，390px 宽度无横向溢出
-- Canvas 消息密度图，主题切换自动重绘，hover 提示
-- 模拟直播开始/停止、实时事件流、最近动态、最活跃观众
-- 观众搜索、重点关注开关、昵称历史、参与场次
-- AI 三步向导：导出 AI 分析包（可用）、复制 AI 分析指令（可用）、导入（明确标注 M6）
-- AI 任务说明卡与平台无关 AI 服务说明
-- 设置：语言、主题、存储模式、数据统计、关于
+- 5 页、三语、明亮/黑暗/跟随系统、首帧无闪烁、响应式
+- Canvas 消息密度图、SSE 实时动态、观众档案与昵称历史
+- AI 三步向导（导出可用、复制指令可用、导入标注 M6）
 
 ### AI 分析包（导出侧）
-- 单文件 ZIP（自研 STORE 写入器，零依赖，UTF-8 文件名，路径穿越防护）
-- `manifest.json` 对 5 个内容文件做 SHA-256；不含自引用；计数含 `messages_with_emotes` / `emote_kinds`
-- 三语 `instructions.md`（中文/日文/英文分别本地化，不混用英文标题），含 Emoji/平台表情规则
-- `result.schema.json`（`livememory-analysis-result-v1`）
-- `session_context.json` 含去重 `emote_dictionary`；`messages.jsonl` 含 `emote_refs` / 按需 `content_ai`
-- 导出记录写入 `ai_packages`，场次 `ai_status` 变为 `exported`
-
-### Windows 普通权限启动修复（P0）✅
-
-- 启动器全链路守护 + 每步状态/错误码；三语失败提示；交互式等待按键；`--error-dialog`
-- 早期启动日志（数据库前可用），临时目录回退，解析数据目录后迁入 `<数据目录>\logs`
-- 真实写探测（创建/写入/读回/删除）、数据目录回退链、`LIVE_MEMORY_DEFAULT_DATA_DIR` 仅作偏好
-- 单实例：PID + `runtime.json` + `/api/health` 三重判定；陈旧锁接管
-- SEA：staging + 标记 + 原子 rename；二次启动复用
-- 新增 `--diagnose` 环境诊断
-- 自动化：`scripts/verify-exe.mjs` 9 项 EXE 矩阵全部通过
-
-### Bilibili 真实直播接入（M3 第一阶段）🟡
-
-- 真实连接：`room_init` → `getDanmuInfo`（WBI + buvid3）→ `wss://host/sub` → 鉴权 → 心跳/看门狗/重连
-- 事件映射：`DANMU_MSG`、`SEND_GIFT`（付费/免费）、`SUPER_CHAT_MESSAGE(_JPN)`、`GUARD_BUY` / `USER_TOAST_MSG(_V2)`
-- 身份：UID 优先；实测 142/142 弹幕带 UID；另一房间 72/77 条 UID=0 + 昵称打码 → 记为无身份，不合并
-- 平台表情：`info[0][13]` 元数据 + `info[1]` 文字标签；真实采样见 `PLATFORM_INTEGRATIONS.md`
-- 金额：礼物金瓜子 1000=1 元（分）；SC 元×100；大航海单位未确认 → 不记金额
-- 扫码登录后端（生成/轮询/`nav` 校验）与加密 Cookie 存储；二维码在应用内本地渲染（vendored MIT QR）
-- 路由 `/api/bilibili/*`、直播页「直播来源」面板、三语文案
-- 真实直播间：`21144080`（142 条弹幕全部带 UID/昵称）、`7734200`、`5050`；端到端房间→连接→入库→停止已验证
-- **未验证**：礼物/SC/大航海真实事件、`SEND_GIFT_V2`、登录后字段、真实断线、其他房间/表情类型
-
-### YouTube（预留）⬜
-
-- `src/platforms/youtube/mapper.mjs`：文本、Unicode Emoji、`:code:` 自定义表情、channelId 身份
-- 无传输层、无 OAuth、无 API Key；合成样本测试通过，**不能称为真实接入**
-
-### Windows EXE
-
-- `node scripts/build-windows.mjs` 生成 `dist/LiveMemory.exe`（Node SEA + postject）
-- PE 子系统强制为 Console（3），双击可见命令行窗口
-- 应用资源嵌入 EXE，首次运行解压到 `<数据目录>\app\<hash>\`，失败时回退到用户临时目录
-- 本轮构建：约 89.9 MB，82 个资源文件，SHA-256 `9477dbcb6a6b80d909800e7fab43f71fd7d8c9de63eb5c4a3f8d63d20922cf2d`
-- 本机实测（普通权限）：`--version`、`--help --lang ja`、`--diagnose`、单实例、`/api/health`、schema 2、AI 指令、静态资源、模拟记录与 AI 包导出均正常
+- 单文件 ZIP，`manifest.json` 校验和，三语 `instructions.md`，结果 Schema
+- `emote_dictionary` / `emote_refs` / 按需 `content_ai`
+- 新增 `session_context.session.broadcast_started_at` 与 `messages.jsonl.offset_seconds`（相对直播时间）
+- 含平台、稳定身份、经济支持事件；不含任何凭据
 
 ## 4. 部分完成
 
 | 项目 | 现状 | 缺口 |
 | --- | --- | --- |
-| 精简/完整存储模式 | 设置可保存；模式写入场次；清理函数已实现并有测试，会清 `content` + `emotes` | 自动清理未接入（需在 AI 导入校验后触发，M4/M6） |
-| AI 分析中心 | 导出、任务说明、指令复制、包列表可用；平台无关 | 导入、Schema 校验、分批、合并（M6） |
-| 观众画像 | 稳定身份、统计、昵称历史、关注标记 | 兴趣/喜恶/变化（依赖 M7 的 AI 画像） |
+| 精简/完整存储模式 | 设置可保存；清理函数与测试齐全 | 自动清理未接入（M4/M6） |
+| YouTube Live | 传输层、映射、登录、控制台、保留策略、模拟端到端完成 | 真实直播间采样、真实 OAuth 授权、真实配额与断网长时验证 |
+| AI 分析中心 | 导出、任务说明、指令复制可用 | 导入、Schema 校验、分批（M6） |
+| 观众画像 | 稳定身份、统计、昵称历史、关注 | 兴趣/喜恶/变化（M7） |
 | 备份与恢复 | 文档与数据模型已设计 | 导出/导入/校验/回滚（M5） |
-| 平台接入 | 统一事件模型、模拟平台、Bilibili 真实连接与表情映射、YouTube 离线 mapper | 礼物/SC/大航海真实事件复核、`SEND_GIFT_V2`、YouTube 传输层（M3） |
+| Bilibili 经济事件 | 映射与金额规则完成 | 礼物/SC/大航海真实事件仍未观测 |
 
 ## 5. 未完成
 
-- YouTube Live Chat 真实连接（API Key/OAuth 边界、分页、配额）
-- 礼物 / SC / 大航海真实事件复核与 `SEND_GIFT_V2` 解码
-- Bilibili 其他房间/全局表情/粉丝牌表情/动态表情、`dm_v2` 解码
+- YouTube 真实凭据下的端到端验收（本轮阻塞原因：无 API Key / OAuth 客户端）
+- Bilibili 礼物 / SC / 大航海真实事件复核、`SEND_GIFT_V2`、`dm_v2`
 - AI 结果导入与 Schema 校验、重复导入保护
 - 长期观众 AI 画像与增量更新
-- 可移植备份 `.livememory`、加密、跨电脑恢复
-- 数据删除 / 清理 UI、存储占用管理
-- 真实平台下的去重、断线重连、异常恢复验收
+- 可移植备份 `.livememory`
+- 数据删除 UI、存储占用管理
 - 干净 Windows 环境 EXE 验收、代码签名、发布流水线
-- 韩语 / 西班牙语预留
+- 韩语 / 西班牙语
 
-## 6. 测试结果（2026-11-08）
-
-命令：
+## 6. 测试结果（2026-11-08，v0.2.0）
 
 ```bat
-node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-结果：**195 个测试全部通过，0 失败，约 5.7 秒**。
+结果：**259 个测试通过，0 失败，约 6.5 秒**。
 
-覆盖（新增部分）：
-- 单元：Unicode Emoji / VS16 / 肤色 / ZWJ 保留与 grapheme 截断；表情元数据规范化/去重/上限；AI 可读文本与未知标记；Bilibili `info[0][13]`；纯表情消息；YouTube 离线 mapper
-- 集成：表情元数据落库/重复投递/清理；v1→v2 迁移；AI 包表情字典、`emote_refs`、`content_ai`、包大小控制
+新增测试文件：`youtube-link`、`youtube-api`、`youtube-oauth`、`youtube-adapter`、`youtube-mapper`（重写）、`youtube-retention`、`youtube-token-store`、`integration/youtube-session`。
+修改：`migration-emotes`（v1→v3）。
 
-EXE：`scripts/verify-exe.mjs` 9/9 通过；全新数据目录启动确认 schema=2、AI 指令含表情规则；EXE 内模拟 42 条消息导出包，2 条平台表情与 `emote_refs` 正确。
+EXE：`scripts/verify-exe.mjs` 9/9 通过（含普通权限、损坏恢复、端口顺延、单实例、不可写目录、异目录运行、解压复用、三语 CLI）。
+EXE 实测：`schema=3`、`version=0.2.0`、`/api/youtube/status` 未配置状态清晰、`live.js` 含 YouTube 入口。
 
-UI 验证：无头 Edge 截图（`docs/screenshots/`）：
-- `ai-light-zh-CN.png`（1440×1200，明亮中文）
-- `ai-dark-ja.png`（1440×1200，黑暗日语）
-- `ai-mobile-light-zh-CN.png`（390×1100，移动端）
-- `live-emoji-light-zh-CN.png`（1440×1100，直播动态）
+UI 截图（无头 Edge + DevTools）：
+- `docs/screenshots/live-youtube-light-zh-CN.png`
+- `docs/screenshots/live-youtube-dark-zh-CN.png`
+- `docs/screenshots/live-youtube-mobile-light-zh-CN.png`
+- `docs/screenshots/live-youtube-recording-zh-CN.png`
+- `docs/screenshots/live-youtube-unconfigured-zh-CN.png`
 
 **未在第二台干净 Windows 机器上做视觉验收。**
 
 ## 7. 已知问题与限制
 
-1. `Ctrl+C` 的真实控制台信号未在自动化中复现；优雅退出通过 `startServer().close()` 集成测试与代码路径验证，仍需人工按一次 Ctrl+C 确认。
-2. EXE 仅在本开发机验证；沙箱环境禁止浏览器进程，截图验证是通过 DevTools 临时放宽访问完成的。
-3. 动态选中的端口不会写回设置，下一次仍优先尝试 `preferredPort`。
-4. 静态资源使用 `no-cache` 且无 ETag，每次请求重新下载（本地可接受）。
-5. 模拟数据会长期保留在测试数据目录；真实用户数据目录不受影响。
-6. 分析包未分批，单包最多 20,000 条消息；超长直播需要 M6 的分批机制。
-7. 图表无缩放/区间选择；热度图为整场概览。
-8. 无删除场次/观众的 UI（数据库层已支持级联删除）。
-9. `--help` 通过管道截断时进程可能以 1 退出（PowerShell 提前关闭管道所致，非程序错误）。
-10. Bilibili 平台表情仅保存在 `content` + 最小 `emotes` 元数据；不显示图片。`dm_v2` 未解码。
-11. YouTube mapper 未接真实 API，所有 YouTube 行为仍属未验证。
+1. `Ctrl+C` 的真实控制台信号未自动化；通过 `startServer().close()` 与代码路径验证。
+2. EXE 仅在本开发机验证；沙箱内截图通过 DevTools 完成。
+3. 动态选中的端口不写回设置。
+4. 静态资源 `no-cache` 且无 ETag。
+5. 分析包未分批（单包上限 20,000 条）。
+6. 图表无区间选择。
+7. 无删除场次/观众 UI。
+8. `--help` 通过管道截断时进程可能以 1 退出（PowerShell 管道提前关闭）。
+9. Bilibili 平台表情仅保存名称/id，不显示图片；`dm_v2` 未解码。
+10. YouTube 每次 `liveChatMessages.list` 消耗 5 个配额单位；10,000/天约等于 2,000 次轮询，长时间直播会耗尽。界面显示已用/上限，配额守卫会以明确原因停止轮询而不是撞墙重试。
+11. YouTube 会员事件的评论会保存到 `content`，但**不计入消息数**，也不进入 AI 包的 `messages.jsonl`（分析包仍只含 chat + super_chat）；这是为防止「会员事件被当成聊天」而做的保守取舍。
+12. 未配置凭据时 YouTube 面板只显示说明，不提供伪造的登录入口。
 
 ## 8. 阻塞事项
 
-无硬阻塞。下一阶段主要风险是 YouTube 真实接入授权边界，以及 Bilibili 礼物/SC/大航海与其他表情类型的真实样本覆盖。
+- **YouTube 真实端到端验收缺少开发者凭据**：需要一次性配置 Google Cloud 项目 + 启用的 YouTube Data API +（OAuth 客户端 或 公开数据用 API Key），并解决 Developer Policies III.D.1.d 对「开源项目内嵌凭据」的限制（例如仅发布构建注入 + 合规评估，或由发布方申请许可）。在此之前，真实消息数、真实稳定身份比例、真实 OAuth 授权均**无法给出**。
+- 其余无硬阻塞。
 
 ## 9. 下一步目标
 
-1. **M3 后续**：用有礼物/SC/大航海的真实直播间复核字段与金额，补 `SEND_GIFT_V2`；继续采样其他房间/全局表情。
-2. **M6 起步**：实现 AI 结果导入（JSON 文件/粘贴 → Schema 校验 → 事务写入），这是长期画像 M7 的前置。
-3. 评估 YouTube 公开 Live Chat 的最低授权方案（API Key 配额、是否仍需 OAuth），不为了表情显示额外要求 OAuth。
+1. **在有凭据的环境完成 YouTube 真实验收**：公开直播采样聊天、Super Chat、会员；记录真实条数与身份完整率；验证真实断网与配额行为。
+2. **M6 AI 结果导入**：JSON/粘贴 → Schema 校验 → `task_id`/`session_id`/`viewer_id`/`message_refs` 校验 → 事务写入与重复导入保护。
+3. M4 存储管理：自动精简清理、删除场次/观众 UI。
 
 ## 10. 最近 Commit
 
-- 本轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre
-- 上一轮：`bb59f72` fix: render the Bilibili login QR inside the app
+- 本轮：`64bb0b3` feat: connect real YouTube Live chat with anonymous keys and Google OAuth
+- 上一轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
 - P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows
 - 首轮：`5cb66a9` feat: initialize LiveMemory with launcher, local console and recording pipeline
