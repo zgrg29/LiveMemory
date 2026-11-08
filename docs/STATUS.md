@@ -83,13 +83,24 @@
 
 自动化：`scripts/verify-exe.mjs` 9 项 EXE 矩阵（普通权限 8 通过 / 1 项为脚本自身判定已修正后重跑通过），详见 `docs/TEST_PLAN.md` 与 `log/2026-11-08-p0-windows-startup.md`。
 
+### Bilibili 真实直播接入（M3 第一阶段）🟡
+
+- 真实连接：`room_init` → `getDanmuInfo`（WBI + buvid3）→ `wss://host/sub` → 鉴权 → 心跳/看门狗/重连
+- 事件映射：`DANMU_MSG`、`SEND_GIFT`（付费/免费）、`SUPER_CHAT_MESSAGE(_JPN)`、`GUARD_BUY` / `USER_TOAST_MSG(_V2)`
+- 身份：UID 优先；实测 142/142 弹幕带 UID；另一房间 72/77 条 UID=0 + 昵称打码 → 记为无身份，不合并
+- 金额：礼物金瓜子 1000=1 元（分）；SC 元×100；大航海单位未确认 → 不记金额
+- 扫码登录后端（生成/轮询/`nav` 校验）与加密 Cookie 存储；UI 在浏览器打开扫码页
+- 路由 `/api/bilibili/*`、直播页「直播来源」面板、三语文案
+- 真实直播间：`21144080`（142 条弹幕全部带 UID/昵称）、`7734200`、`5050`；端到端房间→连接→入库→停止已验证
+- **未验证**：礼物/SC/大航海真实事件、`SEND_GIFT_V2`、登录后字段、真实断线
+
 ### Windows EXE
 
 - `node scripts/build-windows.mjs` 生成 `dist/LiveMemory.exe`（Node SEA + postject，校验 postject 包 SHA-256）
 - PE 子系统强制为 Console（3），双击可见命令行窗口
 - 应用资源嵌入 EXE，首次运行解压到 `<数据目录>\app\<hash>\`，失败时回退到用户临时目录
-- 本机实测（最终源码构建）：`--version`、`--help --lang ja`、单实例提示、`/api/health`、静态资源均正常，解压目录哈希 `612f0f97b537a08cdad4`
-- 构建产物：约 89.7 MB，最终构建 SHA-256 `dcd86c5db339f0e75a099597c6e1aaa4bbca2912afa465016ea7899472ce4622`（仅记录本次构建，不作发布校验值）
+- 本机实测（最终源码构建，普通权限）：`--version`、`--help --lang ja`、单实例提示、`/api/health`、静态资源均正常，解压目录哈希 `7fe20cc55a5453430d02`
+- 构建产物：约 89.9 MB，最终构建 SHA-256 `ae4a6952922edf5bc1a7f2d48c6ea2159ad34c2251525f422c8afe0a2a6e86ff`（仅记录本次构建，不作发布校验值）
 
 ## 3. 部分完成
 
@@ -99,7 +110,7 @@
 | AI 分析中心 | 导出、提示词复制、包列表可用 | 导入、Schema 校验、分批、合并（M6） |
 | 观众画像 | 稳定身份、统计、昵称历史、关注标记 | 兴趣/喜恶/变化（依赖 M7 的 AI 画像） |
 | 备份与恢复 | 文档与数据模型已设计 | 导出/导入/校验/回滚（M5） |
-| 平台接入 | 统一事件模型、适配器契约、模拟平台 | Bilibili / YouTube 真实连接（M3） |
+| 平台接入 | 统一事件模型、适配器契约、模拟平台、Bilibili 真实连接与映射 | 礼物/SC/大航海真实事件复核、`SEND_GIFT_V2`、YouTube（M3） |
 
 ## 4. 未完成
 
@@ -121,7 +132,7 @@
 node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
 ```
 
-结果：**119 个测试全部通过，0 失败，约 5 秒**（P0 阶段；M3 用例在下一个提交中增加）。
+结果：**161 个测试全部通过，0 失败，约 5.5 秒**（含 M3 Bilibili 用例）。
 
 覆盖：
 - 单元：语言解析、主题、金额、事件规范化/去重、时间、热度分桶、三语文案一致性、ZIP、设置存储、单实例锁、启动参数、数据目录、真实写探测、启动日志与回退、实例健康探测、暂停/对话框、脱敏、bootstrap 解压与标记

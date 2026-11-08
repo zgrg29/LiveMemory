@@ -33,6 +33,14 @@ export const livePage = {
     let elapsedTimer = null;
     let destroyed = false;
     let startBusy = false;
+    let biliStatus = null;
+    let sourceMode = 'mock';
+    let checkedRoom = null;
+    let loginTimer = null;
+    let loginExpiresAt = 0;
+    let loginHintText = '';
+    let sourceHost = null;
+    let loginHintHost = null;
 
     const [currentPayload, sessionsPayload] = await Promise.all([
       api.get('/api/sessions/current'),
@@ -40,6 +48,11 @@ export const livePage = {
     ]);
     summary = currentPayload.session ?? null;
     lastSessionRow = sessionsPayload.sessions?.[0] ?? null;
+    try {
+      biliStatus = await api.get('/api/bilibili/status');
+    } catch {
+      biliStatus = null;
+    }
 
     /* ------------------------------------------------------------- building */
 
@@ -57,7 +70,9 @@ export const livePage = {
       chart?.destroy();
       chart = null;
       refs = {};
+      loginHintHost = null;
       clear(container);
+      sourceHost = el('div');
       container.append(
         el('section', {className: 'hero', dataset: {live: 'false'}},
           el('div', {className: 'hero-body'},
@@ -66,8 +81,253 @@ export const livePage = {
               el('h1', {className: 'hero-title', text: t('live.hero.idleTitle')}),
               el('p', {className: 'hero-sub', text: t('live.hero.idleSubtitle')})),
             el('div', {className: 'hero-actions'}, startButton()))),
+        sourceHost,
         buildLastSessionCard()
       );
+      renderSource();
+    }
+
+    /* -------------------------------------------------------- live source */
+
+    function tabButton(label, mode, onSelect) {
+      const active = sourceMode === mode;
+      return el('button', {
+        className: active ? 'button button--secondary button--small' : 'button button--ghost button--small',
+        type: 'button',
+        text: label,
+        attrs: {'aria-pressed': active ? 'true' : 'false'},
+        onClick: () => {
+          if (sourceMode === mode) return;
+          sourceMode = mode;
+          checkedRoom = null;
+          onSelect?.();
+          renderSource();
+        }
+      });
+    }
+
+    function renderSource() {
+      if (!sourceHost) return;
+      clear(sourceHost);
+      loginHintHost = null;
+      const card = el('section', {className: 'card', style: {marginTop: '16px'}},
+        el('div', {className: 'card-head'},
+          el('div', {className: 'card-title', text: t('live.source.title')}),
+          el('div', {className: 'card-hint', text: t('live.source.hint')})));
+
+      const tabs = el('div', {className: 'source-tabs'},
+        tabButton(t('live.source.mockTab'), 'mock'),
+        tabButton(t('live.source.biliTab'), 'bilibili'));
+
+      const body = el('div', {className: 'card-body'}, tabs);
+      body.append(sourceMode === 'mock' ? buildMockPanel() : buildBiliPanel());
+      card.append(body);
+      sourceHost.append(card);
+    }
+
+    function buildMockPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(
+        el('p', {className: 'source-note', text: t('live.source.mockNote')}),
+        el('div', {className: 'hero-actions', style: {marginTop: '12px'}}, startButton()));
+      return panel;
+    }
+
+    function loginStateText() {
+      const login = biliStatus?.login;
+      if (!login?.loggedIn) return t('live.source.loginAnonymous');
+      const name = login.user?.name || login.user?.uid || '—';
+      return t('live.source.loginSignedIn', {name});
+    }
+
+    function buildBiliPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      const login = biliStatus?.login;
+
+      const loginStatus = el('div', {className: 'source-status', text: loginStateText()});
+      const loginButton = el('button', {
+        className: 'button button--secondary button--small',
+        type: 'button',
+        text: t('live.source.loginButton'),
+        onClick: (event) => openLogin(event.currentTarget)
+      });
+      const logoutButton = login?.loggedIn
+        ? el('button', {
+          className: 'button button--ghost button--small',
+          type: 'button',
+          text: t('live.source.logout'),
+          onClick: (event) => logout(event.currentTarget)
+        })
+        : null;
+
+      loginHintHost = el('div', {className: 'source-status', text: loginHintText});
+      panel.append(el('div', {className: 'source-row'},
+        el('div', {className: 'field', style: {flex: '1 1 240px'}},
+          el('span', {className: 'label', text: t('live.source.loginTitle')}),
+          loginStatus),
+        el('div', {className: 'source-row-actions'}, loginButton, logoutButton)));
+      panel.append(loginHintHost);
+      panel.append(el('p', {className: 'source-note', text: t('live.source.loginBrowserHint')}));
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          inputmode: 'numeric',
+          placeholder: t('live.source.roomPlaceholder'),
+          'aria-label': t('live.source.roomLabel'),
+          value: checkedRoom ? String(checkedRoom.inputRoomId ?? checkedRoom.roomId) : ''
+        }
+      });
+      input.value = checkedRoom ? String(checkedRoom.inputRoomId ?? checkedRoom.roomId) : '';
+      refs.roomInput = input;
+      const checkButton = el('button', {
+        className: 'button button--secondary',
+        type: 'button',
+        text: t('live.source.check'),
+        onClick: (event) => checkRoom(event.currentTarget)
+      });
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 240px'}},
+          el('span', {className: 'label', text: t('live.source.roomLabel')}),
+          input),
+        checkButton));
+
+      if (checkedRoom) {
+        const meta = el('div', {className: 'source-meta'});
+        meta.append(el('div', {className: 'source-status'},
+          chip(t('live.source.roomReady'), 'accent'),
+          checkedRoom.liveStatus === 1
+            ? chip(t('live.source.liveNow'), 'live', {dot: true})
+            : chip(t('live.source.offline'), 'neutral'),
+          checkedRoom.title ? el('span', {className: 'row-title-text', text: checkedRoom.title}) : null));
+        const details = [];
+        if (checkedRoom.anchorName) details.push(`${t('live.source.anchor')}: ${checkedRoom.anchorName}`);
+        if (checkedRoom.online) details.push(`${t('live.source.online')}: ${formatInteger(checkedRoom.online, ctx.locale)}`);
+        if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+        const startButtonNode = el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('live.source.start'),
+          onClick: (event) => connectRoom(event.currentTarget)
+        });
+        meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}}, startButtonNode));
+        panel.append(meta);
+      }
+
+      panel.append(el('p', {className: 'source-note', text: t('live.source.anonymousNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.identityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.moneyNote')}));
+      return panel;
+    }
+
+    function setLoginHint(text) {
+      loginHintText = text;
+      if (loginHintHost) loginHintHost.textContent = text;
+    }
+
+    async function openLogin(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/bilibili/login/open', {});
+        loginExpiresAt = result.expiresAt ?? Date.now() + 180000;
+        setLoginHint(t('live.source.loginWaiting'));
+        startLoginPolling();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function startLoginPolling() {
+      clearInterval(loginTimer);
+      loginTimer = window.setInterval(async () => {
+        if (destroyed) {
+          clearInterval(loginTimer);
+          return;
+        }
+        if (Date.now() > loginExpiresAt) {
+          clearInterval(loginTimer);
+          setLoginHint(t('live.source.loginExpired'));
+          return;
+        }
+        try {
+          const result = await api.post('/api/bilibili/login/poll', {});
+          if (result.state === 'success') {
+            clearInterval(loginTimer);
+            setLoginHint(t('live.source.loginSuccess'));
+            biliStatus = await api.get('/api/bilibili/status');
+            renderSource();
+            ctx.toast(t('live.source.loginSuccess'));
+          } else if (result.state === 'scanned') {
+            setLoginHint(t('live.source.loginScanned'));
+          } else if (result.state === 'expired') {
+            clearInterval(loginTimer);
+            setLoginHint(t('live.source.loginExpired'));
+          } else {
+            setLoginHint(t('live.source.loginWaiting'));
+          }
+        } catch (error) {
+          clearInterval(loginTimer);
+          setLoginHint(t('live.source.loginFailed'));
+        }
+      }, 2000);
+    }
+
+    async function logout(button) {
+      button.disabled = true;
+      try {
+        await api.post('/api/bilibili/login/logout', {});
+        biliStatus = await api.get('/api/bilibili/status');
+        loginHintText = '';
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    async function checkRoom(button) {
+      const input = refs.roomInput;
+      const roomId = String(input?.value ?? '').trim();
+      if (!/^\d{1,12}$/.test(roomId)) {
+        ctx.toast(t('errors.roomIdInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      button.textContent = t('live.source.checking');
+      try {
+        const result = await api.post('/api/bilibili/room', {roomId});
+        checkedRoom = result.room;
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = t('live.source.check');
+      }
+    }
+
+    async function connectRoom(button) {
+      if (!checkedRoom) return;
+      button.disabled = true;
+      button.textContent = t('live.source.starting');
+      try {
+        await api.post('/api/bilibili/connect', {roomId: checkedRoom.roomId});
+        const payload = await api.get('/api/sessions/current');
+        summary = payload.session ?? null;
+        if (summary) {
+          mode = 'live';
+          feedEvents = [];
+          buildLive(summary);
+          await loadFeed(summary.session.id);
+          await ctx.refreshStatus();
+        }
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = t('live.source.start');
+      }
     }
 
     function buildLastSessionCard() {
@@ -326,10 +586,11 @@ export const livePage = {
 
     async function handleStop(button) {
       if (!button) return;
+      const endpoint = summary?.session?.platform === 'bilibili' ? '/api/bilibili/disconnect' : '/api/simulate/stop';
       button.disabled = true;
       button.textContent = t('live.hero.stopping');
       try {
-        await api.post('/api/simulate/stop', {});
+        await api.post(endpoint, {});
         summary = null;
         ctx.state.liveSummary = null;
         const sessions = await api.get('/api/sessions?limit=1');
@@ -390,6 +651,7 @@ export const livePage = {
       offEvent();
       offSummary();
       clearInterval(elapsedTimer);
+      clearInterval(loginTimer);
       chart?.destroy();
       chart = null;
     };

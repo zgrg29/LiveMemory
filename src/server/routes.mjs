@@ -47,7 +47,8 @@ function statusPayload(deps) {
     },
     data: {dir: paths.root},
     storage: {mode: settingsStore.get().storageMode},
-    ai: {export: true, import: false, protocol: ANALYSIS_PROTOCOL}
+    ai: {export: true, import: false, protocol: ANALYSIS_PROTOCOL},
+    bilibili: deps.bilibili ? deps.bilibili.status() : null
   };
 }
 
@@ -66,6 +67,29 @@ function effectiveSettings(deps) {
 
 function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
   return new AppError(code, {messageKey, httpStatus: 404});
+}
+
+/** Bodies are optional on the small command endpoints. */
+async function readOptionalJson(req) {
+  const contentType = String(req.headers['content-type'] ?? '');
+  if (!contentType.toLowerCase().includes('application/json')) return {};
+  return readJsonBody(req);
+}
+
+/** Platform failures become stable, translatable API errors. */
+function bilibiliError(error) {
+  if (error instanceof AppError) return error;
+  const code = error?.code ?? 'UNKNOWN';
+  if (code === 'AUTH' || code === 'AUTH_REQUIRED') {
+    return new AppError('BILIBILI_AUTH', {messageKey: 'errors.bilibiliAuth', httpStatus: 401, cause: error});
+  }
+  if (code === 'ROOM_NOT_FOUND' || code === 'ROOM_INVALID') {
+    return new AppError('ROOM_NOT_FOUND', {messageKey: 'errors.roomNotFound', httpStatus: 404, cause: error});
+  }
+  if (code === 'NETWORK' || code === 'HTTP' || code === 'BAD_RESPONSE') {
+    return new AppError('BILIBILI_NETWORK', {messageKey: 'errors.bilibiliNetwork', httpStatus: 502, cause: error});
+  }
+  return new AppError('BILIBILI_ERROR', {messageKey: 'errors.bilibiliError', httpStatus: 502, cause: error});
 }
 
 export function createRouter(routes, deps) {
@@ -393,6 +417,100 @@ export function buildRoutes() {
           'X-Content-Type-Options': 'nosniff'
         });
         createReadStream(absolute).pipe(res);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/bilibili/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.bilibili.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/login/qrcode',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const qr = await deps.bilibili.loginWithQr();
+          sendJson(res, 201, {url: qr.url, expiresAt: qr.expiresAt, state: qr.state});
+        } catch (error) {
+          throw bilibiliError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/login/open',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const result = await deps.bilibili.openLoginPage();
+          sendJson(res, 201, {url: result.url, opened: result.opened, expiresAt: result.expiresAt});
+        } catch (error) {
+          throw bilibiliError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/login/poll',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const result = await deps.bilibili.pollLogin();
+          sendJson(res, 200, {state: result.state, user: result.user});
+        } catch (error) {
+          throw bilibiliError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/login/logout',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        await deps.bilibili.logout();
+        sendJson(res, 200, deps.bilibili.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/room',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const room = await deps.bilibili.checkRoom(body.roomId);
+          sendJson(res, 200, {room});
+        } catch (error) {
+          throw bilibiliError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.bilibili.connect(body.roomId);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            room: result.room,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw bilibiliError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/bilibili/disconnect',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = await deps.bilibili.disconnect();
+        sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
       }
     },
     {

@@ -119,6 +119,39 @@
       "title": "上一场直播",
       "empty": "还没有历史场次。",
       "link": "在历史中查看"
+    },
+    "source": {
+      "title": "直播来源",
+      "hint": "模拟直播用于体验记录流程；Bilibili 接入真实直播间。",
+      "mockTab": "模拟直播",
+      "biliTab": "Bilibili 直播",
+      "mockNote": "模拟事件只用于验证记录流程，不是真实平台数据。",
+      "roomLabel": "直播间 ID",
+      "roomPlaceholder": "例如 5050",
+      "check": "检查直播间",
+      "checking": "正在检查…",
+      "roomReady": "直播间可用",
+      "liveNow": "正在直播",
+      "offline": "未开播",
+      "anchor": "主播",
+      "online": "人气",
+      "start": "开始记录直播",
+      "starting": "正在连接直播间…",
+      "loginTitle": "Bilibili 登录（可选）",
+      "loginSignedIn": "已登录：{name}",
+      "loginAnonymous": "未登录（匿名连接即可接收公开弹幕）",
+      "loginButton": "扫码登录",
+      "loginOpening": "正在打开扫码页面…",
+      "logout": "退出登录",
+      "loginBrowserHint": "扫码页面会在默认浏览器中打开，用 Bilibili 手机客户端扫码并确认。",
+      "loginWaiting": "等待扫码…",
+      "loginScanned": "已扫码，请在手机上确认",
+      "loginSuccess": "登录成功",
+      "loginExpired": "二维码已过期，请重新打开扫码页面",
+      "loginFailed": "登录失败",
+      "anonymousNote": "未登录也可以接收公开弹幕、礼物和醒目留言；登录不会改变观众的身份字段。",
+      "moneyNote": "金额按平台字段换算：礼物 1000 金瓜子 = 1 元；醒目留言以元报价；大航海的金额单位未确认，因此不记入金额。",
+      "identityNote": "观众身份使用平台 UID。昵称可能被平台打码（例如“电***”），不会被猜测或合并。"
     }
   },
   "history": {
@@ -307,7 +340,12 @@
     "viewerNotFound": "该观众已不存在。",
     "badRequest": "请求内容不完整。",
     "jsonRequired": "需要 JSON 格式的请求内容。",
-    "portUnavailable": "没有可用的本地端口。"
+    "portUnavailable": "没有可用的本地端口。",
+    "bilibiliAuth": "Bilibili 要求登录后才能继续，请先扫码登录。",
+    "bilibiliNetwork": "无法连接 Bilibili，请检查网络后重试。",
+    "bilibiliError": "Bilibili 返回了无法处理的响应。",
+    "roomNotFound": "找不到该直播间，请检查房间号。",
+    "roomIdInvalid": "直播间 ID 必须是数字。"
   },
   "toast": {
     "saved": "已保存",

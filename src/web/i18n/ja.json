@@ -119,6 +119,39 @@
       "title": "前回の配信",
       "empty": "過去の配信はまだありません。",
       "link": "履歴で開く"
+    },
+    "source": {
+      "title": "配信ソース",
+      "hint": "シミュレーション配信で記録の流れを試せます。Bilibili は実際の配信に接続します。",
+      "mockTab": "シミュレーション",
+      "biliTab": "Bilibili 配信",
+      "mockNote": "シミュレーションのイベントは記録フローの確認用で、実際のプラットフォームのデータではありません。",
+      "roomLabel": "配信ルーム ID",
+      "roomPlaceholder": "例: 5050",
+      "check": "ルームを確認",
+      "checking": "確認しています…",
+      "roomReady": "ルームを確認しました",
+      "liveNow": "配信中",
+      "offline": "配信外",
+      "anchor": "配信者",
+      "online": "人気",
+      "start": "配信の記録を開始",
+      "starting": "ルームに接続しています…",
+      "loginTitle": "Bilibili ログイン（任意）",
+      "loginSignedIn": "ログイン中: {name}",
+      "loginAnonymous": "未ログイン（匿名でも公開コメントは受信できます）",
+      "loginButton": "QR コードでログイン",
+      "loginOpening": "ログインページを開いています…",
+      "logout": "ログアウト",
+      "loginBrowserHint": "ブラウザーで開いたページの QR コードを Bilibili アプリで読み取り、承認してください。",
+      "loginWaiting": "QR コードの読み取りを待っています…",
+      "loginScanned": "読み取り済みです。スマートフォンで承認してください",
+      "loginSuccess": "ログインしました",
+      "loginExpired": "QR コードの有効期限が切れました。もう一度開いてください",
+      "loginFailed": "ログインに失敗しました",
+      "anonymousNote": "未ログインでも公開コメント・ギフト・スーパーチャットを受信できます。ログインしても視聴者の識別情報は変わりません。",
+      "moneyNote": "金額はプラットフォームの値から換算します: ギフトは 1000 金瓜子 = 1 元、スーパーチャットは元建て、大航海の金額単位は未確認のため金額に計上しません。",
+      "identityNote": "視聴者の識別にはプラットフォームの UID を使います。ニックネームは伏字になる場合があり（例「電***」）、推測や名寄せは行いません。"
     }
   },
   "history": {
@@ -307,7 +340,12 @@
     "viewerNotFound": "その視聴者は存在しません。",
     "badRequest": "リクエストの内容が不足しています。",
     "jsonRequired": "JSON 形式のリクエスト本文が必要です。",
-    "portUnavailable": "利用できるローカルポートがありません。"
+    "portUnavailable": "利用できるローカルポートがありません。",
+    "bilibiliAuth": "続行するには Bilibili へのログインが必要です。QR コードでログインしてください。",
+    "bilibiliNetwork": "Bilibili に接続できません。ネットワークを確認して再試行してください。",
+    "bilibiliError": "Bilibili から処理できない応答が返されました。",
+    "roomNotFound": "配信ルームが見つかりません。ルーム ID を確認してください。",
+    "roomIdInvalid": "ルーム ID は数字で指定してください。"
   },
   "toast": {
     "saved": "保存しました",

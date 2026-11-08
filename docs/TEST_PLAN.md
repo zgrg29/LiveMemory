@@ -48,6 +48,11 @@ node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test
 | `diagnostics.test.mjs` | 交互式等待按键、非 TTY 不阻塞、`--no-wait`、对话框禁用 |
 | `bootstrap.test.mjs` | 解压候选目录、标记校验、原子解压、路径穿越拒绝、三语失败文本、语言选择 |
 | `logger.test.mjs` | 敏感键脱敏、自由文本中的凭据、JSON 片段、无误伤 |
+| `bilibili-wbi.test.mjs` | 公开测试向量、mixin key、键提取、排序/编码 |
+| `bilibili-protocol.test.mjs` | 头布局、鉴权包、心跳、多包、zlib/brotli、人气、异常长度、命令归一化 |
+| `bilibili-mapper.test.mjs` | 弹幕身份/UID=0/打码昵称、付费/免费礼物金额、不可整除标记、SC 元→分、大航海不记账、V2 嵌套、补充 toast 去重、时间戳 |
+| `bilibili-cookie.test.mjs` | Set-Cookie/URL 双来源、SESSDATA 必需、白名单、加密存储、篡改返回 null、状态不含 Cookie |
+| `bilibili-adapter.test.mjs` | 鉴权包内容、立即心跳、事件映射、鉴权失败、close 后重连调度 |
 
 ### 3.2 集成
 
@@ -60,13 +65,13 @@ node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test
 ## 4. 本轮结果（2026-11-08）
 
 ```text
-tests 119
-pass  119
+tests 161
+pass  161
 fail  0
-duration ≈ 5.1s
+duration ≈ 5.5s
 ```
 
-（P0 阶段，不含 M3 的 Bilibili 用例；M3 用例见下一次提交。）
+（包含 P0 启动修复与 M3 Bilibili 单元/集成用例。）
 
 无跳过、无 todo。
 
@@ -118,3 +123,14 @@ duration ≈ 5.1s
 - 身份缺失：UID 为空时不得更新画像。
 - 金额单位：每个平台单独断言“1 单位货币 = N minor units”。
 - 真实直播间验收表（房间号、日期、事件类型、字段核对）。
+
+## 8. 真实直播间验收（2026-11-08，匿名连接）
+
+| 房间号 | 时长 | 观测 | 结论 |
+| --- | --- | --- | --- |
+| 21144080 | 30s | 142 条 `DANMU_MSG` | 142/142 带 UID 与昵称；`info[1]` 文本、`info[2][0]/[1]`、`info[9].ts` 映射正确 |
+| 5050 | 25s | 77 条 `DANMU_MSG` | 72 条 UID=0 且昵称打码 → 记 `viewer_uid=null`、`source_quality=unknown`，不合并 |
+| 7734200 | 20s | 弹幕与互动事件 | 短号 6 解析正确，连接稳定 |
+| 5050 | 20s | HTTP 端到端 | `room → connect → 3 条事件入库 → disconnect`，场次 `ended`，计数一致 |
+
+未观测到 `SEND_GIFT` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` / `USER_TOAST_MSG` / `SEND_GIFT_V2`，因此这些事件的真实字段与金额单位仍标记为未验证。

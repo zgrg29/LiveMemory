@@ -83,3 +83,12 @@
 - 文件保存在本机；
 - 上传给 AI 服务即离开本机，由用户自行判断；
 - 不要公开分享含观众信息的备份。
+
+## 8. Bilibili 凭据（2026-11-08 起）
+
+- 扫码登录得到的 Cookie 只保存在 `<数据目录>\secrets\bilibili-login.json`（AES-256-GCM 加密）；密钥在同目录 `.bilibili-key`，尽力用 `icacls` 限制为当前 Windows 用户。同账户的进程仍可读取，因此这是「用户目录 + 加密」级别的保护，不是 DPAPI。
+- 状态 API（`/api/bilibili/status`）只返回 `loggedIn`、`uid`、`name`、时间，不返回 Cookie。
+- 日志脱敏覆盖 `SESSDATA`、`bili_jct`、`DedeUserID`、`Bearer …`、JSON 中的 `token/cookie/apiKey/secret/password`（本轮修复了一个会把原值重新拼回文本的正则缺陷）。
+- 二维码登录页在系统默认浏览器中打开 Bilibili 自己的页面；应用不截屏、不上传、不把登录参数写入日志。
+- AI 分析包不包含登录信息与 Cookie（导出只读取数据库事件与统计）。
+- 观众身份来自平台 UID；平台不提供 UID（UID=0）时不猜测、不按昵称合并，也不会因此把观众写进别人的档案。

@@ -119,6 +119,39 @@
       "title": "Last session",
       "empty": "No previous sessions yet.",
       "link": "Open in history"
+    },
+    "source": {
+      "title": "Live source",
+      "hint": "The simulator lets you try the recording flow; Bilibili connects to a real live room.",
+      "mockTab": "Simulated",
+      "biliTab": "Bilibili live",
+      "mockNote": "Simulated events only verify the recording flow; they are not real platform data.",
+      "roomLabel": "Live room ID",
+      "roomPlaceholder": "e.g. 5050",
+      "check": "Check room",
+      "checking": "Checking…",
+      "roomReady": "Room found",
+      "liveNow": "Live now",
+      "offline": "Not live",
+      "anchor": "Streamer",
+      "online": "Popularity",
+      "start": "Start recording this stream",
+      "starting": "Connecting to the live room…",
+      "loginTitle": "Bilibili login (optional)",
+      "loginSignedIn": "Signed in as {name}",
+      "loginAnonymous": "Not signed in (public chat works anonymously)",
+      "loginButton": "Sign in by QR",
+      "loginOpening": "Opening the sign-in page…",
+      "logout": "Sign out",
+      "loginBrowserHint": "The QR page opens in your default browser. Scan it with the Bilibili mobile app and confirm.",
+      "loginWaiting": "Waiting for the QR scan…",
+      "loginScanned": "Scanned — confirm on your phone",
+      "loginSuccess": "Signed in",
+      "loginExpired": "The QR code expired. Open the sign-in page again",
+      "loginFailed": "Sign-in failed",
+      "anonymousNote": "Public chat, gifts and Super Chats work without signing in. Signing in does not change viewer identity fields.",
+      "moneyNote": "Amounts follow the platform: gifts at 1000 gold coins = ¥1, Super Chats quoted in yuan, and guard prices stay unbooked because their unit is unconfirmed.",
+      "identityNote": "Viewer identity uses the platform UID. Nicknames may be masked by the platform (e.g. “电***”); they are never guessed or merged."
     }
   },
   "history": {
@@ -307,7 +340,12 @@
     "viewerNotFound": "That viewer no longer exists.",
     "badRequest": "The request was incomplete.",
     "jsonRequired": "A JSON request body is required.",
-    "portUnavailable": "No free local port was available."
+    "portUnavailable": "No free local port was available.",
+    "bilibiliAuth": "Bilibili requires a signed-in account for this action. Please sign in by QR.",
+    "bilibiliNetwork": "Could not reach Bilibili. Check the network and try again.",
+    "bilibiliError": "Bilibili returned a response this app cannot handle.",
+    "roomNotFound": "That live room was not found. Check the room ID.",
+    "roomIdInvalid": "The live room ID must be numeric."
   },
   "toast": {
     "saved": "Saved",

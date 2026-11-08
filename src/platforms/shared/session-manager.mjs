@@ -80,6 +80,72 @@ export class SessionManager {
     return {started: true, session: getSession(this.db, session.id)};
   }
 
+  /**
+   * Start a real platform session with a supplied adapter.
+   *
+   * The adapter owns the transport only; every draft it produces goes through
+   * the same EventIngest pipeline as the simulator (dedupe, viewer aggregation,
+   * currency totals). If the adapter cannot connect, the session is closed again
+   * so a failed connection never leaves a "recording" row behind.
+   */
+  async startPlatform({
+    platform,
+    platformRoomId,
+    roomTitle = null,
+    broadcasterName = null,
+    sourceQuality = null,
+    simulated = false,
+    createAdapter
+  }) {
+    const live = findLiveSession(this.db);
+    if (live) {
+      return {started: false, reason: 'session_active', session: live};
+    }
+    const startedAt = this.now();
+    const session = createSession(this.db, {
+      platform,
+      platformRoomId: String(platformRoomId),
+      roomTitle,
+      broadcasterName,
+      storageMode: this.settings.get().storageMode,
+      sourceQuality,
+      simulated,
+      startedAt,
+      now: startedAt
+    });
+    const adapter = createAdapter({sessionId: session.id});
+    this.adapter = adapter;
+    this.#setConnection(CONNECTION_STATE.CONNECTING, {platform, roomId: platformRoomId});
+    try {
+      await adapter.start({
+        onEvent: (draft) => {
+          try {
+            this.ingest.record({...draft, session_id: session.id});
+          } catch (error) {
+            this.logger?.error({event: 'ingest.failed', code: error?.code ?? 'unknown'});
+          }
+        },
+        onStateChange: (change) => this.#setConnection(change.state, change.detail)
+      });
+    } catch (error) {
+      this.adapter = null;
+      try {
+        await adapter.stop();
+      } catch {
+        /* ignore */
+      }
+      endSession(this.db, session.id, {status: 'ended', endedAt: this.now()});
+      this.#setConnection(CONNECTION_STATE.FAILED, {reason: error?.code ?? 'unknown'});
+      this.logger?.warn({event: 'session.start.failed', platform, code: error?.code ?? 'unknown'});
+      throw error;
+    }
+    if ([CONNECTION_STATE.CONNECTING, CONNECTION_STATE.IDLE].includes(this.connection)) {
+      this.#setConnection(CONNECTION_STATE.CONNECTED, adapter.snapshot?.().detail ?? null);
+    }
+    this.logger?.info({event: 'session.started', sessionId: session.id, platform});
+    return {started: true, session: getSession(this.db, session.id)};
+  }
+
   async stopActive({status = 'ended'} = {}) {
     if (this.adapter) {
       await this.adapter.stop();

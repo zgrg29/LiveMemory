@@ -5,6 +5,7 @@ import {createPaths, ensureDirectories, assertWritable} from './paths.mjs';
 import {SettingsStore} from './settings-store.mjs';
 import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
+import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
 import {serializeEvent} from './serializers.mjs';
@@ -66,6 +67,12 @@ export async function startServer({
     onStatusChange: (status) => hub.broadcast('status', status)
   });
   const recovered = sessionManager.recoverInterrupted();
+  const bilibili = new BilibiliService({
+    secretsDir: paths.secrets,
+    sessionManager,
+    logger,
+    now
+  });
 
   const startedAt = now();
   const state = {port: 0};
@@ -74,6 +81,7 @@ export async function startServer({
     db,
     settingsStore,
     sessionManager,
+    bilibili,
     hub,
     logger,
     startedAt,
@@ -141,6 +149,11 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.session.failed', code: error?.code ?? 'unknown'});
     }
+    try {
+      await bilibili.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.bilibili.failed', code: error?.code ?? 'unknown'});
+    }
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 3000);
       timer.unref?.();
@@ -165,6 +178,7 @@ export async function startServer({
     db,
     settings: settingsStore,
     sessionManager,
+    bilibili,
     hub,
     recovered,
     migration,
