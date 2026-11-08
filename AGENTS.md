@@ -143,6 +143,16 @@ node scripts/build-windows.mjs
 3. 检查 `git diff`，确认没有提交用户数据、凭据、`tests/.tmp`、`dist/`、`build/`。
 4. 创建本地 Commit（见下）。**未经用户明确授权，不得 Push、打标签、发布 Release 或创建远程仓库。**
 
+### 提交身份（强制匿名）
+
+- 本仓库的 Git 身份固定为匿名的 GitHub noreply 地址，**不得使用真实邮箱**：
+  - `user.name = zgrg29`
+  - `user.email = 10182596+zgrg29@users.noreply.github.com`
+- 这两个值是**仓库本地**配置（`git config --local`），已在本仓库设置；新克隆或新环境必须重新设置后再提交。
+- GitHub 开启 “Keep my email addresses private” 时会拒绝包含真实邮箱的 Push；noreply 地址仍能关联账号，但不会公开真实邮箱。
+- 不得用 `--author` 或临时环境变量改回真实邮箱。若发现历史提交含真实邮箱，先重写历史再 Push。
+- 每次提交后可用 `git log --format='%ae | %ce'` 自检。
+
 Commit 命名：
 
 ```text
