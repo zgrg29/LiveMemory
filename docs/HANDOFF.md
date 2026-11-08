@@ -73,7 +73,7 @@ src/storage/retention.mjs               YouTube 原文保留策略
 - 自动化：**259 通过 / 0 失败 / 约 6.5 秒**。
 - 新增：链接解析、官方错误映射、配额、PKCE/回环/交换/刷新、状态机与重启恢复、令牌加密与篡改、全部经济事件、`amountMicros`、轮询/重连/结束/配额、保留策略、v1→v3 迁移。
 - 集成：本地假 YouTube API（严格官方响应结构）跑通「连接 → 入库 → 观众 → 多币种 → 历史 → 保留」。
-- EXE：90.1 MB，SHA-256 `a1becfb6…`，`verify-exe.mjs` 9/9；EXE 内 schema=3、未配置状态清晰。
+- EXE：90.1 MB，SHA-256 `8af88e25…`，`verify-exe.mjs` 9/9；EXE 内 schema=3、未配置状态清晰。
 - UI：5 张截图（明亮/黑暗/窄屏/录制中/未配置）。
 
 ## 8. 未验证 / 阻塞（必须如实保留）

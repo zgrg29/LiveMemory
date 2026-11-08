@@ -100,7 +100,7 @@ duration ≈ 6.5s
 | 明亮/黑暗/跟随系统 | 截图 + 设置持久化测试 | ✅ |
 | 中文/日语界面 | 截图 | ✅ |
 | 390px 响应式 | 截图 | ✅ 无横向溢出 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.1 MB，SHA-256 `a1becfb6…`，92 个资源文件 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.1 MB，SHA-256 `8af88e25…`，92 个资源文件 |
 | EXE 普通权限完整启动 | `scripts/verify-exe.mjs` | ✅ 9/9 场景通过，0 失败 |
 | EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=3、version=0.2.0、`/api/youtube/status` 未配置状态清晰、`live.js` 含 YouTube 入口 |
 | EXE 端到端表情导出 | EXE 内模拟记录 42 条 → 导出包 | ✅ 2 条平台表情消息、`emote_refs` 正确、manifest `messages_with_emotes=2`、`emote_kinds=1` |

@@ -58,7 +58,7 @@
 
 - 自动化：**259 个测试全部通过，0 失败，约 6.5 秒**。
 - 新增覆盖：链接解析、官方错误映射、配额计费、PKCE/回调/令牌交换与刷新、登录状态机与重启恢复、令牌加密存储与篡改检测、全部经济事件映射、`amountMicros` 多币种、轮询/重连/结束/配额守卫、保留策略、v1→v3 迁移、以及**本地假 API 的端到端**（连接 → 入库 → 观众 → 多币种 → 历史 → 保留）。
-- EXE：`dist/LiveMemory.exe` **90.1 MB**，SHA-256 `a1becfb6e18606c5db59dc4f8c218dd473d08dab931116a310887ec1a76b2d2d`；`scripts/verify-exe.mjs` **9/9 通过**；EXE 内 `/api/youtube/status` 返回未配置状态、schema=3、`live.js` 含 YouTube 入口。
+- EXE：`dist/LiveMemory.exe` **90.1 MB**，SHA-256 `8af88e255122c2a26f448ae4f414de40ad3266543760b537ad7e74decded3196`；`scripts/verify-exe.mjs` **9/9 通过**；EXE 内 `/api/youtube/status` 返回未配置状态、schema=3、`live.js` 含 YouTube 入口。
 - UI 截图：`docs/screenshots/live-youtube-light-zh-CN.png`、`live-youtube-dark-zh-CN.png`、`live-youtube-mobile-light-zh-CN.png`、`live-youtube-recording-zh-CN.png`（本地假 API 的端到端录制）、`live-youtube-unconfigured-zh-CN.png`。
 
 ### 2.6 未完成的真实验收（必须如实保留）

@@ -148,7 +148,7 @@ Node SEA（Single Executable Application）+ postject 注入。
 已验证（本机，2026-11-08，普通权限 = 非管理员令牌，最终源码构建）：
 
 - 构建成功，PE 子系统 = 3（Console）
-- 本轮构建：90.1 MB，92 个资源文件，SHA-256 `a1becfb6e18606c5db59dc4f8c218dd473d08dab931116a310887ec1a76b2d2d`
+- 本轮构建：90.1 MB，92 个资源文件，SHA-256 `8af88e255122c2a26f448ae4f414de40ad3266543760b537ad7e74decded3196`
 - 全新数据目录启动确认 SQLite schema=3、`platform_started_at` 列存在、`live.js` 含 YouTube 来源标签
 - `/api/youtube/status` 在未配置构建中返回 `configured=false`、`authMode=none`、`policy.days=30`，界面显示「这个构建没有包含开发者凭据」，不提供伪造登录
 - `LiveMemory.exe --version` → `LiveMemory 0.2.0`
