@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube Live 的传输层、授权、映射、保留策略与界面已完成，端到端通过本地假 API 验证；真实凭据下的直播采样尚未完成（见 §3.7）。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 官方 Data API / OAuth 路径完整实现但缺真实凭据验收；YouTube 免登录网页聊天已实现并通过两个真实直播间采样，属于非官方实验路径，默认关闭。** 模拟平台（mock）保持可用。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -161,7 +161,7 @@ node scripts/verify-bilibili.mjs 5050 20
 
 | 问题 | 结论 |
 | --- | --- |
-| 完全不需要任何凭据？ | **不可以**。官方 API 要求调用方身份；ToS 与 Developer Policies 禁止抓取与使用未公开接口 |
+| 完全不需要任何凭据？ | **官方 API 不可以**；官方 API 要求调用方身份。另有免登录网页接口的实验路径（非官方，见 §3.10），默认关闭 |
 | 需要 Google 账号登录？ | **不需要**（公开数据路径） |
 | 需要 OAuth？ | **不需要**（公开数据路径）；只有读主播自己的频道信息才必须 OAuth |
 | 需要应用级 API Key？ | **是**（公开数据路径）；或者用 OAuth access token 代替 |
@@ -257,7 +257,7 @@ node scripts/verify-bilibili.mjs 5050 20
 ### 3.8 合规要点（一手条款）
 
 - **数据保留**：公开直播聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 **30 个日历日**；III.E.4.c 对 Authorized Data 同样是 30 天。主播的 OAuth **不能**为其他观众的数据授权无限期保存。本轮实现默认 30 天清理原始文本（保留统计与身份），见 §7。来源：<https://developers.google.com/youtube/terms/developer-policies>
-- **不得抓取 / 不得用未公开接口**：ToS 与 Developer Policies 明确禁止 scraper 与 undocumented APIs，因此没有实现任何绕过。
+- **抓取与未公开接口**：ToS 与 Developer Policies 明确禁止 scraper 与 undocumented APIs。官方路径没有实现任何绕过。免登录网页接口是唯一例外：它是未公开接口，很可能违反 ToS，因此默认关闭、显式 opt-in、带风险提示，并且不绕过登录/验证码/年龄墙/地区限制；不得把它描述为合规。
 - **凭据分发**：III.D.1.d 禁止在开源项目中嵌入 API 凭据；OAuth 安装型客户端的 secret 虽然「不视为机密」，但公开仓库仍不应提交。默认常量留空是刻意的。
 - **外部 AI**：分析包由用户手动交给自选 AI 服务；软件不自动上传。包内不包含凭据；保留策略先于导出生效（允许用户在导出前手动执行清理）。
 
@@ -271,6 +271,91 @@ node --test --test-isolation=none "tests/unit/youtube-*.test.mjs" "tests/integra
 set LIVE_MEMORY_YOUTUBE_API_KEY=AIza...
 node src/launcher/launcher.mjs
 :: 打开「直播记录 → YouTube 直播」，粘贴 https://www.youtube.com/live/<VIDEO_ID>
+```
+
+### 3.10 免登录网页聊天（实验性，默认关闭）
+
+> 结论：**技术可用，但非官方接口，很可能违反 YouTube ToS 的自动化访问与个人信息收集限制。** 因此不作为默认方式，必须显式启用；官方 Data API 仍是推荐方式。
+
+#### 3.10.1 是否无需登录
+
+- 不发送 Cookie、OAuth token、refresh token 或用户 API Key。
+- 只使用公开直播网页自身的 `INNERTUBE_CONTEXT` 和页面公开的 Web API key。
+- 不绕过登录、验证码、年龄墙或地区限制；遇到 `Sign in`/consent 直接报 `YOUTUBE_WEB_RESTRICTED`。
+
+#### 3.10.2 代码结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/platforms/youtube/anonymous/parser.mjs` | watch 页、live_chat 页、continuation、runs、badge、金额的纯解析 |
+| `src/platforms/youtube/anonymous/client.mjs` | HTTP、页面重开、400/429/5xx 错误分层 |
+| `src/platforms/youtube/anonymous/adapter.mjs` | 轮询、timeout、退避、continuation 刷新、结束、gap 诊断 |
+| `src/platforms/youtube/mapper.mjs` | `mapYouTubeAnonymousChatItem`：文本/SC/Sticker/会员/gift → canonical |
+| `src/shared/badges.mjs` | owner/moderator/verified/member 规范化 |
+
+所有事件仍经过 `EventIngest`，没有第二条写入路径。
+
+#### 3.10.3 协议
+
+```text
+GET  /watch?v=ID
+  → ytInitialPlayerResponse.videoDetails / liveBroadcastDetails / playabilityStatus
+GET  /live_chat?is_popout=1&v=ID
+  → ytcfg.set({INNERTUBE_CONTEXT, INNERTUBE_API_KEY, ...})
+  → ytInitialData.contents.liveChatRenderer.actions + continuations[0]
+POST /youtubei/v1/live_chat/get_live_chat?prettyPrint=false&key=<page key>
+  body {context, continuation}
+  → continuationContents.liveChatContinuation.actions + 新 continuation + timeoutMs
+```
+
+真实样本 `timeoutMs=10000`；客户端 clamp 到 2–30 秒。
+
+#### 3.10.4 字段与限制
+
+| 字段 | 来源 | 结论 |
+| --- | --- | --- |
+| 消息 ID | `renderer.id` | 稳定，`ext:<id>` 去重 |
+| 时间 | `timestampUsec` | 微秒 → epoch ms（BigInt） |
+| 昵称 | `authorName.simpleText` / `content` | 有 |
+| Channel ID | `authorExternalChannelId` | 聊天/SC 有；新版 gift 无 |
+| 正文 | `message.runs` | 原文 + Unicode Emoji；自定义表情用 `:code:` 文本回退 |
+| badge | `authorBadges` | owner/moderator/verified/member；保留 label |
+| SC 金额 | `purchaseAmountText.simpleText` | 只有格式化字符串；仅在币种可确认时换算 |
+| gift | `giftMessageViewModel` | 有 ID/文本/礼物图，但无 Channel ID、无价格 |
+| 会员 | `liveChatMembershipItemRenderer` | 结构已映射，真实未观测 |
+| Sticker | `liveChatPaidStickerRenderer` | 结构已映射，真实未观测 |
+
+#### 3.10.5 真实采样（2026-11-08）
+
+| 房间 | 时长 | 事件 | chat | 经济 | 稳定 Channel ID | badge | 错误 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `FKLZiufsCk0` | 35s | 86 | 85 | 1 SC `HK$2,000.00` → HKD 200000 | 86/86（100%） | 49 | 0 |
+| `gXawf8GZDI8` | 35s | 100 | 87 | 13 gift（金额未知） | chat 87/87；gift 0/13 | 3 | 0 |
+
+- 两场均 0 重复、0 失败、`pollCount=3`。
+- 未观测到 Super Sticker / 会员 / 赠送会员。
+- 没有官方凭据，未做官方并排对照。
+
+#### 3.10.6 稳定性
+
+- continuation 每页更新；400/`failedPrecondition` → 重开 live_chat；重复消息由 `external_id` 去重。
+- 429 → 至少 30 秒退避；网络/5xx → 1→60 秒指数退避；连续 8 次失败才停止并保存。
+- 每 60 秒检查 watch 页；直播结束后自动结束场次。
+- 相邻消息时间跳变 > 90 秒记 `gapSuspected`；UI 只说“可能漏消息”。
+- 不把短暂网络错误当直播结束；不无限重试。
+
+#### 3.10.7 条款与保留
+
+- YouTube ToS 禁止自动化访问 Service、规避限制、收集可识别个人信息；本路径很可能冲突。
+- 因此 UI 默认官方；实验模式必须显式启用，并在界面显示风险。
+- `youtubeRawRetentionDays` 上限从 3650 收紧为 30；清理原文、emotes、badges、amount_display 和过期昵称。
+- 稳定 Channel ID、计数、金额合计仍保留；不等于完全删除个人数据。
+- 研究、许可证与完整政策分析见 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`。
+
+#### 3.10.8 复现
+
+```bat
+node scripts/verify-youtube-anonymous.mjs https://www.youtube.com/live/<VIDEO_ID> 35
 ```
 
 ## 4. 统一事件模型
@@ -319,7 +404,7 @@ is_paid, source_quality, dedupe_key
 | 项目 | 处理 |
 | --- | --- |
 | 依据 | YouTube API Services Developer Policies III.E.4.c / III.E.4.d：Authorized Data 与其他数据保存不超过 30 个日历日 |
-| 默认窗口 | 30 天（`settings.youtubeRawRetentionDays`，1–3650，可在设置 JSON 调整） |
+| 默认窗口 | 30 天（`settings.youtubeRawRetentionDays`，1–30，可在设置 JSON 调整；最大 30） |
 | 触发 | 应用启动；YouTube 场次结束；`POST /api/youtube/retention/apply`（面板按钮） |
 | 清理内容 | `events.content`、`events.emotes`，并写 `content_purged_at` |
 | 保留内容 | 行、计数、观众身份、昵称历史、币种合计、AI 包记录 |

@@ -60,7 +60,9 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `youtube-oauth.test.mjs` | PKCE S256、授权 URL 参数、state 常量时间比较、本地化回调页无外部资源、回环接收器只接受指定路径、拒绝授权、code 交换与刷新错误映射、完整登录流程、state 不匹配、未配置拒绝、过期令牌 → `expired` |
 | `youtube-token-store.test.mjs` | 加密往返、明文不落盘、`status()` 不含令牌、频道信息更新、空凭据拒绝、篡改检测、退出删除 |
 | `youtube-adapter.test.mjs` | 非直播拒绝、分页与轮询间隔、`offlineAt` 结束、网络错误重连不结束、配额守卫、停止后不再请求 |
-| `youtube-retention.test.mjs` | 天数钳制、只清理过期 YouTube 原文、Bilibili 不动、金额/计数/身份保留、`app_meta` 记录 |
+| `youtube-retention.test.mjs` | 天数钳制（最大 30）、只清理过期 YouTube 原文、Bilibili 不动、金额/计数/身份保留、badges/amount_display 清理、过期昵称清理、`app_meta` 记录 |
+| `youtube-anonymous-parser.test.mjs` | 真实页面/续页结构、显式/裸 `$`/`¥` 币种、格式化金额、Unicode/自定义表情、badges、watch 状态、gift 无身份、会员不猜价格 |
+| `youtube-anonymous-adapter.test.mjs` | continuation 失效重开、网络错误退避恢复、不结束场次、匿名快照 |
 | `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
 
 ### 3.2 集成
@@ -70,16 +72,17 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
 | `migration-emotes.test.mjs` | v1 旧库（无 `emotes`、无 `platform_started_at`）升级到 v3；旧消息保留且 `emotes=NULL`；升级后可写表情 |
 | `youtube-session.test.mjs` | 本地假 YouTube API 的端到端：匿名 API Key 模式、直播定位、普通视频 409、非法链接零请求、连接 → 8 条事件入库（含重复消息去重）、多币种分账、按 channelId 建档案、赠送会员接收者不计付费、停止后进入历史、手动保留清理 |
+| `youtube-anonymous-session.test.mjs` | 本地假公开网页：默认官方、显式切匿名、watch/chat 检查、SC `HK$`、gift 无 Channel ID、badge、会员/Sticker、重复与 ticker 去重、自动结束、30 天上限 |
 | `api.test.mjs` | health/bootstrap、CSP、设置校验与持久化、模拟记录、事件列表、重复开始 409、停止、历史与详情、分析包下载与校验和、观众列表/档案/关注、SSE、Host/Origin/路径穿越/404、runtime 文件、重启后设置保持 |
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
 
-## 4. 本轮结果（2026-11-08，v0.2.0）
+## 4. 本轮结果（2026-11-08，v0.3.0）
 
 ```text
-tests 259
-pass  259
+tests 287
+pass  287
 fail  0
-duration ≈ 6.5s
+duration ≈ 17.7s
 ```
 
 无跳过、无 todo。
@@ -100,19 +103,22 @@ duration ≈ 6.5s
 | 明亮/黑暗/跟随系统 | 截图 + 设置持久化测试 | ✅ |
 | 中文/日语界面 | 截图 | ✅ |
 | 390px 响应式 | 截图 | ✅ 无横向溢出 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.1 MB，SHA-256 `8af88e25…`，92 个资源文件 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.2 MB，SHA-256 `9d586aa9…`，97 个资源文件 |
 | EXE 普通权限完整启动 | `scripts/verify-exe.mjs` | ✅ 9/9 场景通过，0 失败 |
-| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=3、version=0.2.0、`/api/youtube/status` 未配置状态清晰、`live.js` 含 YouTube 入口 |
+| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=4、version=0.3.0、匿名模式真实入库 72 条事件、72/72 Channel ID、0 错误（最终样本无付费事件） |
 | EXE 端到端表情导出 | EXE 内模拟记录 42 条 → 导出包 | ✅ 2 条平台表情消息、`emote_refs` 正确、manifest `messages_with_emotes=2`、`emote_kinds=1` |
-| YouTube 本地端到端 | 假 API + `startServer` | ✅ 连接 → 8 条事件 → 4 条消息 / 5 个付费事件 → 多币种 → 历史 |
-| YouTube 界面 | 无头 Edge 截图 | ✅ 明亮/黑暗/390px/录制中/未配置 5 张 |
+| YouTube 官方本地端到端 | 假 API + `startServer` | ✅ 连接 → 8 条事件 → 4 条消息 / 5 个付费事件 → 多币种 → 历史 |
+| YouTube 匿名本地端到端 | 假网页 + `startServer` | ✅ 5 条事件、SC HKD、gift 无身份、badge、自动结束 |
+| YouTube 匿名真实房间 A | `FKLZiufsCk0` 35 秒 | ✅ 86 事件、86/86 Channel ID、1 HKD SC、49 badge、0 错误 |
+| YouTube 匿名真实房间 B | `gXawf8GZDI8` 35 秒 | ✅ 100 事件、chat 87/87 Channel ID、13 gift 无身份/金额、3 badge、0 错误 |
+| YouTube 界面 | Headless Chrome + DevTools | ✅ 未配置/实验模式/黑暗/录制中/390px/设置页 6 张 |
 
 ## 6. 尚未验证（必须如实保留）
 
 1. 真实 Ctrl+C 优雅退出（自动化无法发送控制台信号）。
 2. 干净 Windows 10/11 虚拟机（非管理员、无 Node）。
 3. EXE 代码签名/杀毒误报。
-4. **YouTube 真实 Live Chat API**：链路已实现并用本地假 API 验证，但**没有真实 Google 凭据**，因此没有真实直播采样、真实消息条数、真实稳定身份比例。
+4. **YouTube 官方 Live Chat API**：链路已实现并用本地假 API 验证，但**没有真实 Google 凭据**，因此没有官方路径的真实直播采样、真实消息条数、真实稳定身份比例。
 5. YouTube 真实 OAuth：同意屏、refresh token 过期（Testing 应用 7 天）、未验证应用 100 用户上限均未在线验证。
 6. YouTube 真实断网 / 配额耗尽的长时行为（只有逻辑分支测试）。
 7. 跨电脑备份迁移（M5）。
@@ -121,6 +127,8 @@ duration ≈ 6.5s
 10. 多显示器 / 高 DPI 控制台字体。
 11. Bilibili 其他房间、全局表情、粉丝牌表情、动态表情图片；`dm_v2` 解码。
 12. 礼物 / SC / 大航海真实事件字段复核。
+13. **YouTube 匿名网页接口**：只做了两个房间各 35 秒；未验证数小时长直播、真实 429/验证码/consent/age wall、不同地区币种、Super Sticker/会员/赠送会员。
+14. **匿名路径条款合规**：未取得 YouTube 书面许可或法务结论；不得把“技术可用”描述为“允许使用”。
 
 ## 7. M3 起需补充的测试
 
@@ -162,3 +170,18 @@ duration ≈ 6.5s
 | 保留清理 | `pendingPurge=0`，`app_meta['retention.lastRun']` 已写入 |
 
 真实环境仍需补测：真实消息条数、真实身份完整率、真实 Super Chat / 会员样本、真实断网与配额行为。**在拿到开发者凭据之前，这些数字不能填写。**
+
+## 10. YouTube 匿名网页聊天真实采样（2026-11-08）
+
+> 来源：`scripts/verify-youtube-anonymous.mjs`，真实公开直播，无 Cookie / 无 OAuth / 无用户 API Key。只打印聚合，不打印正文或昵称。
+
+| 房间 | 时长 | actions | 事件 | chat | 经济 | 稳定 Channel ID | badge | 错误/重复 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `FKLZiufsCk0` | 35s | 92 | 86 | 85 | 1 SC `HK$2,000.00` → HKD 200000 | 86/86（100%） | 49 | 0 / 0 |
+| `gXawf8GZDI8` | 35s | 103 | 100 | 87 + 13 gift | 13 gift，金额未知 | chat 87/87；gift 0/13 | 3 | 0 / 0 |
+
+- `pollCount=3`，`failures=0`，`endReason=null`；手动停止后场次 `ended`。
+- 未观测到 Super Sticker、会员里程碑、赠送会员；这些只有结构化测试，不是真实样本。
+- 重连没有在真实环境触发；`youtube-anonymous-adapter.test.mjs` 模拟 continuation 失效与网络错误，确认不结束场次。
+- 无官方凭据，**未完成**官方 API 并排对照。
+- 兼容性：该接口不是官方 API，可能违反 YouTube ToS；详见 `YOUTUBE_ANONYMOUS_RESEARCH.md`。

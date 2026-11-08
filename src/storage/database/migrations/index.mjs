@@ -168,6 +168,17 @@ export const MIGRATIONS = Object.freeze([
       // user started recording. Used to show time relative to the stream.
       db.exec('ALTER TABLE sessions ADD COLUMN platform_started_at INTEGER');
     }
+  },
+  {
+    version: 4,
+    name: 'event-badges-and-amount-display',
+    up(db) {
+      // Confirmed author badges (owner/moderator/verified/member) and the raw
+      // money string as displayed by the platform. The latter is kept alongside
+      // the parsed integer amount so an ambiguous symbol can be audited later.
+      db.exec('ALTER TABLE events ADD COLUMN badges TEXT');
+      db.exec('ALTER TABLE events ADD COLUMN amount_display TEXT');
+    }
   }
 ]);
 

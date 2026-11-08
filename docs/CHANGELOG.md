@@ -1,5 +1,54 @@
 # 版本变化（CHANGELOG）
 
+## 0.3.0 — 2026-11-08（YouTube 免登录实验接入与真实双房间验证）
+
+### 新增
+
+- **YouTube 免登录公开网页聊天（实验性，默认关闭）**
+  - 新增 `src/platforms/youtube/anonymous/`：watch 页、`live_chat` 页、`get_live_chat` continuation、actions 解析。
+  - 不发送 Cookie、OAuth token 或用户 API Key；只用公开页面自身的 client context 与 Web key。
+  - 真实字段：`external_id`、`timestampUsec`、`authorName`、`authorExternalChannelId`、`authorBadges`、`message.runs`、`purchaseAmountText`、`giftMessageViewModel`。
+  - 文字、Unicode Emoji、自定义表情代码、badge、Super Chat、Super Sticker、会员、gift 映射到现有 canonical event。
+  - Continuation 更新、400/`failedPrecondition` 重开、429/网络退避、60 秒直播状态检查、自动结束。
+  - 相邻消息时间跳变 > 90 秒标记 `gapSuspected`，UI 只说“可能漏消息”。
+
+- **稳定身份与金额**
+  - 聊天/SC 使用 `youtube:<channelId>`；新版 gift 无 Channel ID 时 `viewer_uid=null`，不按昵称合并。
+  - 格式化金额仅在币种可确认时解析；沿用整数最小单位；保留 `amount_display` 原文；无法确认则金额未知。
+  - 会员等级、gift 数量、赠送会员不换算金额。
+  - ticker 展示不产生事件，避免 Super Chat 重复累计。
+
+- **schema v4**
+  - `events.badges TEXT`：owner/moderator/verified/member，可空。
+  - `events.amount_display TEXT`：平台显示金额字符串，可空。
+  - v1→v4 迁移测试；旧行为 NULL。
+
+- **保留策略收紧**
+  - `youtubeRawRetentionDays` 从 1–3650 改为 **1–30**，默认 30。
+  - 清理原文、emotes、badges、amount_display 与过期 YouTube 昵称历史/当前昵称。
+  - 保留计数、稳定 Channel ID 与金额合计；明确不等于完全删除个人数据。
+
+- **界面**
+  - 默认官方模式；无官方凭据时显示真实原因与“启用免登录实验模式”按钮。
+  - 实验模式 warning：非官方接口、可能违反 YouTube ToS、可能随时失效。
+  - 设置页新增 YouTube 接入卡；高级设置可切换官方/实验模式。
+  - 动态流显示 badge；录制页显示实验模式、消息数与可能漏消息提示。
+  - 三语、明亮/黑暗/跟随系统、390px 响应式。
+
+- **测试与验证**
+  - 自动化测试 259 → **287**；新增匿名 parser、adapter 重连、HTTP 集成、v1→v4 迁移、retention badge/nickname、settings 模式。
+  - 真实房间 `FKLZiufsCk0` 35 秒：86 事件、86/86 Channel ID、1 笔 HKD 200000 SC、49 badge、0 错误。
+  - 真实房间 `gXawf8GZDI8` 35 秒：100 事件、chat 87/87 Channel ID、13 gift（无身份/金额）、3 badge、0 错误。
+  - EXE 90.2 MB，SHA-256 `9d586aa9…`，`verify-exe.mjs` 9/9；EXE 内真实匿名 72 条事件、72/72 Channel ID、0 错误。
+
+### 尚未包含 / 未验证
+
+- **匿名路径合规未确认，且很可能违反 YouTube ToS**；因此不是默认功能，正式发布前必须评估/取得许可。
+- 官方 API 真实凭据下的直播采样与并排对照仍未完成。
+- Super Sticker、会员、赠送会员没有真实匿名样本。
+- 真实 429、验证码、consent/age wall、长时断网、数小时直播未验证。
+- 30 天清理不等同于完全删除个人数据；严格删除模式未实现。
+
 ## 0.2.0 — 2026-11-08（YouTube Live 接入；并包含上一轮的表情兼容与 AI 分析中心通用化）
 
 ### 新增（本轮：YouTube Live）

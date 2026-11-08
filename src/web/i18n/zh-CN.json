@@ -109,7 +109,12 @@
       "membershipLabel": "会员",
       "anonymous": "未识别观众",
       "paid": "付费",
-      "emoteFallback": "平台表情：{name}"
+      "emoteFallback": "平台表情：{name}",
+      "badgeOwner": "主播",
+      "badgeModerator": "管理员",
+      "badgeVerified": "已验证",
+      "badgeMember": "会员",
+      "badgeUnknown": "身份标记"
     },
     "top": {
       "title": "最活跃观众",
@@ -157,7 +162,7 @@
       "loginScanHint": "用 Bilibili 手机客户端（App）扫描下方二维码，并在手机上确认登录。二维码只在本地生成，不会打开外部网页。",
       "loginQrUnavailable": "无法生成二维码，请刷新页面后重试。",
       "youtubeIntro": "粘贴正在直播的 YouTube 链接或视频 ID 即可开始记录。只支持直播，不抓取普通视频与评论。",
-      "youtubeModeAnonymous": "公开直播模式：使用应用级 API Key 读取公开聊天，无需登录",
+      "youtubeModeAnonymous": "免登录网页聊天（实验性）",
       "youtubeModeOAuth": "已使用 Google 账号登录",
       "youtubeModeNone": "尚未配置",
       "youtubeNotConfiguredTitle": "YouTube 接入尚未配置",
@@ -191,7 +196,7 @@
       "youtubeQuota": "API 配额",
       "youtubeQuotaValue": "已用 {used} / {limit} 单位",
       "youtubePolicyTitle": "YouTube 数据保存",
-      "youtubePolicyBody": "YouTube 官方政策限制公开聊天数据的保存期限。聊天原文会在 {days} 天后自动清理；发言计数、观众身份与经济支持统计保留。",
+      "youtubePolicyBody": "YouTube 开发者政策限制公开聊天数据的保存期限。聊天原文、表情/身份标记元数据和过期昵称会在 {days} 天后清理（最多 30 天）；消息计数、稳定 Channel ID 与经济支持合计仍会保留。",
       "youtubeApplyRetention": "立即清理过期原文",
       "youtubeRetentionApplied": "已清理 {count} 条过期原文",
       "youtubeConnection": "直播连接",
@@ -199,7 +204,28 @@
       "youtubeConnectionReconnecting": "网络中断，正在重连…",
       "youtubeConnectionError": "连接异常",
       "youtubeHotness": "当前观看 {n}",
-      "youtubeAutoEnded": "直播已结束，记录已保存"
+      "youtubeAutoEnded": "直播已结束，记录已保存",
+      "youtubeModeLabel": "接入方式",
+      "youtubeCaptureModeTitle": "YouTube 接入方式",
+      "youtubeModeOfficial": "官方 Data API（推荐）",
+      "youtubeModeOfficialHint": "使用官方 Data API：需要开发者一次性配置 API Key 或 Google OAuth，稳定且符合平台文档。",
+      "youtubeModeAnonymousHint": "直接读取公开直播网页使用的聊天接口；无需 API Key、无需 Google 登录，但不是官方公开接口，可能随时失效。",
+      "youtubeModeWarningTitle": "实验性方式，非官方接口",
+      "youtubeModeWarningBody": "该方式绕过官方 Data API，属于未公开的网页客户端接口，可能与 YouTube 服务条款冲突，也可能因平台改动突然停止。LiveMemory 不把它作为默认方式，也不保证长期可用。开启即表示你理解并自行承担风险。",
+      "youtubeUseAnonymous": "启用免登录实验模式",
+      "youtubeBackToOfficial": "切换到官方模式",
+      "youtubeExperimentalBadge": "实验性 · 免登录",
+      "youtubeOfficialUnconfiguredTitle": "此构建没有官方 YouTube 凭据",
+      "youtubeOfficialUnconfiguredBody": "官方方式需要开发者一次性配置 API Key 或 OAuth。普通用户无需自己申请；但当前构建未包含该配置。你可以改用下面的实验性免登录方式。",
+      "youtubeAnonymousChecked": "公开聊天无需账号即可读取",
+      "youtubeAnonymousStats": "无需 API Key · 不消耗官方配额 · 非官方接口",
+      "youtubeAnonymousIdentityNote": "匿名接口通常提供真实 Channel ID；若某条消息缺失，LiveMemory 不会用昵称伪造身份。",
+      "youtubeMoneyNote": "Super Chat 只提供格式化金额文本（例如 HK$2,000.00）。LiveMemory 仅在币种可确认时换算；否则金额记为未知，并保留原始显示文本。",
+      "youtubeConnectionAnonymous": "实验性网页聊天",
+      "youtubeAnonymousUnavailable": "实验性免登录聊天暂时不可用。请稍后重试，或改用官方 API。",
+      "youtubeAdvanced": "高级设置",
+      "youtubeModeSwitched": "接入方式已切换",
+      "youtubePossibleGaps": "可能漏消息 {n} 次"
     }
   },
   "history": {
@@ -382,7 +408,17 @@
       "theme": "主题"
     },
     "saved": "设置已保存",
-    "saving": "正在保存…"
+    "saving": "正在保存…",
+    "youtube": {
+      "title": "YouTube 接入",
+      "desc": "选择 YouTube 直播聊天的获取方式。官方 Data API 是推荐路径；免登录网页聊天仅用于无法配置凭据时的实验性使用。",
+      "official": "官方 Data API",
+      "officialDesc": "使用 API Key 或 Google OAuth，符合 YouTube 官方文档。需要开发者一次性配置。",
+      "anonymous": "免登录网页聊天（实验性）",
+      "anonymousDesc": "无需 API Key 或 Google 登录，直接读取公开直播的网页聊天。未公开接口，可能失效或与平台条款冲突。",
+      "warning": "实验性方式不是官方 API，LiveMemory 不保证其可用性，也不把它作为默认方式。",
+      "note": "切换只影响之后开始的记录；已经入库的事件不会被改写。"
+    }
   },
   "errors": {
     "generic": "出现了问题，请再试一次。",
@@ -425,7 +461,13 @@
     "youtubeLoginDenied": "你在 Google 页面拒绝了授权。",
     "youtubeLoginTimeout": "等待授权超时，请重新登录。",
     "youtubeLoginFailed": "授权结果无效，请重新登录。",
-    "youtubeClientInvalid": "OAuth 客户端配置无效，请联系维护者。"
+    "youtubeClientInvalid": "OAuth 客户端配置无效，请联系维护者。",
+    "youtubeWebNetwork": "无法读取 YouTube 直播网页。请检查网络后重试。",
+    "youtubeWebBlocked": "YouTube 暂时限制了网页请求。请降低频率、稍后重试，或改用官方 API。",
+    "youtubeWebProtocol": "YouTube 网页聊天的响应结构已变化，当前版本无法解析。请改用官方 API 或等待更新。",
+    "youtubeWebStale": "聊天续页已失效，正在尝试重新连接。",
+    "youtubeWebRestricted": "YouTube 要求登录或限制了该直播的网页访问。LiveMemory 不会绕过登录。",
+    "youtubeWebNotConfigured": "实验性免登录模式未启用。"
   },
   "toast": {
     "saved": "已保存",

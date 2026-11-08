@@ -267,90 +267,128 @@ export const livePage = {
     /**
      * YouTube panel.
      *
-     * The streamer never sees developer configuration: either the build can read
-     * public chat anonymously with an application key, or one click signs the
-     * streamer in with Google (system browser + loopback callback). When neither
-     * is available the panel says so instead of failing later.
+     * The simple path is: paste a live link → check → record. The official Data
+     * API is recommended and is the default. The anonymous web client is shown
+     * only after an explicit, clearly labelled opt-in because it is
+     * undocumented and may conflict with YouTube's terms. No API key or Google
+     * account is requested for the anonymous path.
      */
     function buildYouTubePanel() {
       const panel = el('div', {className: 'source-panel'});
       panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeIntro')}));
 
       const status = youtubeStatus;
-      if (!status || status.configured === false) {
+      if (!status) {
         panel.append(el('div', {className: 'source-status'}, chip(t('live.source.youtubeModeNone'), 'neutral')));
-        panel.append(el('div', {className: 'source-status', text: t('live.source.youtubeNotConfiguredTitle')}));
-        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeNotConfiguredBody')}));
+        panel.append(el('p', {className: 'source-note', text: t('errors.youtubeWebProtocol')}));
         return panel;
       }
 
+      const mode = status.captureMode === 'anonymous' ? 'anonymous' : 'official';
+      const officialConfigured = status.officialConfigured === true || status.configured === true;
       const signedIn = status.login?.signedIn === true;
-      const apiKeyMode = status.authMode === 'api-key';
       const expired = status.login?.state === 'expired';
-      const statusText = signedIn
-        ? t('live.source.youtubeLoginSignedIn', {name: status.login?.channel?.title || 'Google'})
-        : (apiKeyMode ? t('live.source.youtubeModeAnonymous') : (status.oauthConfigured
-          ? t('live.source.youtubeLoginSignedOut')
-          : t('live.source.youtubeModeNone')));
 
-      const actions = [];
-      if (signedIn) {
-        actions.push(el('button', {
+      if (mode === 'anonymous') {
+        panel.append(el('div', {className: 'source-status'},
+          chip(t('live.source.youtubeExperimentalBadge'), 'neutral'),
+          chip(t('live.source.youtubeAnonymousChecked'), 'accent')));
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          el('div', {},
+            el('div', {className: 'callout-title', text: t('live.source.youtubeModeWarningTitle')}),
+            el('div', {text: t('live.source.youtubeModeWarningBody')}))));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeAnonymousStats')}));
+        const switchButton = el('button', {
           className: 'button button--ghost button--small',
           type: 'button',
-          text: t('live.source.youtubeLogout'),
-          onClick: (event) => logoutYouTube(event.currentTarget)
-        }));
-      } else if (status.oauthConfigured) {
-        actions.push(el('button', {
-          className: 'button button--secondary button--small',
-          type: 'button',
-          text: expired ? t('live.source.youtubeReLogin') : t('live.source.youtubeLoginButton'),
-          onClick: (event) => startYouTubeLogin(event.currentTarget)
-        }));
-      }
+          text: t('live.source.youtubeBackToOfficial'),
+          onClick: (event) => setYoutubeMode('official', event.currentTarget)
+        });
+        panel.append(el('div', {className: 'hero-actions', style: {marginTop: '8px'}}, switchButton));
+      } else if (!officialConfigured) {
+        panel.append(el('div', {className: 'source-status'}, chip(t('live.source.youtubeModeNone'), 'neutral')));
+        panel.append(el('div', {className: 'source-status', text: t('live.source.youtubeOfficialUnconfiguredTitle')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeOfficialUnconfiguredBody')}));
+        panel.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+          el('button', {
+            className: 'button button--secondary',
+            type: 'button',
+            text: t('live.source.youtubeUseAnonymous'),
+            onClick: (event) => setYoutubeMode('anonymous', event.currentTarget)
+          })));
+      } else {
+        const statusText = signedIn
+          ? t('live.source.youtubeLoginSignedIn', {name: status.login?.channel?.title || 'Google'})
+          : (status.authMode === 'api-key'
+            ? t('live.source.youtubeModeAnonymous')
+            : (status.oauthConfigured
+              ? t('live.source.youtubeLoginSignedOut')
+              : t('live.source.youtubeModeNone')));
 
-      panel.append(el('div', {className: 'source-row'},
-        el('div', {className: 'field', style: {flex: '1 1 240px'}},
-          el('span', {className: 'label', text: t('live.source.youtubeLoginTitle')}),
-          el('div', {className: 'source-status'},
-            expired ? chip(t('live.source.youtubeLoginExpired'), 'neutral') : null,
-            el('span', {text: statusText}))),
-        actions.length ? el('div', {className: 'source-row-actions'}, ...actions) : null));
+        const actions = [];
+        if (signedIn) {
+          actions.push(el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.youtubeLogout'),
+            onClick: (event) => logoutYouTube(event.currentTarget)
+          }));
+        } else if (status.oauthConfigured) {
+          actions.push(el('button', {
+            className: 'button button--secondary button--small',
+            type: 'button',
+            text: expired ? t('live.source.youtubeReLogin') : t('live.source.youtubeLoginButton'),
+            onClick: (event) => startYouTubeLogin(event.currentTarget)
+          }));
+        }
+
+        panel.append(el('div', {className: 'source-row'},
+          el('div', {className: 'field', style: {flex: '1 1 240px'}},
+            el('span', {className: 'label', text: t('live.source.youtubeLoginTitle')}),
+            el('div', {className: 'source-status'},
+              expired ? chip(t('live.source.youtubeLoginExpired'), 'neutral') : null,
+              el('span', {text: statusText}))),
+          actions.length ? el('div', {className: 'source-row-actions'}, ...actions) : null));
+
+        if (status.oauthConfigured && status.authMode !== 'api-key') {
+          panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeLoginHint')}));
+        }
+      }
 
       ytHintHost = el('div', {className: 'source-status', text: ytHintText});
       panel.append(ytHintHost);
 
-      if (status.oauthConfigured && !apiKeyMode) {
-        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeLoginHint')}));
+      if (mode === 'anonymous' || officialConfigured) {
+        const input = el('input', {
+          className: 'input',
+          attrs: {
+            type: 'text',
+            placeholder: t('live.source.youtubeLinkPlaceholder'),
+            'aria-label': t('live.source.youtubeLinkLabel'),
+            spellcheck: 'false'
+          }
+        });
+        input.value = checkedVideo?.input ?? '';
+        refs.ytInput = input;
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+          el('label', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.youtubeLinkLabel')}),
+            input),
+          el('button', {
+            className: 'button button--secondary',
+            type: 'button',
+            text: t('live.source.youtubeCheck'),
+            onClick: (event) => checkYouTube(event.currentTarget)
+          })));
+
+        if (checkedVideo) panel.append(buildVideoMeta(checkedVideo));
       }
 
-      const input = el('input', {
-        className: 'input',
-        attrs: {
-          type: 'text',
-          placeholder: t('live.source.youtubeLinkPlaceholder'),
-          'aria-label': t('live.source.youtubeLinkLabel'),
-          spellcheck: 'false'
-        }
-      });
-      input.value = checkedVideo?.input ?? '';
-      refs.ytInput = input;
-      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
-        el('label', {className: 'field', style: {flex: '1 1 320px'}},
-          el('span', {className: 'label', text: t('live.source.youtubeLinkLabel')}),
-          input),
-        el('button', {
-          className: 'button button--secondary',
-          type: 'button',
-          text: t('live.source.youtubeCheck'),
-          onClick: (event) => checkYouTube(event.currentTarget)
-        })));
-
-      if (checkedVideo) panel.append(buildVideoMeta(checkedVideo));
-
-      const quota = status.quota;
-      if (quota) {
+      if (mode === 'anonymous') {
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeAnonymousIdentityNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeMoneyNote')}));
+      } else if (status.quota) {
+        const quota = status.quota;
         panel.append(el('p', {
           className: 'source-note',
           text: `${t('live.source.youtubeQuota')}: ${t('live.source.youtubeQuotaValue', {
@@ -372,7 +410,44 @@ export const livePage = {
             onClick: (event) => applyYouTubeRetention(event.currentTarget)
           })));
       }
+
+      panel.append(buildYoutubeAdvanced(mode));
       return panel;
+    }
+
+    function buildYoutubeAdvanced(mode) {
+      const select = el('select', {className: 'input', attrs: {'aria-label': t('live.source.youtubeCaptureModeTitle')}},
+        el('option', {value: 'official', text: t('live.source.youtubeModeOfficial')}),
+        el('option', {value: 'anonymous', text: t('live.source.youtubeModeAnonymous')}));
+      select.value = mode;
+      select.addEventListener('change', async () => {
+        if (select.value === mode) return;
+        await setYoutubeMode(select.value, select, {silent: false});
+      });
+      return el('details', {className: 'advanced-settings', style: {marginTop: '16px'}},
+        el('summary', {text: t('live.source.youtubeAdvanced')}),
+        el('div', {style: {marginTop: '10px'}},
+          el('span', {className: 'label', text: t('live.source.youtubeCaptureModeTitle')}),
+          select,
+          el('p', {className: 'source-note', text: mode === 'anonymous'
+            ? t('live.source.youtubeModeWarningBody')
+            : t('live.source.youtubeModeOfficialHint')})));
+    }
+
+    async function setYoutubeMode(mode, button, {silent = false} = {}) {
+      if (!['official', 'anonymous'].includes(mode)) return;
+      if (button) button.disabled = true;
+      try {
+        await api.patch('/api/settings', {youtubeCaptureMode: mode});
+        await refreshYoutubeStatus();
+        checkedVideo = null;
+        ytHintText = '';
+        renderSource();
+        if (!silent) ctx.toast(t('live.source.youtubeModeSwitched'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        if (button) button.disabled = false;
+      }
     }
 
     function videoReasonText(reason) {
@@ -384,7 +459,13 @@ export const livePage = {
         YOUTUBE_CHAT_DISABLED: 'errors.youtubeChatDisabled',
         YOUTUBE_CHAT_NOT_FOUND: 'errors.youtubeChatUnavailable',
         YOUTUBE_AUTH_REQUIRED: 'errors.youtubeAuthRequired',
-        YOUTUBE_QUOTA_EXCEEDED: 'errors.youtubeQuota'
+        YOUTUBE_QUOTA_EXCEEDED: 'errors.youtubeQuota',
+        YOUTUBE_WEB_NETWORK: 'errors.youtubeWebNetwork',
+        YOUTUBE_WEB_BLOCKED: 'errors.youtubeWebBlocked',
+        YOUTUBE_WEB_PROTOCOL: 'errors.youtubeWebProtocol',
+        YOUTUBE_WEB_STALE: 'errors.youtubeWebStale',
+        YOUTUBE_WEB_RESTRICTED: 'errors.youtubeWebRestricted',
+        YOUTUBE_WEB_NOT_CONFIGURED: 'errors.youtubeWebNotConfigured'
       }[reason];
       return key ? t(key) : null;
     }
@@ -396,6 +477,7 @@ export const livePage = {
       else if (video.state === 'upcoming') head.append(chip(t('live.source.youtubeUpcoming'), 'neutral'));
       else if (video.state === 'ended') head.append(chip(t('live.source.youtubeEnded'), 'neutral'));
       else head.append(chip(t('live.source.youtubeNotLive'), 'neutral'));
+      if (video.mode === 'anonymous') head.append(chip(t('live.source.youtubeExperimentalBadge'), 'neutral'));
       if (video.title) head.append(el('span', {className: 'row-title-text', text: video.title}));
       meta.append(head);
 
@@ -530,7 +612,8 @@ export const livePage = {
       button.disabled = true;
       button.textContent = t('live.source.youtubeChecking');
       try {
-        const result = await api.post('/api/youtube/video', {url});
+        const mode = youtubeStatus?.captureMode === 'anonymous' ? 'anonymous' : 'official';
+        const result = await api.post('/api/youtube/video', {url, mode});
         checkedVideo = result.video;
         renderSource();
       } catch (error) {
@@ -545,7 +628,8 @@ export const livePage = {
       button.disabled = true;
       button.textContent = t('live.source.youtubeStarting');
       try {
-        await api.post('/api/youtube/connect', {url: checkedVideo.input});
+        const captureMode = youtubeStatus?.captureMode === 'anonymous' ? 'anonymous' : 'official';
+        await api.post('/api/youtube/connect', {url: checkedVideo.input, mode: captureMode});
         const payload = await api.get('/api/sessions/current');
         summary = payload.session ?? null;
         if (summary) {
@@ -898,11 +982,14 @@ export const livePage = {
             ? t('live.source.youtubeConnectionError')
             : t('live.source.youtubeConnection');
       host.append(chip(stateText, state === 'connected' ? 'live' : 'neutral', {dot: state === 'connected'}));
+      if (connection.mode === 'anonymous') {
+        host.append(chip(t('live.source.youtubeConnectionAnonymous'), 'neutral'));
+      }
       if (Number.isFinite(connection.viewers) && connection.viewers !== null) {
         host.append(chip(t('live.source.youtubeHotness', {n: formatInteger(connection.viewers, ctx.locale)}), 'neutral'));
       }
       const quota = youtubeStatus?.quota;
-      if (quota) {
+      if (quota && connection.mode !== 'anonymous') {
         host.append(el('span', {
           className: 'source-note',
           text: t('live.source.youtubeQuotaValue', {
@@ -910,6 +997,12 @@ export const livePage = {
             limit: formatInteger(quota.limit, ctx.locale)
           })
         }));
+      }
+      if (connection.mode === 'anonymous' && Number.isFinite(connection.detail?.messagesSeen)) {
+        host.append(chip(t('live.stats.messages') + ' ' + formatInteger(connection.detail.messagesSeen, ctx.locale), 'neutral'));
+      }
+      if (connection.mode === 'anonymous' && Number(connection.detail?.gapSuspected) > 0) {
+        host.append(chip(t('live.source.youtubePossibleGaps', {n: connection.detail.gapSuspected}), 'neutral'));
       }
     }
 
@@ -975,7 +1068,13 @@ export const livePage = {
     function feedItem(event) {
       const name = event.displayName || t('live.feed.anonymous');
       const tag = feedTagFor(event.type);
-      const line = el('div', {className: 'feed-line'}, el('span', {className: 'feed-name', text: name}));
+      const badge = Array.isArray(event.badges) && event.badges.length > 0 ? event.badges[0] : null;
+      const badgeLabel = badge
+        ? (badge.label || t(`live.feed.badge${badge.type.charAt(0).toUpperCase()}${badge.type.slice(1)}`))
+        : null;
+      const line = el('div', {className: 'feed-line'},
+        el('span', {className: 'feed-name', text: name}),
+        badgeLabel ? el('span', {className: 'feed-badge', text: badgeLabel}) : null);
       if (event.type === 'gift') {
         line.append(el('span', {className: 'feed-text', text: t('live.feed.giftLabel', {
           name: event.giftName ?? '',

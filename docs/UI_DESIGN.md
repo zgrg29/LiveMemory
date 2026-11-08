@@ -108,19 +108,22 @@
 
 直播记录页的「直播来源」卡片是唯一让用户选择平台的地方，固定三个标签：**模拟直播 / Bilibili 直播 / YouTube 直播**。标签切换不得清空当前正在进行的记录。
 
-YouTube 标签的四种可见状态（全部三语）：
+YouTube 标签的可见状态（全部三语）：
 
 | 状态 | 显示 | 用户可做什么 |
 | --- | --- | --- |
-| 未配置 | 「尚未配置」胶囊 + 标题 + 说明（缺开发者一次性配置，主播无需申请 Key） | 阅读说明；不显示伪造的登录按钮 |
-| 公开直播模式 | 「公开直播模式：使用应用级 API Key 读取公开聊天，无需登录」 | 直接粘贴直播链接 |
-| 未登录（有 OAuth 客户端） | 「未登录」+「登录 Google / YouTube」+ 授权说明 | 点击登录，浏览器打开 Google 官方页 |
-| 已登录 / 已失效 | 「已登录：频道名」或「授权已失效」+ 重新登录 / 退出 | 输入链接或重新授权 |
+| 官方未配置（默认） | 「尚未配置」胶囊 + 真实原因 + 说明官方需要开发者一次性配置 | 阅读说明；可显式点击「启用免登录实验模式」；不显示伪造的登录按钮 |
+| 官方 API Key 模式 | 「公开直播模式：使用应用级 API Key 读取公开聊天，无需登录」 | 直接粘贴直播链接 |
+| 官方 OAuth 未登录 | 「未登录」+「登录 Google / YouTube」+ 授权说明 | 点击登录，浏览器打开 Google 官方页 |
+| 官方已登录 / 已失效 | 「已登录：频道名」或「授权已失效」+ 重新登录 / 退出 | 输入链接或重新授权 |
+| 匿名实验模式 | 「实验性 · 免登录」+ warning callout + 无需 API Key / 无需 Google 登录 | 粘贴链接 → 检查 → 开始；可切回官方 |
 
-- 登录按钮点击后必须先同步打开空白窗口（避免弹窗拦截），拿到授权 URL 后再导航；被拦截时在页面内给出可点击的官方链接，不要求用户复制回调代码。
+- 匿名模式**不是默认**；必须由用户点击按钮或高级设置切换。界面必须同时显示：非官方接口、可能与 YouTube 服务条款冲突、可能随时失效、不保证可用。
+- 匿名模式没有官方配额显示；显示消息数、连接状态与「可能漏消息」诊断。
 - 检查结果用胶囊表达：正在直播（`live`）、尚未开始、已结束、非直播、聊天关闭；不可记录时说明原因，不显示开始按钮。
-- 面板底部固定显示 API 配额（已用/上限）与数据保留说明（天数 + 「立即清理过期原文」）。
-- 直播进行中，页面头部追加 YouTube 连接状态（已连接 / 网络中断重连）与「当前观看 N」，10 秒轮询一次，不承担高频请求。
+- 官方面板底部显示 API 配额（已用/上限）与数据保留说明（天数 + 「立即清理过期原文」）。
+- 直播进行中，页面头部追加 YouTube 连接状态（已连接 / 网络中断重连 / 连接失败）、模式胶囊与「当前观看 N」（官方有数据时），10 秒轮询一次，不承担高频请求。
+- 动态流显示平台确认的 badge 文本；没有 badge 不占位。
 
 ## 8. 主题行为
 
@@ -159,10 +162,16 @@ YouTube 标签的四种可见状态（全部三语）：
 - `docs/screenshots/ai-light-zh-CN.png`（1440×1200，明亮中文 AI 分析中心与任务说明）
 - `docs/screenshots/ai-dark-ja.png`（1440×1200，黑暗日语 AI 分析中心）
 - `docs/screenshots/ai-mobile-light-zh-CN.png`（390×1100，移动端 AI 分析中心）
-- `docs/screenshots/live-youtube-light-zh-CN.png`（1440×1120，YouTube 面板：公开直播模式、链接、配额、保留策略）
-- `docs/screenshots/live-youtube-dark-zh-CN.png`（1440×1120，同一页面的黑暗主题独立设计）
+- `docs/screenshots/live-youtube-light-zh-CN.png`（1440×1120，YouTube 官方模式面板）
+- `docs/screenshots/live-youtube-dark-zh-CN.png`（黑暗主题）
 - `docs/screenshots/live-youtube-mobile-light-zh-CN.png`（390×1000，窄屏无横向溢出）
-- `docs/screenshots/live-youtube-recording-zh-CN.png`（录制中：连接状态、当前观看、多币种支持、Super Sticker 与会员动态）
-- `docs/screenshots/live-youtube-unconfigured-zh-CN.png`（未配置状态：说明开发者一次性配置，不显示伪造入口）
+- `docs/screenshots/live-youtube-recording-zh-CN.png`（官方模式录制中）
+- `docs/screenshots/live-youtube-unconfigured-zh-CN.png`（官方未配置状态）
+- `docs/screenshots/live-youtube-anonymous-unconfigured-zh-CN.png`（默认官方未配置 + 实验模式入口）
+- `docs/screenshots/live-youtube-anonymous-light-zh-CN.png`（实验模式 warning + 无需 Key + 链接输入）
+- `docs/screenshots/live-youtube-anonymous-dark-zh-CN.png`（实验模式黑暗主题）
+- `docs/screenshots/live-youtube-anonymous-recording-zh-CN.png`（真实匿名直播：聊天、badge、HKD Super Chat）
+- `docs/screenshots/live-youtube-anonymous-mobile-zh-CN.png`（390×1200，真实匿名直播）
+- `docs/screenshots/settings-youtube-anonymous-zh-CN.png`（设置页 YouTube 接入卡）
 
 尚未在第二台 Windows 设备/真实控制台字体环境下验收。

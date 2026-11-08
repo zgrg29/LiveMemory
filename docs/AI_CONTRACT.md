@@ -62,7 +62,7 @@ result.schema.json     livememory-analysis-result-v1
 {"seq":1,"at":"2026-11-08T10:00:01.000Z","type":"chat","viewer_id":"bilibili:123","name":"昵称","content":"今天太开心了😂❤️"}
 {"seq":2,"at":"...","type":"chat","viewer_id":"bilibili:123","name":"昵称","content":"就这","emote_refs":["bilibili:id:room_5050_96171"]}
 {"seq":3,"at":"...","type":"chat","viewer_id":"bilibili:123","name":"昵称","content":"今天太有意思了","emote_refs":["bilibili:id:room_cat"],"content_ai":"今天太有意思了[平台表情：猫猫鼓掌]"}
-{"seq":4,"at":"...","type":"super_chat","viewer_id":"...","name":"...","content":"...","amount_minor":3000,"currency":"CNY"}
+{"seq":4,"at":"...","type":"super_chat","viewer_id":"...","name":"...","content":"...","amount_minor":3000,"amount_display":"¥30.00","currency":"CNY","badges":[{"type":"member","label":"Member (1 year)"}]}
 {"seq":5,"at":"...","offset_seconds":754,"type":"chat","viewer_id":"youtube:UC_...","name":"...","content":"这个背景音乐好棒 🎵"}
 ```
 
@@ -71,13 +71,17 @@ result.schema.json     livememory-analysis-result-v1
 - `content_ai` 只在原文不足以理解表情时出现：补充平台表情名称，或标记未知表情 `[未知平台表情：emote_id=…]`。原文已包含名称时省略，避免重复。
 - `emote_refs` 引用 `session_context.emote_dictionary`；同一条消息可引用多个表情。
 - `offset_seconds`（2026-11-08 起，可选）：相对**平台直播开始时间**的秒数，只在 `session.broadcast_started_at` 存在时出现（目前是 YouTube）。用于回答「第几分钟在聊什么」。
+- `badges`（2026-11-08 起，可选）：平台确认的 `owner`/`moderator`/`verified`/`member`，来自 `events.badges`。没有 badge 时省略；不得据此推断兴趣或情绪。
+- `amount_display`（2026-11-08 起，可选）：平台显示的原始金额字符串（如 `HK$2,000.00`）。`amount_minor` 是本地可确认时换算的整数最小单位；AI 不得重新计算或推算价格。
 - 上限 20,000 条（M6 实现分批）。
 
 ### 平台字段（YouTube）
 
-- `viewer_id` 形如 `youtube:UC_xxxx`，来自 `authorDetails.channelId` / `authorChannelId.value`，不是昵称。
+- `viewer_id` 形如 `youtube:UC_xxxx`，来自官方 `authorDetails.channelId` / `authorChannelId.value`，或匿名网页的 `authorExternalChannelId`，不是昵称。
 - Super Chat / Super Sticker 只出现在 `session_context.economic_support` 与 `local_stats`，并保留 `currency` + `value_kind=actual`。
+- 匿名网页的 Super Chat 只有格式化金额；`amount_minor` 仅在币种可确认时出现，`amount_display` 保留原文。无法确认时 `amount_minor` 为 `null`、`currency` 为 `null`。
 - 会员事件（新会员、里程碑、赠送/收到赠送）**不在 `messages.jsonl` 中**：它们不是聊天消息，且没有金额；可在 `local_stats.paymentEvents` 与观众上下文中看到计数。
+- 新版 YouTube gift（`giftMessageViewModel`）也不是聊天：它可能没有 Channel ID 与价格，不得推断身份或金额。
 - 未知/缺失身份的消息 `viewer_id` 为 `null`，不得据此建立画像。
 
 ### session_context.json

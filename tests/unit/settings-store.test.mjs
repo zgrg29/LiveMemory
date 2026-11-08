@@ -9,9 +9,11 @@ test('default settings follow the system for language and theme', () => {
   assert.equal(DEFAULT_SETTINGS.locale, 'system');
   assert.equal(DEFAULT_SETTINGS.theme, 'system');
   assert.equal(DEFAULT_SETTINGS.storageMode, 'compact');
+  assert.equal(DEFAULT_SETTINGS.youtubeCaptureMode, 'official');
   assert.equal(normalizeSettings({}).locale, 'system');
   assert.equal(normalizeSettings({locale: 'fr'}).locale, 'system');
   assert.equal(normalizeSettings({theme: 'neon'}).theme, 'system');
+  assert.equal(normalizeSettings({youtubeCaptureMode: 'magic'}).youtubeCaptureMode, 'official');
 });
 
 test('loads an existing settings file and keeps valid preferences', () => {
@@ -62,6 +64,9 @@ test('updates are persisted atomically and validated', () => {
   assert.throws(() => store.update({storageMode: 'eternal'}), /SETTINGS_INVALID/);
   assert.throws(() => store.update({unknownKey: 1}), /SETTINGS_INVALID/);
   assert.throws(() => store.update({preferredPort: 70000}), /SETTINGS_INVALID/);
+  assert.throws(() => store.update({youtubeCaptureMode: 'scrape'}), /SETTINGS_INVALID/);
+  assert.equal(store.update({youtubeCaptureMode: 'anonymous'}).youtubeCaptureMode, 'anonymous');
+  assert.equal(store.update({youtubeCaptureMode: 'official'}).youtubeCaptureMode, 'official');
   assert.equal(store.update({locale: 'system'}).locale, 'system');
   temp.cleanup();
 });

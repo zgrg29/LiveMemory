@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**3**
+Schema 版本：**4**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -63,9 +63,11 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | occurred_at / received_at | 平台时间 / 本地接收时间 |
 | content | 文本（SC 含正文；礼物为空） |
 | emotes | 平台表情元数据 JSON 数组（可空）：`[{id?, code?, name?, source?}]`；不存图片 |
+| badges | 平台确认的作者 badge（schema v4，可空）：`[{type, label}]`，type = `owner`/`moderator`/`verified`/`member`/`unknown` |
 | gift_id / gift_name / gift_type | 礼物信息；`gift_type` = `paid` / `free` |
 | gift_quantity | 数量 |
 | unit_amount_minor / amount_minor | 单价 / 总价（最小单位） |
+| amount_display | 平台显示的原始金额字符串（schema v4，可空），例如 `HK$2,000.00`；仅用于审计，不参与累计 |
 | currency | ISO-4217 |
 | value_kind | `actual` / `display` / `unknown` |
 | is_paid | 0/1 |
@@ -168,14 +170,16 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 
 | 项目 | 说明 |
 | --- | --- |
-| 依据 | YouTube API Services Developer Policies：非授权数据（含公开直播聊天）保存不超过 30 个日历日 |
-| 默认 | 30 天，`settings.youtubeRawRetentionDays`（1–3650） |
-| 实现 | `src/storage/retention.mjs`：`runRetention(db, {days})` / `purgeExpiredRawEvents` |
+| 依据 | YouTube API Services Developer Policies：API 数据保存不超过 30 个日历日；匿名网页接口不是官方 API，但采用同样保守上限 |
+| 默认/上限 | 30 天（`settings.youtubeRawRetentionDays`，1–30） |
+| 实现 | `src/storage/retention.mjs`：`runRetention(db, {days})` / `purgeExpiredRawEvents` / `purgeExpiredYouTubeNicknames` |
 | 触发 | 启动、YouTube 场次结束、`POST /api/youtube/retention/apply` |
-| 清理 | `events.content`、`events.emotes` + `content_purged_at` |
-| 保留 | 行、计数、`viewers`、`viewer_nicknames`、币种合计、`ai_packages` |
+| 清理 | `events.content`、`events.emotes`、`events.badges`、`events.amount_display` + 过期观众昵称历史/当前昵称 |
+| 保留 | 行、计数、稳定 Channel ID、币种合计、`ai_packages` |
 | 范围 | `platform='youtube'`；Bilibili 不清理 |
-| 记录 | `app_meta['retention.lastRun'] = {at, days, platforms, purged, cutoff}` |
+| 记录 | `app_meta['retention.lastRun'] = {at, days, platforms, purged, purgedNicknames, clearedViewerNicknames, cutoff}` |
+
+**局限**：稳定 Channel ID 与按人聚合的金额/计数仍保留；这不等同于删除全部个人数据。严格删除/去标识化模式未实现。
 
 删除场次：`DELETE FROM sessions` → 级联删除事件、`viewer_sessions`、币种合计、AI 包记录；观众本身保留（可能参与其他场次）。
 
@@ -187,7 +191,8 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 - 迁移失败必须回滚，且不得让服务以半迁移状态启动。
 - **v1 → v2**：`ALTER TABLE events ADD COLUMN emotes TEXT`。旧记录保持 `emotes = NULL`，读取时按“无表情元数据”处理；不需要重写表，不丢失旧消息。
 - **v2 → v3**：`ALTER TABLE sessions ADD COLUMN platform_started_at INTEGER`。旧场次为 `NULL`，UI/AI 包按「未知直播开始时间」处理，不推断。
-- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v3 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
+- **v3 → v4**：`ALTER TABLE events ADD COLUMN badges TEXT` + `amount_display TEXT`。旧行为 `NULL`；迁移不重写表。
+- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v4 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
 
 ## 8. 备份相关（M5 设计）
 

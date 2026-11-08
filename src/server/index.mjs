@@ -50,7 +50,8 @@ export async function startServer({
   now = () => Date.now(),
   webRoot = null,
   systemLocale = null,
-  youtubeApiBase = null
+  youtubeApiBase = null,
+  youtubeWebBase = null
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
   const paths = ensureDirectories(createPaths(dataDir));
@@ -87,7 +88,8 @@ export async function startServer({
     now,
     configFile: join(paths.config, OAUTH_CONFIG_FILE_NAME),
     apiKeyConfigFile: join(paths.config, API_KEY_FILE_NAME),
-    apiBase: youtubeApiBase
+    apiBase: youtubeApiBase,
+    webBase: youtubeWebBase
   });
   // YouTube raw chat content is subject to the platform retention policy; run it
   // once per start so a long-unused installation also converges.

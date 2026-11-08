@@ -109,7 +109,12 @@
       "membershipLabel": "メンバー",
       "anonymous": "匿名の視聴者",
       "paid": "有料",
-      "emoteFallback": "プラットフォーム絵文字：{name}"
+      "emoteFallback": "プラットフォーム絵文字：{name}",
+      "badgeOwner": "配信者",
+      "badgeModerator": "モデレーター",
+      "badgeVerified": "認証済み",
+      "badgeMember": "メンバー",
+      "badgeUnknown": "バッジ"
     },
     "top": {
       "title": "よく発言した視聴者",
@@ -157,7 +162,7 @@
       "loginScanHint": "Bilibili アプリで下の QR コードを読み取り、スマートフォンで承認してください。QR コードはこのアプリ内で生成され、外部ページは開きません。",
       "loginQrUnavailable": "QR コードを生成できませんでした。ページを再読み込みしてください。",
       "youtubeIntro": "配信中の YouTube リンクまたは動画 ID を貼り付けると記録を開始できます。配信のみを対象とし、通常の動画やコメントは取得しません。",
-      "youtubeModeAnonymous": "公開配信モード：アプリの API キーで公開チャットを読み取ります（ログイン不要）",
+      "youtubeModeAnonymous": "ログイン不要の Web チャット（実験的）",
       "youtubeModeOAuth": "Google アカウントでログイン済み",
       "youtubeModeNone": "未設定",
       "youtubeNotConfiguredTitle": "YouTube 連携が未設定です",
@@ -191,7 +196,7 @@
       "youtubeQuota": "API クォータ",
       "youtubeQuotaValue": "使用 {used} / {limit} ユニット",
       "youtubePolicyTitle": "YouTube データの保存",
-      "youtubePolicyBody": "YouTube のポリシーにより公開チャットデータの保存期間が制限されています。チャット本文は {days} 日後に自動で削除され、発言数・視聴者の識別・経済的支援の統計は保持されます。",
+      "youtubePolicyBody": "YouTube 開発者ポリシーは公開チャットデータの保存期間を制限しています。チャット本文、絵文字・バッジのメタデータ、古いニックネームは {days} 日後に削除されます（最大 30 日）。メッセージ数、安定した Channel ID、経済支援の合計は保持されます。",
       "youtubeApplyRetention": "期限切れの本文を今すぐ削除",
       "youtubeRetentionApplied": "{count} 件の期限切れ本文を削除しました",
       "youtubeConnection": "配信接続",
@@ -199,7 +204,28 @@
       "youtubeConnectionReconnecting": "ネットワーク切断。再接続しています…",
       "youtubeConnectionError": "接続エラー",
       "youtubeHotness": "同時視聴者 {n}",
-      "youtubeAutoEnded": "配信が終了しました。記録は保存されています"
+      "youtubeAutoEnded": "配信が終了しました。記録は保存されています",
+      "youtubeModeLabel": "接続方法",
+      "youtubeCaptureModeTitle": "YouTube の接続方法",
+      "youtubeModeOfficial": "公式 Data API（推奨）",
+      "youtubeModeOfficialHint": "公式 Data API を使用します。開発者が一度だけ API キーまたは Google OAuth を設定する必要があります。安定しており、プラットフォームの文書に沿っています。",
+      "youtubeModeAnonymousHint": "公開ライブ配信の Web ページが使うチャットインターフェースを直接読み取ります。API キーも Google ログインも不要ですが、非公式のインターフェースであり、予告なく動作しなくなる可能性があります。",
+      "youtubeModeWarningTitle": "実験的な方法・非公式インターフェース",
+      "youtubeModeWarningBody": "この方法は公式 Data API を経由せず、公開されていない Web クライアントインターフェースを使用します。YouTube 利用規約と衝突する可能性があり、プラットフォーム側の変更で突然停止することがあります。LiveMemory はこれを既定の方法にせず、長期の可用性も保証しません。有効化する場合はリスクを理解した上で使用してください。",
+      "youtubeUseAnonymous": "ログイン不要の実験モードを有効にする",
+      "youtubeBackToOfficial": "公式モードに切り替える",
+      "youtubeExperimentalBadge": "実験的 · ログイン不要",
+      "youtubeOfficialUnconfiguredTitle": "このビルドには公式 YouTube 認証情報がありません",
+      "youtubeOfficialUnconfiguredBody": "公式方法には開発者による API キーまたは OAuth の一度だけの設定が必要です。一般ユーザーが自分で申請する必要はありませんが、このビルドには設定が含まれていません。下の実験的なログイン不要モードを試せます。",
+      "youtubeAnonymousChecked": "公開チャットはアカウントなしで読めます",
+      "youtubeAnonymousStats": "API キー不要 · 公式クォータ不使用 · 非公式インターフェース",
+      "youtubeAnonymousIdentityNote": "匿名インターフェースは通常、実際の Channel ID を返します。欠落している場合、LiveMemory はニックネームで身元を捏造しません。",
+      "youtubeMoneyNote": "Super Chat は書式付き金額文字列（例: HK$2,000.00）のみを提供します。LiveMemory は通貨を確認できる場合だけ換算し、不明な場合は金額を未知として元の表示文字列を保存します。",
+      "youtubeConnectionAnonymous": "実験的 Web チャット",
+      "youtubeAnonymousUnavailable": "実験的なログイン不要チャットは現在利用できません。後で再試行するか、公式 API を使用してください。",
+      "youtubeAdvanced": "詳細設定",
+      "youtubeModeSwitched": "接続方法を切り替えました",
+      "youtubePossibleGaps": "消息欠落の可能性 {n} 回"
     }
   },
   "history": {
@@ -382,7 +408,17 @@
       "theme": "テーマ"
     },
     "saved": "設定を保存しました",
-    "saving": "保存中…"
+    "saving": "保存中…",
+    "youtube": {
+      "title": "YouTube 接続",
+      "desc": "YouTube ライブチャットの取得方法を選択します。公式 Data API が推奨です。ログイン不要の Web チャットは、認証情報を設定できない場合の実験的な選択肢です。",
+      "official": "公式 Data API",
+      "officialDesc": "API キーまたは Google OAuth を使用し、YouTube の公式文書に沿います。開発者による一度だけの設定が必要です。",
+      "anonymous": "ログイン不要の Web チャット（実験的）",
+      "anonymousDesc": "API キーも Google ログインも不要で、公開ライブ配信の Web チャットを直接読み取ります。非公開インターフェースのため、停止や規約との衝突の可能性があります。",
+      "warning": "実験的な方法は公式 API ではありません。LiveMemory は可用性を保証せず、既定の方法にもしていません。",
+      "note": "切り替えは今後開始する記録にのみ影響します。保存済みのイベントは書き換えません。"
+    }
   },
   "errors": {
     "generic": "問題が発生しました。もう一度お試しください。",
@@ -425,7 +461,13 @@
     "youtubeLoginDenied": "Google の画面で認可を拒否しました。",
     "youtubeLoginTimeout": "認可の待機がタイムアウトしました。もう一度ログインしてください。",
     "youtubeLoginFailed": "認可の結果が無効です。もう一度ログインしてください。",
-    "youtubeClientInvalid": "OAuth クライアントの設定が無効です。配布者に連絡してください。"
+    "youtubeClientInvalid": "OAuth クライアントの設定が無効です。配布者に連絡してください。",
+    "youtubeWebNetwork": "YouTube のライブ Web ページを読み取れません。ネットワークを確認して再試行してください。",
+    "youtubeWebBlocked": "YouTube が Web リクエストを一時的に制限しています。頻度を下げるか、公式 API を使用してください。",
+    "youtubeWebProtocol": "YouTube Web チャットの応答構造が変わり、現在のバージョンでは解析できません。公式 API を使用するか、更新をお待ちください。",
+    "youtubeWebStale": "チャットの続きが無効になりました。再接続を試みています。",
+    "youtubeWebRestricted": "YouTube がログインを要求したか、この配信の Web アクセスを制限しています。LiveMemory はログインを回避しません。",
+    "youtubeWebNotConfigured": "実験的なログイン不要モードは有効になっていません。"
   },
   "toast": {
     "saved": "保存しました",

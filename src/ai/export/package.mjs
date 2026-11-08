@@ -116,8 +116,12 @@ export async function buildAnalysisPackage({
       // Only add the field when it carries information beyond the raw text.
       if (aiContent !== message.content) line.content_ai = aiContent;
     }
+    if (Array.isArray(message.badges) && message.badges.length > 0) {
+      line.badges = message.badges;
+    }
     if (message.event_type === 'super_chat') {
       line.amount_minor = message.amount_minor;
+      line.amount_display = message.amount_display ?? null;
       line.currency = message.currency;
     }
     return JSON.stringify(line);

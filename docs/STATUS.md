@@ -1,74 +1,136 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-08（YouTube Live 真实接入，版本 0.2.0，schema 3）
+最后更新：2026-11-08（YouTube 免登录实验接入真实验证，版本 0.3.0，schema 4）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0 / P1 / P2 完成；M3 进行中（Bilibili 真实接入 + YouTube Live 接入）**
-- 版本：`0.2.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**3**（v2 新增 `events.emotes`，v3 新增 `sessions.platform_started_at`）
+- 里程碑：**M0 / M1 / M2 核心 / P0 / P1 / P2 完成；M3 进行中（Bilibili + YouTube 官方/匿名实验双路径）**
+- 版本：`0.3.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**4**（v2 `events.emotes`，v3 `sessions.platform_started_at`，v4 `events.badges` + `events.amount_display`）
 - 分支：`main`，本地提交，未 Push
 
-## 2. 本轮完成（2026-11-08）：YouTube Live
+## 2. 本轮完成（2026-11-08）：YouTube 免登录实验接入
 
-### 2.1 授权结论（先回答最重要的问题）
+### 2.1 研究结论（先回答最重要的问题）
 
-| 能力 | 是否需要 Google 账号 | 是否需要 OAuth | 是否需要应用级 API Key | 结论 |
-| --- | --- | --- | --- | --- |
-| 定位直播（`videos.list` + `liveStreamingDetails`） | 否 | 否 | 是 | 官方支持 |
-| 读取公开直播聊天（`liveChatMessages.list`） | 否 | 否 | 是 | 官方文档明确允许 API Key 读取公开数据（含公开直播聊天） |
-| 主播自己的频道信息（`channels.list?mine=true`） | 是 | 是 | 否 | 只有 OAuth 可用 |
-| 私有/会员限定直播、`liveBroadcasts.list` | 是 | 是 | 否 | 本轮不实现 |
+| 问题 | 结论 |
+| --- | --- |
+| 五个参考仓库是否都实际查看源码？ | 是。`youtube-chat`、`pytchat`、`ytmemchat_wails`、`chat-downloader` 逐文件读取；`komet` 仓库只有 README/许可证/截图，**没有应用源码**，已如实记录。 |
+| 是否存在完全合规的免登录官方通道？ | **不存在**。官方 Data API 需要 API Key 或 OAuth；匿名网页接口不是官方 API。 |
+| 匿名网页接口是否可用？ | **可用**。2026-11-08 两个真实直播间均成功读取。 |
+| 是否无需用户 API Key / OAuth / Cookie？ | **是**。请求只用公开直播页自身的 context 与页面公开 Web key，不发送 Cookie。 |
+| 是否取得稳定 Channel ID？ | 聊天与 Super Chat **100%**；新版 gift 消息接口本身无 Channel ID，记 0%，不伪造。 |
+| 是否合法/符合平台条款？ | **不能确认，且很可能违反 YouTube ToS 的自动化访问与个人信息收集限制。** 因此不做默认方式，必须显式启用。 |
+| 官方路径是否保留？ | **保留**。官方 API Key / OAuth 仍是默认与推荐路径。 |
 
-- **完全不需要任何凭据的官方通道不存在。** YouTube ToS 与 Developer Policies 禁止抓取与使用未公开接口；本轮没有实现任何绕过。
-- 本轮实现 **两种官方模式**，运行时自动选择：
-  1. **公开直播模式（api-key）**：应用级 API Key，匿名读取公开直播与公开聊天，主播零登录、零配置；
-  2. **OAuth 模式（oauth）**：主播点一次「登录 Google」，PKCE + 系统浏览器 + `127.0.0.1` 回环回调，自动刷新令牌。
-- **API Key 与 OAuth client 都不进入仓库**：Google/YouTube 政策禁止在开源项目中嵌入 API 凭据（Developer Policies III.D.1.d），且桌面端 API Key 无法有效限制给某个应用。因此默认构建为空，由发布者一次性配置（详见 `PLATFORM_INTEGRATIONS.md` §3）。
-- 普通主播**不需要**注册 Google Cloud、创建项目、启用 API、申请 Key 或填写任何密钥；缺配置时界面明确说明「这个构建没有包含开发者凭据」，而不是伪装成功。
+- 因此产品上采用 **“官方优先 + 实验性免登录显式 opt-in”**：
+  - 默认 `youtubeCaptureMode=official`；
+  - 无官方凭据时，页面显示真实原因，并提供“启用免登录实验模式”按钮；
+  - 启用后明确显示“非官方接口 / 可能与服务条款冲突 / 可能随时失效”；
+  - 不在匿名失败时静默切到其他实现，也不伪造成功。
+- 完整研究、许可证、真实采样与政策分析见 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`。
 
-### 2.2 已实现代码
+### 2.2 新增代码
 
-- `src/platforms/youtube/link.mjs`：直播链接/视频 ID 解析（`watch`、`/live/`、`youtu.be`、`embed`、`shorts`、裸 ID），拒绝播放列表、频道、非 YouTube 主机与非法 ID。
-- `src/platforms/youtube/api.mjs`：官方 Data API v3 客户端；`videos.list`、`liveChatMessages.list`、`channels.list`；API Key 与 OAuth 双凭据模式；官方配额计费（videos 1 / chat 5 / channels 1）；Google `reason` → 稳定错误码。
-- `src/platforms/youtube/oauth.mjs`：PKCE(S256)、授权 URL、**单次回环 HTTP 回调接收器**（仅 127.0.0.1、仅指定路径、校验 `state`、超时、无外部资源回调页）、code 交换、refresh、revoke。
-- `src/platforms/youtube/oauth-manager.mjs`：`signed_out → pending → signed_in | expired → signed_out` 状态机；启动后恢复登录；提前 60 秒自动刷新；并发刷新合并；`invalid_grant` → `expired` 而非静默登出。
-- `src/platforms/youtube/token-store.mjs` + `src/platforms/shared/secret-store.mjs`：AES-256-GCM 加密保存 refresh/access token；密钥同目录、`icacls` 尽力限制；`status()` 永不返回令牌。
-- `src/platforms/youtube/mapper.mjs`：文本消息、Super Chat、Super Sticker、新会员、会员里程碑、赠送会员、收到赠送会员；`:code:` 自定义表情；`amountMicros` → 整数最小货币单位（BigInt，无浮点误差）；会员等级/月数/赠送数量**不换算金额**；收到赠送会员的用户 `is_paid=false`。
-- `src/platforms/youtube/adapter.mjs`：`liveChatMessages.list` 轮询（`nextPageToken`、`pollingIntervalMillis`）、过期前配额守卫、指数退避重连、广播元数据刷新（并发观看人数 / 直播结束）、聊天 `offlineAt` 结束检测、`chatEnded/chatDisabled=真结束`、网络错误**不结束场次**。
-- `src/platforms/youtube/service.mjs` + 路由 `/api/youtube/*`：状态、登录、退出、检查直播、开始/停止记录、手动执行保留清理。
-- 统一写入路径不变：所有事件仍经过 `EventIngest`（去重、观众聚合、按币种累计、场次计数）。
+```text
+src/platforms/youtube/anonymous/
+  parser.mjs      观看页/聊天页/continuation/金额/表情/badge 的纯解析
+  client.mjs      公开网页与 get_live_chat 的 HTTP 传输、429/失效/协议错误
+  adapter.mjs     轮询、timeout、退避、continuation 刷新、结束检测、可能漏消息诊断
+src/shared/badges.mjs      owner/moderator/verified/member badge 规范化
+src/shared/capture-mode.mjs official / anonymous 模式
+scripts/verify-youtube-anonymous.mjs 真实网络 E2E 采样
+```
 
-### 2.3 数据与策略
+- 匿名适配器只负责传输与解析；所有事件仍走现有 `mapper.mjs` → Canonical Event → `EventIngest` → SQLite。
+- 不直接写数据库，不新建观众档案系统。
+- 无新增运行时依赖；EXE 仍是 Node SEA 单文件。
 
-- schema **v3**：`sessions.platform_started_at` 保存平台侧的直播开始时间（YouTube `liveStreamingDetails.actualStartTime`），用于「相对直播时间」。
-- **保留策略（默认 30 天）**：YouTube 公开聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 30 个日历日。`src/storage/retention.mjs` 在启动、场次结束与手动操作时清理 `content`/`emotes`；发言计数、观众身份、昵称历史与经济支持统计保留。Bilibili 数据不受该政策约束，未被清理。
-- 金额：Super Chat / Super Sticker 使用官方 `amountMicros` + `currency`，`value_kind=actual`；不同币种分别累计（USD / JPY / EUR 各自独立）。
-- 付款者统计修正：`payment_event_count` 现在只在 `is_paid=true` 时累加；赠送会员的**接收者**不再被算作付款者，免费礼物也不再计入付费事件。
+### 2.3 数据与身份
 
-### 2.4 界面
+- schema **v4**：
+  - `events.badges TEXT`：`[{type, label}]`，只保存平台确认的 owner/moderator/verified/member；
+  - `events.amount_display TEXT`：平台显示的原始金额字符串（如 `HK$2,000.00`），用于审计。
+- 稳定身份仍为 `youtube:<channelId>`；匿名 gift 无 Channel ID 时 `viewer_uid=null`，不创建档案、不按昵称合并。
+- 匿名聊天事件 `source_quality=verified`；Super Chat/会员/gift 因格式化金额或未知价格保持 `estimated`。
+- 金额：
+  - 明确币种符号/代码（`HK$`、`US$`、`A$`、`€`、`£`、`₹`、`JPY` 等）才直接换算；
+  - 裸 `$`/`¥` 按页面 `gl` 解析并保留原始显示文本；无法确认则金额未知；
+  - 会员等级、赠送数量、gift 名称不换算金额；gift 只记 `is_paid=true`、`amount_minor=null`。
+- 表情：
+  - Unicode Emoji 原样进 `content`；
+  - 自定义表情用 `:code:` 文本回退，并保存 `id/code/name/source`；
+  - 不把图片 URL 当正文，不下载图片。
 
-- 直播记录页新增第三个来源标签「YouTube 直播」：账号/模式状态、登录/重新登录/退出、直播链接输入、检查结果（正在直播 / 未开始 / 已结束 / 非直播 / 聊天关闭）、频道、当前观看、API 配额、数据保留说明与「立即清理过期原文」。
-- 直播中新增 YouTube 专属指示：连接状态（已连接 / 网络中断重连）、当前观看人数、配额消耗；`Super Sticker`、会员里程碑留言在动态流中正确显示。
-- 三语（zh-CN / ja / en）键完全对齐（自动化校验），明亮 / 黑暗 / 跟随系统均验证；窄屏 390px 无横向溢出。
+### 2.4 实时稳定性
 
-### 2.5 测试与 EXE
+- Continuation 每页更新；使用服务端 `timeoutMs`（真实样本 10000ms），clamp 到 2–30 秒。
+- 400/`failedPrecondition` → 重新打开 live_chat 页，不清空已入库消息；重复消息靠 `external_id` 去重。
+- 429 → 至少 30 秒退避，读取 `Retry-After`；连续 8 次失败才停止并保存，不做无限重试。
+- 网络/5xx → 指数退避（1→60s），**不结束场次**。
+- 每 60 秒检查 watch 页；`isLiveNow=false` 或 `isLiveContent` 已结束 → 自动结束场次。
+- `chat disabled / ended / unavailable` → 明确结束或失败，不当作网络错误。
+- 相邻消息时间跳变 > 90 秒记 `gapSuspected`；UI 只显示“可能漏消息”，不声称确定遗漏。
+- 连接状态、轮询次数、actions/identity/paid/gift 计数、错误码写入 `status.connection.detail`；不记录正文、昵称历史或敏感凭据。
 
-- 自动化：**259 个测试全部通过，0 失败，约 6.5 秒**。
-- 新增覆盖：链接解析、官方错误映射、配额计费、PKCE/回调/令牌交换与刷新、登录状态机与重启恢复、令牌加密存储与篡改检测、全部经济事件映射、`amountMicros` 多币种、轮询/重连/结束/配额守卫、保留策略、v1→v3 迁移、以及**本地假 API 的端到端**（连接 → 入库 → 观众 → 多币种 → 历史 → 保留）。
-- EXE：`dist/LiveMemory.exe` **90.1 MB**，SHA-256 `8af88e255122c2a26f448ae4f414de40ad3266543760b537ad7e74decded3196`；`scripts/verify-exe.mjs` **9/9 通过**；EXE 内 `/api/youtube/status` 返回未配置状态、schema=3、`live.js` 含 YouTube 入口。
-- UI 截图：`docs/screenshots/live-youtube-light-zh-CN.png`、`live-youtube-dark-zh-CN.png`、`live-youtube-mobile-light-zh-CN.png`、`live-youtube-recording-zh-CN.png`（本地假 API 的端到端录制）、`live-youtube-unconfigured-zh-CN.png`。
+### 2.5 保留策略修正
 
-### 2.6 未完成的真实验收（必须如实保留）
+- `youtubeRawRetentionDays` 从 1–3650 改为 **1–30，默认 30，最大 30**。
+- 清理范围：`content`、`emotes`、`badges`、`amount_display`，以及过期 YouTube 观众的昵称历史与当前昵称。
+- 保留：事件行、计数、稳定 Channel ID、场次/观众币种合计。
+- 明确局限：稳定 ID 与按人聚合的金额/计数仍保留，不能声称“已删除全部个人数据”；严格删除模式留给后续里程碑。
 
-- **没有真实 Google 凭据**：本轮没有可用的 API Key 或 OAuth 客户端，因此**未对真实 YouTube 直播做端到端采样**，也没有「真实消息条数 / 稳定身份比例」数据。
-- 端到端验证使用**本地假 API 服务器**（严格按官方响应结构返回），证明链路可运行，但不能称为真实平台验收。
-- OAuth 流程在本地回环与假 token 端点上验证；未与 Google 真实授权页、真实 refresh token 过期规则（Testing 状态 7 天）做在线验证。
-- 30 天保留策略依据文本条款实现，未获得 Google 的书面确认。
+### 2.6 界面
 
-## 3. 已完成（有代码与验证）
+- YouTube 标签默认显示官方路径；无官方凭据时显示真实原因 + “启用免登录实验模式”。
+- 实验模式显示高对比 warning、无需 API Key、无需 Google 登录、数据保留说明。
+- 高级设置（`<details>`）可切换官方 / 实验模式；设置页增加 YouTube 接入卡。
+- 直播中显示“实验性网页聊天”、消息数、可能漏消息提示；官方模式保留 API 配额显示。
+- 动态流显示确认的 badge 文本（Member/Moderator/Owner/Verified）。
+- 三语 zh-CN / ja / en 键完全对齐；明亮 / 黑暗 / 跟随系统、390px 窄屏均验证。
+
+### 2.7 真实直播采样（不是模拟）
+
+| 房间 | 时长 | actions | 事件 | chat | 经济事件 | 稳定 Channel ID | badge | 错误 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `FKLZiufsCk0` | 35s | 92 | 86 | 85 | 1 SC：`HK$2,000.00` → HKD 200000 | 86/86（100%） | 49 | 0 |
+| `gXawf8GZDI8` | 35s | 103 | 100 | 87 + 13 gift | 13 gift，金额未知 | chat 87/87（100%），gift 0/13 | 3 | 0 |
+
+- 两场均 `pollCount=3`、0 失败、0 重复；停止后进入 `ended`。
+- 未观测到 Super Sticker、会员里程碑、赠送会员，因此这些映射标记为“结构已实现、真实未验证”。
+- 没有官方凭据，**未完成与官方 Data API 的并排对照**；不声称官方对照。
+- 打包后的 EXE 在房间 A 实测约 10 秒：72 条事件、72/72 Channel ID、0 错误；最终样本未出现付费事件（源码 35 秒样本捕获到 HKD Super Chat）。
+
+### 2.8 测试与 EXE
+
+- 自动化：**287 个测试通过，0 失败，约 17.7 秒**。
+- 新增：
+  - `youtube-anonymous-parser`：真实页面/续页结构、金额与币种、Unicode/自定义表情、badges、watch 状态、gift 无身份；
+  - `youtube-anonymous-adapter`：continuation 失效重开、网络错误退避恢复、场次不结束；
+  - `integration/youtube-anonymous-session`：HTTP → 匿名传输 → mapper → ingest → SQLite → 观众档案 → 自动结束；
+  - retention：badges/amount_display 清理、过期昵称清理；
+  - settings：模式校验、30 天上限；
+  - migration：v1→v4。
+- EXE：`dist/LiveMemory.exe` **90.2 MB**，SHA-256 `9d586aa9cbe60274c6755b0b8ba8204cc111e6c8261b329868c38bb65190604c`；`scripts/verify-exe.mjs` **9/9 通过**；`--version` 为 0.3.0。
+- UI 截图：
+  - `docs/screenshots/live-youtube-anonymous-unconfigured-zh-CN.png`
+  - `docs/screenshots/live-youtube-anonymous-light-zh-CN.png`
+  - `docs/screenshots/live-youtube-anonymous-dark-zh-CN.png`
+  - `docs/screenshots/live-youtube-anonymous-recording-zh-CN.png`
+  - `docs/screenshots/live-youtube-anonymous-mobile-zh-CN.png`
+  - `docs/screenshots/settings-youtube-anonymous-zh-CN.png`
+
+## 3. 上一轮完成（2026-11-08）：YouTube 官方 API 接入
+
+- 官方 `videos.list` + `liveChatMessages.list` 轮询、配额守卫、官方错误映射。
+- 官方 API Key（公开数据）与 OAuth（PKCE + 回环回调 + 自动刷新 + 撤销）双模式。
+- 官方映射：文本、Super Chat、Super Sticker、会员、里程碑、赠送会员、收到赠送会员。
+- 官方路径仍完整保留；默认仍为官方。
+- 上一轮没有任何真实 Google 凭据，因此官方路径的真实直播采样仍未完成。
+
+## 4. 已完成（有代码与验证）
 
 ### 工程与文档
 - 独立 Git 仓库（`origin` 指向 github.com/zgrg29/LiveMemory，未 push）
@@ -82,82 +144,81 @@
 - Node SEA 打包，PE 子系统 Console，首次运行解压到 `<数据目录>\app\<hash>\`
 
 ### 数据层
-- `node:sqlite`，WAL，schema 3，迁移可重复执行
+- `node:sqlite`，WAL，schema 4，迁移可重复执行
 - 表：`sessions`、`events`、`viewers`、`viewer_nicknames`、`viewer_sessions`、`viewer_currency_totals`、`session_currency_totals`、`ai_packages`、`app_meta`
 - 唯一写入管线 `EventIngest`：去重 → 观众聚合 → 场次金额 → 场次计数，单事务
 - 观众身份 `platform:uid`；昵称历史独立保存；跨平台不合并
 - 金额整数最小单位，按 `currency` + `value_kind` 分账
+- `events.badges` / `events.amount_display`（v4）
 
 ### 服务器与 API
 - 仅监听 `127.0.0.1`；Host/Origin 校验、CSP、nosniff、无 framing；路径穿越与 1 MB JSON 限制
 - 路由：health、bootstrap、status、settings、sessions、simulate、bilibili、youtube、viewers、events + SSE、storage、AI 包
-- 设置持久化 `config/settings.json`（原子写入；新增 `youtubeRawRetentionDays`）
+- 设置持久化 `config/settings.json`（新增 `youtubeCaptureMode`；`youtubeRawRetentionDays` 上限 30）
 
 ### 平台
 - 模拟直播（中/日/英 24 位观众、话题漂移、Emoji、平台表情、3% 重复投递）
-- Bilibili 真实直播：WebSocket、鉴权、心跳/看门狗/重连、弹幕/礼物/SC/大航海映射、扫码登录、平台表情元数据（真实采样：弹幕 142/142 带 UID）
-- YouTube Live：见 §2（代码完成，真实直播未采样）
+- Bilibili 真实直播：WebSocket、鉴权、心跳/看门狗/重连、弹幕/礼物/SC/大航海映射、扫码登录、平台表情元数据
+- YouTube 官方 Live：官方 API Key / OAuth、轮询、官方事件映射、配额、保留策略
+- YouTube 匿名实验：网页 watch/live_chat、continuation、真实聊天/SC/gift/badge、退避与重连、自动结束
+- 两套 YouTube 适配器共用 Canonical Event、EventIngest、SQLite、UI、AI 包
 
 ### 网页控制台（Apple 风格）
 - 5 页、三语、明亮/黑暗/跟随系统、首帧无闪烁、响应式
 - Canvas 消息密度图、SSE 实时动态、观众档案与昵称历史
+- YouTube 官方/实验模式选择、真实状态、badge、经济支持展示
 - AI 三步向导（导出可用、复制指令可用、导入标注 M6）
 
 ### AI 分析包（导出侧）
 - 单文件 ZIP，`manifest.json` 校验和，三语 `instructions.md`，结果 Schema
 - `emote_dictionary` / `emote_refs` / 按需 `content_ai`
-- 新增 `session_context.session.broadcast_started_at` 与 `messages.jsonl.offset_seconds`（相对直播时间）
+- `session_context.session.broadcast_started_at` 与 `messages.jsonl.offset_seconds`
+- 新增 `badges` 与 `amount_display`（仅存在时输出）
 - 含平台、稳定身份、经济支持事件；不含任何凭据
 
-## 4. 部分完成
+## 5. 部分完成
 
 | 项目 | 现状 | 缺口 |
 | --- | --- | --- |
 | 精简/完整存储模式 | 设置可保存；清理函数与测试齐全 | 自动清理未接入（M4/M6） |
-| YouTube Live | 传输层、映射、登录、控制台、保留策略、模拟端到端完成 | 真实直播间采样、真实 OAuth 授权、真实配额与断网长时验证 |
+| YouTube 官方 Live | 传输层、映射、登录、控制台、保留策略、模拟端到端完成 | 真实凭据下的直播采样、真实 OAuth 授权、真实配额与长时断网验证 |
+| YouTube 匿名 Live | 真实双房间采样、EXE 实测、身份/金额/badge/gift、重连测试完成 | 条款合规未确认；Super Sticker/会员未真实观测；未做官方并排对照 |
 | AI 分析中心 | 导出、任务说明、指令复制可用 | 导入、Schema 校验、分批（M6） |
 | 观众画像 | 稳定身份、统计、昵称历史、关注 | 兴趣/喜恶/变化（M7） |
 | 备份与恢复 | 文档与数据模型已设计 | 导出/导入/校验/回滚（M5） |
 | Bilibili 经济事件 | 映射与金额规则完成 | 礼物/SC/大航海真实事件仍未观测 |
 
-## 5. 未完成
+## 6. 未完成
 
-- YouTube 真实凭据下的端到端验收（本轮阻塞原因：无 API Key / OAuth 客户端）
+- **完全合规的 YouTube 免登录方案不存在**；匿名网页接口仍可能违反 ToS，正式发布前必须做法律/平台评估。
+- YouTube 官方 API 真实凭据下的端到端验收（本轮仍无凭据）
 - Bilibili 礼物 / SC / 大航海真实事件复核、`SEND_GIFT_V2`、`dm_v2`
 - AI 结果导入与 Schema 校验、重复导入保护
 - 长期观众 AI 画像与增量更新
 - 可移植备份 `.livememory`
-- 数据删除 UI、存储占用管理
+- 数据删除 UI、严格删除/去标识化模式
 - 干净 Windows 环境 EXE 验收、代码签名、发布流水线
 - 韩语 / 西班牙语
 
-## 6. 测试结果（2026-11-08，v0.2.0）
+## 7. 测试结果（2026-11-08，v0.3.0）
 
 ```bat
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-结果：**259 个测试通过，0 失败，约 6.5 秒**。
+结果：**287 个测试通过，0 失败，约 17.7 秒**。
 
-新增测试文件：`youtube-link`、`youtube-api`、`youtube-oauth`、`youtube-adapter`、`youtube-mapper`（重写）、`youtube-retention`、`youtube-token-store`、`integration/youtube-session`。
-修改：`migration-emotes`（v1→v3）。
+EXE：`dist/LiveMemory.exe` 90.2 MB，SHA-256 `9d586aa9…`；`scripts/verify-exe.mjs` 9/9 通过。
+EXE 内实测：schema=4、version=0.3.0、匿名模式真实入库 72 条事件、72/72 Channel ID、0 错误。
 
-EXE：`scripts/verify-exe.mjs` 9/9 通过（含普通权限、损坏恢复、端口顺延、单实例、不可写目录、异目录运行、解压复用、三语 CLI）。
-EXE 实测：`schema=3`、`version=0.2.0`、`/api/youtube/status` 未配置状态清晰、`live.js` 含 YouTube 入口。
+真实直播采样：见 §2.7 与 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`。
 
-UI 截图（无头 Edge + DevTools）：
-- `docs/screenshots/live-youtube-light-zh-CN.png`
-- `docs/screenshots/live-youtube-dark-zh-CN.png`
-- `docs/screenshots/live-youtube-mobile-light-zh-CN.png`
-- `docs/screenshots/live-youtube-recording-zh-CN.png`
-- `docs/screenshots/live-youtube-unconfigured-zh-CN.png`
+UI 截图：见 §2.8。
 
-**未在第二台干净 Windows 机器上做视觉验收。**
-
-## 7. 已知问题与限制
+## 8. 已知问题与限制
 
 1. `Ctrl+C` 的真实控制台信号未自动化；通过 `startServer().close()` 与代码路径验证。
-2. EXE 仅在本开发机验证；沙箱内截图通过 DevTools 完成。
+2. EXE 仅在本开发机验证；沙箱内截图通过 Headless Chrome + DevTools 完成。
 3. 动态选中的端口不写回设置。
 4. 静态资源 `no-cache` 且无 ETag。
 5. 分析包未分批（单包上限 20,000 条）。
@@ -165,27 +226,29 @@ UI 截图（无头 Edge + DevTools）：
 7. 无删除场次/观众 UI。
 8. `--help` 通过管道截断时进程可能以 1 退出（PowerShell 管道提前关闭）。
 9. Bilibili 平台表情仅保存名称/id，不显示图片；`dm_v2` 未解码。
-10. YouTube 每次 `liveChatMessages.list` 消耗 5 个配额单位；10,000/天约等于 2,000 次轮询，长时间直播会耗尽。界面显示已用/上限，配额守卫会以明确原因停止轮询而不是撞墙重试。
-11. YouTube 会员事件的评论会保存到 `content`，但**不计入消息数**，也不进入 AI 包的 `messages.jsonl`（分析包仍只含 chat + super_chat）；这是为防止「会员事件被当成聊天」而做的保守取舍。
-12. 未配置凭据时 YouTube 面板只显示说明，不提供伪造的登录入口。
+10. YouTube 官方 API 每次聊天请求 5 配额；匿名路径不消耗官方配额但属于未公开接口。
+11. 匿名 fetch 未携带登录 Cookie，因此会员限定/私密直播不可读；这是安全边界，不是缺陷。
+12. 匿名 gift 没有 Channel ID 与价格，不能累计金额。
+13. 匿名接口可能被 429、验证码、consent 或页面结构变化阻断；应用会停止/退避并显示真实原因。
+14. 30 天保留只覆盖原文、badge、金额显示文本与过期昵称；稳定 ID 与聚合金额仍保留，不等于完全删除个人数据。
 
-## 8. 阻塞事项
+## 9. 阻塞事项
 
-- **YouTube 真实端到端验收缺少开发者凭据**：需要一次性配置 Google Cloud 项目 + 启用的 YouTube Data API +（OAuth 客户端 或 公开数据用 API Key），并解决 Developer Policies III.D.1.d 对「开源项目内嵌凭据」的限制（例如仅发布构建注入 + 合规评估，或由发布方申请许可）。在此之前，真实消息数、真实稳定身份比例、真实 OAuth 授权均**无法给出**。
-- 其余无硬阻塞。
+- **法律/平台合规**：匿名网页客户端可能违反 YouTube ToS；在未获得平台书面许可或法务确认前，不能把它作为默认发布功能，也不能声称合规。
+- **官方 YouTube 真实验收**：仍缺合法可用的 API Key / OAuth 客户端。
+- **真实付费事件覆盖**：Super Sticker、会员、赠送会员未在真实直播中观测到。
 
-## 9. 下一步目标
+## 10. 下一步目标
 
-1. **在有凭据的环境完成 YouTube 真实验收**：公开直播采样聊天、Super Chat、会员；记录真实条数与身份完整率；验证真实断网与配额行为。
-2. **M6 AI 结果导入**：JSON/粘贴 → Schema 校验 → `task_id`/`session_id`/`viewer_id`/`message_refs` 校验 → 事务写入与重复导入保护。
-3. M4 存储管理：自动精简清理、删除场次/观众 UI。
+1. 对匿名路径做正式合规评估；若不允许发布，则只保留内部/开发者模式，并强化官方 API 引导。
+2. 在持有官方凭据的环境完成 YouTube 官方 API 真实验收与匿名并排对照。
+3. **M6 AI 结果导入**：JSON/粘贴 → Schema 校验 → `task_id`/`session_id`/`viewer_id`/`message_refs` 校验 → 事务写入与重复导入保护。
+4. M4 存储管理：自动精简清理、删除场次/观众、严格删除模式。
 
-## 10. 最近 Commit
+## 11. 最近 Commit
 
-- 本轮：`aa27417` feat: connect real YouTube Live chat with anonymous keys and Google OAuth（文档哈希修正随后一个 `docs:` 提交落地）
-- 上一轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre
+- 本轮：待提交（`feat: record public YouTube Live chat without a developer key`）
+- 上一轮：`7a86e58` docs: cite the primary YouTube authorization and policy sources
+- 上一轮：`aa27417` feat: connect real YouTube Live chat with anonymous keys and Google OAuth
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
-- P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows
 - 首轮：`5cb66a9` feat: initialize LiveMemory with launcher, local console and recording pipeline
-
-> 为满足 GitHub 隐私邮箱策略，历史提交已重写为匿名 noreply 身份，旧 hash 失效。

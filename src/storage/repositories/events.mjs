@@ -8,13 +8,14 @@
  */
 
 import {parseEmotesJson, serializeEmotes} from '../../shared/emoticons.mjs';
+import {parseBadgesJson, serializeBadges} from '../../shared/badges.mjs';
 
 const INSERT_SQL = `
   INSERT OR IGNORE INTO events (
     session_id, platform, external_id, event_type, viewer_id, viewer_uid, display_name,
-    occurred_at, received_at, content, emotes, gift_id, gift_name, gift_type, gift_quantity,
-    unit_amount_minor, amount_minor, currency, value_kind, is_paid, source_quality, dedupe_key
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    occurred_at, received_at, content, emotes, badges, gift_id, gift_name, gift_type, gift_quantity,
+    unit_amount_minor, amount_minor, amount_display, currency, value_kind, is_paid, source_quality, dedupe_key
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 export function insertEvent(db, event) {
@@ -30,12 +31,14 @@ export function insertEvent(db, event) {
     event.received_at,
     event.content,
     serializeEmotes(event.emotes),
+    serializeBadges(event.badges),
     event.gift_id,
     event.gift_name,
     event.gift_type,
     event.gift_quantity,
     event.unit_amount_minor,
     event.amount_minor,
+    event.amount_display,
     event.currency,
     event.value_kind,
     event.is_paid ? 1 : 0,
@@ -63,12 +66,14 @@ function mapEventRow(row) {
     received_at: row.received_at,
     content: row.content,
     emotes: parseEmotesJson(row.emotes),
+    badges: parseBadgesJson(row.badges),
     gift_id: row.gift_id,
     gift_name: row.gift_name,
     gift_type: row.gift_type,
     gift_quantity: row.gift_quantity,
     unit_amount_minor: row.unit_amount_minor,
     amount_minor: row.amount_minor,
+    amount_display: row.amount_display,
     currency: row.currency,
     value_kind: row.value_kind,
     is_paid: row.is_paid === 1,
@@ -147,9 +152,11 @@ export function purgeSessionContent(db, sessionId, {now = Date.now()} = {}) {
     UPDATE events
        SET content = NULL,
            emotes = NULL,
+           badges = NULL,
+           amount_display = NULL,
            content_purged_at = ?
      WHERE session_id = ?
-       AND (content IS NOT NULL OR emotes IS NOT NULL)
+       AND (content IS NOT NULL OR emotes IS NOT NULL OR badges IS NOT NULL OR amount_display IS NOT NULL)
        AND event_type IN ('chat', 'super_chat')
   `).run(now, String(sessionId));
   return result.changes;

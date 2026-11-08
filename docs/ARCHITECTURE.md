@@ -16,8 +16,9 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
          ├─ src/platforms/mock/         模拟直播源
          ├─ src/platforms/bilibili/     真实直播适配器（WebSocket）
-         ├─ src/platforms/youtube/      真实直播适配器（OAuth / API Key + 轮询）
-         ├─ src/storage/retention.mjs   YouTube 原始内容保留策略
+         ├─ src/platforms/youtube/      官方 Data API / OAuth
+         ├─ src/platforms/youtube/anonymous/  实验性公开网页聊天（非官方，默认关闭）
+         ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像）
          └─ src/ai/export/              分析包生成（含表情字典）
    └─ src/web/                          浏览器控制台（原生 ES Modules）
@@ -61,29 +62,36 @@ LiveMemory.exe (Node SEA)
 ## 3.1 YouTube 凭据与数据流
 
 ```text
-凭据解析（oauth-config.mjs）
-  ├─ 环境变量 / <数据目录>/config/*.json / 内置常量（默认空）
-  ├─ api-key 模式：YouTubeApi 把 key 放在查询参数，无 Authorization 头
-  └─ oauth 模式：YouTubeOAuthManager 提供 Bearer token（提前 60s 刷新）
+模式选择（settings.youtubeCaptureMode，默认 official）
+  ├─ official：oauth-config.mjs → API Key 或 OAuth
+  │   ├─ api-key 模式：YouTubeApi 把 key 放在查询参数，无 Authorization 头
+  │   └─ oauth 模式：YouTubeOAuthManager 提供 Bearer token（提前 60s 刷新）
+  └─ anonymous（显式 opt-in，实验性）：YouTubeAnonymousClient
+      ├─ GET /watch?v=ID       → ytInitialPlayerResponse / ytInitialData
+      ├─ GET /live_chat?v=ID   → ytcfg + liveChatRenderer 首批 actions + continuation
+      └─ POST /youtubei/v1/live_chat/get_live_chat
+           body {context, continuation} → actions + 新 continuation + timeoutMs
 
 连接流程
-  parseYouTubeInput(link) → videos.list → checkRecordable()
+  parseYouTubeInput(link) → 模式对应的 checkVideo()
     ├─ 非直播/未开始/已结束/聊天关闭 → 明确错误码（三语）
     └─ 可记录 → SessionManager.startPlatform({platformStartedAt})
-                 → YouTubeLiveChatAdapter.start()
-                     → liveChatMessages.list(pageToken)  ← 轮流询
-                     → mapper.mjs → canonical draft
+                 → YouTube 适配器.start()
+                     → actions → mapper.mjs → canonical draft
                      → EventIngest（去重/观众/金额/计数）
                      → SSE → 控制台
 ```
 
-- OAuth：`startLogin()` 启动单次回环接收器（`127.0.0.1` 随机端口）→ 系统浏览器打开 Google 官方授权页 → 回调校验 `state` → code + PKCE verifier 换 token → AES-256-GCM 加密保存。UI 轮询 `/api/youtube/login/status`。
-- 令牌只存在于加密文件与内存；`status()`、日志、AI 包、备份都不含令牌。
-- 适配器只负责传输：任何平台事件都必须经过 `EventIngest`。
+- **官方路径（默认/推荐）**：`videos.list` 定位，`liveChatMessages.list` 轮询；OAuth 回环回调 + PKCE + 加密令牌。
+- **匿名实验路径**：不发送 Cookie、OAuth token 或用户 API Key；读取公开网页聊天客户端。它不是官方 API，可能违反 YouTube ToS，必须显式启用，错误或失效时不得伪装成功。
+- 两条路径都只负责传输；任何平台事件都必须经过 `EventIngest`。
+- 匿名 continuation：每页更新；400/`failedPrecondition` 重开 live_chat；429/网络指数退避；连续 8 次失败停止并保存。
+- 匿名身份：`authorExternalChannelId` → `youtube:<channelId>`；新版 gift 无该字段时 `viewer_uid=null`，不按昵称合并。
+- 匿名金额：只解析可确认的格式化金额；`amount_display` 保留原文，无法确认时 `amount_minor=null`。
 
 ## 3.2 保留策略
 
-`src/storage/retention.mjs` 在启动、YouTube 场次结束与手动调用时清理 `platform='youtube'` 且超过窗口的聊天原文与表情元数据，保留行、计数、身份与金额。目的见 `PRIVACY_SECURITY.md` §12。
+`src/storage/retention.mjs` 在启动、YouTube 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的 YouTube 聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定 Channel ID 与金额合计。目的与局限见 `PRIVACY_SECURITY.md` §14。
 
 ## 4. 读模型
 

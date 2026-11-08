@@ -46,8 +46,8 @@ test('retention days are clamped to a sane range', () => {
   assert.equal(normalizeRetentionDays(undefined), DEFAULT_YOUTUBE_RAW_RETENTION_DAYS);
   assert.equal(normalizeRetentionDays(0), 1);
   assert.equal(normalizeRetentionDays(-5), 1);
-  assert.equal(normalizeRetentionDays('45'), 45);
-  assert.equal(normalizeRetentionDays(999999), 3650);
+  assert.equal(normalizeRetentionDays('45'), 30);
+  assert.equal(normalizeRetentionDays(999999), 30);
 });
 
 test('only YouTube raw chat text older than the window is purged', () => {
@@ -93,9 +93,11 @@ test('money and message counts survive a retention purge', () => {
     event_type: 'super_chat',
     content: 'support',
     amount_minor: 500,
-    currency: 'USD',
+    amount_display: 'HK$5.00',
+    currency: 'HKD',
     value_kind: 'actual',
     is_paid: true,
+    badges: [{type: 'member', label: 'Member (1 year)'}],
     received_at: NOW - 40 * DAY,
     occurred_at: NOW - 40 * DAY
   });
@@ -105,10 +107,36 @@ test('money and message counts survive a retention purge', () => {
   const totals = db.prepare('SELECT currency, value_kind, total_minor, event_count FROM session_currency_totals')
     .all()
     .map((row) => ({...row}));
-  assert.deepEqual(totals, [{currency: 'USD', value_kind: 'actual', total_minor: 500, event_count: 1}]);
+  assert.deepEqual(totals, [{currency: 'HKD', value_kind: 'actual', total_minor: 500, event_count: 1}]);
   const counters = db.prepare('SELECT message_count, payment_event_count FROM sessions WHERE id = ?').get(session.id);
   assert.equal(Number(counters.message_count), 2);
   assert.equal(Number(counters.payment_event_count), 1);
+  const raw = db.prepare("SELECT content, emotes, badges, amount_display FROM events WHERE external_id = 'old-sc'").get();
+  assert.deepEqual({...raw}, {content: null, emotes: null, badges: null, amount_display: null});
+  closeDatabase(db);
+});
+
+test('retention removes stale YouTube nicknames but keeps aggregate identity', () => {
+  const {db, record} = setup();
+  record({
+    external_id: 'old-with-badge',
+    badges: [{type: 'moderator', label: 'Moderator'}],
+    received_at: NOW - 40 * DAY,
+    occurred_at: NOW - 40 * DAY
+  });
+  // EventIngest records the *local observation* time for viewer activity, so
+  // force the viewer into the stale window to exercise nickname cleanup.
+  db.prepare('UPDATE viewers SET last_seen_at = ? WHERE platform_uid = ?').run(NOW - 40 * DAY, 'UC_A');
+  const summary = runRetention(db, {now: NOW, days: 30});
+  assert.equal(summary.purged, 1);
+  assert.ok(summary.purgedNicknames >= 1);
+  const viewer = db.prepare("SELECT id, nickname FROM viewers WHERE platform_uid = 'UC_A'").get();
+  assert.ok(viewer?.id);
+  assert.equal(viewer.nickname, null);
+  const nicknames = db.prepare('SELECT COUNT(*) AS count FROM viewer_nicknames WHERE viewer_id = ?').get(viewer.id);
+  assert.equal(Number(nicknames.count), 0);
+  // The event and its counts remain, so the session history does not change.
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM events WHERE external_id = 'old-with-badge'").get().count, 1);
   closeDatabase(db);
 });
 

@@ -155,8 +155,11 @@ export function buildRoutes() {
               {
                 id: 'youtube',
                 label: 'YouTube Live',
-                state: deps.youtube?.status().configured ? 'available' : 'needs_setup',
-                authMode: deps.youtube?.status().authMode ?? 'none'
+                state: 'available',
+                authMode: deps.youtube?.status().authMode ?? 'none',
+                captureMode: deps.youtube?.status().captureMode ?? 'official',
+                anonymousExperimental: true,
+                officialConfigured: Boolean(deps.youtube?.status().officialConfigured)
               }
             ],
             ai: {export: true, import: false},
@@ -553,7 +556,9 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         const body = await readOptionalJson(req);
         try {
-          const video = await deps.youtube.checkVideo(body.url ?? body.videoId ?? body.input);
+          const video = await deps.youtube.checkVideo(body.url ?? body.videoId ?? body.input, {
+            mode: body.mode ?? null
+          });
           sendJson(res, 200, {video});
         } catch (error) {
           throw youtubeError(error);
@@ -566,7 +571,9 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         const body = await readOptionalJson(req);
         try {
-          const result = await deps.youtube.connect(body.url ?? body.videoId ?? body.input);
+          const result = await deps.youtube.connect(body.url ?? body.videoId ?? body.input, {
+            mode: body.mode ?? null
+          });
           sendJson(res, 201, {
             session: serializeSessionRow(result.session),
             video: result.video,

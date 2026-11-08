@@ -109,7 +109,12 @@
       "membershipLabel": "Membership",
       "anonymous": "Anonymous viewer",
       "paid": "paid",
-      "emoteFallback": "Platform emote: {name}"
+      "emoteFallback": "Platform emote: {name}",
+      "badgeOwner": "Owner",
+      "badgeModerator": "Moderator",
+      "badgeVerified": "Verified",
+      "badgeMember": "Member",
+      "badgeUnknown": "Badge"
     },
     "top": {
       "title": "Most active viewers",
@@ -157,7 +162,7 @@
       "loginScanHint": "Scan the QR code below with the Bilibili mobile app and confirm on your phone. The code is generated locally; no external page is opened.",
       "loginQrUnavailable": "Could not render the QR code. Reload the page and try again.",
       "youtubeIntro": "Paste the link of a YouTube broadcast that is live right now, or its video ID. Only live broadcasts are supported — uploaded videos and comments are never fetched.",
-      "youtubeModeAnonymous": "Public broadcast mode: an application API key reads public chat, no sign-in needed",
+      "youtubeModeAnonymous": "No-login web chat (experimental)",
       "youtubeModeOAuth": "Signed in with a Google account",
       "youtubeModeNone": "Not configured",
       "youtubeNotConfiguredTitle": "YouTube is not configured in this build",
@@ -191,7 +196,7 @@
       "youtubeQuota": "API quota",
       "youtubeQuotaValue": "{used} / {limit} units used",
       "youtubePolicyTitle": "YouTube data retention",
-      "youtubePolicyBody": "YouTube's developer policies limit how long public chat data may be kept. Chat text is deleted automatically after {days} days; message counts, viewer identity and support totals are kept.",
+      "youtubePolicyBody": "YouTube’s developer policies cap retention of public chat data. Chat text, emote/badge metadata and stale nicknames are deleted after {days} days (maximum 30). Message counts, stable channel ids and support totals remain.",
       "youtubeApplyRetention": "Purge expired text now",
       "youtubeRetentionApplied": "Purged {count} expired messages",
       "youtubeConnection": "Live connection",
@@ -199,7 +204,28 @@
       "youtubeConnectionReconnecting": "Network interrupted — reconnecting…",
       "youtubeConnectionError": "Connection problem",
       "youtubeHotness": "Watching now {n}",
-      "youtubeAutoEnded": "The broadcast ended. The recording is saved"
+      "youtubeAutoEnded": "The broadcast ended. The recording is saved",
+      "youtubeModeLabel": "Connection mode",
+      "youtubeCaptureModeTitle": "YouTube connection mode",
+      "youtubeModeOfficial": "Official Data API (recommended)",
+      "youtubeModeOfficialHint": "Uses the official Data API: a maintainer configures an API key or Google OAuth once. Stable and documented.",
+      "youtubeModeAnonymousHint": "Reads the chat endpoint used by the public live web page. No API key and no Google login, but it is not a public official interface and may stop working at any time.",
+      "youtubeModeWarningTitle": "Experimental, unofficial interface",
+      "youtubeModeWarningBody": "This path bypasses the official Data API and uses an undocumented web-client endpoint. It may conflict with YouTube’s Terms of Service and can break without notice. LiveMemory does not make it the default and does not guarantee availability. Enable it only if you understand and accept the risk.",
+      "youtubeUseAnonymous": "Enable experimental no-login mode",
+      "youtubeBackToOfficial": "Switch to official mode",
+      "youtubeExperimentalBadge": "Experimental · no login",
+      "youtubeOfficialUnconfiguredTitle": "This build has no official YouTube credentials",
+      "youtubeOfficialUnconfiguredBody": "The official path needs a one-time developer API key or OAuth client. Streamers should not have to apply themselves, but this build does not include that configuration. You can try the experimental no-login mode below.",
+      "youtubeAnonymousChecked": "Public chat is readable without an account",
+      "youtubeAnonymousStats": "No API key · no official quota · unofficial interface",
+      "youtubeAnonymousIdentityNote": "The anonymous interface normally returns a real Channel ID. If a message lacks one, LiveMemory never invents identity from a nickname.",
+      "youtubeMoneyNote": "Super Chat only exposes a formatted amount string (for example HK$2,000.00). LiveMemory converts it only when the currency is confirmable; otherwise the amount stays unknown and the raw display text is kept.",
+      "youtubeConnectionAnonymous": "Experimental web chat",
+      "youtubeAnonymousUnavailable": "Experimental no-login chat is unavailable right now. Try again later or use the official API.",
+      "youtubeAdvanced": "Advanced settings",
+      "youtubeModeSwitched": "Connection mode switched",
+      "youtubePossibleGaps": "Possible message gaps: {n}"
     }
   },
   "history": {
@@ -382,7 +408,17 @@
       "theme": "Theme"
     },
     "saved": "Settings saved",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "youtube": {
+      "title": "YouTube capture",
+      "desc": "Choose how YouTube live chat is obtained. The official Data API is recommended; the no-login web chat is an experimental fallback when credentials are unavailable.",
+      "official": "Official Data API",
+      "officialDesc": "Uses an API key or Google OAuth and follows YouTube’s documentation. Requires a one-time maintainer configuration.",
+      "anonymous": "No-login web chat (experimental)",
+      "anonymousDesc": "Needs no API key or Google login and reads the public live web chat directly. Undocumented, may stop working, and may conflict with platform terms.",
+      "warning": "The experimental path is not the official API. LiveMemory does not guarantee availability and does not use it by default.",
+      "note": "Switching affects only recordings started afterwards; stored events are not rewritten."
+    }
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
@@ -425,7 +461,13 @@
     "youtubeLoginDenied": "You denied the authorization on the Google page.",
     "youtubeLoginTimeout": "Timed out waiting for the authorization. Please sign in again.",
     "youtubeLoginFailed": "The authorization result was invalid. Please sign in again.",
-    "youtubeClientInvalid": "The OAuth client configuration is invalid. Contact the maintainer."
+    "youtubeClientInvalid": "The OAuth client configuration is invalid. Contact the maintainer.",
+    "youtubeWebNetwork": "Could not read the YouTube live web page. Check the network and try again.",
+    "youtubeWebBlocked": "YouTube is temporarily limiting web requests. Slow down, try again later, or use the official API.",
+    "youtubeWebProtocol": "YouTube’s web chat response changed and this version cannot parse it. Use the official API or wait for an update.",
+    "youtubeWebStale": "The chat continuation expired; reconnecting.",
+    "youtubeWebRestricted": "YouTube requires a sign-in or restricts web access to this broadcast. LiveMemory does not bypass login.",
+    "youtubeWebNotConfigured": "Experimental no-login mode is not enabled."
   },
   "toast": {
     "saved": "Saved",

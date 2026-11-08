@@ -4,6 +4,7 @@ import {toEpochMs} from './time.mjs';
 import {sha256Hex} from './ids.mjs';
 import {cleanText} from './text.mjs';
 import {normalizeEmotes} from './emoticons.mjs';
+import {normalizeBadges} from './badges.mjs';
 
 /**
  * Canonical internal event model.
@@ -154,6 +155,8 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
   // original `content`; it is a small, de-duplicated annotation for the UI and
   // the AI package.
   const emotes = isMessageEvent(eventType) ? normalizeEmotes(draft.emotes) : null;
+  const badges = normalizeBadges(draft.badges);
+  const amountDisplay = cleanText(draft.amount_display ?? draft.amountDisplay, 80);
 
   const event = {
     session_id: sessionId,
@@ -167,12 +170,14 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
     received_at: receivedAt,
     content: cleanText(draft.content, MAX_CONTENT_LENGTH),
     emotes,
+    badges,
     gift_id: cleanText(draft.gift_id ?? draft.giftId, 120),
     gift_name: cleanText(draft.gift_name ?? draft.giftName, 120),
     gift_type: giftType === 'free' || giftType === 'paid' ? giftType : null,
     gift_quantity: isPaymentEvent(eventType) ? giftQuantity : 1,
     unit_amount_minor: safeUnit,
     amount_minor: eventType === EVENT_TYPES.CHAT ? null : safeAmount,
+    amount_display: amountDisplay,
     currency,
     value_kind: eventType === EVENT_TYPES.CHAT ? VALUE_KIND.UNKNOWN : valueKind,
     is_paid: isPaid,
@@ -203,7 +208,9 @@ export function buildDedupeKey(event) {
     event.gift_name ?? '',
     event.gift_quantity ?? '',
     event.amount_minor ?? '',
-    event.currency ?? ''
+    event.currency ?? '',
+    event.amount_display ?? '',
+    normalizeBadges(event.badges)?.map((badge) => `${badge.type}:${badge.label ?? ''}`).join(',') ?? ''
   ].join('\u0001');
   return `fp:${sha256Hex(fingerprint)}`;
 }
