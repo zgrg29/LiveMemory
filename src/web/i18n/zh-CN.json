@@ -1,0 +1,320 @@
+{
+  "app": {
+    "tagline": "本地优先的直播记忆系统",
+    "localOnly": "仅本机",
+    "privacyNote": "所有数据都保存在这台电脑"
+  },
+  "a11y": {
+    "skipToContent": "跳到主要内容",
+    "openNavigation": "打开导航",
+    "themeToggle": "切换主题"
+  },
+  "nav": {
+    "live": "直播记录",
+    "history": "直播历史",
+    "viewers": "观众档案",
+    "ai": "AI 分析中心",
+    "settings": "设置"
+  },
+  "status": {
+    "idle": "空闲",
+    "connected": "记录中",
+    "connecting": "连接中",
+    "live": "直播中",
+    "ended": "已结束",
+    "interrupted": "已中断",
+    "simulated": "模拟"
+  },
+  "common": {
+    "loading": "正在载入…",
+    "error": "出现了一点问题",
+    "retry": "重试",
+    "refresh": "刷新",
+    "cancel": "取消",
+    "close": "关闭",
+    "search": "搜索",
+    "all": "全部",
+    "unknown": "未知",
+    "noData": "暂无数据",
+    "viewAll": "查看全部",
+    "back": "返回",
+    "none": "无",
+    "events": "条事件",
+    "people": "位观众",
+    "perMinute": "/ 分钟",
+    "notAvailable": "暂未支持",
+    "actualPaid": "实际支付",
+    "displayValue": "礼物展示价值",
+    "platform": {
+      "mock": "模拟直播",
+      "bilibili": "哔哩哔哩直播",
+      "youtube": "YouTube 直播"
+    }
+  },
+  "format": {
+    "durationHM": "{h} 小时 {m} 分",
+    "durationMS": "{m} 分 {s} 秒",
+    "durationS": "{s} 秒",
+    "countMessages": "{n} 条消息",
+    "countPeople": "{n} 位观众"
+  },
+  "live": {
+    "pageTitle": "直播记录",
+    "pageSubtitle": "记录一场直播，实时查看聊天热度，结束后保留这一刻的统计与摘要。",
+    "hero": {
+      "liveEyebrow": "正在记录",
+      "idleEyebrow": "准备就绪",
+      "idleTitle": "当前没有正在记录的直播",
+      "idleSubtitle": "可以先开始一场模拟直播，体验 LiveMemory 如何记录聊天、礼物与观众。真实的哔哩哔哩与 YouTube 连接将在 M3 阶段提供。",
+      "simulatedChip": "模拟场次",
+      "elapsed": "已记录",
+      "startedAt": "开始于",
+      "start": "开始模拟直播",
+      "stop": "结束记录",
+      "simulationTitle": "模拟直播",
+      "stopDone": "记录已结束并保存",
+      "starting": "正在开始…",
+      "stopping": "正在停止…",
+      "startFailed": "模拟直播未能开始。"
+    },
+    "stats": {
+      "messages": "消息",
+      "viewers": "独立观众",
+      "support": "经济支持",
+      "rate": "峰值速度",
+      "payments": "付费事件",
+      "messagesSub": "弹幕与醒目留言",
+      "viewersSub": "本场参与人数",
+      "supportSub": "付费事件，精确累计",
+      "rateSub": "每分钟",
+      "noSupport": "—"
+    },
+    "chart": {
+      "title": "消息密度",
+      "hint": "时间粒度随直播时长自动调整",
+      "empty": "有消息之后，这里会出现热度曲线。",
+      "messages": "消息",
+      "viewers": "观众",
+      "peak": "峰值：单个时间段 {n} 条消息"
+    },
+    "feed": {
+      "title": "最近动态",
+      "hint": "最新在上",
+      "empty": "消息、礼物与醒目留言会显示在这里。",
+      "giftLabel": "送出 {name} ×{qty}",
+      "giftTag": "礼物",
+      "scLabel": "醒目留言",
+      "guardLabel": "大航海",
+      "membershipLabel": "会员",
+      "anonymous": "未识别观众",
+      "paid": "付费"
+    },
+    "top": {
+      "title": "最活跃观众",
+      "hint": "本场统计",
+      "empty": "还没有观众发言。",
+      "messages": "{n} 条消息"
+    },
+    "last": {
+      "title": "上一场直播",
+      "empty": "还没有历史场次。",
+      "link": "在历史中查看"
+    }
+  },
+  "history": {
+    "pageTitle": "直播历史",
+    "pageSubtitle": "每一场已记录的直播，以及不依赖任何 AI 服务的本地统计。",
+    "empty": "还没有记录任何直播",
+    "emptyBody": "在“直播记录”页开始一次记录。结束后的场次会连同统计与时间线保存在这里。",
+    "columns": {
+      "session": "场次",
+      "date": "开始时间",
+      "duration": "时长",
+      "messages": "消息",
+      "viewers": "观众",
+      "support": "支持"
+    },
+    "ai": {
+      "none": "待分析",
+      "exported": "已导出分析包",
+      "imported": "已导入分析"
+    },
+    "detail": {
+      "overview": "总览",
+      "timelineTitle": "活动时间线",
+      "supportTitle": "经济支持",
+      "supportEmpty": "本场没有付费事件。",
+      "topSpeakers": "最活跃观众",
+      "topSupporters": "支持最多的观众",
+      "topEmpty": "暂无观众数据。",
+      "aiTitle": "AI 分析",
+      "aiPendingTitle": "尚未导入分析结果",
+      "aiPendingBody": "导出分析包并交给 ChatGPT，可以补充讨论话题、情绪变化与切片建议。",
+      "aiCta": "前往 AI 分析中心",
+      "storageTitle": "已保存的数据",
+      "eventsKept": "保留事件",
+      "contentStored": "已保存聊天文本",
+      "simulatedNote": "本场为模拟数据，用于验证记录流程。",
+      "interruptedNote": "本场记录被中断（软件异常关闭），统计按已收到的数据保留。",
+      "back": "返回直播历史"
+    }
+  },
+  "viewers": {
+    "pageTitle": "观众档案",
+    "pageSubtitle": "基于平台稳定 ID 建立的长期档案，昵称变化不会把同一个人拆成两个。",
+    "searchPlaceholder": "按昵称搜索",
+    "empty": "还没有观众档案",
+    "emptyBody": "观众在已记录的场次中发言或送礼后，会自动出现在这里。",
+    "emptySearch": "没有匹配该搜索的观众。",
+    "countLabel": "{n} 位观众",
+    "metric": {
+      "sessions": "参与场次",
+      "messages": "累计发言",
+      "support": "累计支持",
+      "lastSeen": "最近出现"
+    },
+    "detail": {
+      "back": "返回观众档案",
+      "focus": "标记为重点关注",
+      "unfocus": "取消重点关注",
+      "focusedChip": "重点关注",
+      "identityTitle": "身份",
+      "platformUid": "稳定 ID",
+      "firstSeen": "首次出现",
+      "lastSeen": "最近出现",
+      "nicknamesTitle": "昵称历史",
+      "nicknameCurrent": "当前",
+      "supportTitle": "累计经济支持",
+      "supportEmpty": "没有记录到付费支持。",
+      "sessionsTitle": "共同参与的场次",
+      "sessionsEmpty": "还没有记录到场次。",
+      "interestsTitle": "长期关注话题",
+      "interestsEmpty": "长期兴趣由导入的 AI 画像更新补充（M7 阶段）。在那之前这里只显示本地记录的事实。",
+      "notes": "LiveMemory 只呈现它记录到的事实，如何使用这些信息完全由你决定。"
+    }
+  },
+  "ai": {
+    "pageTitle": "AI 分析中心",
+    "pageSubtitle": "不需要 API Key，也不连接任何云端。你下载分析包，在 ChatGPT 中分析，再把结果导入回来。",
+    "steps": {
+      "exportTitle": "1 · 导出分析包",
+      "exportDesc": "生成一个 .zip，包含聊天记录、统计、提示词与结果 Schema。",
+      "promptTitle": "2 · 交给 ChatGPT",
+      "promptDesc": "上传分析包，并粘贴包内的任务说明。",
+      "importTitle": "3 · 导入结果",
+      "importDesc": "校验返回的 JSON 并合并进控制台。"
+    },
+    "export": {
+      "title": "创建分析包",
+      "sessionLabel": "场次",
+      "languageLabel": "分析语言",
+      "button": "创建分析包",
+      "exporting": "正在生成…",
+      "download": "下载分析包",
+      "successTitle": "分析包已生成",
+      "successBody": "{messages} 条消息 · {viewers} 位观众 · {size}",
+      "hint": "压缩包包含聊天记录、场次统计、观众上下文、对应语言的提示词以及 JSON Schema。不包含 Cookie 或任何令牌。",
+      "empty": "请先记录一场直播，目前还没有可分析的内容。",
+      "needSession": "请选择一个场次。"
+    },
+    "prompt": {
+      "title": "给 ChatGPT 的任务说明",
+      "hint": "同样的内容也保存在压缩包的 instructions.md 中。",
+      "copy": "复制说明",
+      "copied": "说明已复制",
+      "loading": "正在载入说明…"
+    },
+    "import": {
+      "title": "导入 AI 结果",
+      "body": "导入与 Schema 校验将在 M6 阶段提供。当前分析包内已经包含完整 Schema，方便你先手动核对结果。",
+      "badge": "计划于 M6 提供"
+    },
+    "packages": {
+      "title": "已导出的分析包",
+      "empty": "还没有导出过分析包。",
+      "download": "下载",
+      "meta": "{messages} 条消息 · {date}"
+    },
+    "protocolLabel": "协议版本"
+  },
+  "settings": {
+    "pageTitle": "设置",
+    "pageSubtitle": "语言、外观与存储方式。所有偏好都保存在这台电脑上，重启后继续生效。",
+    "language": {
+      "title": "语言",
+      "desc": "同时影响网页控制台与启动时的命令行窗口。",
+      "system": "跟随系统",
+      "systemHint": "当前识别为：{locale}",
+      "zh": "简体中文",
+      "ja": "日本語",
+      "en": "English",
+      "effective": "当前显示语言：{locale}",
+      "note": "聊天原文不会被翻译；AI 报告使用你选择的分析语言。"
+    },
+    "theme": {
+      "title": "外观",
+      "desc": "明亮与黑暗模式分别设计，保证舒适的对比度。",
+      "system": "跟随系统",
+      "light": "明亮",
+      "dark": "黑暗",
+      "hint": "选择“跟随系统”后，Windows 切换主题时会自动响应。"
+    },
+    "storage": {
+      "title": "存储模式",
+      "desc": "决定原始聊天文本保留多久。累计统计与观众档案始终保留。",
+      "compact": "精简模式（默认）",
+      "compactDesc": "原始聊天在直播期间保存；分析结果成功导入并校验后清理文本，条数、观众与经济支持仍然保留。",
+      "full": "完整存档",
+      "fullDesc": "长期保留原始聊天与事件，方便以后重新分析。",
+      "note": "自动清理属于 M4/M6 阶段；当前版本不会自动删除任何数据。"
+    },
+    "data": {
+      "title": "你的数据",
+      "desc": "所有内容都在你自己的文件夹里，不会上传到任何地方。",
+      "dataDir": "数据目录",
+      "dbSize": "数据库占用",
+      "sessions": "场次",
+      "viewers": "观众",
+      "events": "事件",
+      "backupTitle": "备份与迁移",
+      "backupBody": "可移植的 .livememory 备份与恢复将在 M5 阶段提供。目前可以在关闭 LiveMemory 后复制整个数据目录。"
+    },
+    "about": {
+      "title": "关于",
+      "version": "版本",
+      "license": "许可证",
+      "repo": "项目主页",
+      "runtime": "本地服务",
+      "schema": "数据库结构版本",
+      "language": "界面语言",
+      "theme": "主题"
+    },
+    "saved": "设置已保存",
+    "saving": "正在保存…"
+  },
+  "errors": {
+    "generic": "出现了问题，请再试一次。",
+    "network": "无法连接本地 LiveMemory 服务，请确认命令行窗口仍在运行。",
+    "sessionNotFound": "该场次已不存在。",
+    "sessionEmpty": "这个场次还没有可分析的消息。",
+    "sessionActive": "已经有一场直播正在记录。",
+    "sessionNotActive": "该场次当前不在记录中。",
+    "settingsInvalid": "该设置值无效。",
+    "invalidJson": "请求内容不是合法的 JSON。",
+    "payloadTooLarge": "请求内容过大。",
+    "notFound": "未找到。",
+    "eventInvalid": "有一条事件无法解析，已跳过。",
+    "viewerNotFound": "该观众已不存在。",
+    "badRequest": "请求内容不完整。",
+    "jsonRequired": "需要 JSON 格式的请求内容。",
+    "portUnavailable": "没有可用的本地端口。"
+  },
+  "toast": {
+    "saved": "已保存",
+    "language": "语言已更新",
+    "theme": "主题已更新",
+    "copied": "已复制到剪贴板",
+    "exported": "分析包已生成",
+    "downloadStarted": "已开始下载"
+  }
+}

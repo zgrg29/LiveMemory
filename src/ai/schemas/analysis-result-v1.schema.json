@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://livememory.local/schemas/analysis-result-v1.schema.json",
+  "title": "LiveMemory analysis result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "task_id", "session_id", "locale", "session_topics", "viewer_profiles"],
+  "properties": {
+    "protocol": {"const": "livememory-analysis-result-v1"},
+    "task_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "session_id": {"type": "string", "minLength": 1, "maxLength": 100},
+    "locale": {"enum": ["zh-CN", "ja", "en"]},
+    "session_topics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "topics", "sentiment", "disputes", "highlights"],
+      "properties": {
+        "summary": {"type": "string", "maxLength": 4000},
+        "topics": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["title", "started_at", "ended_at", "summary", "key_points", "confidence", "evidence"],
+            "properties": {
+              "title": {"type": "string", "minLength": 1, "maxLength": 120},
+              "started_at": {"type": "string", "format": "date-time"},
+              "ended_at": {"type": "string", "format": "date-time"},
+              "summary": {"type": "string", "maxLength": 2000},
+              "key_points": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "evidence": {"enum": ["observed", "inferred"]},
+              "message_refs": {"type": "array", "maxItems": 200, "items": {"type": "integer", "minimum": 1}}
+            }
+          }
+        },
+        "sentiment": {
+          "type": "array",
+          "maxItems": 120,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "tone", "note", "confidence"],
+            "properties": {
+              "at": {"type": "string", "format": "date-time"},
+              "tone": {"enum": ["positive", "neutral", "negative", "mixed"]},
+              "note": {"type": "string", "maxLength": 500},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "disputes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary", "started_at", "note", "confidence"],
+            "properties": {
+              "summary": {"type": "string", "maxLength": 500},
+              "started_at": {"type": "string", "format": "date-time"},
+              "note": {"type": "string", "maxLength": 500},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "highlights": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["started_at", "ended_at", "reason", "clip_suggestion"],
+            "properties": {
+              "started_at": {"type": "string", "format": "date-time"},
+              "ended_at": {"type": "string", "format": "date-time"},
+              "reason": {"type": "string", "maxLength": 500},
+              "clip_suggestion": {"type": "string", "maxLength": 500}
+            }
+          }
+        }
+      }
+    },
+    "viewer_profiles": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["viewer_id", "interests", "dislikes", "summary", "confidence"],
+        "properties": {
+          "viewer_id": {"type": "string", "minLength": 1, "maxLength": 200},
+          "interests": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["topic", "strength", "evidence", "note"],
+              "properties": {
+                "topic": {"type": "string", "minLength": 1, "maxLength": 80},
+                "strength": {"enum": ["emerging", "stable", "fading"]},
+                "evidence": {"enum": ["observed", "inferred"]},
+                "note": {"type": "string", "maxLength": 300}
+              }
+            }
+          },
+          "dislikes": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["topic", "evidence", "note"],
+              "properties": {
+                "topic": {"type": "string", "minLength": 1, "maxLength": 80},
+                "evidence": {"enum": ["observed", "inferred"]},
+                "note": {"type": "string", "maxLength": 300}
+              }
+            }
+          },
+          "summary": {"type": "string", "maxLength": 1000},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  }
+}

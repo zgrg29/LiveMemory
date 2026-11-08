@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+# Windows batch files need CRLF for cmd.exe.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets must never be normalised.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.tgz binary
+*.blob binary

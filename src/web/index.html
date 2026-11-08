@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-theme-preference="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>LiveMemory</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script src="/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/pages.css">
+</head>
+<body>
+  <a class="skip-link" href="#view" data-i18n="a11y.skipToContent">Skip to content</a>
+
+  <div class="app-shell" id="app">
+    <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+
+    <aside class="sidebar" id="sidebar" aria-label="Primary">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 28 28" width="28" height="28" fill="none">
+            <rect x="1" y="1" width="26" height="26" rx="8" fill="currentColor" opacity="0.12"></rect>
+            <path d="M8.5 9.5h11M8.5 14h11M8.5 18.5h6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+            <circle cx="20.4" cy="18.6" r="2.1" fill="currentColor"></circle>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">LiveMemory</span>
+          <span class="brand-tagline" data-i18n="app.tagline">Local-first livestream memory</span>
+        </span>
+      </div>
+
+      <nav class="nav" id="nav" aria-label="Sections">
+        <a class="nav-item" href="#/live" data-nav="live">
+          <span class="nav-icon" aria-hidden="true"></span>Live
+        </a>
+        <a class="nav-item" href="#/history" data-nav="history">
+          <span class="nav-icon" aria-hidden="true"></span>History
+        </a>
+        <a class="nav-item" href="#/viewers" data-nav="viewers">
+          <span class="nav-icon" aria-hidden="true"></span>Viewers
+        </a>
+        <a class="nav-item" href="#/ai" data-nav="ai">
+          <span class="nav-icon" aria-hidden="true"></span>AI analysis
+        </a>
+        <a class="nav-item" href="#/settings" data-nav="settings">
+          <span class="nav-icon" aria-hidden="true"></span>Settings
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="connection-pill" id="connection-pill" data-state="idle">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connection-text" data-i18n="status.idle">Idle</span>
+        </div>
+        <div class="sidebar-meta">
+          <span id="app-version">v0.1.0</span>
+          <span class="dot-sep" aria-hidden="true">路</span>
+          <span id="local-only-label" data-i18n="app.localOnly">Local only</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+          <span class="menu-bars" aria-hidden="true"></span>
+        </button>
+        <div class="topbar-title" id="page-title">LiveMemory</div>
+        <div class="topbar-actions">
+          <span class="privacy-note" id="privacy-note" data-i18n="app.privacyNote">Everything stays on this computer</span>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle theme" title="Theme">
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+      </header>
+
+      <div class="view" id="view" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <div class="toast-region" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
+

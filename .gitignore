@@ -1,0 +1,40 @@
+# Dependencies (the app is intentionally dependency-free at runtime)
+node_modules/
+package-lock.json
+
+# Local reference checkout of other projects (never committed, never modified)
+.ref/
+
+# Build output
+build/
+dist/
+*.exe
+*.blob
+*.zip
+*.7z
+
+# Runtime data (never committed: user databases, logs, exports, backups)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.livememory
+*.lmbackup
+*.tmp
+
+# Logs and temporary analysis packages
+log/*.log
+logs/
+*.jsonl.tmp
+*.log
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test artifacts
+tests/.tmp/
+coverage/

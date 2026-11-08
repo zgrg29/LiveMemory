@@ -1,0 +1,413 @@
+import {createReadStream, existsSync, statSync} from 'node:fs';
+import {join} from 'node:path';
+import {sendJson, sendText, readJsonBody} from './http.mjs';
+import {AppError, ERROR_CODES} from '../shared/errors.mjs';
+import {normalizeLocale} from '../shared/locale.mjs';
+import {resolveLocale} from '../shared/locale.mjs';
+import {
+  serializeEvent,
+  serializePackage,
+  serializeSessionRow,
+  serializeViewerRow
+} from './serializers.mjs';
+import {getSession, listSessions} from '../storage/repositories/sessions.mjs';
+import {listEvents, contentStats} from '../storage/repositories/events.mjs';
+import {buildSessionSummary} from '../analytics/sessions/summary.mjs';
+import {buildViewerProfile} from '../analytics/viewers/profile.mjs';
+import {listViewers, setViewerFocused, sessionSupportBySessionIds, viewerSupportByViewerIds} from '../storage/repositories/viewers.mjs';
+import {getPackage, listPackages} from '../storage/repositories/ai-packages.mjs';
+import {buildAnalysisPackage, ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
+import {buildInstructions} from '../ai/prompts/instructions.mjs';
+import {currentSchemaVersion} from '../storage/database/migrations/index.mjs';
+import {databaseSizeBytes} from '../storage/database/connection.mjs';
+import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
+
+/**
+ * Route table. Every handler is async, returns void and writes the response
+ * itself; thrown AppErrors are converted by the HTTP layer.
+ */
+
+const SPEEDS = {calm: 1600, normal: 750, busy: 320};
+
+function statusPayload(deps) {
+  const {paths, db, settingsStore, sessionManager, startedAt} = deps;
+  return {
+    server: {
+      name: APP_NAME,
+      version: APP_VERSION,
+      port: deps.getPort(),
+      startedAt,
+      uptimeSeconds: Math.round((Date.now() - startedAt) / 1000)
+    },
+    platform: sessionManager.status(),
+    database: {
+      ok: true,
+      schemaVersion: currentSchemaVersion(db),
+      sizeBytes: databaseSizeBytes(paths.databaseFile)
+    },
+    data: {dir: paths.root},
+    storage: {mode: settingsStore.get().storageMode},
+    ai: {export: true, import: false, protocol: ANALYSIS_PROTOCOL}
+  };
+}
+
+function effectiveSettings(deps) {
+  const settings = deps.settingsStore.get();
+  return {
+    settings,
+    effective: {
+      locale: resolveLocale(settings.locale, deps.systemLocale),
+      systemLocale: deps.systemLocale,
+      theme: settings.theme,
+      storageMode: settings.storageMode
+    }
+  };
+}
+
+function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
+  return new AppError(code, {messageKey, httpStatus: 404});
+}
+
+export function createRouter(routes, deps) {
+  const compiled = routes.map((route) => {
+    const names = [];
+    const pattern = route.path.replace(/:[A-Za-z_]+/g, (token) => {
+      names.push(token.slice(1));
+      return '([^/]+)';
+    });
+    return {method: route.method, regex: new RegExp(`^${pattern}$`), names, handler: route.handler};
+  });
+
+  return async function route(req, res, url) {
+    for (const item of compiled) {
+      const match = item.regex.exec(url.pathname);
+      if (!match) continue;
+      if (item.method !== req.method) continue;
+      const params = {};
+      item.names.forEach((name, index) => {
+        params[name] = decodeURIComponent(match[index + 1]);
+      });
+      await item.handler({req, res, url, params, deps});
+      return true;
+    }
+    return false;
+  };
+}
+
+export function buildRoutes() {
+  return [
+    {
+      method: 'GET',
+      path: '/api/health',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, {
+          status: 'ok',
+          name: APP_NAME,
+          version: APP_VERSION,
+          port: deps.getPort(),
+          startedAt: deps.startedAt
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/bootstrap',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, {
+          app: {
+            name: APP_NAME,
+            version: APP_VERSION,
+            homepage: APP_HOMEPAGE,
+            startedAt: deps.startedAt
+          },
+          ...effectiveSettings(deps),
+          status: statusPayload(deps),
+          capabilities: {
+            platforms: [
+              {id: 'mock', label: 'Simulation', state: 'available'},
+              {id: 'bilibili', label: 'Bilibili Live', state: 'planned'},
+              {id: 'youtube', label: 'YouTube Live', state: 'planned'}
+            ],
+            ai: {export: true, import: false},
+            backup: {export: false, import: false}
+          }
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/status',
+      handler: ({res, deps}) => sendJson(res, 200, statusPayload(deps))
+    },
+    {
+      method: 'GET',
+      path: '/api/settings',
+      handler: ({res, deps}) => sendJson(res, 200, effectiveSettings(deps))
+    },
+    {
+      method: 'PATCH',
+      path: '/api/settings',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        deps.settingsStore.update(body);
+        deps.logger?.info({event: 'settings.updated', keys: Object.keys(body)});
+        sendJson(res, 200, effectiveSettings(deps));
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/sessions',
+      handler: ({res, url, deps}) => {
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        const platform = url.searchParams.get('platform');
+        const rows = listSessions(deps.db, {limit, offset, platform});
+        const support = sessionSupportBySessionIds(deps.db, rows.map((row) => row.id));
+        sendJson(res, 200, {
+          sessions: rows.map((row) => ({...serializeSessionRow(row), support: support.get(row.id) ?? []}))
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/sessions/current',
+      handler: ({res, deps}) => {
+        const live = deps.sessionManager.status().activeSession;
+        if (!live) {
+          sendJson(res, 200, {session: null});
+          return;
+        }
+        sendJson(res, 200, {session: buildSessionSummary(deps.db, live.id)});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/sessions/:id',
+      handler: ({res, params, deps}) => {
+        const summary = buildSessionSummary(deps.db, params.id);
+        if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        sendJson(res, 200, summary);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/sessions/:id/stop',
+      handler: async ({res, params, deps}) => {
+        const session = getSession(deps.db, params.id);
+        if (!session) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        if (session.status !== 'live') {
+          throw new AppError(ERROR_CODES.SESSION_NOT_ACTIVE, {messageKey: 'errors.sessionNotActive', httpStatus: 409});
+        }
+        const result = await deps.sessionManager.stopActive();
+        sendJson(res, 200, {session: serializeSessionRow(result.session)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/simulate/start',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 120) : 'Simulated stream';
+        const speed = typeof body.speed === 'string' && Object.hasOwn(SPEEDS, body.speed) ? body.speed : 'normal';
+        const result = await deps.sessionManager.startSimulation({title, intervalMs: SPEEDS[speed]});
+        if (!result.started) {
+          sendJson(res, 409, {
+            error: {
+              code: 'SESSION_ACTIVE',
+              messageKey: 'errors.sessionActive',
+              details: {sessionId: result.session?.id ?? null}
+            }
+          });
+          return;
+        }
+        sendJson(res, 201, {session: serializeSessionRow(result.session), speed});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/simulate/stop',
+      handler: async ({res, deps}) => {
+        const result = await deps.sessionManager.stopActive();
+        sendJson(res, 200, {session: result.session ? serializeSessionRow(result.session) : null});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/viewers',
+      handler: ({res, url, deps}) => {
+        const query = url.searchParams.get('query') ?? '';
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const platform = url.searchParams.get('platform');
+        const rows = listViewers(deps.db, {query, limit, platform});
+        const support = viewerSupportByViewerIds(deps.db, rows.map((row) => row.id));
+        sendJson(res, 200, {
+          viewers: rows.map((row) => ({...serializeViewerRow(row), support: support.get(row.id) ?? []}))
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/viewers/:id',
+      handler: ({res, params, deps}) => {
+        const profile = buildViewerProfile(deps.db, params.id);
+        if (!profile) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotFound');
+        sendJson(res, 200, profile);
+      }
+    },
+    {
+      method: 'PATCH',
+      path: '/api/viewers/:id',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readJsonBody(req);
+        if (typeof body.focused !== 'boolean') {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const profile = buildViewerProfile(deps.db, params.id);
+        if (!profile) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotFound');
+        setViewerFocused(deps.db, params.id, body.focused);
+        sendJson(res, 200, buildViewerProfile(deps.db, params.id));
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/events',
+      handler: ({res, url, deps}) => {
+        const sessionId = url.searchParams.get('sessionId');
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const beforeId = url.searchParams.get('beforeId');
+        const rows = listEvents(deps.db, {sessionId, limit, beforeId: beforeId ? Number(beforeId) : null});
+        sendJson(res, 200, {events: rows.map(serializeEvent)});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/events/stream',
+      handler: ({req, res, deps}) => {
+        deps.hub.add(req, res);
+        // Response stays open until the client disconnects.
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/storage',
+      handler: ({res, deps}) => {
+        const {db, paths, settingsStore} = deps;
+        const sessions = db.prepare('SELECT COUNT(*) AS count FROM sessions').get();
+        const viewers = db.prepare('SELECT COUNT(*) AS count FROM viewers').get();
+        const events = db.prepare('SELECT COUNT(*) AS count FROM events').get();
+        const purged = db.prepare('SELECT COUNT(*) AS count FROM events WHERE content_purged_at IS NOT NULL').get();
+        sendJson(res, 200, {
+          mode: settingsStore.get().storageMode,
+          dataDir: paths.root,
+          databaseBytes: databaseSizeBytes(paths.databaseFile),
+          exportsDir: paths.exports,
+          backupsDir: paths.backups,
+          counts: {
+            sessions: Number(sessions?.count ?? 0),
+            viewers: Number(viewers?.count ?? 0),
+            events: Number(events?.count ?? 0),
+            purgedEvents: Number(purged?.count ?? 0)
+          }
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/instructions',
+      handler: ({res, url, deps}) => {
+        const requested = normalizeLocale(url.searchParams.get('locale'));
+        const locale = requested && requested !== 'system'
+          ? requested
+          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        sendJson(res, 200, {locale, text: buildInstructions(locale)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/packages',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const summary = buildSessionSummary(deps.db, sessionId);
+        if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        if (summary.stats.messages === 0) {
+          throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
+        }
+        const requested = body.locale ? normalizeLocale(body.locale) : null;
+        const locale = requested && requested !== 'system'
+          ? requested
+          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        const result = await buildAnalysisPackage({
+          db: deps.db,
+          sessionId,
+          locale,
+          exportsDir: deps.paths.exports,
+          now: Date.now()
+        });
+        deps.logger?.info({event: 'ai.package.created', packageId: result.id, sessionId, messages: result.messageCount});
+        sendJson(res, 201, {
+          package: {
+            id: result.id,
+            sessionId: result.sessionId,
+            fileName: result.fileName,
+            bytes: result.bytes,
+            checksum: result.checksum,
+            messageCount: result.messageCount,
+            viewerCount: result.viewerCount,
+            locale: result.locale,
+            protocol: result.protocol,
+            createdAt: result.createdAt
+          }
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/packages',
+      handler: ({res, url, deps}) => {
+        const sessionId = url.searchParams.get('sessionId');
+        const rows = listPackages(deps.db, {sessionId});
+        sendJson(res, 200, {packages: rows.map(serializePackage)});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/packages/:id/download',
+      handler: ({res, params, deps}) => {
+        const record = getPackage(deps.db, params.id);
+        if (!record) throw notFound();
+        const absolute = join(deps.paths.exports, record.relative_path);
+        if (!existsSync(absolute)) throw notFound();
+        const stat = statSync(absolute);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Length': stat.size,
+          'Content-Disposition': `attachment; filename="${record.file_name.replace(/"/g, '')}"`,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        createReadStream(absolute).pipe(res);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/storage/content',
+      handler: ({res, url, deps}) => {
+        const sessionId = url.searchParams.get('sessionId');
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        sendJson(res, 200, {stats: contentStats(deps.db, sessionId)});
+      }
+    }
+  ];
+}
+
+/** Exposed for tests. */
+export const __internal = {SPEEDS, statusPayload, effectiveSettings};

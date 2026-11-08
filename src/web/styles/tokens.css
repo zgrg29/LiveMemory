@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Design tokens — light and dark are designed separately, not inverted.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Typography: system fonts first, with explicit CJK fallbacks so Chinese and
+     Japanese render correctly on every Windows install. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Hiragino Sans",
+    "Yu Gothic UI", "Noto Sans JP", "Meiryo", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
+
+  /* Surfaces */
+  --bg: #f5f5f7;
+  --bg-gradient: radial-gradient(1200px 600px at 15% -10%, #ffffff 0%, #f5f5f7 55%);
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f5f5f7;
+  --surface-hover: rgba(0, 0, 0, 0.035);
+
+  /* Text */
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #86868b;
+  --text-inverse: #ffffff;
+
+  /* Lines */
+  --hairline: rgba(0, 0, 0, 0.085);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+
+  /* Accent and semantic colours */
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-pressed: #0068d1;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(0, 113, 227, 0.10);
+  --accent-soft-strong: rgba(0, 113, 227, 0.18);
+  --success: #1a7f37;
+  --success-soft: rgba(26, 127, 55, 0.10);
+  --warning: #a35200;
+  --warning-soft: rgba(163, 82, 0, 0.10);
+  --danger: #c8102e;
+  --danger-soft: rgba(200, 16, 46, 0.10);
+  --live: #34a853;
+  --live-soft: rgba(52, 168, 83, 0.12);
+
+  /* Chart */
+  --chart-line: #0071e3;
+  --chart-fill-top: rgba(0, 113, 227, 0.22);
+  --chart-fill-bottom: rgba(0, 113, 227, 0.02);
+  --chart-grid: rgba(0, 0, 0, 0.07);
+  --chart-muted: rgba(0, 113, 227, 0.35);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 1px rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.12), 0 6px 16px rgba(0, 0, 0, 0.06);
+
+  /* Geometry */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 980px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 44px;
+  --space-8: 64px;
+
+  /* Shell */
+  --sidebar-width: 256px;
+  --content-max: 1120px;
+  --topbar-height: 64px;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration: 200ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --bg-gradient: radial-gradient(1200px 600px at 15% -10%, #131316 0%, #000000 60%);
+  --surface: #1c1c1e;
+  --surface-raised: #242426;
+  --surface-sunken: #141416;
+  --surface-hover: rgba(255, 255, 255, 0.055);
+
+  --text: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --text-tertiary: #8e8e93;
+  --text-inverse: #0b0b0c;
+
+  --hairline: rgba(255, 255, 255, 0.10);
+  --hairline-strong: rgba(255, 255, 255, 0.20);
+
+  --accent: #0a84ff;
+  --accent-hover: #369aff;
+  --accent-pressed: #0070e0;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(10, 132, 255, 0.16);
+  --accent-soft-strong: rgba(10, 132, 255, 0.26);
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.14);
+  --warning: #ffb340;
+  --warning-soft: rgba(255, 179, 64, 0.14);
+  --danger: #ff6961;
+  --danger-soft: rgba(255, 105, 97, 0.14);
+  --live: #30d158;
+  --live-soft: rgba(48, 209, 88, 0.16);
+
+  --chart-line: #369aff;
+  --chart-fill-top: rgba(54, 154, 255, 0.28);
+  --chart-fill-bottom: rgba(54, 154, 255, 0.02);
+  --chart-grid: rgba(255, 255, 255, 0.09);
+  --chart-muted: rgba(54, 154, 255, 0.42);
+
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.7), 0 8px 20px rgba(0, 0, 0, 0.5);
+}

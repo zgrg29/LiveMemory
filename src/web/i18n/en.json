@@ -1,0 +1,320 @@
+{
+  "app": {
+    "tagline": "Local-first livestream memory",
+    "localOnly": "Local only",
+    "privacyNote": "Everything stays on this computer"
+  },
+  "a11y": {
+    "skipToContent": "Skip to content",
+    "openNavigation": "Open navigation",
+    "themeToggle": "Toggle theme"
+  },
+  "nav": {
+    "live": "Live",
+    "history": "History",
+    "viewers": "Viewers",
+    "ai": "AI analysis",
+    "settings": "Settings"
+  },
+  "status": {
+    "idle": "Idle",
+    "connected": "Recording",
+    "connecting": "Connecting",
+    "live": "Live",
+    "ended": "Ended",
+    "interrupted": "Interrupted",
+    "simulated": "Simulated"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "retry": "Try again",
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "close": "Close",
+    "search": "Search",
+    "all": "All",
+    "unknown": "Unknown",
+    "noData": "No data yet",
+    "viewAll": "View all",
+    "back": "Back",
+    "none": "None",
+    "events": "events",
+    "people": "people",
+    "perMinute": "/ min",
+    "notAvailable": "Not available yet",
+    "actualPaid": "Actually paid",
+    "displayValue": "Gift display value",
+    "platform": {
+      "mock": "Simulation",
+      "bilibili": "Bilibili Live",
+      "youtube": "YouTube Live"
+    }
+  },
+  "format": {
+    "durationHM": "{h}h {m}m",
+    "durationMS": "{m}m {s}s",
+    "durationS": "{s}s",
+    "countMessages": "{n} messages",
+    "countPeople": "{n} people"
+  },
+  "live": {
+    "pageTitle": "Live",
+    "pageSubtitle": "Record a broadcast, watch the room in real time, and keep the summary when the stream ends.",
+    "hero": {
+      "liveEyebrow": "Recording now",
+      "idleEyebrow": "Ready to record",
+      "idleTitle": "No stream is being recorded",
+      "idleSubtitle": "Start a simulated stream to see how LiveMemory records chat, gifts and viewers. Real Bilibili and YouTube connections arrive in milestone M3.",
+      "simulatedChip": "Simulated session",
+      "elapsed": "Elapsed",
+      "startedAt": "Started",
+      "start": "Start simulated stream",
+      "stop": "Stop recording",
+      "simulationTitle": "Simulated stream",
+      "stopDone": "Recording stopped and saved",
+      "starting": "Starting…",
+      "stopping": "Stopping…",
+      "startFailed": "The simulated stream could not start."
+    },
+    "stats": {
+      "messages": "Messages",
+      "viewers": "Viewers",
+      "support": "Support",
+      "rate": "Peak rate",
+      "payments": "Paid events",
+      "messagesSub": "chat + Super Chat",
+      "viewersSub": "unique participants",
+      "supportSub": "paid events, exact totals",
+      "rateSub": "per minute",
+      "noSupport": "—"
+    },
+    "chart": {
+      "title": "Message density",
+      "hint": "Bucket size adapts to the session length",
+      "empty": "The chart appears as soon as messages arrive.",
+      "messages": "Messages",
+      "viewers": "Viewers",
+      "peak": "Peak: {n} messages in one bucket"
+    },
+    "feed": {
+      "title": "Recent activity",
+      "hint": "Newest first",
+      "empty": "Messages, gifts and Super Chats will appear here.",
+      "giftLabel": "sent {name} ×{qty}",
+      "giftTag": "Gift",
+      "scLabel": "Super Chat",
+      "guardLabel": "Guard",
+      "membershipLabel": "Membership",
+      "anonymous": "Anonymous viewer",
+      "paid": "paid"
+    },
+    "top": {
+      "title": "Most active viewers",
+      "hint": "This session",
+      "empty": "No viewer activity yet.",
+      "messages": "{n} messages"
+    },
+    "last": {
+      "title": "Last session",
+      "empty": "No previous sessions yet.",
+      "link": "Open in history"
+    }
+  },
+  "history": {
+    "pageTitle": "History",
+    "pageSubtitle": "Every recorded broadcast, with local statistics that do not depend on any AI service.",
+    "empty": "No sessions recorded yet",
+    "emptyBody": "Start a recording on the Live page. Finished sessions are kept here with their statistics and timeline.",
+    "columns": {
+      "session": "Session",
+      "date": "Started",
+      "duration": "Duration",
+      "messages": "Messages",
+      "viewers": "Viewers",
+      "support": "Support"
+    },
+    "ai": {
+      "none": "AI pending",
+      "exported": "Package exported",
+      "imported": "Analysis imported"
+    },
+    "detail": {
+      "overview": "Overview",
+      "timelineTitle": "Activity timeline",
+      "supportTitle": "Economic support",
+      "supportEmpty": "No paid events in this session.",
+      "topSpeakers": "Most active viewers",
+      "topSupporters": "Top supporters",
+      "topEmpty": "No viewer data.",
+      "aiTitle": "AI analysis",
+      "aiPendingTitle": "No analysis imported yet",
+      "aiPendingBody": "Export an analysis package and paste it into ChatGPT to get topics, sentiment and clip suggestions.",
+      "aiCta": "Open AI analysis",
+      "storageTitle": "Stored data",
+      "eventsKept": "Events kept",
+      "contentStored": "Chat text stored",
+      "simulatedNote": "This session contains simulated data used to verify the recording pipeline.",
+      "interruptedNote": "This session was interrupted (the app closed unexpectedly). Its statistics are kept as recorded.",
+      "back": "Back to history"
+    }
+  },
+  "viewers": {
+    "pageTitle": "Viewers",
+    "pageSubtitle": "Long-term profiles built from stable platform identities. Nickname changes never split a person in two.",
+    "searchPlaceholder": "Search by nickname",
+    "empty": "No viewers yet",
+    "emptyBody": "Viewers appear here once they speak or send support during a recorded session.",
+    "emptySearch": "No viewer matches that search.",
+    "countLabel": "{n} viewers",
+    "metric": {
+      "sessions": "Sessions",
+      "messages": "Messages",
+      "support": "Support",
+      "lastSeen": "Last seen"
+    },
+    "detail": {
+      "back": "Back to viewers",
+      "focus": "Mark as important",
+      "unfocus": "Remove important mark",
+      "focusedChip": "Important",
+      "identityTitle": "Identity",
+      "platformUid": "Stable ID",
+      "firstSeen": "First seen",
+      "lastSeen": "Last seen",
+      "nicknamesTitle": "Nickname history",
+      "nicknameCurrent": "current",
+      "supportTitle": "Lifetime support",
+      "supportEmpty": "No paid support recorded.",
+      "sessionsTitle": "Sessions together",
+      "sessionsEmpty": "No sessions recorded yet.",
+      "interestsTitle": "Long-term interests",
+      "interestsEmpty": "Interests are added by an imported AI profile update (milestone M7). Until then only local facts are shown.",
+      "notes": "LiveMemory shows facts it recorded. How you use them is entirely your decision."
+    }
+  },
+  "ai": {
+    "pageTitle": "AI analysis",
+    "pageSubtitle": "No API keys and no cloud connection. You download a package, analyse it in ChatGPT, then import the answer.",
+    "steps": {
+      "exportTitle": "1 · Export package",
+      "exportDesc": "Build one .zip with messages, aggregates, the prompt and the result schema.",
+      "promptTitle": "2 · Ask ChatGPT",
+      "promptDesc": "Upload the package and paste the included instructions.",
+      "importTitle": "3 · Import result",
+      "importDesc": "Validate the JSON answer and merge it into the console."
+    },
+    "export": {
+      "title": "Create an analysis package",
+      "sessionLabel": "Session",
+      "languageLabel": "Analysis language",
+      "button": "Create package",
+      "exporting": "Building package…",
+      "download": "Download package",
+      "successTitle": "Package ready",
+      "successBody": "{messages} messages · {viewers} viewers · {size}",
+      "hint": "The archive contains the chat log, session statistics, viewer context, the localized prompt and the JSON schema. No cookies or tokens are included.",
+      "empty": "Record a session first — there is nothing to analyse yet.",
+      "needSession": "Choose a session."
+    },
+    "prompt": {
+      "title": "Instructions to give ChatGPT",
+      "hint": "The same text is inside the package as instructions.md.",
+      "copy": "Copy instructions",
+      "copied": "Instructions copied",
+      "loading": "Loading instructions…"
+    },
+    "import": {
+      "title": "Import the AI result",
+      "body": "Import and schema validation arrive in milestone M6. Until then the package already contains the exact schema so you can inspect the answer by hand.",
+      "badge": "Planned for M6"
+    },
+    "packages": {
+      "title": "Exported packages",
+      "empty": "No packages exported yet.",
+      "download": "Download",
+      "meta": "{messages} messages · {date}"
+    },
+    "protocolLabel": "Protocol"
+  },
+  "settings": {
+    "pageTitle": "Settings",
+    "pageSubtitle": "Language, appearance and storage. Preferences are saved on this computer and survive restarts.",
+    "language": {
+      "title": "Language",
+      "desc": "Used by the web console and by the launcher console window.",
+      "system": "Follow system",
+      "systemHint": "Detected: {locale}",
+      "zh": "简体中文",
+      "ja": "日本語",
+      "en": "English",
+      "effective": "Currently showing: {locale}",
+      "note": "Chat messages are never translated; AI reports follow the analysis language you choose."
+    },
+    "theme": {
+      "title": "Appearance",
+      "desc": "Light and dark are designed separately for comfortable contrast.",
+      "system": "Follow system",
+      "light": "Light",
+      "dark": "Dark",
+      "hint": "Follow system switches automatically when Windows changes theme."
+    },
+    "storage": {
+      "title": "Storage mode",
+      "desc": "Controls how long raw chat text is kept. Totals and profiles are always kept.",
+      "compact": "Compact (default)",
+      "compactDesc": "Raw chat is kept until an analysis import is verified, then the text is purged while counts, viewers and payments remain.",
+      "full": "Full archive",
+      "fullDesc": "Raw chat and events are kept indefinitely so sessions can be re-analysed later.",
+      "note": "Automatic purging is part of M4/M6; in this build nothing is deleted automatically."
+    },
+    "data": {
+      "title": "Your data",
+      "desc": "Everything lives in a folder you own. Nothing is uploaded anywhere.",
+      "dataDir": "Data folder",
+      "dbSize": "Database size",
+      "sessions": "Sessions",
+      "viewers": "Viewers",
+      "events": "Events",
+      "backupTitle": "Backup and migration",
+      "backupBody": "Portable .livememory backup and restore arrive in milestone M5. Today you can copy the data folder while LiveMemory is closed."
+    },
+    "about": {
+      "title": "About",
+      "version": "Version",
+      "license": "License",
+      "repo": "Project",
+      "runtime": "Local server",
+      "schema": "Database schema",
+      "language": "Interface language",
+      "theme": "Theme"
+    },
+    "saved": "Settings saved",
+    "saving": "Saving…"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Cannot reach the local LiveMemory server. Is the console window still running?",
+    "sessionNotFound": "That session no longer exists.",
+    "sessionEmpty": "This session has no messages to analyse yet.",
+    "sessionActive": "A session is already being recorded.",
+    "sessionNotActive": "That session is not being recorded.",
+    "settingsInvalid": "That setting value is not valid.",
+    "invalidJson": "The request body was not valid JSON.",
+    "payloadTooLarge": "The request was too large.",
+    "notFound": "Not found.",
+    "eventInvalid": "An event could not be read and was skipped.",
+    "viewerNotFound": "That viewer no longer exists.",
+    "badRequest": "The request was incomplete.",
+    "jsonRequired": "A JSON request body is required.",
+    "portUnavailable": "No free local port was available."
+  },
+  "toast": {
+    "saved": "Saved",
+    "language": "Language updated",
+    "theme": "Theme updated",
+    "copied": "Copied to clipboard",
+    "exported": "Analysis package created",
+    "downloadStarted": "Download started"
+  }
+}

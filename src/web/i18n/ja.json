@@ -1,0 +1,320 @@
+{
+  "app": {
+    "tagline": "ローカル優先の配信記録システム",
+    "localOnly": "この PC のみ",
+    "privacyNote": "データはすべてこの PC に保存されます"
+  },
+  "a11y": {
+    "skipToContent": "本文へ移動",
+    "openNavigation": "ナビゲーションを開く",
+    "themeToggle": "テーマを切り替え"
+  },
+  "nav": {
+    "live": "ライブ記録",
+    "history": "配信履歴",
+    "viewers": "視聴者プロフィール",
+    "ai": "AI 分析",
+    "settings": "設定"
+  },
+  "status": {
+    "idle": "待機中",
+    "connected": "記録中",
+    "connecting": "接続中",
+    "live": "配信中",
+    "ended": "終了",
+    "interrupted": "中断",
+    "simulated": "シミュレーション"
+  },
+  "common": {
+    "loading": "読み込み中…",
+    "error": "問題が発生しました",
+    "retry": "再試行",
+    "refresh": "更新",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "search": "検索",
+    "all": "すべて",
+    "unknown": "不明",
+    "noData": "データがありません",
+    "viewAll": "すべて表示",
+    "back": "戻る",
+    "none": "なし",
+    "events": "件のイベント",
+    "people": "人",
+    "perMinute": "/ 分",
+    "notAvailable": "未対応",
+    "actualPaid": "実際の支払い",
+    "displayValue": "ギフトの表示価値",
+    "platform": {
+      "mock": "シミュレーション",
+      "bilibili": "ビリビリライブ",
+      "youtube": "YouTube ライブ"
+    }
+  },
+  "format": {
+    "durationHM": "{h}時間{m}分",
+    "durationMS": "{m}分{s}秒",
+    "durationS": "{s}秒",
+    "countMessages": "{n} 件のメッセージ",
+    "countPeople": "{n} 人"
+  },
+  "live": {
+    "pageTitle": "ライブ記録",
+    "pageSubtitle": "配信を記録し、チャットの熱をリアルタイムで確認。終了後はその配信の統計と要約が残ります。",
+    "hero": {
+      "liveEyebrow": "記録中",
+      "idleEyebrow": "準備完了",
+      "idleTitle": "記録中の配信はありません",
+      "idleSubtitle": "シミュレーション配信を開始すると、LiveMemory がチャット・ギフト・視聴者をどう記録するか確認できます。実際のビリビリ・YouTube 接続は M3 で提供予定です。",
+      "simulatedChip": "シミュレーション配信",
+      "elapsed": "経過時間",
+      "startedAt": "開始",
+      "start": "シミュレーションを開始",
+      "stop": "記録を終了",
+      "simulationTitle": "シミュレーション配信",
+      "stopDone": "記録を終了して保存しました",
+      "starting": "開始しています…",
+      "stopping": "停止しています…",
+      "startFailed": "シミュレーション配信を開始できませんでした。"
+    },
+    "stats": {
+      "messages": "メッセージ",
+      "viewers": "視聴者",
+      "support": "経済的支援",
+      "rate": "ピーク速度",
+      "payments": "支払いイベント",
+      "messagesSub": "チャット＋スーパーチャット",
+      "viewersSub": "参加した人数",
+      "supportSub": "支払いイベント・正確な合計",
+      "rateSub": "1 分あたり",
+      "noSupport": "—"
+    },
+    "chart": {
+      "title": "メッセージ密度",
+      "hint": "時間の区切りは配信の長さに合わせて自動調整されます",
+      "empty": "メッセージが届くとここにグラフが表示されます。",
+      "messages": "メッセージ",
+      "viewers": "視聴者",
+      "peak": "ピーク: 1 区間で {n} 件"
+    },
+    "feed": {
+      "title": "最近の動き",
+      "hint": "新しい順",
+      "empty": "メッセージ・ギフト・スーパーチャットがここに表示されます。",
+      "giftLabel": "{name} ×{qty} を送信",
+      "giftTag": "ギフト",
+      "scLabel": "スーパーチャット",
+      "guardLabel": "ギャラリー",
+      "membershipLabel": "メンバー",
+      "anonymous": "匿名の視聴者",
+      "paid": "有料"
+    },
+    "top": {
+      "title": "よく発言した視聴者",
+      "hint": "この配信",
+      "empty": "まだ視聴者の動きがありません。",
+      "messages": "{n} 件"
+    },
+    "last": {
+      "title": "前回の配信",
+      "empty": "過去の配信はまだありません。",
+      "link": "履歴で開く"
+    }
+  },
+  "history": {
+    "pageTitle": "配信履歴",
+    "pageSubtitle": "記録したすべての配信と、AI サービスに依存しないローカル統計。",
+    "empty": "まだ配信が記録されていません",
+    "emptyBody": "「ライブ記録」ページで記録を開始してください。終了した配信は統計とタイムラインとともにここに残ります。",
+    "columns": {
+      "session": "配信",
+      "date": "開始日時",
+      "duration": "長さ",
+      "messages": "メッセージ",
+      "viewers": "視聴者",
+      "support": "支援"
+    },
+    "ai": {
+      "none": "分析待ち",
+      "exported": "分析パッケージ出力済み",
+      "imported": "分析を取り込み済み"
+    },
+    "detail": {
+      "overview": "概要",
+      "timelineTitle": "アクティビティの推移",
+      "supportTitle": "経済的支援",
+      "supportEmpty": "この配信に支払いイベントはありません。",
+      "topSpeakers": "よく発言した視聴者",
+      "topSupporters": "支援が多い視聴者",
+      "topEmpty": "視聴者データがありません。",
+      "aiTitle": "AI 分析",
+      "aiPendingTitle": "分析結果はまだ取り込まれていません",
+      "aiPendingBody": "分析パッケージを出力して ChatGPT に渡すと、話題・感情の変化・切り抜き候補を追加できます。",
+      "aiCta": "AI 分析を開く",
+      "storageTitle": "保存されているデータ",
+      "eventsKept": "保持イベント数",
+      "contentStored": "保存中のチャット本文",
+      "simulatedNote": "この配信は記録フロー検証用のシミュレーションデータです。",
+      "interruptedNote": "この配信は中断されました（アプリが異常終了）。統計は受信済みのデータとして残しています。",
+      "back": "配信履歴に戻る"
+    }
+  },
+  "viewers": {
+    "pageTitle": "視聴者プロフィール",
+    "pageSubtitle": "プラットフォームの安定 ID に基づく長期プロフィール。名前が変わっても同じ人物が分かれません。",
+    "searchPlaceholder": "名前で検索",
+    "empty": "視聴者プロフィールはまだありません",
+    "emptyBody": "記録した配信で発言または支援した視聴者が自動的にここへ追加されます。",
+    "emptySearch": "この検索に一致する視聴者はいません。",
+    "countLabel": "{n} 人",
+    "metric": {
+      "sessions": "参加配信",
+      "messages": "発言数",
+      "support": "累計支援",
+      "lastSeen": "最終参加"
+    },
+    "detail": {
+      "back": "視聴者一覧に戻る",
+      "focus": "重要としてマーク",
+      "unfocus": "重要マークを解除",
+      "focusedChip": "重要",
+      "identityTitle": "識別情報",
+      "platformUid": "安定 ID",
+      "firstSeen": "初回",
+      "lastSeen": "最終",
+      "nicknamesTitle": "名前の履歴",
+      "nicknameCurrent": "現在",
+      "supportTitle": "累計の経済的支援",
+      "supportEmpty": "有料の支援は記録されていません。",
+      "sessionsTitle": "一緒に参加した配信",
+      "sessionsEmpty": "記録された配信はまだありません。",
+      "interestsTitle": "長期的な関心",
+      "interestsEmpty": "関心は取り込んだ AI プロフィール更新で追加されます（M7）。それまではローカルで記録した事実のみ表示します。",
+      "notes": "LiveMemory は記録した事実だけを表示します。使い方はあなたが決めることです。"
+    }
+  },
+  "ai": {
+    "pageTitle": "AI 分析",
+    "pageSubtitle": "API キーもクラウド接続も不要。パッケージをダウンロードし、ChatGPT で分析して、結果を取り込みます。",
+    "steps": {
+      "exportTitle": "1 · パッケージ出力",
+      "exportDesc": "メッセージ・統計・プロンプト・結果 Schema をまとめた .zip を作成します。",
+      "promptTitle": "2 · ChatGPT に依頼",
+      "promptDesc": "パッケージをアップロードし、同梱の説明を貼り付けます。",
+      "importTitle": "3 · 結果を取り込む",
+      "importDesc": "返された JSON を検証してコンソールへ統合します。"
+    },
+    "export": {
+      "title": "分析パッケージを作成",
+      "sessionLabel": "配信",
+      "languageLabel": "分析の言語",
+      "button": "パッケージを作成",
+      "exporting": "作成しています…",
+      "download": "パッケージをダウンロード",
+      "successTitle": "パッケージの準備ができました",
+      "successBody": "{messages} 件のメッセージ · {viewers} 人 · {size}",
+      "hint": "アーカイブにはチャットログ、配信統計、視聴者コンテキスト、指定言語のプロンプト、JSON Schema が含まれます。Cookie やトークンは含まれません。",
+      "empty": "まず配信を記録してください。分析できる内容がまだありません。",
+      "needSession": "配信を選択してください。"
+    },
+    "prompt": {
+      "title": "ChatGPT に渡す説明",
+      "hint": "同じ内容がパッケージ内の instructions.md にも入っています。",
+      "copy": "説明をコピー",
+      "copied": "説明をコピーしました",
+      "loading": "説明を読み込み中…"
+    },
+    "import": {
+      "title": "AI 結果を取り込む",
+      "body": "取り込みと Schema 検証は M6 で提供します。現在のパッケージには完全な Schema が含まれているため、まずは手元で結果を確認できます。",
+      "badge": "M6 で提供予定"
+    },
+    "packages": {
+      "title": "出力済みのパッケージ",
+      "empty": "出力したパッケージはまだありません。",
+      "download": "ダウンロード",
+      "meta": "{messages} 件 · {date}"
+    },
+    "protocolLabel": "プロトコル"
+  },
+  "settings": {
+    "pageTitle": "設定",
+    "pageSubtitle": "言語・外観・保存方式。設定はこの PC に保存され、再起動後も引き継がれます。",
+    "language": {
+      "title": "言語",
+      "desc": "Web コンソールと起動時のコマンドライン画面の両方に反映されます。",
+      "system": "システムに従う",
+      "systemHint": "検出: {locale}",
+      "zh": "简体中文",
+      "ja": "日本語",
+      "en": "English",
+      "effective": "現在の表示言語: {locale}",
+      "note": "チャット本文は翻訳されません。AI レポートは選択した分析言語で出力されます。"
+    },
+    "theme": {
+      "title": "外観",
+      "desc": "ライトとダークは読みやすさを保つため個別に設計しています。",
+      "system": "システムに従う",
+      "light": "ライト",
+      "dark": "ダーク",
+      "hint": "「システムに従う」を選ぶと、Windows のテーマ変更に自動で追従します。"
+    },
+    "storage": {
+      "title": "保存モード",
+      "desc": "生のチャット本文をどれだけ保持するかを決めます。累計統計とプロフィールは常に保持されます。",
+      "compact": "コンパクト（既定）",
+      "compactDesc": "生のチャットは配信中のみ保持し、分析結果の取り込み検証後に本文を削除します。件数・視聴者・支払いは残ります。",
+      "full": "完全アーカイブ",
+      "fullDesc": "生のチャットとイベントを無期限に保持し、後から再分析できます。",
+      "note": "自動削除は M4/M6 の機能です。現在のビルドでは何も自動削除しません。"
+    },
+    "data": {
+      "title": "あなたのデータ",
+      "desc": "すべて自分のフォルダー内にあり、どこにもアップロードされません。",
+      "dataDir": "データフォルダー",
+      "dbSize": "データベース容量",
+      "sessions": "配信",
+      "viewers": "視聴者",
+      "events": "イベント",
+      "backupTitle": "バックアップと移行",
+      "backupBody": "可搬性のある .livememory バックアップと復元は M5 で提供します。現在は LiveMemory を終了した状態でデータフォルダーをコピーできます。"
+    },
+    "about": {
+      "title": "このアプリについて",
+      "version": "バージョン",
+      "license": "ライセンス",
+      "repo": "プロジェクト",
+      "runtime": "ローカルサーバー",
+      "schema": "データベース構造",
+      "language": "表示言語",
+      "theme": "テーマ"
+    },
+    "saved": "設定を保存しました",
+    "saving": "保存中…"
+  },
+  "errors": {
+    "generic": "問題が発生しました。もう一度お試しください。",
+    "network": "ローカルの LiveMemory サーバーに接続できません。コマンドライン画面が開いているか確認してください。",
+    "sessionNotFound": "その配信は存在しません。",
+    "sessionEmpty": "この配信には分析できるメッセージがまだありません。",
+    "sessionActive": "すでに配信を記録しています。",
+    "sessionNotActive": "その配信は現在記録中ではありません。",
+    "settingsInvalid": "その設定値は無効です。",
+    "invalidJson": "リクエスト本文が正しい JSON ではありません。",
+    "payloadTooLarge": "リクエストが大きすぎます。",
+    "notFound": "見つかりません。",
+    "eventInvalid": "イベントを 1 件読み取れず、スキップしました。",
+    "viewerNotFound": "その視聴者は存在しません。",
+    "badRequest": "リクエストの内容が不足しています。",
+    "jsonRequired": "JSON 形式のリクエスト本文が必要です。",
+    "portUnavailable": "利用できるローカルポートがありません。"
+  },
+  "toast": {
+    "saved": "保存しました",
+    "language": "言語を更新しました",
+    "theme": "テーマを更新しました",
+    "copied": "クリップボードにコピーしました",
+    "exported": "分析パッケージを作成しました",
+    "downloadStarted": "ダウンロードを開始しました"
+  }
+}
