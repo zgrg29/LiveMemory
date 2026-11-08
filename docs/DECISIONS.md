@@ -103,3 +103,20 @@
 **背景**：固定端口易冲突；但用户偏好应稳定。
 **决定**：优先 `preferredPort`，冲突时 +1…+9，最后系统分配；本轮不回写实际端口。
 **后果**：每次启动可能变化；`runtime.json` 与“已在运行”提示使用实际端口。M8 可考虑记住上次成功端口。
+
+## ADR-015 二维码登录在应用内本地渲染（vendored MIT 库）
+
+**状态**：已采纳
+
+**背景**：Bilibili 扫码登录需要把 `qrcode_key` 对应的 URL 编码成二维码展示给手机扫描。初版把该 URL 交给 Bilibili 的外部页面打开，结果在桌面浏览器中跳转并触发下载，登录不可用。
+
+**决定**：
+- 采用与参考项目相同的做法：在页面内生成二维码。
+- 使用参考项目自带的 `qrcode.js`（MIT，Kazuhiko Arase），复制到 `src/web/js/vendor/` 并保留 `qrcode.LICENSE.txt`。
+- 用 `<canvas>` 自行绘制矩阵，不使用 `innerHTML`；不引入 npm 依赖、不调用任何二维码云服务。
+- 服务端只提供二维码内容（`/api/bilibili/login/qrcode`）与轮询（`/api/bilibili/login/poll`），不再打开外部页面。
+
+**后果**：
+- 前端多一个约 58 KB 的第三方单文件（MIT，已在仓库内），构建时随 `src/` 一起嵌入 EXE；不需要 `npm install`。
+- 二维码生成完全离线，符合「本地优先」与 CSP `script-src 'self'`。
+- 若未来升级该库，必须保留版权头与许可证文件，并重跑 `tests/unit/bilibili-qr.test.mjs`。

@@ -89,7 +89,7 @@
 - 事件映射：`DANMU_MSG`、`SEND_GIFT`（付费/免费）、`SUPER_CHAT_MESSAGE(_JPN)`、`GUARD_BUY` / `USER_TOAST_MSG(_V2)`
 - 身份：UID 优先；实测 142/142 弹幕带 UID；另一房间 72/77 条 UID=0 + 昵称打码 → 记为无身份，不合并
 - 金额：礼物金瓜子 1000=1 元（分）；SC 元×100；大航海单位未确认 → 不记金额
-- 扫码登录后端（生成/轮询/`nav` 校验）与加密 Cookie 存储；UI 在浏览器打开扫码页
+- 扫码登录后端（生成/轮询/`nav` 校验）与加密 Cookie 存储；二维码在应用内本地渲染（vendored MIT QR，与参考项目一致），不打开外部页面
 - 路由 `/api/bilibili/*`、直播页「直播来源」面板、三语文案
 - 真实直播间：`21144080`（142 条弹幕全部带 UID/昵称）、`7734200`、`5050`；端到端房间→连接→入库→停止已验证
 - **未验证**：礼物/SC/大航海真实事件、`SEND_GIFT_V2`、登录后字段、真实断线
@@ -99,8 +99,8 @@
 - `node scripts/build-windows.mjs` 生成 `dist/LiveMemory.exe`（Node SEA + postject，校验 postject 包 SHA-256）
 - PE 子系统强制为 Console（3），双击可见命令行窗口
 - 应用资源嵌入 EXE，首次运行解压到 `<数据目录>\app\<hash>\`，失败时回退到用户临时目录
-- 本机实测（最终源码构建，普通权限）：`--version`、`--help --lang ja`、单实例提示、`/api/health`、静态资源均正常，解压目录哈希 `7fe20cc55a5453430d02`
-- 构建产物：约 89.9 MB，最终构建 SHA-256 `ae4a6952922edf5bc1a7f2d48c6ea2159ad34c2251525f422c8afe0a2a6e86ff`（仅记录本次构建，不作发布校验值）
+- 本机实测（最终源码构建，普通权限）：`--version`、`--help --lang ja`、单实例提示、`/api/health`、静态资源均正常，解压目录哈希 `3a1d043253a1c9176000`
+- 构建产物：约 89.9 MB，最终构建 SHA-256 `a7b9dc679e4189118995e240fda45e4720b3eb389ea21f8da5a834014aaf3aa7`（仅记录本次构建，不作发布校验值）
 
 ## 3. 部分完成
 
@@ -114,7 +114,7 @@
 
 ## 4. 未完成
 
-- Bilibili 扫码登录与直播 WebSocket 接入（参考仓库已验证的协议需按当前平台再核实）
+- Bilibili 礼物 / SC / 大航海真实事件复核与 `SEND_GIFT_V2` 解码
 - YouTube 公开数据读取（API Key 方案）与 OAuth 边界
 - AI 结果导入与 Schema 校验、重复导入保护
 - 长期观众 AI 画像与增量更新
@@ -132,7 +132,7 @@
 node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
 ```
 
-结果：**161 个测试全部通过，0 失败，约 5.5 秒**（含 M3 Bilibili 用例）。
+结果：**165 个测试全部通过，0 失败，约 4.9 秒**（含 M3 Bilibili 与二维码用例）。
 
 覆盖：
 - 单元：语言解析、主题、金额、事件规范化/去重、时间、热度分桶、三语文案一致性、ZIP、设置存储、单实例锁、启动参数、数据目录、真实写探测、启动日志与回退、实例健康探测、暂停/对话框、脱敏、bootstrap 解压与标记
@@ -159,10 +159,15 @@ UI 验证：本机用无头 Edge 通过 DevTools 协议截图（明亮/黑暗、
 
 ## 8. 下一步目标
 
-1. 修复/确认 Ctrl+C 优雅退出的人工验证。
-2. 进入 M3：先做 Bilibili 扫码登录 + 直播间连接（复用参考仓库的协议实现，逐字段核对当前返回），再用真实直播间验证事件身份字段。
-3. 同步更新 `docs/PLATFORM_INTEGRATIONS.md` 的验证状态。
+1. 在真实直播间复核礼物 / SC / 大航海字段与金额单位，补 SEND_GIFT_V2。
+2. 真实断线重连与长时间稳定性验收；随后评估 YouTube 接入。
+3. 用真实账号完成一次扫码登录的端到端确认（本轮只验证到二维码生成与轮询接口）。
 
 ## 9. 最近 Commit
 
-见本文件同目录的 Git 历史；首轮提交信息：`feat: initialize LiveMemory with launcher, local console and recording pipeline`。
+- P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows
+- P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
+- P2：本轮二维码登录提交（fix: render Bilibili login QR inside the app），见 git log
+- 首轮：`5cb66a9` feat: initialize LiveMemory with launcher, local console and recording pipeline
+
+> 为满足 GitHub 隐私邮箱策略，历史提交已重写为匿名 noreply 身份，旧 hash 失效。

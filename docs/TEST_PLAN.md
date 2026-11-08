@@ -53,6 +53,7 @@ node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test
 | `bilibili-mapper.test.mjs` | 弹幕身份/UID=0/打码昵称、付费/免费礼物金额、不可整除标记、SC 元→分、大航海不记账、V2 嵌套、补充 toast 去重、时间戳 |
 | `bilibili-cookie.test.mjs` | Set-Cookie/URL 双来源、SESSDATA 必需、白名单、加密存储、篡改返回 null、状态不含 Cookie |
 | `bilibili-adapter.test.mjs` | 鉴权包内容、立即心跳、事件映射、鉴权失败、close 后重连调度 |
+| `bilibili-qr.test.mjs` | vendored MIT QR 库可用、登录 URL 生成矩阵、定位图案、确定性、长 URL 容量 |
 
 ### 3.2 集成
 
@@ -65,10 +66,10 @@ node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test
 ## 4. 本轮结果（2026-11-08）
 
 ```text
-tests 161
-pass  161
+tests 165
+pass  165
 fail  0
-duration ≈ 5.5s
+duration ≈ 4.9s
 ```
 
 （包含 P0 启动修复与 M3 Bilibili 单元/集成用例。）

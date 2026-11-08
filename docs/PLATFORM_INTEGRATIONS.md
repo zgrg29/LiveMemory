@@ -93,8 +93,9 @@ info[9]   { ts: epoch 毫秒, ... }
 
 ### 2.5 登录与安全
 
-- 扫码流程已实现：`POST /api/bilibili/login/open` 生成二维码并在**默认浏览器**打开 Bilibili 的扫码页（同一 `qrcode_key`），前端每 2 秒 `POST /api/bilibili/login/poll`，成功后服务端拿到 Cookie。
-- 本轮**没有实现本地二维码渲染**（零依赖约束下需要一个 QR 编码器），因此二维码由 Bilibili 自己的页面显示；这是已知限制，不是「已支持内置扫码」。
+- 扫码流程：`POST /api/bilibili/login/qrcode` 只返回二维码内容与过期时间；二维码在**应用页面内本地渲染**（canvas + vendored MIT qrcode-generator，与参考项目 `bili-gift-drop` 完全一致的做法），前端每 2 秒 `POST /api/bilibili/login/poll`，成功后服务端拿到 Cookie。
+- **不再打开任何外部登录页面**：旧实现会跳到 `account.bilibili.com`（部分浏览器会触发下载），`/api/bilibili/login/open` 已移除。
+- 参考实现位置：`D:\哔哩哔哩OBS礼物特效`（完整工程）与 `.ref/bili-gift-drop`（只读副本）；二维码库为 `src/control/vendor/qrcode.js`（MIT，Kazuhiko Arase），已复制为 `src/web/js/vendor/qrcode.js` 并保留许可证。
 - Cookie 只保存在 `%LOCALAPPDATA%\LiveMemory\secrets\bilibili-login.json`，AES-256-GCM 加密，密钥同目录、尽力用 `icacls` 限制为当前用户；状态 API 永不返回 Cookie；日志脱敏覆盖 `SESSDATA`/`bili_jct`/`DedeUserID`。
 - 匿名为默认：不登录也能接收公开弹幕（本轮已实测）。
 

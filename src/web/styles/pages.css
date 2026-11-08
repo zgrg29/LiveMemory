@@ -843,3 +843,24 @@
 .source-panel .field {
   min-width: 220px;
 }
+
+/* ------------------------------------------------------------- login QR */
+
+.login-qr {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  max-width: 280px;
+}
+
+.login-qr-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: #ffffff;
+  border-radius: 8px;
+}

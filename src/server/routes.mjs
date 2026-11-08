@@ -441,19 +441,6 @@ export function buildRoutes() {
     },
     {
       method: 'POST',
-      path: '/api/bilibili/login/open',
-      handler: async ({req, res, deps}) => {
-        await readOptionalJson(req);
-        try {
-          const result = await deps.bilibili.openLoginPage();
-          sendJson(res, 201, {url: result.url, opened: result.opened, expiresAt: result.expiresAt});
-        } catch (error) {
-          throw bilibiliError(error);
-        }
-      }
-    },
-    {
-      method: 'POST',
       path: '/api/bilibili/login/poll',
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);

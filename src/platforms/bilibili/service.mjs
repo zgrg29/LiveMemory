@@ -4,7 +4,6 @@ import {BilibiliLogin} from './login.mjs';
 import {CookieStore} from './cookie-store.mjs';
 import {AppError, ERROR_CODES} from '../../shared/errors.mjs';
 import {SOURCE_QUALITY} from '../../shared/events.mjs';
-import {openDefaultBrowser, isAllowedExternalUrl} from '../../shared/open-browser.mjs';
 
 /**
  * Glue between the HTTP layer, the login flow and the live adapter.
@@ -63,24 +62,6 @@ export class BilibiliService {
 
   async loginWithQr() {
     return this.login.startQr({remember: true});
-  }
-
-  /**
-   * Show the login QR.
-   *
-   * The QR image is rendered by Bilibili's own `scan-web` page, which is opened
-   * in the default browser for the same `qrcode_key` we poll. That keeps the app
-   * free of a QR encoder and of any third-party rendering service; the phone
-   * scans the QR shown in that tab and this process receives the cookies through
-   * its own poll. The raw URL is also returned so the UI can offer a link.
-   */
-  async openLoginPage({openBrowser = openDefaultBrowser} = {}) {
-    const qr = await this.login.startQr({remember: true});
-    if (!isAllowedExternalUrl(qr.url)) {
-      throw new BilibiliError('URL_REJECTED', 'the login URL is not a Bilibili origin');
-    }
-    const opened = openBrowser(qr.url);
-    return {url: qr.url, opened: Boolean(opened?.opened), expiresAt: qr.expiresAt};
   }
 
   async pollLogin() {

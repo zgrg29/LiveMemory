@@ -39,6 +39,9 @@ export const livePage = {
     let loginTimer = null;
     let loginExpiresAt = 0;
     let loginHintText = '';
+    let qrState = null;
+    let qrCanvasRef = null;
+    let qrWrapRef = null;
     let sourceHost = null;
     let loginHintHost = null;
 
@@ -110,6 +113,8 @@ export const livePage = {
       if (!sourceHost) return;
       clear(sourceHost);
       loginHintHost = null;
+      qrCanvasRef = null;
+      qrWrapRef = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
           el('div', {className: 'card-title', text: t('live.source.title')}),
@@ -149,7 +154,7 @@ export const livePage = {
         className: 'button button--secondary button--small',
         type: 'button',
         text: t('live.source.loginButton'),
-        onClick: (event) => openLogin(event.currentTarget)
+        onClick: (event) => startQrLogin(event.currentTarget)
       });
       const logoutButton = login?.loggedIn
         ? el('button', {
@@ -167,7 +172,19 @@ export const livePage = {
           loginStatus),
         el('div', {className: 'source-row-actions'}, loginButton, logoutButton)));
       panel.append(loginHintHost);
-      panel.append(el('p', {className: 'source-note', text: t('live.source.loginBrowserHint')}));
+
+      const qrWrap = el('div', {className: 'login-qr'});
+      const qrCanvas = el('canvas', {
+        className: 'login-qr-canvas',
+        attrs: {role: 'img', 'aria-label': t('live.source.loginTitle')}
+      });
+      qrWrap.append(qrCanvas);
+      qrWrap.hidden = true;
+      qrCanvasRef = qrCanvas;
+      qrWrapRef = qrWrap;
+      panel.append(qrWrap);
+      panel.append(el('p', {className: 'source-note', text: t('live.source.loginScanHint')}));
+      if (qrState?.url && Date.now() < qrState.expiresAt) drawQr(qrState.url);
 
       const input = el('input', {
         className: 'input',
@@ -226,11 +243,67 @@ export const livePage = {
       if (loginHintHost) loginHintHost.textContent = text;
     }
 
-    async function openLogin(button) {
+    /**
+     * Draw the login QR locally, exactly like the reference project does:
+     * generate the matrix in the page (vendored MIT qrcode-generator) and paint
+     * it on a canvas. The login page is never opened in an external browser.
+     */
+    function drawQr(url) {
+      const canvas = qrCanvasRef;
+      if (!canvas || !url) return false;
+      const factory = globalThis.qrcode;
+      if (typeof factory !== 'function') {
+        setLoginHint(t('live.source.loginQrUnavailable'));
+        return false;
+      }
+      try {
+        const qr = factory(0, 'M');
+        qr.addData(url);
+        qr.make();
+        const count = qr.getModuleCount();
+        const margin = 4;
+        const scale = Math.max(3, Math.floor(220 / (count + margin * 2)));
+        const cssSize = (count + margin * 2) * scale;
+        const ratio = Math.min(2, globalThis.devicePixelRatio || 1);
+        canvas.width = Math.round(cssSize * ratio);
+        canvas.height = Math.round(cssSize * ratio);
+        canvas.style.width = `${cssSize}px`;
+        canvas.style.height = `${cssSize}px`;
+        const context = canvas.getContext('2d');
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, cssSize, cssSize);
+        context.fillStyle = '#000000';
+        for (let row = 0; row < count; row += 1) {
+          for (let col = 0; col < count; col += 1) {
+            if (qr.isDark(row, col)) {
+              context.fillRect((col + margin) * scale, (row + margin) * scale, scale, scale);
+            }
+          }
+        }
+        if (qrWrapRef) qrWrapRef.hidden = false;
+        return true;
+      } catch {
+        setLoginHint(t('live.source.loginQrUnavailable'));
+        return false;
+      }
+    }
+
+    function hideQr() {
+      qrState = null;
+      if (qrWrapRef) qrWrapRef.hidden = true;
+    }
+
+    async function startQrLogin(button) {
       button.disabled = true;
       try {
-        const result = await api.post('/api/bilibili/login/open', {});
-        loginExpiresAt = result.expiresAt ?? Date.now() + 180000;
+        const result = await api.post('/api/bilibili/login/qrcode', {});
+        qrState = {
+          url: result.url,
+          expiresAt: result.expiresAt ?? Date.now() + 180000
+        };
+        loginExpiresAt = qrState.expiresAt;
+        drawQr(qrState.url);
         setLoginHint(t('live.source.loginWaiting'));
         startLoginPolling();
       } catch (error) {
@@ -249,6 +322,7 @@ export const livePage = {
         }
         if (Date.now() > loginExpiresAt) {
           clearInterval(loginTimer);
+          hideQr();
           setLoginHint(t('live.source.loginExpired'));
           return;
         }
@@ -256,6 +330,7 @@ export const livePage = {
           const result = await api.post('/api/bilibili/login/poll', {});
           if (result.state === 'success') {
             clearInterval(loginTimer);
+            hideQr();
             setLoginHint(t('live.source.loginSuccess'));
             biliStatus = await api.get('/api/bilibili/status');
             renderSource();
@@ -264,12 +339,14 @@ export const livePage = {
             setLoginHint(t('live.source.loginScanned'));
           } else if (result.state === 'expired') {
             clearInterval(loginTimer);
+            hideQr();
             setLoginHint(t('live.source.loginExpired'));
           } else {
             setLoginHint(t('live.source.loginWaiting'));
           }
         } catch (error) {
           clearInterval(loginTimer);
+          hideQr();
           setLoginHint(t('live.source.loginFailed'));
         }
       }, 2000);
@@ -281,6 +358,7 @@ export const livePage = {
         await api.post('/api/bilibili/login/logout', {});
         biliStatus = await api.get('/api/bilibili/status');
         loginHintText = '';
+        hideQr();
         renderSource();
       } catch (error) {
         ctx.toast(ctx.describeError(error), {tone: 'error'});

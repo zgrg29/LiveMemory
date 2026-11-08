@@ -143,7 +143,6 @@
       "loginButton": "扫码登录",
       "loginOpening": "正在打开扫码页面…",
       "logout": "退出登录",
-      "loginBrowserHint": "扫码页面会在默认浏览器中打开，用 Bilibili 手机客户端扫码并确认。",
       "loginWaiting": "等待扫码…",
       "loginScanned": "已扫码，请在手机上确认",
       "loginSuccess": "登录成功",
@@ -151,7 +150,9 @@
       "loginFailed": "登录失败",
       "anonymousNote": "未登录也可以接收公开弹幕、礼物和醒目留言；登录不会改变观众的身份字段。",
       "moneyNote": "金额按平台字段换算：礼物 1000 金瓜子 = 1 元；醒目留言以元报价；大航海的金额单位未确认，因此不记入金额。",
-      "identityNote": "观众身份使用平台 UID。昵称可能被平台打码（例如“电***”），不会被猜测或合并。"
+      "identityNote": "观众身份使用平台 UID。昵称可能被平台打码（例如“电***”），不会被猜测或合并。",
+      "loginScanHint": "用 Bilibili 手机客户端（App）扫描下方二维码，并在手机上确认登录。二维码只在本地生成，不会打开外部网页。",
+      "loginQrUnavailable": "无法生成二维码，请刷新页面后重试。"
     }
   },
   "history": {

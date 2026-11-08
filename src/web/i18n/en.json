@@ -143,7 +143,6 @@
       "loginButton": "Sign in by QR",
       "loginOpening": "Opening the sign-in page…",
       "logout": "Sign out",
-      "loginBrowserHint": "The QR page opens in your default browser. Scan it with the Bilibili mobile app and confirm.",
       "loginWaiting": "Waiting for the QR scan…",
       "loginScanned": "Scanned — confirm on your phone",
       "loginSuccess": "Signed in",
@@ -151,7 +150,9 @@
       "loginFailed": "Sign-in failed",
       "anonymousNote": "Public chat, gifts and Super Chats work without signing in. Signing in does not change viewer identity fields.",
       "moneyNote": "Amounts follow the platform: gifts at 1000 gold coins = ¥1, Super Chats quoted in yuan, and guard prices stay unbooked because their unit is unconfirmed.",
-      "identityNote": "Viewer identity uses the platform UID. Nicknames may be masked by the platform (e.g. “电***”); they are never guessed or merged."
+      "identityNote": "Viewer identity uses the platform UID. Nicknames may be masked by the platform (e.g. “电***”); they are never guessed or merged.",
+      "loginScanHint": "Scan the QR code below with the Bilibili mobile app and confirm on your phone. The code is generated locally; no external page is opened.",
+      "loginQrUnavailable": "Could not render the QR code. Reload the page and try again."
     }
   },
   "history": {
