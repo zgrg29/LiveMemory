@@ -12,12 +12,18 @@ import {join} from 'node:path';
  */
 
 const SECRET_KEY = /(cookie|sessdata|bili_jct|token|secret|password|passwd|authorization|api[-_]?key|credential|session[-_]?key)/i;
+// Each pattern carries its own replacement so a pattern without capture groups
+// can never be handed the (offset, wholeString) arguments of String.replace and
+// re-insert the unredacted value into the output.
 const SECRET_VALUE_PATTERNS = [
-  /SESSDATA=[^;\s]+/gi,
-  /bili_jct=[^;\s]+/gi,
-  /DedeUserID=[^;\s]+/gi,
-  /Bearer\s+[A-Za-z0-9._-]+/gi,
-  /("(?:token|cookie|apiKey|api_key|secret|password)"\s*:\s*")[^"]*(")/gi
+  {pattern: /SESSDATA=[^;\s]+/gi, replace: (match) => `${match.split('=')[0]}=[redacted]`},
+  {pattern: /bili_jct=[^;\s]+/gi, replace: (match) => `${match.split('=')[0]}=[redacted]`},
+  {pattern: /DedeUserID=[^;\s]+/gi, replace: (match) => `${match.split('=')[0]}=[redacted]`},
+  {pattern: /Bearer\s+[A-Za-z0-9._-]+/gi, replace: () => 'Bearer [redacted]'},
+  {
+    pattern: /("(?:token|cookie|apiKey|api_key|secret|password|sessdata)"\s*:\s*")[^"]*(")/gi,
+    replace: (match, prefix, suffix) => `${prefix}[redacted]${suffix}`
+  }
 ];
 
 const MAX_STRING = 240;
@@ -28,11 +34,7 @@ export function redactValue(value, depth = 0) {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
     let text = value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}…` : value;
-    for (const pattern of SECRET_VALUE_PATTERNS) text = text.replace(pattern, (match, prefix, suffix) => {
-      if (suffix !== undefined && prefix !== undefined) return `${prefix}[redacted]${suffix}`;
-      const name = match.split('=')[0];
-      return `${name}=[redacted]`;
-    });
+    for (const {pattern, replace} of SECRET_VALUE_PATTERNS) text = text.replace(pattern, replace);
     return text;
   }
   if (typeof value === 'number' || typeof value === 'boolean') return value;

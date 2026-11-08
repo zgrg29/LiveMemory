@@ -7,6 +7,10 @@ import {dirname} from 'node:path';
  * A second LiveMemory window must not open a second writer on the same SQLite
  * database. The lock file records the owning PID; a lock left behind by a
  * crashed process is detected and replaced.
+ *
+ * The lock file is advisory and must never crash the launcher: every filesystem
+ * error is reported as data, because a non-elevated account can legitimately be
+ * denied access to a folder that an elevated run created (and vice versa).
  */
 
 export function isProcessAlive(pid) {
@@ -16,7 +20,9 @@ export function isProcessAlive(pid) {
     process.kill(numeric, 0);
     return true;
   } catch (error) {
-    // EPERM means the process exists but belongs to someone else.
+    // EPERM means the process exists but belongs to someone else. That still
+    // counts as "alive"; the caller decides whether it is *our* instance by
+    // probing the recorded console URL instead of trusting the PID alone.
     return error?.code === 'EPERM';
   }
 }
@@ -29,47 +35,82 @@ function readLock(lockFile) {
   }
 }
 
+function makeHandle({lockFile, payload, existing = null, stale = false}) {
+  const update = (patch) => {
+    try {
+      const current = readLock(lockFile) ?? payload;
+      const fd = openSync(lockFile, 'w');
+      writeSync(fd, JSON.stringify({...current, ...patch}));
+      closeSync(fd);
+    } catch {
+      /* the lock file is advisory */
+    }
+  };
+  return {
+    acquired: true,
+    lock: payload,
+    existing,
+    stale,
+    release: () => {
+      try {
+        rmSync(lockFile, {force: true});
+      } catch {
+        /* ignore */
+      }
+    },
+    update
+  };
+}
+
+function failure(reason, {lockFile, error = null, existing = null, stale = false} = {}) {
+  return {
+    acquired: false,
+    lock: null,
+    existing,
+    stale,
+    reason,
+    error,
+    lockFile,
+    release: () => {},
+    update: () => {}
+  };
+}
+
 /**
- * @returns {{acquired:boolean, lock:object|null, existing:object|null, stale:boolean}}
+ * @returns {{acquired:boolean, reason?:'running'|'permission'|'io', error?:Error}}
  */
-export function acquireInstanceLock({lockFile, pid = process.pid, now = Date.now()}) {
-  mkdirSync(dirname(lockFile), {recursive: true});
-  const payload = {pid, startedAt: new Date(now).toISOString(), url: null};
+export function acquireInstanceLock({lockFile, pid = process.pid, now = Date.now(), exePath = process.execPath} = {}) {
+  try {
+    mkdirSync(dirname(lockFile), {recursive: true});
+  } catch (error) {
+    return failure('permission', {lockFile, error});
+  }
+
+  const payload = {
+    pid,
+    startedAt: new Date(now).toISOString(),
+    startedAtMs: now,
+    exePath,
+    url: null,
+    port: null
+  };
+
   try {
     const fd = openSync(lockFile, 'wx');
     writeSync(fd, JSON.stringify(payload));
     closeSync(fd);
-    return {
-      acquired: true,
-      lock: payload,
-      existing: null,
-      stale: false,
-      release: () => {
-        try {
-          rmSync(lockFile, {force: true});
-        } catch {
-          /* ignore */
-        }
-      },
-      update: (patch) => {
-        try {
-          const current = readLock(lockFile) ?? payload;
-          const next = {...current, ...patch};
-          const fd = openSync(lockFile, 'w');
-          writeSync(fd, JSON.stringify(next));
-          closeSync(fd);
-        } catch {
-          /* the lock file is advisory */
-        }
-      }
-    };
+    return makeHandle({lockFile, payload});
   } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
+    if (error?.code !== 'EEXIST') {
+      // No write access to the runtime folder: report it as a permission
+      // problem instead of throwing a raw EPERM into the console.
+      return failure('permission', {lockFile, error});
+    }
   }
 
   const existing = readLock(lockFile);
   if (existing && isProcessAlive(existing.pid)) {
-    return {acquired: false, lock: null, existing, stale: false};
+    return failure('running', {lockFile, existing});
   }
 
   // Stale lock: the owning process is gone. Take it over.
@@ -78,31 +119,9 @@ export function acquireInstanceLock({lockFile, pid = process.pid, now = Date.now
     writeSync(fd, JSON.stringify(payload));
     closeSync(fd);
   } catch (error) {
-    return {acquired: false, lock: null, existing, stale: true, error};
+    return failure('io', {lockFile, error, existing, stale: true});
   }
-  return {
-    acquired: true,
-    lock: payload,
-    existing,
-    stale: true,
-    release: () => {
-      try {
-        rmSync(lockFile, {force: true});
-      } catch {
-        /* ignore */
-      }
-    },
-    update: (patch) => {
-      try {
-        const current = readLock(lockFile) ?? payload;
-        const fd = openSync(lockFile, 'w');
-        writeSync(fd, JSON.stringify({...current, ...patch}));
-        closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
-  };
+  return makeHandle({lockFile, payload, existing, stale: true});
 }
 
 export function readRuntimeInfo(runtimeFile) {
@@ -113,3 +132,5 @@ export function readRuntimeInfo(runtimeFile) {
     return null;
   }
 }
+
+export const __internal = {readLock};

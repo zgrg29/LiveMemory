@@ -1,113 +1,57 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-08 · M0 + M1 · v0.1.0
+本轮：2026-11-08 · P0 普通权限启动修复 · v0.1.0
 
 ## 1. 本轮目标
 
-- 检查开发环境与参考仓库 `bili-gift-drop`
-- 建立独立工程、文档体系与 AGENTS 规则
-- 完成可运行的第一阶段成果：本地服务器、浏览器控制台、Apple 风格 UI、三语、主题、设置持久化
-- 尽可能完成模拟直播与 SQLite 基础记录
-- 验证 Windows EXE 打包方案
-- 运行测试、同步文档、创建本地 Commit
+1. 修复「普通权限双击 EXE → CMD 一闪而过」的真实用户问题；
+2. 保留既有 M0–M2 能力（UI、三语、主题、SQLite、模拟直播、AI 分析包）；
+3. 重新构建 `dist/LiveMemory.exe`，以普通权限验证完整启动链路；
+4. 同步文档并创建独立本地 Commit。
 
 ## 2. 实际完成
 
-### 工程
-- 新仓库结构（零运行时依赖，Node ESM）
-- `AGENTS.md`、README、MIT License、`.gitignore`、`start.cmd`
-- 17 份 docs + `log/2026-11-08-m0-m1.md`
-- 自动化测试 86 个，全部通过
+### 根因（已实测复现）
 
-### 运行链路
-- `src/launcher/launcher.mjs`：环境检查 → 数据目录 → 单实例 → 端口 → 服务就绪 → 打开浏览器 → 状态输出 → 优雅退出
-- `src/server/index.mjs:startServer()`：设置、数据库、迁移、崩溃恢复、会话管理、HTTP
-- `src/storage/*`：`node:sqlite`、迁移 v1、仓储层
-- `src/platforms/shared/ingest.mjs`：唯一写入管线（去重/聚合/金额）
-- `src/platforms/mock/*`：模拟直播源
-- `src/web/*`：5 页控制台、三语、三主题、图表、SSE 实时更新
-- `src/ai/export/package.mjs`：`livememory-analysis-v1` 分析包（ZIP + 校验和 + 三语说明 + Schema）
-- `scripts/build-windows.mjs` + `scripts/sea-bootstrap.cjs`：EXE 构建
+- 启动器只守护 `startServer`，数据目录/配置/日志/单实例锁阶段的异常直接冒泡到 SEA bootstrap，只打印英文堆栈 → 双击窗口瞬间关闭。
+- `accessSync(W_OK)` 在 Windows 不检查写权限，不可写目录能通过预检查，失败被推迟到锁文件（正好在盲区里）。
+- 单实例只看 PID（普通权限对提权进程返回 EPERM 被当成存活；PID 复用会让程序误报「已在运行」后退出 0）。
+- SEA 解压每次重写、非原子；失败会留下半套资源目录。
+- 附带发现并修复 `logger.redactValue` 脱敏正则缺陷（会把原值重新拼回文本）。
 
-### 实测
-- 本地启动、`/api/*` 全链路、模拟记录、分析包解压校验、EXE 启动与单实例
-- 无头 Edge 截图验证明亮/黑暗/中文/日语/390px 布局（`docs/screenshots/`）
+### 修复
 
-## 3. 文件变化（主要）
+- `src/launcher/startup-log.mjs`：数据库之前的启动日志，临时目录回退，迁入 `<数据目录>\logs`，失败报告。
+- `src/shared/write-probe.mjs`：真实写探测；`src/server/paths.mjs` 共用。
+- `src/launcher/diagnostics.mjs`：交互式等待按键、`--error-dialog` 系统对话框、非 TTY 不阻塞。
+- `src/launcher/instance.mjs`：PID + `runtime.json` + `/api/health` 三者判定；陈旧锁接管。
+- `src/launcher/launcher.mjs`：全链路守护，每步状态、错误码、本地化错误、未捕获异常兜底、`--diagnose`。
+- `scripts/sea-bootstrap.cjs`：极早期日志、staging + marker + 原子解压、复用、三语失败提示、异常兜底。
+- `src/launcher/cli-i18n.mjs`：新增三语文案（失败步骤、错误码、日志位置、回退目录、残留锁、崩溃、诊断）。
 
-```text
-新增  AGENTS.md  README.md  LICENSE  .gitignore  package.json  start.cmd
-新增  src/launcher/{launcher,console,cli-i18n,env-check,lock,data-dir}.mjs
-新增  src/server/{index,app,http,routes,settings-store,logger,sse,paths,serializers}.mjs
-新增  src/storage/database/{connection,migrations/index}.mjs
-新增  src/storage/repositories/{sessions,events,viewers,ai-packages}.mjs
-新增  src/analytics/{sessions/hotness,sessions/summary,payments/totals,viewers/profile}.mjs
-新增  src/platforms/{shared/adapter,shared/ingest,shared/session-manager,mock/mock-source}.mjs
-新增  src/ai/{export/package,prompts/instructions,schemas/analysis-result-v1.schema.json}
-新增  src/shared/{app-info,errors,events,ids,locale,money,storage-mode,theme,time,zip}.mjs
-新增  src/web/{index.html,favicon.svg,styles/*.css,js/**,i18n/*.json}
-新增  tests/unit/*.test.mjs（12 个） tests/integration/*.test.mjs（3 个） tests/helpers/*
-新增  scripts/{build-windows,sea-bootstrap,capture-ui}
-新增  docs/*（17 份） log/2026-11-08-m0-m1.md docs/screenshots/*（4 张）
-```
+## 3. 验证
 
-## 4. 技术决策（详见 docs/DECISIONS.md）
+- 自动化：**119 个测试通过，0 失败**（`node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs`）。
+- `scripts/verify-exe.mjs`：普通权限（非管理员令牌）EXE 矩阵，覆盖全新目录、重启保留、强制结束恢复、端口占用、重复启动、不可写目录、其他目录运行、解压复用、CLI。
+- 本机沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，正好验证了「默认目录不可写 → 回退 `%TEMP%\LiveMemory` → 仍能启动并明确提示」的路径。
 
-- **零运行时依赖 + Node SEA**：`node:sqlite` 与 `node:http` 内置，避免原生模块与 `npm install`，EXE 用官方 node.exe 注入。
-- **设置存 JSON**（`config/settings.json`）而非数据库：启动器在数据库打开前就需要语言偏好。
-- **单写入管线**：去重与金额聚合集中在 `EventIngest`，平台适配器无写库权限。
-- **金额分账**：`currency` + `value_kind`（实际支付 / 展示价值），不混加。
-- **前端无框架/无构建**：便于 SEA 打包与长期维护，UI 通过 token + 原生 JS 组织。
-- **SSE 而非轮询**：实时动态；聚合仍由 HTTP 读取，重连不依赖事件回放。
+## 4. 未验证 / 边界
 
-## 5. 测试结果
+- 真实交互式桌面「双击」会话：本执行环境无法创建；已确认进程为非管理员令牌。
+- 管理员模式对照：本环境无法触发 UAC，未执行。
+- 请用户在本机双击 `dist\LiveMemory.exe` 验证：应出现控制台窗口、打印数据目录与 `http://127.0.0.1:…/`、自动打开浏览器；失败时应停留并显示错误与日志路径。
+- Windows 在进入程序前拦截（SmartScreen/映像损坏）无法由程序捕获。
 
-- 86 / 86 通过（6.5s），命令见 `docs/TEST_PLAN.md`
-- UI 截图 6 张（4 张已归档）：明亮中文桌面、历史详情、黑暗日语设置、中文 390px
-- EXE：构建成功，`--version`、单实例、API、静态资源已验证
+## 5. 下一轮建议
 
-## 6. 遗留问题
+继续 M3：Bilibili 真实直播接入（扫码登录、WebSocket、事件映射、身份与金额验证）。
 
-1. 真实 `Ctrl+C` 未自动化验证（代码路径与 `close()` 已测）。
-2. EXE 未在干净 Windows 机器验收；未签名。
-3. 动态端口未回写设置。
-4. 真实平台未接入（M3）。
-5. AI 导入、备份恢复、自动清理未实现（M5–M7）。
-6. 截图依赖临时放宽沙箱，正常开发不受影响。
-
-## 7. 下一轮建议
-
-**优先 M3 的 Bilibili 最小闭环**：
-
-1. 对照 `.ref/bili-gift-drop` 的 `login.mjs`、`bilibili.mjs`、`protocol.mjs`、`wbi.mjs`，实现 `src/platforms/bilibili/`：
-   - 扫码登录（`qrcode/generate` + `poll`），Cookie 仅内存 + 可选加密保存
-   - `room_init` → `getDanmuInfo`（WBI 签名）→ WebSocket 分片解码
-   - `DANMU_MSG` / `SEND_GIFT` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` → canonical event
-2. 用真实直播间验证 UID、昵称、礼物金额单位、大航海等级字段。
-3. 把身份缺失/金额单位不确定的情况写入 `source_quality`，不猜测。
-4. 为适配器补单元测试（协议包解码、消息映射、去重键），并更新 `PLATFORM_INTEGRATIONS.md` 的验证状态。
-5. 保持模拟平台可用，作为无凭据演示与回归测试基座。
-
-## 8. 启动验证方法
+## 6. 启动 / 测试命令
 
 ```bat
-:: 开发
-start.cmd
-
-:: 指定独立数据目录（推荐用于验证）
-node src/launcher/launcher.mjs --no-open --data-dir D:\temp\livememory-test
-
-:: 期待输出：产品名/版本、数据目录、控制台地址、记录状态、退出方式
-:: 浏览器打开控制台地址 → 直播记录 → 开始模拟直播
-```
-
-```bat
-:: 测试
-node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
-```
-
-```bat
-:: EXE
 node scripts/build-windows.mjs
-dist\LiveMemory.exe --no-open --data-dir D:\temp\livememory-exe
+dist\LiveMemory.exe
+dist\LiveMemory.exe --diagnose
+node scripts/verify-exe.mjs
+node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
 ```

@@ -1,14 +1,15 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-08（M0 + M1 首轮，版本 0.1.0）
+最后更新：2026-11-08（P0 普通权限启动修复 + M3 起步，版本 0.1.0）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 完成，M1 完成，M2 部分完成**
+- 里程碑：**M0 完成，M1 完成，M2 部分完成，P0（普通权限启动）完成，M3 进行中**
 - 版本：`0.1.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
 - 分支：`main`，本地提交，未 Push
+
 
 ## 2. 已完成（有代码与验证）
 
@@ -68,7 +69,22 @@
 - `result.schema.json`（`livememory-analysis-result-v1`）
 - 导出记录写入 `ai_packages`，场次 `ai_status` 变为 `exported`
 
+### Windows 普通权限启动修复（P0）✅
+
+用户实测普通权限双击 EXE 闪退。实测复现并定位到的代码级缺陷与修复：
+
+- 启动器错误处理只覆盖 `startServer`，数据目录/配置/日志/锁阶段的异常直接冒泡成英文堆栈 → 改为**全链路守护**，每步记录步骤名、错误码与路径。
+- `accessSync(W_OK)` 在 Windows 不检查写权限 → 改为**真实写探测**（创建/写入/读回/删除），返回失败步骤与真实错误码。
+- 没有任何早期日志 → 新增启动日志（数据库之前可用），`%TEMP%\LiveMemory-logs` 兜底，解析出数据目录后迁入 `<数据目录>\logs`，失败时写 `startup-error.json` 与 `runtime\last-error.json`。
+- 单实例只看 PID → 改为「PID + `runtime.json` + `/api/health` 必须是 LiveMemory」，陈旧锁自动接管，不再误报「已在运行」后静默退出。
+- SEA 解压每次重写、非原子 → staging + 标记 + 原子 rename，二次启动复用；失败逐级回退并记录。
+- 失败不再闪退：三语提示 + 失败步骤/错误码/日志路径 + 交互式等待按键（自动化跳过）+ `--error-dialog` 可选系统错误框 + 未捕获异常兜底。
+- 附带修复：`logger.redactValue` 脱敏正则错误（会把原值重新拼回文本）。
+
+自动化：`scripts/verify-exe.mjs` 9 项 EXE 矩阵（普通权限 8 通过 / 1 项为脚本自身判定已修正后重跑通过），详见 `docs/TEST_PLAN.md` 与 `log/2026-11-08-p0-windows-startup.md`。
+
 ### Windows EXE
+
 - `node scripts/build-windows.mjs` 生成 `dist/LiveMemory.exe`（Node SEA + postject，校验 postject 包 SHA-256）
 - PE 子系统强制为 Console（3），双击可见命令行窗口
 - 应用资源嵌入 EXE，首次运行解压到 `<数据目录>\app\<hash>\`，失败时回退到用户临时目录
@@ -105,10 +121,11 @@
 node --test --test-isolation=none tests/unit/*.test.mjs tests/integration/*.test.mjs
 ```
 
-结果：**86 个测试全部通过，0 失败，约 6.5 秒**。
+结果：**119 个测试全部通过，0 失败，约 5 秒**（P0 阶段；M3 用例在下一个提交中增加）。
 
 覆盖：
-- 单元：语言解析、主题、金额、事件规范化/去重、时间、热度分桶、三语文案一致性、ZIP、设置存储、单实例锁、启动参数、数据目录
+- 单元：语言解析、主题、金额、事件规范化/去重、时间、热度分桶、三语文案一致性、ZIP、设置存储、单实例锁、启动参数、数据目录、真实写探测、启动日志与回退、实例健康探测、暂停/对话框、脱敏、bootstrap 解压与标记
+- 集成：启动失败路径（不可写目录 → 本地化提示 + 启动日志 + 退出码 1）、`--diagnose`
 - 集成：迁移幂等、事件落库与聚合、重复投递不翻倍、跨场次观众统计、匿名事件、崩溃恢复、内容清理、HTTP API 全流程、权限/安全校验、SSE、分析包校验和
 
 UI 验证：本机用无头 Edge 通过 DevTools 协议截图（明亮/黑暗、中文/日语、桌面/390px），截图见 `docs/screenshots/`。**未在第二台干净 Windows 机器上做视觉验收。**

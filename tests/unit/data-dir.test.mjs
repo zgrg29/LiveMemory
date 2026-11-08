@@ -60,11 +60,59 @@ test('reports when no candidate is writable', () => {
   assert.throws(() => resolveDataDir({
     platform: 'linux',
     env: {XDG_DATA_HOME: filePath},
-    home: filePath
+    home: filePath,
+    temp: filePath
   }), (error) => {
     assert.equal(error.code, 'ENOENT');
     assert.ok(Array.isArray(error.attempts));
     return true;
   });
+  temp.cleanup();
+});
+
+test('falls back to the per-user temp folder when every profile folder is unusable', () => {
+  const temp = createTempDir();
+  const filePath = join(temp.dir, 'locked');
+  writeFileSync(filePath, 'x');
+  const fallbackTemp = join(temp.dir, 'tmp');
+  const resolved = resolveDataDir({
+    platform: 'win32',
+    env: {LOCALAPPDATA: filePath, APPDATA: filePath},
+    home: filePath,
+    temp: fallbackTemp
+  });
+  assert.equal(resolved.dir, join(fallbackTemp, 'LiveMemory'));
+  assert.equal(resolved.fallback, true);
+  assert.ok(resolved.attempts.some((attempt) => attempt.ok === false));
+  temp.cleanup();
+});
+
+test('the packaged default folder is a preference, not an explicit request', () => {
+  const temp = createTempDir();
+  const filePath = join(temp.dir, 'locked');
+  writeFileSync(filePath, 'x');
+  const resolved = resolveDataDir({
+    platform: 'win32',
+    env: {
+      LIVE_MEMORY_DEFAULT_DATA_DIR: filePath,
+      LOCALAPPDATA: temp.dir,
+      APPDATA: temp.dir
+    },
+    home: temp.dir
+  });
+  assert.ok(resolved.dir.startsWith(temp.dir));
+  assert.equal(resolved.explicit, false);
+  assert.equal(resolved.attempts[0].ok, false);
+  temp.cleanup();
+});
+
+test('the write probe reports the failing step and the real error code', () => {
+  const temp = createTempDir();
+  const filePath = join(temp.dir, 'not-a-dir');
+  writeFileSync(filePath, 'x');
+  const probe = probeWritable(join(filePath, 'nested'));
+  assert.equal(probe.ok, false);
+  assert.ok(probe.step);
+  assert.ok(probe.code);
   temp.cleanup();
 });

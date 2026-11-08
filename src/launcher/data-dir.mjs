@@ -1,6 +1,6 @@
 import {join, resolve} from 'node:path';
-import {homedir} from 'node:os';
-import {mkdirSync, accessSync, constants} from 'node:fs';
+import {homedir, tmpdir} from 'node:os';
+import {probeWritable} from '../shared/write-probe.mjs';
 
 /**
  * User data directory resolution.
@@ -8,11 +8,31 @@ import {mkdirSync, accessSync, constants} from 'node:fs';
  * Never write next to the executable: the install folder may be read-only
  * (Program Files) and is shared between Windows accounts.
  *
- * Order: explicit --data-dir / LIVE_MEMORY_DATA_DIR, then
- * %LOCALAPPDATA%\LiveMemory, then %APPDATA%\LiveMemory, then the home folder.
+ * Order on Windows: explicit --data-dir / LIVE_MEMORY_DATA_DIR, then
+ * %LOCALAPPDATA%\LiveMemory, %APPDATA%\LiveMemory, the user profile and finally
+ * the per-user temp folder. The first folder that passes a *real* write probe
+ * (create + write + read + delete) wins; the launcher warns when it had to move
+ * away from the default location so the user knows where data will live.
+ *
+ * An explicitly requested folder is still strict: if it is not writable the
+ * launcher reports the failing path and the Windows error code instead of
+ * silently writing somewhere else.
  */
-export function candidateDataDirs({env = process.env, platform = process.platform, home = homedir()} = {}) {
+
+export {probeWritable};
+
+export function candidateDataDirs({
+  env = process.env,
+  platform = process.platform,
+  home = homedir(),
+  temp = tmpdir()
+} = {}) {
   const candidates = [];
+  // The packaged executable knows its intended default folder (usually
+  // %LOCALAPPDATA%\LiveMemory). It is a *preference*, not an instruction: if it
+  // turns out to be read-only the launcher may fall back instead of refusing to
+  // start. Only `--data-dir` / LIVE_MEMORY_DATA_DIR are treated as explicit.
+  if (env.LIVE_MEMORY_DEFAULT_DATA_DIR) candidates.push(resolve(env.LIVE_MEMORY_DEFAULT_DATA_DIR));
   const explicit = env.LIVE_MEMORY_DATA_DIR;
   if (explicit) candidates.push(resolve(explicit));
   if (platform === 'win32') {
@@ -25,42 +45,56 @@ export function candidateDataDirs({env = process.env, platform = process.platfor
     candidates.push(join(home, '.local', 'share', 'livememory'));
   }
   candidates.push(join(home, 'LiveMemory'));
+  // Last resort: the per-user temp folder is always writable on a healthy
+  // Windows account, so the application can still start and explain itself.
+  candidates.push(join(temp, 'LiveMemory'));
   return [...new Set(candidates.map((item) => resolve(item)))];
 }
 
-/** Check writability without leaving anything behind on success. */
-export function probeWritable(directory) {
-  try {
-    mkdirSync(directory, {recursive: true});
-    accessSync(directory, constants.W_OK);
-    return {ok: true, error: null};
-  } catch (error) {
-    return {ok: false, error};
-  }
+function describeAttempt(probe) {
+  return {
+    dir: probe.dir,
+    ok: probe.ok,
+    ...(probe.ok ? {} : {code: probe.code ?? 'unknown', step: probe.step ?? null})
+  };
 }
 
 /**
- * @returns {{dir:string, explicit:boolean, attempts:Array<{dir:string, ok:boolean, code?:string}>}}
- * @throws when an explicitly requested directory is not writable
+ * @returns {{dir:string, explicit:boolean, fallback:boolean, attempts:Array<{dir:string, ok:boolean, code?:string, step?:string}>}}
+ * @throws when an explicitly requested directory is not writable, or when no
+ *   candidate location can be written to at all.
  */
-export function resolveDataDir({env = process.env, platform = process.platform, home = homedir(), requested = null} = {}) {
+export function resolveDataDir({
+  env = process.env,
+  platform = process.platform,
+  home = homedir(),
+  temp = tmpdir(),
+  requested = null,
+  probe = probeWritable
+} = {}) {
   const explicitDir = requested ?? env.LIVE_MEMORY_DATA_DIR ?? null;
   if (explicitDir) {
     const dir = resolve(explicitDir);
-    const probe = probeWritable(dir);
-    if (!probe.ok) {
-      const error = new Error(probe.error?.message ?? 'not writable');
-      error.code = probe.error?.code ?? 'EWRITE';
+    const result = probe(dir);
+    if (!result.ok) {
+      const error = new Error(result.error?.message ?? `data folder is not writable (${result.step ?? 'probe'})`);
+      error.code = result.code ?? 'EWRITE';
       error.path = dir;
+      error.step = result.step ?? null;
+      error.attempts = [describeAttempt(result)];
       throw error;
     }
-    return {dir, explicit: true, attempts: [{dir, ok: true}]};
+    return {dir, explicit: true, fallback: false, attempts: [describeAttempt(result)]};
   }
+
   const attempts = [];
-  for (const dir of candidateDataDirs({env, platform, home})) {
-    const probe = probeWritable(dir);
-    attempts.push({dir, ok: probe.ok, ...(probe.ok ? {} : {code: probe.error?.code ?? 'unknown'})});
-    if (probe.ok) return {dir, explicit: false, attempts};
+  const candidates = candidateDataDirs({env, platform, home, temp});
+  for (const dir of candidates) {
+    const result = probe(dir);
+    attempts.push(describeAttempt(result));
+    if (result.ok) {
+      return {dir, explicit: false, fallback: dir !== candidates[0], attempts};
+    }
   }
   const error = new Error('no writable data directory');
   error.code = 'ENOENT';
