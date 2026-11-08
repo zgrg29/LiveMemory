@@ -166,7 +166,14 @@ node scripts/verify-bilibili.mjs 5050 20
 | 需要 OAuth？ | **不需要**（公开数据路径）；只有读主播自己的频道信息才必须 OAuth |
 | 需要应用级 API Key？ | **是**（公开数据路径）；或者用 OAuth access token 代替 |
 
-依据：Live Streaming 授权文档写明 API Key 用于 *"requests that only retrieve public data, such as public live chat messages"*；`liveChatMessages.list` 参考页没有 Authorization/scope 小节（对比 `insert`/`delete` 明确列出 scope）；`liveBroadcasts.list` 才是必须 OAuth 的方法，而本轮用 `videos.list.activeLiveChatId` 完全绕开了它。
+依据（一手文档原文）：YouTube Live Streaming API 的 *Implement authorization* 文档写明：
+
+> **API keys:** A request that doesn't provide an OAuth 2.0 token must send an API key. Use an API key for requests that only retrieve public data, such as public live chat messages.
+
+来源：<https://developers.google.com/youtube/data/live/authentication>。同一页也说明安装型应用在交换 authorization code 时会自动获得 refresh token，并列出撤销端点与 scope 列表。
+
+`liveChatMessages.list` 参考文档没有 Authorization/scope 小节（对比 `insert`/`delete` 明确列出 scope），单次调用 5 个配额单位，并在页首建议「轮询用 `liveChatMessages.streamList`」：<https://developers.google.com/youtube/data/live/reference/rest/v3/liveChatMessages/list>。
+`liveBroadcasts.list` 才是必须 OAuth 的方法，而本轮用 `videos.list.activeLiveChatId` 完全绕开了它。
 
 `liveChatMessages.streamList` 确实存在，但它是 **gRPC server-streaming RPC**，不在 `youtube/v3` REST discovery 文档中，没有 REST 路径。因此实现使用文档化的 `liveChatMessages.list` + `nextPageToken` 轮询，并严格遵守服务端返回的 `pollingIntervalMillis`。
 
@@ -249,7 +256,7 @@ node scripts/verify-bilibili.mjs 5050 20
 
 ### 3.8 合规要点（一手条款）
 
-- **数据保留**：公开直播聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 **30 个日历日**；III.E.4.c 对 Authorized Data 同样是 30 天。主播的 OAuth **不能**为其他观众的数据授权无限期保存。本轮实现默认 30 天清理原始文本（保留统计与身份），见 §7。
+- **数据保留**：公开直播聊天属于 Non-Authorized Data，Developer Policies III.E.4.d 要求不超过 **30 个日历日**；III.E.4.c 对 Authorized Data 同样是 30 天。主播的 OAuth **不能**为其他观众的数据授权无限期保存。本轮实现默认 30 天清理原始文本（保留统计与身份），见 §7。来源：<https://developers.google.com/youtube/terms/developer-policies>
 - **不得抓取 / 不得用未公开接口**：ToS 与 Developer Policies 明确禁止 scraper 与 undocumented APIs，因此没有实现任何绕过。
 - **凭据分发**：III.D.1.d 禁止在开源项目中嵌入 API 凭据；OAuth 安装型客户端的 secret 虽然「不视为机密」，但公开仓库仍不应提交。默认常量留空是刻意的。
 - **外部 AI**：分析包由用户手动交给自选 AI 服务；软件不自动上传。包内不包含凭据；保留策略先于导出生效（允许用户在导出前手动执行清理）。
