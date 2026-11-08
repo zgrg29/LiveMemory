@@ -182,7 +182,7 @@ UI 截图（无头 Edge + DevTools）：
 
 ## 10. 最近 Commit
 
-- 本轮：`64bb0b3` feat: connect real YouTube Live chat with anonymous keys and Google OAuth
+- 本轮：`aa27417` feat: connect real YouTube Live chat with anonymous keys and Google OAuth（文档哈希修正随后一个 `docs:` 提交落地）
 - 上一轮：`02d3101` feat: preserve chat emoji and generalize the AI analysis centre
 - P1：`a6e3443` feat: connect real Bilibili live chat and record canonical events
 - P0：`e7b88d5` fix: start LiveMemory without administrator rights on Windows
