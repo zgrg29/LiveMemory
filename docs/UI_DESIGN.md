@@ -170,8 +170,8 @@ YouTube 标签的可见状态（全部三语）：
 - `docs/screenshots/live-youtube-anonymous-unconfigured-zh-CN.png`（默认官方未配置 + 实验模式入口）
 - `docs/screenshots/live-youtube-anonymous-light-zh-CN.png`（实验模式 warning + 无需 Key + 链接输入）
 - `docs/screenshots/live-youtube-anonymous-dark-zh-CN.png`（实验模式黑暗主题）
-- `docs/screenshots/live-youtube-anonymous-recording-zh-CN.png`（真实匿名直播：聊天、badge、HKD Super Chat）
-- `docs/screenshots/live-youtube-anonymous-mobile-zh-CN.png`（390×1200，真实匿名直播）
+- `docs/screenshots/live-youtube-anonymous-recording-zh-CN.png`（真实匿名会话统计；观众名与聊天正文已替换为示例，避免把公开观众数据长期写入仓库）
+- `docs/screenshots/live-youtube-anonymous-mobile-zh-CN.png`（390×1200，同上，示例化观众数据）
 - `docs/screenshots/settings-youtube-anonymous-zh-CN.png`（设置页 YouTube 接入卡）
 
 尚未在第二台 Windows 设备/真实控制台字体环境下验收。

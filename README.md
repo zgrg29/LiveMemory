@@ -27,7 +27,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ![YouTube 免登录实验模式（明亮 / 中文）](docs/screenshots/live-youtube-anonymous-light-zh-CN.png)
 
-![YouTube 匿名真实录制中](docs/screenshots/live-youtube-anonymous-recording-zh-CN.png)
+![YouTube 匿名录制界面（示例；观众名与正文已替换）](docs/screenshots/live-youtube-anonymous-recording-zh-CN.png)
 
 ![设置（黑暗 / 日本語）](docs/screenshots/settings-dark-ja.png)
 
