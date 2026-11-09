@@ -32,6 +32,8 @@ export function serializeSessionRow(row) {
     platformRoomId: row.platform_room_id,
     roomTitle: row.room_title,
     broadcasterName: row.broadcaster_name,
+    broadcasterId: row.broadcaster_id ?? null,
+    broadcasterIdentity: row.broadcaster_identity ?? 'unresolved',
     status: row.status,
     storageMode: row.storage_mode,
     sourceQuality: row.source_quality,
@@ -62,7 +64,24 @@ export function serializeViewerRow(row) {
     paymentEventCount: Number(row.payment_event_count ?? 0),
     sessionCount: Number(row.session_count ?? 0),
     nicknameCount: Number(row.nickname_count ?? 0),
+    broadcasterCount: Number(row.broadcaster_count ?? 0),
     focused: row.focused === 1
+  };
+}
+
+export function serializeBroadcasterRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    platform: row.platform,
+    platformUid: row.platform_uid,
+    displayName: row.display_name,
+    identity: row.identity_quality,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    sessionCount: Number(row.session_count ?? 0),
+    viewerCount: Number(row.viewer_count ?? 0),
+    lastSessionAt: row.last_session_at ?? null
   };
 }
 

@@ -10,27 +10,262 @@ import {
   pageHead,
   statCard
 } from '../ui.js';
-import {platformLabel, statusChip, supportPrimaryText, supportRows} from './shared.js';
+import {
+  broadcasterIdentityChip,
+  platformLabel,
+  statusChip,
+  supportPrimaryText,
+  supportRows
+} from './shared.js';
 
 /**
  * Viewer directory and long-term profile.
  *
- * The profile page deliberately shows aggregates and recorded facts only.
- * Interests and dislikes are AI-derived and therefore appear only after the
- * profile import of milestone M7.
+ * Identity is platform-global (`platform:uid`), but the interaction context is
+ * per broadcaster. The scope selector defaults to the current broadcaster and
+ * every number on this page follows it; the global overview is always labelled
+ * separately and never mixed into a broadcaster's context.
  */
+
+const SCOPE_ALL = 'all';
+const SCOPE_UNASSIGNED = 'unassigned';
+
+function readScope(query) {
+  const raw = query?.get?.('broadcaster');
+  if (!raw) return null;
+  const value = String(raw).trim();
+  return value || null;
+}
+
+function scopeSuffix(scope) {
+  return scope && scope !== SCOPE_ALL ? `?broadcaster=${encodeURIComponent(scope)}` : '';
+}
+
+function replaceScopeUrl(path, scope) {
+  window.history.replaceState(null, '', `#${path}${scopeSuffix(scope)}`);
+}
+
+function broadcasterName(broadcaster) {
+  return broadcaster?.displayName || broadcaster?.platformUid || broadcaster?.id || '—';
+}
+
+function scopeOptions(payload, t) {
+  const options = [{value: SCOPE_ALL, label: t('viewers.scope.all'), searchText: t('viewers.scope.all')}];
+  for (const broadcaster of payload?.broadcasters ?? []) {
+    const name = broadcasterName(broadcaster);
+    const current = broadcaster.id === payload.currentId;
+    const label = [
+      name,
+      platformLabel(broadcaster.platform, t),
+      current ? t('viewers.scope.currentBadge') : null
+    ].filter(Boolean).join(' · ');
+    options.push({
+      value: broadcaster.id,
+      label,
+      searchText: `${name} ${broadcaster.platformUid} ${broadcaster.platform}`.toLowerCase()
+    });
+  }
+  if ((payload?.unassigned?.sessionCount ?? 0) > 0) {
+    options.push({
+      value: SCOPE_UNASSIGNED,
+      label: `${t('viewers.scope.unassigned')} · ${payload.unassigned.sessionCount}`,
+      searchText: t('viewers.scope.unassigned').toLowerCase()
+    });
+  }
+  return options;
+}
+
+function resolveScope(payload, raw, {profile = null} = {}) {
+  const values = new Set([SCOPE_ALL]);
+  for (const broadcaster of payload?.broadcasters ?? []) values.add(broadcaster.id);
+  if ((payload?.unassigned?.sessionCount ?? 0) > 0) values.add(SCOPE_UNASSIGNED);
+  if (raw === SCOPE_ALL) return SCOPE_ALL;
+  if (raw && values.has(raw)) return raw;
+  if (profile) {
+    if (payload?.currentId && profile.broadcasters?.some((entry) => entry.id === payload.currentId)) {
+      return payload.currentId;
+    }
+    if (profile.broadcasters?.length > 0) return profile.broadcasters[0].id;
+    if ((payload?.unassigned?.sessionCount ?? 0) > 0 && (profile.sessions?.length ?? 0) > 0) {
+      return SCOPE_UNASSIGNED;
+    }
+    return SCOPE_ALL;
+  }
+  if (payload?.currentId && values.has(payload.currentId)) return payload.currentId;
+  return SCOPE_ALL;
+}
+
+function createScopePicker({t, payload, value, onChange}) {
+  const options = scopeOptions(payload, t);
+  const select = el('select', {
+    className: 'select scope-select',
+    attrs: {'aria-label': t('viewers.scope.label')}
+  });
+  const search = el('input', {
+    className: 'input scope-search',
+    type: 'search',
+    placeholder: t('viewers.scope.searchPlaceholder'),
+    attrs: {'aria-label': t('viewers.scope.searchPlaceholder'), autocomplete: 'off'}
+  });
+
+  function renderOptions(filter = '') {
+    const needle = filter.trim().toLowerCase();
+    const visible = options.filter((option) => (
+      option.value === value || !needle || option.searchText.includes(needle)
+    ));
+    select.replaceChildren(...visible.map((option) => el('option', {
+      value: option.value,
+      text: option.label,
+      attrs: {selected: option.value === value}
+    })));
+    select.value = value;
+  }
+  renderOptions();
+
+  select.addEventListener('change', () => {
+    value = select.value;
+    renderOptions(search.value);
+    onChange(value);
+  });
+  if (options.length > 8) {
+    search.addEventListener('input', debounce(() => renderOptions(search.value), 160));
+  } else {
+    search.classList.add('hidden');
+  }
+
+  return el('div', {className: 'scope-control'},
+    el('span', {className: 'scope-label', text: t('viewers.scope.label')}),
+    select,
+    search);
+}
+
+function summaryCard({broadcaster, summary, support, t, locale}) {
+  const supportText = supportPrimaryText(support, locale) ?? '—';
+  return el('section', {className: 'card scope-summary'},
+    el('div', {className: 'card-head'},
+      el('div', {className: 'card-title inline'},
+        el('span', {text: broadcasterName(broadcaster)}),
+        broadcasterIdentityChip(broadcaster.identity, t)),
+      el('div', {className: 'card-hint', text: platformLabel(broadcaster.platform, t)})),
+    el('div', {className: 'card-body'},
+      el('div', {className: 'stat-grid'},
+        statCard({label: t('viewers.scope.viewers'), value: formatInteger(summary.viewerCount, locale)}),
+        statCard({label: t('viewers.scope.sessions'), value: formatInteger(summary.sessionCount, locale)}),
+        statCard({label: t('viewers.scope.messages'), value: formatInteger(summary.messageCount, locale)}),
+        statCard({label: t('viewers.scope.support'), value: supportText})),
+      el('div', {className: 'scope-foot'},
+        chip(`${t('viewers.scope.newViewers')} ${formatInteger(summary.newViewers, locale)}`, 'accent'),
+        chip(`${t('viewers.scope.returningViewers')} ${formatInteger(summary.returningViewers, locale)}`, 'neutral'),
+        el('span', {className: 'small tertiary', text: t('viewers.scope.scopedHint')}))));
+}
+
+function unassignedCard({unassigned, t, locale}) {
+  return el('div', {className: 'callout callout--warn scope-callout'},
+    el('div', {},
+      el('div', {className: 'callout-title', text: t('viewers.scope.unassignedTitle')}),
+      el('div', {text: t('viewers.scope.unassignedBody', {
+        sessions: formatInteger(unassigned?.sessionCount ?? 0, locale),
+        viewers: formatInteger(unassigned?.viewerCount ?? 0, locale)
+      })})));
+}
+
+function scopedMetrics(viewer, scoped) {
+  return scoped ? (viewer.scoped ?? {}) : viewer;
+}
+
+function viewerRow(viewer, {ctx, scoped, scope}) {
+  const t = ctx.t;
+  const metrics = scopedMetrics(viewer, scoped);
+  const support = supportPrimaryText(metrics.support ?? viewer.support, ctx.locale);
+  const sessionCount = metrics.sessionCount ?? viewer.sessionCount;
+  const messageCount = metrics.messageCount ?? viewer.messageCount;
+  const star = el('button', {
+    className: 'focus-star',
+    type: 'button',
+    text: viewer.focused ? '★' : '☆',
+    attrs: {
+      'aria-pressed': String(viewer.focused),
+      'aria-label': viewer.focused ? t('viewers.detail.unfocus') : t('viewers.detail.focus'),
+      title: viewer.focused ? t('viewers.detail.unfocus') : t('viewers.detail.focus')
+    },
+    onClick: async (event) => {
+      event.stopPropagation();
+      star.disabled = true;
+      try {
+        const profile = await api.patch(`/api/viewers/${encodeURIComponent(viewer.id)}`, {focused: !viewer.focused});
+        viewer.focused = profile.viewer.focused;
+        star.textContent = viewer.focused ? '★' : '☆';
+        star.setAttribute('aria-pressed', String(viewer.focused));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        star.disabled = false;
+      }
+    }
+  });
+
+  const open = () => ctx.navigate(`/viewers/${encodeURIComponent(viewer.id)}${scopeSuffix(scope)}`);
+  const sub = [
+    el('span', {text: platformLabel(viewer.platform, t)}),
+    el('span', {className: 'mono tertiary', text: viewer.platformUid})
+  ];
+  if (scoped) {
+    sub.push(el('span', {className: 'tertiary', text: t('viewers.scope.scopedBadge')}));
+  } else if (Number(viewer.broadcasterCount ?? 0) > 0) {
+    sub.push(el('span', {className: 'tertiary', text: t('viewers.scope.otherBroadcasters', {
+      n: formatInteger(viewer.broadcasterCount, ctx.locale)
+    })}));
+  }
+
+  return el('div', {
+    className: 'list-row list-row--interactive viewer-row',
+    attrs: {role: 'link', tabindex: '0'},
+    onClick: open,
+    onKeydown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    }
+  },
+    star,
+    el('span', {className: 'avatar', text: initials(viewer.nickname ?? viewer.platformUid), attrs: {'aria-hidden': 'true'}}),
+    el('div', {className: 'row-main'},
+      el('div', {className: 'row-title'},
+        el('span', {className: 'row-title-text', text: viewer.nickname ?? viewer.platformUid}),
+        viewer.focused ? chip(t('viewers.detail.focusedChip'), 'warn') : null),
+      el('div', {className: 'row-sub'}, sub)),
+    el('div', {className: 'row-metrics'},
+      el('div', {className: 'metric'},
+        el('div', {className: 'metric-label', text: t('viewers.metric.sessions')}),
+        el('div', {className: 'metric-value', text: formatInteger(sessionCount, ctx.locale)})),
+      el('div', {className: 'metric metric--optional'},
+        el('div', {className: 'metric-label', text: t('viewers.metric.messages')}),
+        el('div', {className: 'metric-value', text: formatInteger(messageCount, ctx.locale)})),
+      el('div', {className: 'metric metric--optional'},
+        el('div', {className: 'metric-label', text: t('viewers.metric.support')}),
+        el('div', {className: 'metric-value', text: support ?? '—'}))),
+    el('span', {className: 'chevron', attrs: {'aria-hidden': 'true'}}));
+}
+
 export const viewersPage = {
   titleKey: 'viewers.pageTitle',
 
-  async render(container, ctx, params) {
-    if (params?.id) return renderDetail(container, ctx, params.id);
-    return renderList(container, ctx);
+  async render(container, ctx, params, query) {
+    if (params?.id) return renderDetail(container, ctx, params.id, query);
+    return renderList(container, ctx, query);
   }
 };
 
-async function renderList(container, ctx) {
+async function renderList(container, ctx, query) {
   const t = ctx.t;
   container.append(pageHead({title: t('viewers.pageTitle'), subtitle: t('viewers.pageSubtitle')}));
+
+  const payload = await api.get('/api/broadcasters');
+  let scope = resolveScope(payload, readScope(query));
+  let searchText = '';
+  let sort = 'messages';
+  let requestToken = 0;
 
   const searchInput = el('input', {
     className: 'input',
@@ -38,106 +273,137 @@ async function renderList(container, ctx) {
     placeholder: t('viewers.searchPlaceholder'),
     attrs: {'aria-label': t('viewers.searchPlaceholder'), autocomplete: 'off'}
   });
+  const sortSelect = el('select', {className: 'select scope-select', attrs: {'aria-label': t('viewers.scope.sort')}},
+    [
+      ['messages', t('viewers.scope.sortMessages')],
+      ['sessions', t('viewers.scope.sortSessions')],
+      ['support', t('viewers.scope.sortSupport')],
+      ['recent', t('viewers.scope.sortRecent')],
+      ['newest', t('viewers.scope.sortNewest')]
+    ].map(([value, label]) => el('option', {value, text: label})));
+  sortSelect.value = sort;
+  const sortWrap = el('div', {className: 'inline scope-sort'}, sortSelect);
+
   const countLabel = el('span', {className: 'small tertiary'});
-  const toolbar = el('div', {className: 'toolbar'}, searchInput, countLabel);
+  const toolbar = el('div', {className: 'toolbar viewer-toolbar'});
+  const summaryHost = el('div', {className: 'scope-summary-host'});
   const listHost = el('div', {className: 'card', style: {overflow: 'hidden'}});
-  container.append(toolbar, listHost);
+  container.append(toolbar, summaryHost, listHost);
 
-  let requestToken = 0;
+  function renderToolbar() {
+    toolbar.replaceChildren(
+      searchInput,
+      createScopePicker({
+        t,
+        payload,
+        value: scope,
+        onChange: (next) => {
+          scope = next;
+          replaceScopeUrl('/viewers', scope);
+          renderToolbar();
+          load().catch((error) => ctx.toast(ctx.describeError(error), {tone: 'error'}));
+        }
+      }),
+      sortWrap,
+      countLabel
+    );
+    sortWrap.classList.toggle('hidden', scope === SCOPE_ALL);
+  }
 
-  async function load(query = '') {
+  async function load() {
     const token = ++requestToken;
+    const queryText = searchText.trim();
     listHost.replaceChildren();
-    const payload = await api.get(`/api/viewers?limit=200&query=${encodeURIComponent(query)}`);
+    summaryHost.replaceChildren();
+    let response;
+    if (scope === SCOPE_UNASSIGNED) {
+      response = await api.get(`/api/viewers?scope=unassigned&limit=200&query=${encodeURIComponent(queryText)}`);
+      summaryHost.append(unassignedCard({unassigned: response.scope?.unassigned ?? payload.unassigned, t, locale: ctx.locale}));
+    } else if (scope !== SCOPE_ALL) {
+      response = await api.get(`/api/broadcasters/${encodeURIComponent(scope)}/viewers?limit=200&query=${encodeURIComponent(queryText)}&sort=${encodeURIComponent(sort)}`);
+      summaryHost.append(summaryCard({
+        broadcaster: response.broadcaster,
+        summary: response.summary,
+        support: response.support ?? [],
+        t,
+        locale: ctx.locale
+      }));
+    } else {
+      response = await api.get(`/api/viewers?limit=200&query=${encodeURIComponent(queryText)}`);
+    }
     if (token !== requestToken) return;
-    const viewers = payload.viewers ?? [];
-    countLabel.textContent = t('viewers.countLabel', {n: viewers.length});
+    const viewers = response.viewers ?? [];
+    countLabel.textContent = t('viewers.countLabel', {n: formatInteger(viewers.length, ctx.locale)});
     listHost.replaceChildren();
     if (viewers.length === 0) {
       listHost.append(emptyState({
-        title: query ? t('viewers.emptySearch') : t('viewers.empty'),
-        body: query ? null : t('viewers.emptyBody'),
+        title: queryText ? t('viewers.emptySearch') : t('viewers.empty'),
+        body: queryText ? null : t('viewers.emptyBody'),
         glyph: '·'
       }));
       return;
     }
     const list = el('div', {className: 'list'});
     for (const viewer of viewers) {
-      list.append(viewerRow(viewer));
+      list.append(viewerRow(viewer, {
+        ctx,
+        scoped: scope !== SCOPE_ALL,
+        scope
+      }));
     }
     listHost.append(list);
   }
 
-  function viewerRow(viewer) {
-    const star = el('button', {
-      className: 'focus-star',
-      type: 'button',
-      text: viewer.focused ? '★' : '☆',
-      attrs: {
-        'aria-pressed': String(viewer.focused),
-        'aria-label': viewer.focused ? t('viewers.detail.unfocus') : t('viewers.detail.focus'),
-        title: viewer.focused ? t('viewers.detail.unfocus') : t('viewers.detail.focus')
-      },
-      onClick: async (event) => {
-        event.stopPropagation();
-        star.disabled = true;
-        try {
-          const profile = await api.patch(`/api/viewers/${encodeURIComponent(viewer.id)}`, {focused: !viewer.focused});
-          viewer.focused = profile.viewer.focused;
-          star.textContent = viewer.focused ? '★' : '☆';
-          star.setAttribute('aria-pressed', String(viewer.focused));
-        } catch (error) {
-          ctx.toast(ctx.describeError(error), {tone: 'error'});
-        } finally {
-          star.disabled = false;
-        }
-      }
-    });
-    const support = supportPrimaryText(viewer.support, ctx.locale);
-    return el('div', {
-      className: 'list-row list-row--interactive viewer-row',
-      attrs: {role: 'link', tabindex: '0'},
-      onClick: () => ctx.navigate(`/viewers/${encodeURIComponent(viewer.id)}`),
-      onKeydown: (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          ctx.navigate(`/viewers/${encodeURIComponent(viewer.id)}`);
-        }
-      }
-    },
-      star,
-      el('span', {className: 'avatar', text: initials(viewer.nickname ?? viewer.platformUid), attrs: {'aria-hidden': 'true'}}),
-      el('div', {className: 'row-main'},
-        el('div', {className: 'row-title'},
-          el('span', {className: 'row-title-text', text: viewer.nickname ?? viewer.platformUid}),
-          viewer.focused ? chip(t('viewers.detail.focusedChip'), 'warn') : null),
-        el('div', {className: 'row-sub'},
-          el('span', {text: platformLabel(viewer.platform, t)}),
-          el('span', {className: 'mono tertiary', text: viewer.platformUid}))),
-      el('div', {className: 'row-metrics'},
-        el('div', {className: 'metric'},
-          el('div', {className: 'metric-label', text: t('viewers.metric.sessions')}),
-          el('div', {className: 'metric-value', text: formatInteger(viewer.sessionCount, ctx.locale)})),
-        el('div', {className: 'metric metric--optional'},
-          el('div', {className: 'metric-label', text: t('viewers.metric.messages')}),
-          el('div', {className: 'metric-value', text: formatInteger(viewer.messageCount, ctx.locale)})),
-        el('div', {className: 'metric metric--optional'},
-          el('div', {className: 'metric-label', text: t('viewers.metric.support')}),
-          el('div', {className: 'metric-value', text: support ?? '—'}))),
-      el('span', {className: 'chevron', attrs: {'aria-hidden': 'true'}}));
-  }
-
   searchInput.addEventListener('input', debounce(() => {
-    load(searchInput.value.trim()).catch((error) => ctx.toast(ctx.describeError(error), {tone: 'error'}));
+    searchText = searchInput.value;
+    load().catch((error) => ctx.toast(ctx.describeError(error), {tone: 'error'}));
   }, 260));
-  await load('');
+  sortSelect.addEventListener('change', () => {
+    sort = sortSelect.value;
+    load().catch((error) => ctx.toast(ctx.describeError(error), {tone: 'error'}));
+  });
+
+  renderToolbar();
+  await load();
   return undefined;
 }
 
-async function renderDetail(container, ctx, viewerId) {
+async function renderDetail(container, ctx, viewerId, query) {
   const t = ctx.t;
-  const profile = await api.get(`/api/viewers/${encodeURIComponent(viewerId)}`);
-  const {viewer, support, nicknames, sessions} = profile;
+  const [payload, baseProfile] = await Promise.all([
+    api.get('/api/broadcasters'),
+    api.get(`/api/viewers/${encodeURIComponent(viewerId)}`)
+  ]);
+  const scope = resolveScope(payload, readScope(query), {profile: baseProfile});
+  const profilePromise = scope === SCOPE_ALL
+    ? Promise.resolve(baseProfile)
+    : api.get(`/api/viewers/${encodeURIComponent(viewerId)}?${
+      scope === SCOPE_UNASSIGNED ? 'scope=unassigned' : `broadcasterId=${encodeURIComponent(scope)}`
+    }`);
+  const profile = await profilePromise;
+  const {viewer, nicknames} = profile;
+  const scoped = scope !== SCOPE_ALL;
+  const scopeData = profile.scope ?? null;
+  const scopeName = scoped
+    ? (scope === SCOPE_UNASSIGNED ? t('viewers.scope.unassigned') : broadcasterName(scopeData?.broadcaster))
+    : t('viewers.scope.global');
+  const metrics = scoped
+    ? {
+      sessionCount: scopeData?.sessionCount ?? 0,
+      messageCount: scopeData?.messageCount ?? 0,
+      paymentEventCount: scopeData?.paymentEventCount ?? 0,
+      support: scopeData?.support ?? [],
+      sessions: scopeData?.sessions ?? [],
+      lastSeenAt: scopeData?.lastSeenAt ?? null
+    }
+    : {
+      sessionCount: viewer.sessionCount,
+      messageCount: viewer.messageCount,
+      paymentEventCount: viewer.paymentEventCount,
+      support: profile.support ?? [],
+      sessions: profile.sessions ?? [],
+      lastSeenAt: viewer.lastSeenAt
+    };
 
   const back = el('button', {
     className: 'detail-back',
@@ -177,37 +443,70 @@ async function renderDetail(container, ctx, viewerId) {
       el('div', {className: 'viewer-platform'},
         el('span', {text: platformLabel(viewer.platform, t)}),
         el('span', {className: 'mono', text: viewer.platformUid}),
+        el('span', {text: t('viewers.scope.otherBroadcasters', {
+          n: formatInteger(viewer.broadcasterCount ?? 0, ctx.locale)
+        })}),
         headerChips)),
     el('div', {className: 'page-actions'}, focusButton));
 
+  const scopePicker = createScopePicker({
+    t,
+    payload,
+    value: scope,
+    onChange: (next) => {
+      ctx.navigate(`/viewers/${encodeURIComponent(viewerId)}${scopeSuffix(next)}`);
+    }
+  });
+
+  const scopeBar = el('section', {className: 'card scope-bar'},
+    el('div', {className: 'card-body'},
+      scopePicker,
+      el('div', {className: 'small tertiary', text: scoped
+        ? t('viewers.detail.scopeHint', {name: scopeName})
+        : t('viewers.detail.allScopeHint')})));
+
   const statsGrid = el('div', {className: 'stat-grid'},
-    statCard({label: t('viewers.metric.sessions'), value: formatInteger(viewer.sessionCount, ctx.locale)}),
-    statCard({label: t('viewers.metric.messages'), value: formatInteger(viewer.messageCount, ctx.locale)}),
-    statCard({label: t('live.stats.payments'), value: formatInteger(viewer.paymentEventCount, ctx.locale)}),
-    statCard({label: t('viewers.metric.lastSeen'), value: formatDateTime(viewer.lastSeenAt, ctx.locale)}));
+    statCard({label: t('viewers.metric.sessions'), value: formatInteger(metrics.sessionCount, ctx.locale)}),
+    statCard({label: t('viewers.metric.messages'), value: formatInteger(metrics.messageCount, ctx.locale)}),
+    statCard({label: t('live.stats.payments'), value: formatInteger(metrics.paymentEventCount, ctx.locale)}),
+    statCard({label: t('viewers.metric.lastSeen'), value: formatDateTime(metrics.lastSeenAt ?? viewer.lastSeenAt, ctx.locale)}));
+
+  const contextTitle = scoped
+    ? t('viewers.detail.currentContextTitle', {name: scopeName})
+    : t('viewers.detail.globalContextTitle');
 
   const supportCard = el('section', {className: 'card'},
     el('div', {className: 'card-head'},
-      el('div', {className: 'card-title', text: t('viewers.detail.supportTitle')}),
+      el('div', {className: 'card-title', text: scoped
+        ? t('viewers.detail.scopedSupportTitle')
+        : t('viewers.detail.supportTitle')}),
       el('div', {className: 'card-hint', text: t('common.actualPaid')})),
     el('div', {className: 'card-body'},
-      support.length === 0
+      metrics.support.length === 0
         ? emptyState({title: t('viewers.detail.supportEmpty'), glyph: '·'})
-        : el('div', {className: 'support-list'}, supportRows(support, ctx.locale, t))));
+        : el('div', {className: 'support-list'}, supportRows(metrics.support, ctx.locale, t))));
 
-  const nicknameRows = nicknames.length === 0
-    ? emptyState({title: t('common.noData'), glyph: '·'})
-    : el('div', {className: 'nickname-list'}, nicknames.map((entry) => el('div', {className: 'nickname-row'},
-      el('span', {}, entry.nickname, entry.nickname === viewer.nickname ? chip(t('viewers.detail.nicknameCurrent'), 'accent') : null),
-      el('span', {className: 'small tertiary', text: `${formatDateTime(entry.firstSeenAt, ctx.locale)} → ${formatDateTime(entry.lastSeenAt, ctx.locale)}`}))));
+  const identityRows = [
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('viewers.detail.platformUid')}),
+      el('span', {className: 'def-value mono', text: viewer.platformUid})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('viewers.detail.firstSeen')}),
+      el('span', {className: 'def-value', text: formatDateTime(scoped ? scopeData?.firstSeenAt : viewer.firstSeenAt, ctx.locale)})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('viewers.detail.lastSeen')}),
+      el('span', {className: 'def-value', text: formatDateTime(metrics.lastSeenAt ?? viewer.lastSeenAt, ctx.locale)})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('viewers.scope.label')}),
+      el('span', {className: 'def-value', text: scopeName}))
+  ];
+  const identityCard = el('section', {className: 'card'},
+    el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.identityTitle')})),
+    el('div', {className: 'card-body'}, el('div', {className: 'def-list'}, identityRows)));
 
-  const nicknameCard = el('section', {className: 'card'},
-    el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.nicknamesTitle')})),
-    el('div', {className: 'card-body'}, nicknameRows));
-
-  const sessionRows = sessions.length === 0
+  const sessionRows = metrics.sessions.length === 0
     ? emptyState({title: t('viewers.detail.sessionsEmpty'), glyph: '·'})
-    : el('div', {className: 'list'}, sessions.map((session) => el('div', {
+    : el('div', {className: 'list'}, metrics.sessions.map((session) => el('div', {
       className: 'list-row list-row--interactive',
       attrs: {role: 'link', tabindex: '0'},
       onClick: () => ctx.navigate(`/history/${encodeURIComponent(session.sessionId)}`),
@@ -236,9 +535,77 @@ async function renderDetail(container, ctx, viewerId) {
 
   const sessionsCard = el('section', {className: 'card'},
     el('div', {className: 'card-head'},
-      el('div', {className: 'card-title', text: t('viewers.detail.sessionsTitle')}),
-      el('div', {className: 'card-hint', text: t('viewers.metric.sessions')})),
+      el('div', {className: 'card-title', text: scoped
+        ? t('viewers.detail.scopedSessionsTitle')
+        : t('viewers.detail.sessionsTitle')}),
+      el('div', {className: 'card-hint', text: scopeName})),
     el('div', {className: 'card-body', style: {padding: '0'}}, sessionRows));
+
+  const broadcasterRows = (profile.broadcasters ?? []).length === 0
+    ? emptyState({title: t('viewers.detail.broadcastersEmpty'), glyph: '·'})
+    : el('div', {className: 'list'}, profile.broadcasters.map((entry) => {
+      const active = entry.id === scope;
+      return el('div', {
+        className: `list-row list-row--interactive scope-row${active ? ' scope-row--active' : ''}`,
+        attrs: {role: 'link', tabindex: '0', 'aria-current': active ? 'true' : null},
+        onClick: () => ctx.navigate(`/viewers/${encodeURIComponent(viewerId)}${scopeSuffix(entry.id)}`),
+        onKeydown: (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            ctx.navigate(`/viewers/${encodeURIComponent(viewerId)}${scopeSuffix(entry.id)}`);
+          }
+        }
+      },
+        el('div', {className: 'row-main'},
+          el('div', {className: 'row-title'},
+            el('span', {className: 'row-title-text', text: broadcasterName(entry)}),
+            broadcasterIdentityChip(entry.identity, t),
+            active ? chip(t('viewers.scope.selectedBadge'), 'accent') : null),
+          el('div', {className: 'row-sub'},
+            el('span', {text: platformLabel(entry.platform, t)}),
+            el('span', {className: 'mono tertiary', text: entry.platformUid}),
+            el('span', {text: t('viewers.scope.sessionCount', {
+              n: formatInteger(entry.sessionCount ?? 0, ctx.locale)
+            })}))),
+        el('div', {className: 'row-metrics'},
+          el('div', {className: 'metric'},
+            el('div', {className: 'metric-label', text: t('viewers.metric.messages')}),
+            el('div', {className: 'metric-value', text: formatInteger(entry.messageCount, ctx.locale)})),
+          el('div', {className: 'metric metric--optional'},
+            el('div', {className: 'metric-label', text: t('viewers.detail.supportShort')}),
+            el('div', {className: 'metric-value', text: supportPrimaryText(entry.support, ctx.locale) ?? '—'}))),
+        el('span', {className: 'chevron', attrs: {'aria-hidden': 'true'}}));
+    }));
+
+  const broadcastersCard = el('section', {className: 'card'},
+    el('div', {className: 'card-head'},
+      el('div', {className: 'card-title', text: t('viewers.detail.broadcastersTitle')}),
+      el('div', {className: 'card-hint', text: t('viewers.detail.broadcastersHint')})),
+    el('div', {className: 'card-body', style: {padding: '0'}}, broadcasterRows));
+
+  const nicknameRows = nicknames.length === 0
+    ? emptyState({title: t('common.noData'), glyph: '·'})
+    : el('div', {className: 'nickname-list'}, nicknames.map((entry) => el('div', {className: 'nickname-row'},
+      el('span', {}, entry.nickname, entry.nickname === viewer.nickname ? chip(t('viewers.detail.nicknameCurrent'), 'accent') : null),
+      el('span', {className: 'small tertiary', text: `${formatDateTime(entry.firstSeenAt, ctx.locale)} → ${formatDateTime(entry.lastSeenAt, ctx.locale)}`}))));
+
+  const nicknameCard = el('section', {className: 'card'},
+    el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.nicknamesTitle')})),
+    el('div', {className: 'card-body'}, nicknameRows));
+
+  const globalCard = scoped
+    ? el('section', {className: 'card card--wide global-overview'},
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('viewers.detail.globalOverviewTitle')}),
+        el('div', {className: 'card-hint', text: t('viewers.scope.global')})),
+      el('div', {className: 'card-body'},
+        el('div', {className: 'stat-grid'},
+          statCard({label: t('viewers.metric.sessions'), value: formatInteger(viewer.sessionCount, ctx.locale)}),
+          statCard({label: t('viewers.metric.messages'), value: formatInteger(viewer.messageCount, ctx.locale)}),
+          statCard({label: t('live.stats.payments'), value: formatInteger(viewer.paymentEventCount, ctx.locale)}),
+          statCard({label: t('viewers.detail.supportShort'), value: supportPrimaryText(profile.support, ctx.locale) ?? '—'})),
+        el('div', {className: 'small tertiary', style: {marginTop: '10px'}, text: t('viewers.detail.globalHint')})))
+    : null;
 
   const interestsCard = el('section', {className: 'card'},
     el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.interestsTitle')})),
@@ -246,26 +613,20 @@ async function renderDetail(container, ctx, viewerId) {
       emptyState({title: t('common.notAvailable'), body: t('viewers.detail.interestsEmpty'), glyph: '◇'}),
       el('div', {className: 'callout callout--neutral', style: {marginTop: '12px'}}, t('viewers.detail.notes'))));
 
-  const identityCard = el('section', {className: 'card'},
-    el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.identityTitle')})),
-    el('div', {className: 'card-body'},
-      el('div', {className: 'def-list'},
-        el('div', {className: 'def-row'},
-          el('span', {className: 'def-key', text: t('viewers.detail.platformUid')}),
-          el('span', {className: 'def-value mono', text: viewer.platformUid})),
-        el('div', {className: 'def-row'},
-          el('span', {className: 'def-key', text: t('viewers.detail.firstSeen')}),
-          el('span', {className: 'def-value', text: formatDateTime(viewer.firstSeenAt, ctx.locale)})),
-        el('div', {className: 'def-row'},
-          el('span', {className: 'def-key', text: t('viewers.detail.lastSeen')}),
-          el('span', {className: 'def-value', text: formatDateTime(viewer.lastSeenAt, ctx.locale)})))));
-
   container.append(
     back,
     hero,
+    scopeBar,
+    el('div', {className: 'scope-context-head'},
+      el('div', {className: 'section-title', text: contextTitle}),
+      scoped && scopeData?.broadcaster
+        ? broadcasterIdentityChip(scopeData.broadcaster.identity, t)
+        : null),
     statsGrid,
     el('div', {className: 'grid-2-equal', style: {marginTop: '16px'}}, supportCard, identityCard),
-    el('div', {className: 'grid-2-equal', style: {marginTop: '16px'}}, sessionsCard, nicknameCard),
+    el('div', {style: {marginTop: '16px'}}, sessionsCard),
+    el('div', {className: 'grid-2-equal', style: {marginTop: '16px'}}, broadcastersCard, nicknameCard),
+    globalCard ? el('div', {style: {marginTop: '16px'}}, globalCard) : null,
     el('div', {style: {marginTop: '16px'}}, interestsCard)
   );
 

@@ -60,7 +60,8 @@
 ```
 
 - 侧边栏固定、半透明 + `backdrop-filter`，底部显示连接状态与版本。
-- 顶栏：页面标题、隐私提示、主题切换。
+- 顶栏：页面标题、隐私提示、语言切换、主题切换。
+- 语言切换与外观切换同一区域：宽屏为 `简体中文 / 日本語 / English` 三个始终以各自语言显示的分段按钮 + 地球“跟随系统”按钮；≤860px 折叠为带地球标识的原生 select。不得只提供当前语言文字按钮；切换不刷新页面。
 - ≤860px：侧边栏变抽屉（hamburger + 遮罩 + Esc 关闭），顶栏保留。
 - 统计卡：桌面 4 列 → 900px 2 列；页面网格 900px 单列。
 - 390px 宽度下无横向溢出（已截图验证）。
@@ -85,9 +86,9 @@
 
 1. **直播记录**：状态 Hero（开始/结束、已记录时长、消息数）→ 4 统计卡 → 消息密度图 → 最近动态 + 最活跃观众；空闲时展示上一场摘要。
 2. **直播历史**：表格化列表（场次、时长、消息、观众、支持、AI 状态）；详情含统计卡、时间线、经济支持、最活跃观众、AI 占位、存储信息。
-3. **观众档案**：搜索 + 列表（头像首字、平台 ID、场次/发言/支持、关注星标）；详情含身份、累计支持、参与场次、昵称历史、兴趣占位。
+3. **观众档案**：主播范围选择器 + 搜索 + 列表（头像首字、平台 ID、当前主播范围的场次/发言/支持、参与主播数、关注星标）；详情含身份、参与过的主播（可切换）、当前主播的互动档案、该主播场次/支持、昵称历史、全局参与概览（明确标注）与兴趣占位。主播多时范围选择器附搜索框。
 4. **AI 分析中心**：三步卡片（导出 AI 分析包 / 交给 AI / 导入 AI 分析结果）→ 自然语言任务说明卡 → 导出表单 → AI 分析指令预览与复制 → 导入占位（明确标注 M6）→ 已导出包列表。界面不绑定任何 AI 品牌，使用任意支持文件上传与结构化输出的 AI 服务。
-5. **设置**：语言（含跟随系统与实际生效语言）、外观（三张预览卡）、存储模式、数据统计、关于。
+5. **设置**：语言（含跟随系统与实际生效语言，并提示 Header 为主入口）、外观（三张预览卡）、存储模式、YouTube 接入、**数据存储位置**（真实路径、来源、位置记录、可写状态、空间、计数、修改/打开/刷新）、**数据管理**（清空数据、恢复出厂设置、数据库快照说明）、关于。
 
 ### 7.1 聊天文字与表情显示
 
@@ -124,6 +125,25 @@ YouTube 标签的可见状态（全部三语）：
 - 官方面板底部显示 API 配额（已用/上限）与数据保留说明（天数 + 「立即清理过期原文」）。
 - 直播进行中，页面头部追加 YouTube 连接状态（已连接 / 网络中断重连 / 连接失败）、模式胶囊与「当前观看 N」（官方有数据时），10 秒轮询一次，不承担高频请求。
 - 动态流显示平台确认的 badge 文本；没有 badge 不占位。
+
+### 7.4 数据存储位置与危险操作
+
+- “数据存储位置”卡显示：当前真实目录（等宽字体）、来源（默认/自定义位置/命令行临时指定）、位置记录文件、可写状态、可用空间、LiveMemory 占用、数据库占用、场次/观众/事件；按钮：修改存储位置、打开数据文件夹、刷新。
+- “修改存储位置”对话框：
+  - 目标路径输入 + 浏览（Windows 原生 FolderBrowserDialog）；
+  - 两种模式：迁移现有数据（推荐）/ 在新目录创建新的数据空间，均有清楚说明；
+  - 云同步/临时目录/长路径 warning + 需要勾选确认；UNC 直接拒绝；
+  - 成功后显示原目录（未删除）、新目录、迁移前后事件数、位置记录；旧目录不会自动删除。
+- “数据管理”危险区：两个独立操作（清空数据 / 恢复出厂设置），每个都有范围说明；二次确认对话框要求输入 `DELETE` / `RESET`，默认勾选数据库快照，记录中禁用。
+- 删除成功后显示清理前后场次/事件/观众、备份路径、清理文件数；按钮“完成并刷新”。快照目录默认不在数据目录内。
+
+### 7.5 多主播范围选择器
+
+- 默认“当前主播”（服务端按直播中/最近真实场次确定）；选项包括全部主播、其他主播、待确认主播（仅当存在 unresolved 历史）。
+- 主播数 > 8 时显示搜索框；排序：发言最多/参与场次最多/支持最多/最近出现/最新出现。
+- 列表在具体主播范围下只显示该主播的场次、发言、支持；全部主播显示全局合计与“参与过 N 位主播”。
+- 详情页的“参与过的主播”行可点击切换；当前主播范围高亮；全局概览放在最后并用虚线卡片与“全部主播”标注，不与当前主播档案混排。
+- 主播身份 chip：已确认频道（强调色）/ 按直播间识别（警告）/ 模拟直播（中性）/ 待确认（警告）。
 
 ## 8. 主题行为
 
@@ -173,5 +193,23 @@ YouTube 标签的可见状态（全部三语）：
 - `docs/screenshots/live-youtube-anonymous-recording-zh-CN.png`（真实匿名会话统计；观众名与聊天正文已替换为示例，避免把公开观众数据长期写入仓库）
 - `docs/screenshots/live-youtube-anonymous-mobile-zh-CN.png`（390×1200，同上，示例化观众数据）
 - `docs/screenshots/settings-youtube-anonymous-zh-CN.png`（设置页 YouTube 接入卡）
+- `docs/screenshots/header-language-zh-CN.png`（1440×1000，Header 中文分段 + 地球按钮）
+- `docs/screenshots/header-language-ja.png`（Header 日语；三种语言名仍为原生写法）
+- `docs/screenshots/header-language-en.png`（Header 英语）
+- `docs/screenshots/header-language-dark-ja.png`（黑暗主题 + 日语）
+- `docs/screenshots/header-language-mobile-zh-CN.png`（390×844，窄屏原生 select）
+- `docs/screenshots/settings-data-location-zh-CN.png`（数据存储位置卡）
+- `docs/screenshots/settings-data-location-after-move-zh-CN.png`（迁移后：位置记录/新目录/计数）
+- `docs/screenshots/settings-relocation-dialog-zh-CN.png`（迁移/新空间对话框）
+- `docs/screenshots/settings-relocation-result-zh-CN.png`（迁移结果：12→12 事件、原目录未删）
+- `docs/screenshots/settings-danger-zh-CN.png`（数据管理危险区）
+- `docs/screenshots/settings-clear-dialog-zh-CN.png`（输入 DELETE、快照勾选）
+- `docs/screenshots/settings-factory-dialog-zh-CN.png`（输入 RESET）
+- `docs/screenshots/settings-clear-result-zh-CN.png`（清空结果：3/12/4 → 0/0/0）
+- `docs/screenshots/viewers-broadcaster-scope-zh-CN.png`（主播范围 + 搜索 + 排序 + 范围统计）
+- `docs/screenshots/viewer-detail-two-broadcasters-zh-CN.png`（同一观众参与 2 位主播，分别统计 + 全局概览）
+- `docs/screenshots/viewers-all-broadcasters-zh-CN.png`（全部主播列表 + 参与主播数）
+- `docs/screenshots/viewers-mobile-zh-CN.png`（390×1000 观众范围响应式）
+- `docs/screenshots/viewers-empty-after-clear-zh-CN.png`（清空后无缓存残留）
 
 尚未在第二台 Windows 设备/真实控制台字体环境下验收。

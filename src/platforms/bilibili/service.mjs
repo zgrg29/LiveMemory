@@ -89,6 +89,7 @@ export class BilibiliService {
       liveStatus: info?.liveStatus ?? room.liveStatus,
       title: info?.title ?? null,
       anchorName: info?.anchorName ?? null,
+      anchorUid: info?.anchorUid ?? null,
       areaName: info?.areaName ?? null,
       parentAreaName: info?.parentAreaName ?? null,
       online: info?.online ?? null
@@ -120,6 +121,7 @@ export class BilibiliService {
         platformRoomId: String(room.roomId),
         roomTitle: room.title ?? `Bilibili ${room.roomId}`,
         broadcasterName: room.anchorName ?? null,
+        broadcasterUid: room.anchorUid ?? null,
         sourceQuality,
         simulated: false,
         createAdapter: () => adapter

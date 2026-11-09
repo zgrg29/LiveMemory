@@ -37,6 +37,7 @@ const RULES = {
         '为 `viewer_context.json` 中证据足够的观众生成 `viewer_profiles`：观众明确表达过什么兴趣、哪些兴趣有多次证据支持、本场出现了什么新信息、是否与已有记录矛盾、哪些结论证据不足。证据不足的观众请省略。',
         '经济支持只作为客观事件引用：金额由本地程序精确统计，不要重新计算或修改；不能因为某人送礼就推断他喜欢当前话题。'
       ],
+      broadcasterContext: '## 主播上下文',
       emotes: '## 表情与 Emoji',
       safety: '## 安全与依据',
       shape: '## 必须输出的结构（JSON 实例，不是 Schema 文本）',
@@ -49,6 +50,12 @@ const RULES = {
       '话题允许重叠。不要为了整齐而强行切成固定时段，也不要把单条玩笑当作整个话题。',
       '观众长期画像必须基于多次、语义明确的证据；单条表情或单次发言不足以建立长期兴趣。',
       '如果包内没有旧画像，不要声称知道观众过去的变化；只描述本场可观察到的信息。'
+    ],
+    broadcasterRules: [
+      '本分析包只针对一个主播频道。`session_context.broadcaster` 与 `viewer_context[].broadcaster_context` 描述当前主播；`viewer_context[].lifetime` 是跨所有主播的全局合计，不能当作当前主播的历史。',
+      '观众若在其他主播处也有记录，只会出现 `other_broadcaster_count` 计数，不包含那些主播的互动内容。不要推测或编造其他主播处的兴趣、支持或画像。',
+      '只有 `broadcaster_context` 中的发言、支持、场次和昵称可作为当前主播画像的证据；全局合计只用于概览，不得混入当前主播的画像。',
+      '如果 `broadcaster.identity` 不是 `verified`（例如 `room_fallback` 或 `unresolved`），说明主播身份不够确定，请降低相关结论的置信度并明确标注。'
     ],
     emoteRules: [
       '优先阅读 `content_ai`（若存在），它与 `content` 的原始文字保持一致，只补充了可读的表情名称/描述；不要改写或翻译原始 `content`。',
@@ -93,6 +100,7 @@ const RULES = {
         '`viewer_context.json` のうち根拠が十分な視聴者について `viewer_profiles` を作成します。視聴者が明示した興味、複数の根拠がある興味、今回の新しい情報、既存記録との矛盾、根拠不足の結論を区別してください。信号がない視聴者は省略してください。',
         '経済的支援は客観的な出来事として参照します。金額はローカルで正確に集計済みなので再計算・変更せず、ギフトを現在の話題への好意と推測しないでください。'
       ],
+      broadcasterContext: '## 配信者のコンテキスト',
       emotes: '## 絵文字とプラットフォーム絵文字',
       safety: '## 安全と根拠',
       shape: '## 必須の出力構造（Schema 文ではなく JSON の実例）',
@@ -105,6 +113,12 @@ const RULES = {
       '話題は重複して構いません。整形のために無理に固定時間へ分割せず、単発の冗談を話題全体として扱わないでください。',
       '視聴者の長期プロフィールは、複数回の明確な根拠に基づく必要があります。単一の絵文字や一度の発言だけでは長期の興味を断定できません。',
       'パッケージに過去のプロフィールがない場合、視聴者の過去の変化を知っているかのように書かず、今回観察できた情報だけを記述してください。'
+    ],
+    broadcasterRules: [
+      'このパッケージは 1 人の配信者のチャンネルのみを対象とします。`session_context.broadcaster` と `viewer_context[].broadcaster_context` が現在の配信者を表し、`viewer_context[].lifetime` は全配信者にまたがる合計です。現在の配信者の履歴として扱わないでください。',
+      '視聴者が他の配信者にも参加している場合、`other_broadcaster_count` の件数だけが含まれ、他配信者でのやり取りは含まれません。他の配信者での興味・支援・プロフィールを推測・創作しないでください。',
+      '現在の配信者のプロフィールの根拠にできるのは `broadcaster_context` の言及・支援・配信・名前だけです。全体の合計は概要用であり、現在の配信者のプロフィールに混ぜないでください。',
+      '`broadcaster.identity` が `verified` でない場合（`room_fallback` や `unresolved` など）、配信者の特定は不確かです。関連する結論の confidence を下げ、明確に注記してください。'
     ],
     emoteRules: [
       '`content_ai` がある場合はそちらを優先して読んでください。元の `content` と一貫し、読みやすい絵文字名・説明だけを補ったものです。元の `content` を書き換えたり翻訳したりしないでください。',
@@ -149,6 +163,7 @@ const RULES = {
         'Produce `viewer_profiles` for the viewers in `viewer_context.json` that have enough evidence: what they explicitly said, which interests are supported by repeated evidence, what is new in this session, whether it contradicts existing records, and which conclusions are under-evidenced. Omit viewers with no usable signal.',
         'Reference economic support as objective events only. Amounts are computed exactly by the local application; do not recompute or modify them, and do not infer that a gift means the viewer likes the current topic.'
       ],
+      broadcasterContext: '## Broadcaster context',
       emotes: '## Emoji and platform emotes',
       safety: '## Safety and grounding',
       shape: '## Required output shape (a JSON example, not the schema text)',
@@ -161,6 +176,12 @@ const RULES = {
       'Topics may overlap. Do not force them into fixed time segments, and do not treat a single joke as a whole topic.',
       'A long-term viewer profile needs repeated, semantically clear evidence. A single emote or a single message is not enough to establish a lasting interest.',
       'If the package contains no previous profiles, do not claim to know how a viewer changed in the past; describe only what is observable in this session.'
+    ],
+    broadcasterRules: [
+      'This package covers exactly one broadcaster channel. `session_context.broadcaster` and `viewer_context[].broadcaster_context` describe that channel; `viewer_context[].lifetime` is a global total across every broadcaster and must not be treated as this channel\'s history.',
+      'If a viewer also appeared for other broadcasters, only `other_broadcaster_count` is included. Their interactions elsewhere are deliberately excluded; do not infer or invent interests, support or profiles from other channels.',
+      'Only `broadcaster_context` messages, support, sessions and nicknames are evidence for the current broadcaster profile. Global totals are overview-only and must never be mixed into it.',
+      'If `broadcaster.identity` is not `verified` (for example `room_fallback` or `unresolved`), the broadcaster is not fully confirmed. Lower the confidence of related conclusions and state the limitation.'
     ],
     emoteRules: [
       'Prefer `content_ai` when present. It stays consistent with the raw `content` and only adds a readable emote name/description; never rewrite or translate the original `content`.',
@@ -250,6 +271,14 @@ export function buildInstructions(locale, context = {}) {
   for (const line of labels.steps) lines.push(`- ${line}`);
   for (const note of rules.taskNotes) lines.push(`- ${note}`);
   lines.push('');
+  if (context.broadcaster) {
+    lines.push(labels.broadcasterContext);
+    lines.push('');
+    for (const rule of rules.broadcasterRules) lines.push(`- ${rule}`);
+    lines.push(`- broadcaster_id: ${context.broadcaster.id ?? 'unresolved'}`);
+    lines.push(`- broadcaster_identity: ${context.broadcaster.identity ?? 'unresolved'}`);
+    lines.push('');
+  }
   lines.push(labels.emotes);
   lines.push('');
   for (const rule of rules.emoteRules) lines.push(`- ${rule}`);
@@ -269,6 +298,9 @@ export function buildInstructions(locale, context = {}) {
     lines.push('');
     lines.push(`- session_id: ${session.id}`);
     lines.push(`- platform: ${session.platform}${session.simulated ? ' (simulated data — not a real broadcast)' : ''}`);
+    if (context.broadcaster) {
+      lines.push(`- broadcaster: ${context.broadcaster.name ?? context.broadcaster.id ?? 'unresolved'} (${context.broadcaster.identity ?? 'unresolved'})`);
+    }
     lines.push(`- started_at: ${isoFromEpochMs(session.started_at)}`);
     lines.push(`- ended_at: ${session.ended_at ? isoFromEpochMs(session.ended_at) : 'live'}`);
     lines.push(`- messages in package: ${context.messageCount ?? 'unknown'}`);

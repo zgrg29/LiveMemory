@@ -4,11 +4,11 @@
 
 | 层级 | 目的 | 位置 |
 | --- | --- | --- |
-| 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录 | `tests/unit/` |
-| 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、v1→v2 升级 | `tests/integration/` |
+| 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
+| 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、图表、空状态、AI 任务卡、表情回退 | 手工 + 无头 Edge 截图 |
-| 真实平台 | Bilibili 真实直播事件与表情元数据 | 已采样（见第 8 节）；YouTube 未开始 |
+| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围 | 手工 + 无头 Chrome/Edge 截图 |
+| 真实平台 | Bilibili 真实直播事件与表情元数据 | 已采样（见第 8 节）；YouTube 官方未验收 |
 | 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
 
 ## 2. 运行方式
@@ -23,7 +23,7 @@ node --test tests/unit tests/integration
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）。
+测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
 ## 3. 覆盖清单
 
@@ -64,28 +64,39 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `youtube-anonymous-parser.test.mjs` | 真实页面/续页结构、显式/裸 `$`/`¥` 币种、格式化金额、Unicode/自定义表情、badges、watch 状态、gift 无身份、会员不猜价格 |
 | `youtube-anonymous-adapter.test.mjs` | continuation 失效重开、网络错误退避恢复、不结束场次、匿名快照 |
 | `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
+| `broadcaster.test.mjs` | YouTube channelId vs 视频 ID、Bilibili anchor uid/room fallback/unresolved、mock、质量排序、控制字符清洗 |
+| `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
 
 ### 3.2 集成
 
 | 文件 | 覆盖 |
 | --- | --- |
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
-| `migration-emotes.test.mjs` | v1 旧库（无 `emotes`、无 `platform_started_at`）升级到 v3；旧消息保留且 `emotes=NULL`；升级后可写表情 |
+| `migration-emotes.test.mjs` | v1 旧库升级到 v5；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表存在 |
 | `youtube-session.test.mjs` | 本地假 YouTube API 的端到端：匿名 API Key 模式、直播定位、普通视频 409、非法链接零请求、连接 → 8 条事件入库（含重复消息去重）、多币种分账、按 channelId 建档案、赠送会员接收者不计付费、停止后进入历史、手动保留清理 |
 | `youtube-anonymous-session.test.mjs` | 本地假公开网页：默认官方、显式切匿名、watch/chat 检查、SC `HK$`、gift 无 Channel ID、badge、会员/Sticker、重复与 ticker 去重、自动结束、30 天上限 |
 | `api.test.mjs` | health/bootstrap、CSP、设置校验与持久化、模拟记录、事件列表、重复开始 409、停止、历史与详情、分析包下载与校验和、观众列表/档案/关注、SSE、Host/Origin/路径穿越/404、runtime 文件、重启后设置保持 |
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
+| `broadcaster-identity.test.mjs` | 同一 YouTube 账号在两个主播、同一主播多场、重名不合并、改名不拆分、跨平台同名不合并、主播维度发言/付费/币种、新/回访、v4→v5 迁移、AI 包 context 隔离、HTTP 范围接口 |
+| `storage-management.test.mjs` | 位置记录原子写/镜像/相对路径拒绝、目标安全校验/UNC/冲突/空间、迁移复制校验与旧目录保留、复制中断回滚、清空保留设置与凭据、出厂重置、应急快照一致性 |
 
-## 4. 本轮结果（2026-11-08，v0.3.0）
+## 4. 本轮结果（2026-11-08，v0.4.0）
 
 ```text
-tests 287
-pass  287
+tests 305
+pass  305
 fail  0
-duration ≈ 17.7s
+duration ≈ 22.8s
 ```
 
 无跳过、无 todo。
+
+新增覆盖重点：
+
+- **语言**：三种语言原生名称、Header 双控件、跟随系统、设置页同一状态、390px Header。
+- **数据目录**：位置记录镜像/损坏回退/相对路径拒绝、目标不安全/UNC/嵌套/冲突/空间不足、迁移成功、旧目录保留、复制中断回滚、迁移后运行时仍可用。
+- **数据清空**：记录中 409、确认文字错误 400、清空保留设置/凭据/备份/无关文件、出厂重置、空库可继续服务、快照 `integrity_check`。
+- **多主播**：同一账号两主播独立统计、重名/改名/跨平台不合并、各主播独立发言与付费、币种分账、v4→v5 迁移、AI 包 `broadcaster_context`/`lifetime`/`other_broadcaster_count`。
 
 ## 5. 手工 / 脚本验证记录
 
@@ -98,20 +109,25 @@ duration ≈ 17.7s
 | `--help` 三语 | `--lang ja/en/zh-CN` | ✅ |
 | 模拟直播 | API + 浏览器 | ✅ 消息、图表、动态、观众统计正确；含 Emoji 与平台表情样本 |
 | AI 分析包 | 下载/读取 ZIP | ✅ 6 个文件，manifest 校验和一致，UTF-8 正常 |
-| Emoji 界面 | 无头 Edge 截图 | ✅ `live-emoji-light-zh-CN.png` 显示 Unicode Emoji 原文 |
-| AI 任务说明 | 无头 Edge 截图 | ✅ 明亮中文 `ai-light-zh-CN.png`、黑暗日语 `ai-dark-ja.png`、390px `ai-mobile-light-zh-CN.png` |
+| Emoji 界面 | 无头 Chrome 截图 | ✅ Unicode Emoji 原文显示 |
+| AI 任务说明 | 无头 Chrome 截图 | ✅ 明亮中文、黑暗日语、390px 移动端 |
 | 明亮/黑暗/跟随系统 | 截图 + 设置持久化测试 | ✅ |
-| 中文/日语界面 | 截图 | ✅ |
+| 中文/日语/英语界面 | 截图 | ✅ |
 | 390px 响应式 | 截图 | ✅ 无横向溢出 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.2 MB，SHA-256 `9d586aa9…`，97 个资源文件 |
+| Header 语言 | Headless Chrome + DevTools | ✅ 中文/日语/英语/黑暗日语/390px；三语原生名称 |
+| 数据目录迁移界面 | Headless Chrome + 真实本地服务 | ✅ 迁移对话框、结果 12→12 事件、新位置卡、位置记录 |
+| 清空数据界面 | Headless Chrome + 真实本地服务 | ✅ DELETE/RESET 对话框、结果 3/12/4→0/0/0、清空后观众页为空 |
+| 多主播界面 | Headless Chrome + 真实本地服务 | ✅ 范围选择、排序、Mika 在 A/B 分别统计、全局概览 |
+| 迁移完整性 | SQLite 直接校验 | ✅ 旧/新 schema=5、integrity=ok、3/12/4/8/5/2 一致 |
+| 清空完整性 | SQLite 直接校验 | ✅ 全部业务表 0、integrity=ok；备份 3/12/4、integrity=ok |
+| 备份快照 | `VACUUM INTO` + 直接校验 | ✅ 快照在数据目录之外、integrity=ok、内容保留 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.3 MB，103 资源，SHA-256 `4aae59fe…` |
 | EXE 普通权限完整启动 | `scripts/verify-exe.mjs` | ✅ 9/9 场景通过，0 失败 |
-| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=4、version=0.3.0、匿名模式真实入库 72 条事件、72/72 Channel ID、0 错误（最终样本无付费事件） |
-| EXE 端到端表情导出 | EXE 内模拟记录 42 条 → 导出包 | ✅ 2 条平台表情消息、`emote_refs` 正确、manifest `messages_with_emotes=2`、`emote_kinds=1` |
-| YouTube 官方本地端到端 | 假 API + `startServer` | ✅ 连接 → 8 条事件 → 4 条消息 / 5 个付费事件 → 多币种 → 历史 |
+| EXE 新代码验证 | 全新数据目录启动 EXE | ✅ schema=5、version=0.4.0 |
+| YouTube 官方本地端到端 | 假 API + `startServer` | ✅ 连接 → 8 条事件 → 多币种 → 历史 |
 | YouTube 匿名本地端到端 | 假网页 + `startServer` | ✅ 5 条事件、SC HKD、gift 无身份、badge、自动结束 |
 | YouTube 匿名真实房间 A | `FKLZiufsCk0` 35 秒 | ✅ 86 事件、86/86 Channel ID、1 HKD SC、49 badge、0 错误 |
 | YouTube 匿名真实房间 B | `gXawf8GZDI8` 35 秒 | ✅ 100 事件、chat 87/87 Channel ID、13 gift 无身份/金额、3 badge、0 错误 |
-| YouTube 界面 | Headless Chrome + DevTools | ✅ 未配置/实验模式/黑暗/录制中/390px/设置页 6 张 |
 
 ## 6. 尚未验证（必须如实保留）
 
@@ -129,6 +145,11 @@ duration ≈ 17.7s
 12. 礼物 / SC / 大航海真实事件字段复核。
 13. **YouTube 匿名网页接口**：只做了两个房间各 35 秒；未验证数小时长直播、真实 429/验证码/consent/age wall、不同地区币种、Super Sticker/会员/赠送会员。
 14. **匿名路径条款合规**：未取得 YouTube 书面许可或法务结论；不得把“技术可用”描述为“允许使用”。
+15. **原生目录选择器**：本执行环境无交互桌面，PowerShell/WinForms 对话框未实际弹出验证；手动路径与 API 已测试。
+16. **真实断盘/断电/磁盘写满**：迁移回滚通过注入 `afterMove` 失败测试，未做物理中断演练；空间不足通过注入 `statfs` 测试。
+17. **映射网络盘**：只识别 UNC 并拒绝；盘符映射的网络盘未自动检测。
+18. **数据清空文件删除**：数据库事务与 `VACUUM` 已测；文件删除为尽力而为，未做断电中断验收。
+19. **旧 YouTube 场次归属**：保持 `unresolved`，没有手动指派 UI。
 
 ## 7. M3 起需补充的测试
 
@@ -137,6 +158,8 @@ duration ≈ 17.7s
 - 身份缺失：UID 为空时不得更新画像。
 - 金额单位：每个平台单独断言“1 单位货币 = N minor units”。
 - 真实直播间验收表（房间号、日期、事件类型、字段核对）。
+- 迁移/删除的物理中断演练（拔盘、断电、磁盘写满）。
+- 旧场次主播归属与单场/观众删除 UI。
 
 ## 8. 真实直播间验收（2026-11-08，匿名连接）
 
@@ -185,3 +208,35 @@ duration ≈ 17.7s
 - 重连没有在真实环境触发；`youtube-anonymous-adapter.test.mjs` 模拟 continuation 失效与网络错误，确认不结束场次。
 - 无官方凭据，**未完成**官方 API 并排对照。
 - 兼容性：该接口不是官方 API，可能违反 YouTube ToS；详见 `YOUTUBE_ANONYMOUS_RESEARCH.md`。
+
+## 11. 多主播与数据管理专项验证（v0.4.0）
+
+| 场景 | 结果 |
+| --- | --- |
+| 同一 YouTube Channel ID 出现在主播 A、B | ✅ 一个 `viewers` 行；两条 `viewer_broadcasters`；A/B 统计独立 |
+| 同一观众在同一主播多场 | ✅ scope 内 `session_count` 增加；另一主播不变 |
+| 两个不同观众昵称完全相同 | ✅ 两个稳定 ID，不合并 |
+| 同一观众更换昵称 | ✅ 更新展示名 + 昵称历史，不拆分身份 |
+| 两个不同平台相同昵称 | ✅ `youtube:` 与 `bilibili:` 不合并 |
+| 同一主播多场不同 YouTube 直播 | ✅ 场次分别关联同一 channelId |
+| Bilibili 同一主播 UID 对应直播间 | ✅ 使用 anchorUid；缺失时 room fallback |
+| 按主播搜索 / 全部主播搜索 | ✅ 范围接口与 UI |
+| 各主播独立发言/付费/币种 | ✅ A USD 5 / B USD 10；lifetime USD 15 |
+| 旧库迁移（v4→v5） | ✅ Bilibili room fallback；YouTube unresolved；mock simulated |
+| 平台数据到期清理后的关联一致性 | ✅ 清理只删原文/badge/金额显示/过期昵称；关系计数/稳定 ID/合计保留 |
+| AI 分析包主播上下文 | ✅ `broadcaster_context` / `lifetime` / `other_broadcaster_count` |
+| 修改到新本地目录 | ✅ 迁移成功，位置记录更新，运行时同端口切换 |
+| 创建新的空数据空间 | ✅ 新库 schema=5、业务表 0；旧目录保留 |
+| 软件重启后仍使用新目录 | ✅ 位置记录读取；目标存在且含数据库才使用 |
+| 新目录无权限 / 空间不足 | ✅ 注入 `statfs` 与写探测错误路径 |
+| 复制中断 / 迁移失败回滚 | ✅ 注入 `afterMove` 失败后回滚到原目录，原数据可用 |
+| 外接目录暂时不可访问 | ✅ 启动器报不可用，不创建空库 |
+| 中文/日文路径 | ✅ 路径按 UTF-8/绝对路径处理，未做路径拼接删除 |
+| 迁移前后记录数量一致 | ✅ 旧/新 3/12/4/8/5/2 完全一致，integrity ok |
+| 清空记录但保留设置 | ✅ 设置/凭据/位置记录/backups/无关文件保留 |
+| 恢复出厂设置 | ✅ 设置默认、凭据/日志/缓存/导出删除；backups/无关文件保留 |
+| 取消 / 确认文字错误 | ✅ 前端禁用 + 服务端 400 |
+| 直播正在记录 | ✅ 设置页禁用 + 服务端 409 |
+| 清理后数据库可初始化 | ✅ 重建运行时、schema=5、空库可服务 |
+| 旧数据不会从缓存重新出现 | ✅ 观众页为空；服务端重建运行时 |
+| 不删除用户无关文件 / 外部备份 | ✅ 根目录 `personal-note.txt` 与备份保留 |

@@ -179,6 +179,153 @@ export const MIGRATIONS = Object.freeze([
       db.exec('ALTER TABLE events ADD COLUMN badges TEXT');
       db.exec('ALTER TABLE events ADD COLUMN amount_display TEXT');
     }
+  },
+  {
+    version: 5,
+    name: 'broadcaster-identity-and-viewer-context',
+    up(db) {
+      // A stable broadcaster (channel) is the third identity axis. Viewers keep
+      // one global platform identity, but every "broadcaster × viewer" pair gets
+      // its own interaction context so statistics and future AI profiles from
+      // different channels are never mixed.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS broadcasters (
+          id TEXT PRIMARY KEY,
+          platform TEXT NOT NULL,
+          platform_uid TEXT NOT NULL,
+          display_name TEXT,
+          identity_quality TEXT NOT NULL DEFAULT 'verified'
+            CHECK (identity_quality IN ('verified', 'room_fallback', 'simulated', 'unresolved')),
+          first_seen_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (platform, platform_uid)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_broadcasters_last_seen ON broadcasters (last_seen_at DESC);
+
+        CREATE TABLE IF NOT EXISTS viewer_broadcasters (
+          viewer_id TEXT NOT NULL REFERENCES viewers (id) ON DELETE CASCADE,
+          broadcaster_id TEXT NOT NULL REFERENCES broadcasters (id) ON DELETE CASCADE,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          payment_event_count INTEGER NOT NULL DEFAULT 0,
+          first_seen_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (viewer_id, broadcaster_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_viewer_broadcasters_broadcaster
+          ON viewer_broadcasters (broadcaster_id, message_count DESC);
+
+        CREATE TABLE IF NOT EXISTS viewer_broadcaster_currency_totals (
+          viewer_id TEXT NOT NULL,
+          broadcaster_id TEXT NOT NULL,
+          currency TEXT NOT NULL,
+          value_kind TEXT NOT NULL CHECK (value_kind IN ('actual', 'display', 'unknown')),
+          total_minor INTEGER NOT NULL DEFAULT 0,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (viewer_id, broadcaster_id, currency, value_kind),
+          FOREIGN KEY (viewer_id, broadcaster_id)
+            REFERENCES viewer_broadcasters (viewer_id, broadcaster_id) ON DELETE CASCADE
+        );
+      `);
+      db.exec('ALTER TABLE sessions ADD COLUMN broadcaster_id TEXT REFERENCES broadcasters (id) ON DELETE SET NULL');
+      db.exec("ALTER TABLE sessions ADD COLUMN broadcaster_identity TEXT NOT NULL DEFAULT 'unresolved'");
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_broadcaster ON sessions (broadcaster_id, started_at DESC)');
+
+      // Backfill. Historical Bilibili sessions have a verified room id but no
+      // anchor uid, so they are attributed to a room-level fallback identity and
+      // marked as such. YouTube history only knows the single video id, which is
+      // NOT a broadcaster identity: those rows stay unresolved and are kept.
+      db.exec(`
+        INSERT INTO broadcasters (
+          id, platform, platform_uid, display_name, identity_quality,
+          first_seen_at, last_seen_at, created_at, updated_at
+        )
+        SELECT 'bilibili:room:' || s.platform_room_id,
+               'bilibili',
+               s.platform_room_id,
+               (SELECT s2.broadcaster_name
+                  FROM sessions s2
+                 WHERE s2.platform = 'bilibili'
+                   AND s2.platform_room_id = s.platform_room_id
+                   AND s2.broadcaster_name IS NOT NULL
+                 ORDER BY s2.started_at DESC
+                 LIMIT 1),
+               'room_fallback',
+               MIN(s.started_at), MAX(s.started_at), MAX(s.updated_at), MAX(s.updated_at)
+          FROM sessions s
+         WHERE s.platform = 'bilibili'
+           AND s.platform_room_id IS NOT NULL
+           AND TRIM(s.platform_room_id) <> ''
+         GROUP BY s.platform_room_id;
+      `);
+      db.exec(`
+        UPDATE sessions
+           SET broadcaster_id = 'bilibili:room:' || platform_room_id,
+               broadcaster_identity = 'room_fallback'
+         WHERE platform = 'bilibili'
+           AND platform_room_id IS NOT NULL
+           AND TRIM(platform_room_id) <> ''
+           AND EXISTS (
+             SELECT 1 FROM broadcasters b
+              WHERE b.id = 'bilibili:room:' || sessions.platform_room_id
+           );
+      `);
+      db.exec(`
+        INSERT INTO broadcasters (
+          id, platform, platform_uid, display_name, identity_quality,
+          first_seen_at, last_seen_at, created_at, updated_at
+        )
+        SELECT 'mock:simulation', 'mock', 'simulation', NULL, 'simulated',
+               MIN(started_at), MAX(started_at), MAX(updated_at), MAX(updated_at)
+          FROM sessions
+         WHERE platform = 'mock'
+        HAVING COUNT(*) > 0;
+      `);
+      db.exec(`
+        UPDATE sessions
+           SET broadcaster_id = 'mock:simulation',
+               broadcaster_identity = 'simulated'
+         WHERE platform = 'mock';
+      `);
+
+      // Rebuild the broadcaster-scoped aggregates from the authoritative
+      // per-session rows so pre-v5 history is immediately usable in the new UI.
+      db.exec(`
+        INSERT INTO viewer_broadcasters (
+          viewer_id, broadcaster_id, message_count, payment_event_count,
+          first_seen_at, last_seen_at, created_at, updated_at
+        )
+        SELECT vs.viewer_id, s.broadcaster_id,
+               SUM(vs.message_count), SUM(vs.payment_event_count),
+               MIN(vs.first_seen_at), MAX(vs.last_seen_at),
+               MAX(vs.last_seen_at), MAX(vs.last_seen_at)
+          FROM viewer_sessions vs
+          JOIN sessions s ON s.id = vs.session_id
+         WHERE s.broadcaster_id IS NOT NULL
+         GROUP BY vs.viewer_id, s.broadcaster_id;
+      `);
+      db.exec(`
+        INSERT INTO viewer_broadcaster_currency_totals (
+          viewer_id, broadcaster_id, currency, value_kind, total_minor, event_count
+        )
+        SELECT e.viewer_id, s.broadcaster_id, e.currency, e.value_kind,
+               SUM(e.amount_minor), COUNT(*)
+          FROM events e
+          JOIN sessions s ON s.id = e.session_id
+         WHERE s.broadcaster_id IS NOT NULL
+           AND e.viewer_id IS NOT NULL
+           AND e.is_paid = 1
+           AND e.amount_minor > 0
+           AND e.value_kind IN ('actual', 'display')
+           AND e.currency IS NOT NULL
+         GROUP BY e.viewer_id, s.broadcaster_id, e.currency, e.value_kind;
+      `);
+    }
   }
 ]);
 

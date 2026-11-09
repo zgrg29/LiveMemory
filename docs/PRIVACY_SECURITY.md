@@ -126,6 +126,8 @@
 
 ## 15. 匿名网页接口的边界（2026-11-08）
 
+> 以下 §16–§18 为 v0.4.0 新增。
+
 - 只读：不发送消息、不点赞、不关注、不修改任何平台状态。
 - 不携带任何用户登录态；不读取、不保存 Cookie。
 - 不绕过登录、验证码、年龄墙、地区限制；被拒绝时显示真实原因。
@@ -133,3 +135,37 @@
 - 不把匿名接口描述为官方 API；UI 与文档明确标注实验性和条款风险。
 - 该路径不是默认；没有官方凭据时，用户必须主动点击「启用免登录实验模式」。
 - 研究、真实采样与许可证记录见 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`。
+
+## 16. 数据位置、迁移与本地目录选择（v0.4.0）
+
+- 位置记录只含 `version/dataDir/updatedAt`，保存在 `%LOCALAPPDATA%\LiveMemory\data-location.json`，镜像到 `%APPDATA%\LiveMemory\data-location.json`；不含数据库内容、Cookie、Token 或 API Key。
+- 位置记录目标必须已存在并含 `database/livememory.db`；否则启动失败，不创建空库、不覆盖旧数据。恢复方式：重新连接磁盘、`--data-dir` 或 `--forget-data-location`。
+- 迁移拒绝：UNC 网络共享、磁盘根目录、Windows/Program Files/ProgramData 系统目录、用户主目录/桌面/下载/文档根目录、与源目录相同或嵌套、目标已有 LiveMemory 数据、空间不足。
+- OneDrive/Dropbox/Google Drive、临时目录、长路径只警告并要求显式确认；**映射网络盘（盘符形式）未自动识别**，用户必须自行确认是本地磁盘。
+- 迁移前停止适配器、checkpoint、关闭 SQLite；复制到目标卷 staging，校验 SQLite `integrity_check`、表计数、schema 版本与配置/凭据/导出文件 SHA-256；成功后移入目标并切换运行时。
+- **原目录永远不由应用自动删除**；失败回滚到原目录。旧目录可能仍含敏感聊天与凭据，用户确认新目录可用后需自行安全删除。
+- 目录选择器：本地 PowerShell 固定脚本调用 WinForms FolderBrowserDialog；不执行用户输入的命令，不使用 `cmd /c`。打开文件夹只接受 `data/exports/backups/logs` 四个受管键，不拼接任意路径。
+- 迁移期间 API 进入维护模式，除 relocation/clear/health/status 外返回 503，避免并发写库。
+
+## 17. 清空数据与恢复出厂（v0.4.0）
+
+- 两种模式的范围见 `docs/STATUS.md` §2.3：
+  - `data` 保留语言、主题、存储模式、数据目录、位置记录、平台登录凭据、`backups/`、日志与根目录无关文件；
+  - `factory` 额外删除偏好、凭据、日志、缓存并重置默认设置；仍不删除位置记录、`backups/`、根目录无关文件或外部备份。
+- 必须输入 `DELETE` / `RESET`；记录中禁用并由服务端再次校验（409）；不做“一键立即删除”。
+- 默认创建数据库快照到 `%LOCALAPPDATA%\LiveMemory-Backups`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖），**不在即将清空的数据目录内**。快照只含数据库，不含分析包/凭据/设置；不是 M5 `.livememory` 备份。
+- 数据库删除在事务内，随后 `VACUUM` + WAL checkpoint；文件删除（`exports/`、`cache/`，factory 另含 `secrets/`、`logs/`）是尽力而为。极端断电可能留下部分文件，但数据库仍为空且下次启动会重新初始化。
+- “清空数据”**不删除登录凭据**；如果用户希望同时清除授权，使用“恢复出厂设置”或在对应平台退出登录。
+- 应用管理的目录：`config/`、`database/`、`secrets/`、`exports/`、`cache/`、`logs/`、`runtime/`、`backups/`。根目录其他个人文件与外部备份不属于清空范围。
+
+## 18. 多主播身份、关联性与保留（v0.4.0）
+
+- 主播维度关系表 `viewer_broadcasters` 会新增“同一平台账号出现在哪些主播处”的关联。这比单主播统计更容易识别跨频道活动，属于新增的链接性风险。
+- 默认观众页、统计与 AI 包都以“当前主播”为范围；跨主播合计明确标注，不自动混入当前主播画像。AI 包只给其他主播的数量 `other_broadcaster_count`，不含其互动细节。
+- 主播身份是公开频道标识（YouTube channelId / Bilibili anchor uid/room id），不是观众个人数据；但主播—观众关系仍是可关联数据。
+- 保留规则不因新增关系表而放宽：
+  - YouTube 30 天清理仍删除原文、emotes、badges、amount_display 与过期昵称；关系表只保留计数/稳定 ID/金额合计；
+  - 删除观众（未来 UI）会级联删除其 `viewer_broadcasters` 与币种合计；
+  - 恢复出厂删除全部关系表；
+  - 旧 YouTube 场次无法确认主播时保持 `unresolved`，不猜归属。
+- 目前没有“跨主播 AI 画像合并”；未来如提供，必须由用户明确选择，并标注证据来源与主播范围。

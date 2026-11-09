@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**4**
+Schema 版本：**5**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -32,7 +32,9 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | platform | TEXT | `bilibili` / `youtube` / `mock` |
 | platform_room_id | TEXT | 平台房间/频道 ID |
 | room_title | TEXT | 直播标题（原文，不翻译） |
-| broadcaster_name | TEXT | 主播名 |
+| broadcaster_name | TEXT | 主播名（展示） |
+| broadcaster_id | TEXT | 外键 → `broadcasters`，可空；旧场次可能无法确定（schema v5） |
+| broadcaster_identity | TEXT | `verified` / `room_fallback` / `simulated` / `unresolved`（schema v5） |
 | status | TEXT | `live` / `ended` / `interrupted` |
 | storage_mode | TEXT | `compact` / `full`（场次级覆盖） |
 | source_quality | TEXT | `verified` / `estimated` / `unknown` / `mock` |
@@ -120,6 +122,28 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 
 `(session_id, currency, value_kind)` 主键 + `total_minor` + `event_count`。场次详情与列表的经济支持来源。
 
+### broadcasters（schema v5）
+
+| 列 | 说明 |
+| --- | --- |
+| id | `platform:uid`（YouTube channelId / Bilibili anchor uid）或 `bilibili:room:<id>` / `mock:simulation` |
+| platform / platform_uid | 拆开保存，`UNIQUE(platform, platform_uid)` |
+| display_name | 最近一次可见主播名；昵称只作展示 |
+| identity_quality | `verified` / `room_fallback` / `simulated` / `unresolved` |
+| first_seen_at / last_seen_at | 毫秒 |
+
+### viewer_broadcasters（schema v5）
+
+`(viewer_id, broadcaster_id)` 主键 + `message_count` / `payment_event_count` / `first_seen_at` / `last_seen_at` / `created_at` / `updated_at`。
+
+- 这是长期观众记忆的主要单位：主播 × 观众的互动上下文。
+- 观众身份仍由 `viewers.id` 唯一；本表不复制身份。
+- 删除观众级联删除关系；删除场次**不**自动减少关系计数（与全局观众计数规则一致）。
+
+### viewer_broadcaster_currency_totals（schema v5）
+
+`(viewer_id, broadcaster_id, currency, value_kind)` 主键 + `total_minor` + `event_count`；外键指向 `viewer_broadcasters` 复合主键。不同主播、不同币种、不同 value_kind 分别累计。
+
 ### ai_packages
 
 导出记录：`id`、`session_id`、`kind`、`protocol_version`、`locale`、`file_name`、`relative_path`、`checksum`、`message_count`、`created_at`。为 M6 的导入去重与任务追踪预留。
@@ -127,8 +151,13 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 ## 3. 身份规则
 
 - 稳定 UID 来自平台；缺失时 `viewer_id = NULL`，事件仍计入场次统计，但**不创建/更新观众档案**。
-- 不同平台的相同 UID 不合并（`platform` 前缀）。
+- 不同平台的相同 UID 不合并（`platform` 前缀）；昵称相同也不合并。
 - 昵称变化写入 `viewer_nicknames`，更新 `viewers.nickname`，不改变主键。
+- **主播身份独立于观众身份**：
+  - YouTube 只认 channelId，视频 ID 不是主播长期身份；
+  - Bilibili 优先 anchor uid；缺失时 room id 作为 `room_fallback`；
+  - 无法确定时 `broadcaster_id=NULL`、`broadcaster_identity=unresolved`，场次保留。
+- 主播 × 观众关系写入 `viewer_broadcasters`；全局 `viewers` 统计仍跨主播累计，但 UI/AI 必须明确区分。
 - AI 无法确认身份的事件不得写入画像（M7 约束）。
 
 ## 4. 金额规则
@@ -192,10 +221,27 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 - **v1 → v2**：`ALTER TABLE events ADD COLUMN emotes TEXT`。旧记录保持 `emotes = NULL`，读取时按“无表情元数据”处理；不需要重写表，不丢失旧消息。
 - **v2 → v3**：`ALTER TABLE sessions ADD COLUMN platform_started_at INTEGER`。旧场次为 `NULL`，UI/AI 包按「未知直播开始时间」处理，不推断。
 - **v3 → v4**：`ALTER TABLE events ADD COLUMN badges TEXT` + `amount_display TEXT`。旧行为 `NULL`；迁移不重写表。
-- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v4 升级路径见 `tests/integration/migration-emotes.test.mjs`）。
+- **v4 → v5**：
+  - 新建 `broadcasters`、`viewer_broadcasters`、`viewer_broadcaster_currency_totals`；
+  - `sessions` 增加 `broadcaster_id`（可空，`ON DELETE SET NULL`）与 `broadcaster_identity`；
+  - 回填：Bilibili 有 room id → `bilibili:room:<id>`（`room_fallback`）；mock → `mock:simulation`；YouTube 历史只有视频 ID → `broadcaster_id=NULL` / `unresolved`，不猜测；
+  - 从 `viewer_sessions` 回填 `viewer_broadcasters`，从 `events` 回填主播维度币种合计；
+  - 旧场次、观众、事件、`viewer_id`、金额与计数全部保留。
+- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v5 见 `migration-emotes.test.mjs`；v4→v5 见 `broadcaster-identity.test.mjs`）。
 
-## 8. 备份相关（M5 设计）
+## 8. 备份、清空与数据位置
 
-- 备份必须使用 SQLite 一致快照（`VACUUM INTO` 或 backup API），禁止直接复制正在写入的 `.db`。
-- 备份内需包含 `schema_version`、应用版本、文件校验和。
-- 凭据（Cookie/Token/API Key）默认不进入备份。
+- 删除/恢复出厂前可创建数据库应急快照：`VACUUM INTO %LOCALAPPDATA%\LiveMemory-Backups\livememory-database-<timestamp>.db`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖）。它只含数据库，不含分析包/凭据/设置，**不是** M5 的 `.livememory` 可移植备份。
+- 清空 `data`：删除业务表、`exports/`、`cache/`；保留设置、凭据、位置记录、`backups/`、日志、根目录无关文件。
+- 恢复出厂 `factory`：额外删除偏好、凭据、日志、缓存并重置设置；仍保留位置记录、`backups/`、根目录无关文件。
+- 删除后 `VACUUM` + WAL checkpoint，然后重建运行时；`schema_migrations` 与 schema v5 保留，数据库为空而非删除文件。
+- M5 可移植备份仍需使用一致快照、`schema_version`、应用版本与文件校验和；凭据默认不进入备份。
+
+## 9. 数据位置记录
+
+- `%LOCALAPPDATA%\LiveMemory\data-location.json`（镜像 `%APPDATA%\LiveMemory\data-location.json`）：
+  ```json
+  {"version":1,"dataDir":"D:\\LiveMemoryData","updatedAt":"2026-11-08T..."}
+  ```
+- 只保存路径指针，不保存数据库内容或凭据；数据库移动后仍能被启动器找到。
+- 目标必须已存在且包含 `database/livememory.db`；否则启动报错，不创建空库。

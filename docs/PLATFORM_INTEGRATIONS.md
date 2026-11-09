@@ -64,6 +64,8 @@ info[9]   { ts: epoch 毫秒, ... }
 > 注意：`info` 有时在**顶层**（与 `cmd` 同级）而不是 `data.info`。适配器用 `json.data ?? json`，两种都兼容。
 > 真实昵称会被平台打码（例如 `电***`），UID 仍然存在；不能根据昵称归并用户。
 
+**主播身份（v0.4.0）**：`getInfoByRoom` 的 `anchor_info.base_info.uid` 作为 `bilibili:<uid>`；若缺失但房间 id 已验证，使用 `bilibili:room:<roomId>` 并标记 `room_fallback`；两者都没有则场次保留为 `unresolved`。主播身份与观众 UID 是两套独立标识。
+
 **身份不完整是真实存在的**：同一天在直播间 `5050` 采样 25 秒，77 条弹幕中 **72 条 `info[2][0]` 为 `0` 且昵称为打码形式**，只有 5 条带可用 UID。这类事件仍会入库（内容、时间、打码昵称），但：
 
 - `viewer_uid = null`，不创建/合并观众档案；
@@ -240,6 +242,8 @@ node scripts/verify-bilibili.mjs 5050 20
 | 赠送会员 | `membershipGiftingDetails` | `membership`，`gift_quantity=数量`；**不换算金额** |
 | 收到赠送会员 | `giftMembershipReceivedDetails` | `membership`，`is_paid=false`、`gift_type=free`，记录赠予者 channelId |
 | 删除/封禁/公告 | `messageDeletedEvent` 等 | 有意丢弃，不猜测成聊天 |
+
+主播身份（v0.4.0）：`videos.list` 返回的 `snippet.channelId` 是长期主播身份（`youtube:<channelId>`，`verified`）；**单场 `videoId` 不是主播身份**。若响应缺失 channelId，场次保留为 `unresolved`，不猜测归属。
 
 身份规则：
 

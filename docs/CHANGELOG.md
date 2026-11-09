@@ -1,5 +1,49 @@
 # 版本变化（CHANGELOG）
 
+## 0.4.0 — 2026-11-08（Header 语言、数据目录迁移、清空/出厂、多主播档案）
+
+### 新增
+
+- **Header 语言快捷切换**
+  - 顶栏外观切换旁新增语言控件：宽屏三个原生语言名 + 地球“跟随系统”，窄屏原生 select。
+  - 与设置页共享同一份 `locale` 偏好；切换立即生效、持久化、不刷新页面。
+  - 三语 `aria-label`；390px Header 无溢出；与主题切换互不干扰。
+
+- **数据存储位置**
+  - 设置页显示真实目录、来源、位置记录、可写状态、空间、占用与计数；支持修改、打开文件夹、刷新。
+  - 两种模式：迁移现有数据（推荐）/ 在新目录创建新数据空间；旧目录永不自动删除。
+  - 位置记录 `data-location.json`（LOCALAPPDATA，APPDATA 镜像）；目标必须存在且含数据库，断盘时不创建空库。
+  - 迁移：WAL checkpoint、staging 复制、SQLite integrity/表计数/schema/文件 SHA-256、运行时重建、单实例锁转移、失败回滚。
+  - 原生目录选择器（固定 PowerShell + WinForms）、OneDrive/云同步/临时/长路径警告、UNC 拒绝、系统目录拒绝。
+  - CLI：`--forget-data-location`。
+
+- **清空数据与恢复出厂设置**
+  - 数据管理危险区；`data` 模式保留设置/凭据/位置记录/备份/无关文件；`factory` 额外清除偏好/凭据/日志/缓存并恢复默认。
+  - 必须输入 `DELETE` / `RESET`；记录中禁止；默认创建 `VACUUM INTO` 数据库快照到数据目录之外。
+  - 事务删除 + `VACUUM` + WAL checkpoint + 运行时重建；数据库保持 schema 5 的空库。
+  - 清空后不会从缓存重新出现旧观众。
+
+- **多主播观众档案（schema v5）**
+  - 新表 `broadcasters`、`viewer_broadcasters`、`viewer_broadcaster_currency_totals`；`sessions.broadcaster_id` / `broadcaster_identity`。
+  - 主播身份：YouTube channelId；Bilibili anchor uid，缺失时 room fallback；mock；无法确定保留 unresolved。
+  - 同一平台观众身份全局唯一，主播 × 观众互动上下文独立；发言/付费/币种按主播分账。
+  - 观众页主播范围选择器、搜索、排序、新/回访观众；详情页参与主播切换与全局概览。
+  - API：`/api/broadcasters`、`/api/broadcasters/:id`、`/api/broadcasters/:id/viewers`、范围化 `/api/viewers`。
+  - AI 包：`session_context.broadcaster`、`viewer_context[].broadcaster_context`、`lifetime`、`other_broadcaster_count`；指令新增主播上下文隔离规则。
+
+- **测试与构建**
+  - 自动化测试 **305 通过 / 0 失败**；新增 broadcaster、header-language、broadcaster-identity、storage-management 测试。
+  - EXE **90.3 MB / 103 资源**，SHA-256 `4aae59fe6f8d0a6cdc13811d27cc732e1e17cd6a6dac5d5fa4da450efbb1387f`；`verify-exe.mjs` **9/9**。
+  - 18 张新截图。
+
+### 未包含 / 未验证
+
+- 旧 YouTube 场次无法确认主播时保持 unresolved；没有手动归属 UI。
+- 映射网络盘（盘符）未自动识别；真实断盘/断电/磁盘写满迁移未做物理演练。
+- 清空文件删除为尽力而为；M5 可移植备份、M6 AI 导入仍未实现。
+- 未扩展 YouTube 未公开接口；匿名模式仍默认关闭、显示风险提示。
+- EXE 未在第二台干净 Windows 验收；未 Push。
+
 ## 0.3.0 — 2026-11-08（YouTube 免登录实验接入与真实双房间验证）
 
 ### 新增

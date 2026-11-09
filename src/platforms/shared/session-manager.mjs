@@ -1,4 +1,6 @@
 import {createSession, endSession, findLiveSession, getSession, recoverInterruptedSessions} from '../../storage/repositories/sessions.mjs';
+import {upsertBroadcaster} from '../../storage/repositories/broadcasters.mjs';
+import {resolveBroadcasterIdentity} from '../../shared/broadcaster.mjs';
 import {EventIngest} from './ingest.mjs';
 import {MockLiveSource} from '../mock/mock-source.mjs';
 import {CONNECTION_STATE} from './adapter.mjs';
@@ -47,11 +49,19 @@ export class SessionManager {
       return {started: false, reason: 'session_active', session: live};
     }
     const startedAt = this.now();
+    const broadcaster = resolveBroadcasterIdentity({
+      platform: 'mock',
+      platformRoomId: 'simulation',
+      broadcasterName: title
+    });
+    this.#ensureBroadcaster(broadcaster, startedAt);
     const session = createSession(this.db, {
       platform: 'mock',
       platformRoomId: 'simulation',
       roomTitle: title,
       broadcasterName: null,
+      broadcasterId: broadcaster.id,
+      broadcasterIdentity: broadcaster.identity,
       storageMode: this.settings.get().storageMode,
       sourceQuality: 'mock',
       simulated: true,
@@ -88,11 +98,26 @@ export class SessionManager {
    * currency totals). If the adapter cannot connect, the session is closed again
    * so a failed connection never leaves a "recording" row behind.
    */
+  #ensureBroadcaster(resolved, seenAt) {
+    if (!resolved?.id) return null;
+    upsertBroadcaster(this.db, {
+      id: resolved.id,
+      platform: resolved.platform,
+      platformUid: resolved.platformUid,
+      displayName: resolved.displayName,
+      identity: resolved.identity,
+      seenAt,
+      now: seenAt
+    });
+    return resolved.id;
+  }
+
   async startPlatform({
     platform,
     platformRoomId,
     roomTitle = null,
     broadcasterName = null,
+    broadcasterUid = null,
     sourceQuality = null,
     simulated = false,
     platformStartedAt = null,
@@ -103,11 +128,22 @@ export class SessionManager {
       return {started: false, reason: 'session_active', session: live};
     }
     const startedAt = this.now();
+    // Resolve the stable broadcaster before the session row exists. YouTube uses
+    // the channel id; Bilibili uses the anchor uid or a marked room fallback.
+    const broadcaster = resolveBroadcasterIdentity({
+      platform,
+      platformRoomId,
+      broadcasterUid,
+      broadcasterName
+    });
+    this.#ensureBroadcaster(broadcaster, startedAt);
     const session = createSession(this.db, {
       platform,
       platformRoomId: String(platformRoomId),
       roomTitle,
       broadcasterName,
+      broadcasterId: broadcaster.id,
+      broadcasterIdentity: broadcaster.identity,
       storageMode: this.settings.get().storageMode,
       sourceQuality,
       simulated,
@@ -173,6 +209,8 @@ export class SessionManager {
         ? {
           id: live.id,
           platform: live.platform,
+          broadcasterId: live.broadcaster_id ?? null,
+          broadcasterIdentity: live.broadcaster_identity ?? 'unresolved',
           roomTitle: live.room_title,
           startedAt: live.started_at,
           platformStartedAt: live.platform_started_at ?? null,

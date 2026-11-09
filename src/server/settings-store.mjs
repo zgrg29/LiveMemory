@@ -191,6 +191,17 @@ export class SettingsStore {
     return this.get();
   }
 
+  /**
+   * Restore factory defaults and persist them. Used by the factory-reset flow;
+   * the data-location pointer is deliberately stored elsewhere and survives.
+   */
+  reset({now = Date.now()} = {}) {
+    this.settings = normalizeSettings(DEFAULT_SETTINGS);
+    this.settings.updatedAt = new Date(now).toISOString();
+    this.save();
+    return this.get();
+  }
+
   save() {
     mkdirSync(dirname(this.file), {recursive: true});
     const temp = `${this.file}.${process.pid}.tmp`;

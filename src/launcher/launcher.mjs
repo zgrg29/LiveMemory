@@ -1,4 +1,5 @@
-import {writeFileSync, rmSync} from 'node:fs';
+import {existsSync, writeFileSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createPaths, ensureDirectories} from '../server/paths.mjs';
 import {AppError} from '../shared/errors.mjs';
@@ -6,7 +7,8 @@ import {detectSystemLocale, normalizeLocale, resolveLocale} from '../shared/loca
 import {APP_NAME, APP_VERSION} from '../shared/app-info.mjs';
 import {SettingsStore} from '../server/settings-store.mjs';
 import {createLogger} from '../server/logger.mjs';
-import {resolveDataDir} from './data-dir.mjs';
+import {resolveDataDir, probeWritable} from './data-dir.mjs';
+import {readDataLocation, clearDataLocation} from '../shared/data-location.mjs';
 import {acquireInstanceLock, readRuntimeInfo} from './lock.mjs';
 import {probeInstance} from './instance.mjs';
 import {createStartupLog} from './startup-log.mjs';
@@ -59,6 +61,7 @@ export function parseArguments(argv = []) {
     diagnose: false,
     waitOnError: true,
     errorDialog: false,
+    forgetDataLocation: false,
     unknown: []
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -86,6 +89,9 @@ export function parseArguments(argv = []) {
         break;
       case '--diagnose':
         options.diagnose = true;
+        break;
+      case '--forget-data-location':
+        options.forgetDataLocation = true;
         break;
       case '--port': {
         const raw = takeValue();
@@ -336,8 +342,64 @@ export async function runLauncher({
     }
 
     try {
-      dataDirInfo = resolveDataDir({env, requested: options.dataDir});
+      // A saved location pointer wins over the default folder, but never over an
+      // explicit `--data-dir` / environment override. An unavailable target is a
+      // hard error: silently starting with an empty default database would look
+      // like data loss.
+      if (!options.dataDir && !env.LIVE_MEMORY_DATA_DIR) {
+        if (options.forgetDataLocation) {
+          const removed = clearDataLocation({env});
+          startupLog.record('data-location.forget', {ok: true, removed});
+        } else {
+          const pointer = readDataLocation({env});
+          if (pointer) {
+            // A saved folder that no longer exists, or exists without its
+            // database, must never be recreated empty: that would look exactly
+            // like data loss. Only a complete existing folder is probed;
+            // reconnecting the drive restores it.
+            const databaseFile = join(pointer.dataDir, 'database', 'livememory.db');
+            const folderExists = existsSync(pointer.dataDir);
+            const hasDatabase = folderExists && existsSync(databaseFile);
+            const probe = folderExists && hasDatabase
+              ? probeWritable(pointer.dataDir)
+              : {
+                ok: false,
+                dir: pointer.dataDir,
+                code: folderExists ? 'ENODB' : 'ENOENT',
+                step: folderExists ? 'database-missing' : 'missing'
+              };
+            if (!probe.ok) {
+              const extra = [
+                t(locale, 'dataDirPointer', {path: pointer.pointerFile}),
+                t(locale, 'dataDirUnavailableHint')
+              ];
+              if (folderExists && !hasDatabase) {
+                extra.splice(1, 0, t(locale, 'dataDirMissingDatabase', {path: databaseFile}));
+              }
+              throw startupError({
+                code: 'DATA_DIR_UNAVAILABLE',
+                step: 'data-dir',
+                userMessage: t(locale, 'dataDirUnavailable', {path: pointer.dataDir}),
+                extra
+              });
+            }
+            dataDirInfo = {
+              dir: pointer.dataDir,
+              explicit: true,
+              source: 'pointer',
+              pointerFile: pointer.pointerFile,
+              fallback: false,
+              attempts: [{dir: pointer.dataDir, ok: true}]
+            };
+          }
+        }
+      }
+      if (!dataDirInfo) {
+        dataDirInfo = resolveDataDir({env, requested: options.dataDir});
+        dataDirInfo.source = 'default';
+      }
     } catch (error) {
+      if (error?.code === 'DATA_DIR_UNAVAILABLE') throw error;
       startupLog.fail('data-dir', error, {requested: options.dataDir ?? null, attempts: error.attempts ?? []});
       const extra = (error.attempts ?? []).map((attempt) => `  ${attempt.dir} (${attempt.code ?? 'error'}${attempt.step ? `, ${attempt.step}` : ''})`);
       throw startupError({
@@ -509,7 +571,46 @@ export async function runLauncher({
         port: options.port ?? null,
         logger,
         now,
-        systemLocale
+        systemLocale,
+        env,
+        // Relocation changes the data folder while the process keeps running.
+        // Move the single-instance lock with it so a second launch cannot write
+        // the new folder at the same time.
+        beginLockMove: async ({paths: targetPaths}) => {
+          const nextLock = acquireInstanceLock({
+            lockFile: targetPaths.lockFile,
+            now: now(),
+            exePath: process.execPath
+          });
+          if (!nextLock.acquired) {
+            throw new AppError('LOCK_FAILED', {
+              messageKey: 'errors.relocationLockFailed',
+              details: {path: targetPaths.lockFile},
+              httpStatus: 409
+            });
+          }
+          const previousLock = lock;
+          return {
+            commit: () => {
+              previousLock?.release?.();
+              lock = nextLock;
+              try {
+                writeFileSync(targetPaths.runtimeFile, `${JSON.stringify({
+                  pid: process.pid,
+                  port: server?.port ?? null,
+                  url: server?.url ?? null,
+                  version: APP_VERSION,
+                  startedAt: new Date(now()).toISOString()
+                }, null, 2)}\n`, 'utf8');
+              } catch {
+                /* the lock still prevents a second writer */
+              }
+            },
+            abort: () => {
+              nextLock?.release?.();
+            }
+          };
+        }
       });
     } catch (error) {
       const code = String(error?.code ?? '');

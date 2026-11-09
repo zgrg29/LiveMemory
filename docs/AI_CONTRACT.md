@@ -86,7 +86,22 @@ result.schema.json     livememory-analysis-result-v1
 
 ### session_context.json
 
-场次信息、`local_stats`、`economic_support`（按币种/`value_kind`）、`top_viewers`、`timeline`、`counts`、`notes`（不可信内容、金额不重算、表情语义规则、未录制视频/音频）。
+场次信息、`local_stats`、`economic_support`（按币种/`value_kind`）、`top_viewers`、`timeline`、`counts`、`notes`（不可信内容、金额不重算、表情语义规则、主播上下文、未录制视频/音频）。
+
+v0.4.0 起增加主播对象与字段：
+
+```json
+{
+  "broadcaster": {"id": "youtube:UC_channel_a", "name": "Channel A", "identity": "verified"},
+  "session": {
+    "broadcaster": "Channel A",
+    "broadcaster_id": "youtube:UC_channel_a",
+    "broadcaster_identity": "verified"
+  }
+}
+```
+
+`manifest.json` 同样带 `broadcaster_id` / `broadcaster_identity`。`instructions.md` 新增“主播上下文”规则：只使用 `broadcaster_context` 作为当前主播画像证据；`lifetime` 仅概览；其他主播细节不在包内。
 
 `session` 内的平台时间字段（2026-11-08 起）：
 
@@ -122,7 +137,45 @@ result.schema.json     livememory-analysis-result-v1
 
 ### viewer_context.json
 
-每位参与者：`viewer_id`、`platform`、`nickname`、首末见、`lifetime`（场次/发言/付费/币种合计）、`session`（本场计数）。不含原始消息。
+每位参与者（v0.4.0 起）：
+
+```json
+{
+  "viewer_id": "youtube:UC_viewer",
+  "platform": "youtube",
+  "nickname": "Mika",
+  "first_seen_at": "2026-11-01T10:00:00.000Z",
+  "last_seen_at": "2026-11-08T10:00:00.000Z",
+  "broadcaster_id": "youtube:UC_channel_a",
+  "broadcaster_context": {
+    "broadcaster_id": "youtube:UC_channel_a",
+    "session_count": 2,
+    "message_count": 4,
+    "payment_event_count": 1,
+    "first_seen_at": "...",
+    "last_seen_at": "...",
+    "support": [{"currency": "USD", "actualMinor": 500, "displayMinor": 0, "actualEventCount": 1, "displayEventCount": 0, "eventCount": 1}]
+  },
+  "other_broadcaster_count": 1,
+  "lifetime": {
+    "session_count": 3,
+    "message_count": 6,
+    "payment_event_count": 2,
+    "support": [{"currency": "USD", "actualMinor": 1500, "...": "..."}]
+  },
+  "session": {
+    "message_count": 2,
+    "payment_event_count": 1,
+    "first_seen_at": "...",
+    "last_seen_at": "..."
+  }
+}
+```
+
+- `broadcaster_context` **只包含本场主播**的累计；`lifetime` 是跨所有主播的全局合计，必须明确区分，不能当作当前主播的历史。
+- `other_broadcaster_count` 只表示该观众还出现在多少个其他主播处；**不包含**其他主播的聊天、金额、场次或画像。
+- 若当前场次主播无法确认，`broadcaster_context` 为 `null`；AI 不得把全局 `lifetime` 当作某个主播的 context。
+- 不含原始消息。
 
 ### instructions.md
 
@@ -166,6 +219,7 @@ Schema：`src/ai/schemas/analysis-result-v1.schema.json`（JSON Schema 2020-12�
 - 金额只能引用，不得重算。
 - 不得输出敏感个人属性推断或操纵性建议。
 - 观众长期画像需多次、语义明确的证据；单个 Emoji 或平台表情不足以建立长期偏好。
+- 观众画像只针对当前 `broadcaster_context`；不得把 `lifetime` 或其他主播的记录写成本主播的观察。`broadcaster.identity` 不是 `verified` 时必须降低置信度并注明。
 - 未知平台表情不得被解释为某种情绪。
 
 ## 4. 导入校验（M6 实现）
@@ -176,7 +230,7 @@ Schema：`src/ai/schemas/analysis-result-v1.schema.json`（JSON Schema 2020-12�
 2. `manifest.protocol` / `result_protocol` 版本匹配。
 3. `task_id`、`session_id` 必须存在且与本地记录一致。
 4. JSON Schema 校验（字段、类型、枚举、长度）。
-5. `viewer_id` 必须在 `viewer_context.json` 中。
+5. `viewer_id` 必须在 `viewer_context.json` 中；`broadcaster_id` 必须与 manifest/session_context 一致；若存在 `broadcaster_context`，其 `broadcaster_id` 必须一致。
 6. `message_refs` 必须在 `messages.jsonl` 的 `seq` 范围内。
 7. `emote_refs`（如存在）必须能在 `session_context.emote_dictionary` 中解析；解析失败不阻止导入，但必须保留告警。
 8. 同一 `task_id` 的重复导入需用户确认并保留版本记录。

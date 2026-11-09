@@ -28,6 +28,13 @@ export function createApp(deps) {
     }
 
     if (url.pathname.startsWith('/api/')) {
+      // While a data-folder relocation is copying files the database is closed
+      // and the services are being rebuilt. Only the relocation endpoint and
+      // read-only health/status probes may run.
+      if (deps.maintenance && url.pathname !== '/api/health') {
+        sendJson(res, 503, {error: {code: 'MAINTENANCE', messageKey: 'errors.maintenance'}});
+        return;
+      }
       const handled = await router(req, res, url);
       if (!handled) {
         sendJson(res, 404, {error: {code: 'NOT_FOUND', messageKey: 'errors.notFound'}});

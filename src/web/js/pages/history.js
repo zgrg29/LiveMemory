@@ -14,6 +14,7 @@ import {
 } from '../ui.js';
 import {
   aiChip,
+  broadcasterIdentityChip,
   platformLabel,
   statusChip,
   supportPrimaryText,
@@ -83,6 +84,9 @@ async function renderList(container, ctx) {
         el('div', {className: 'history-sub'},
           statusChip(row, t),
           row.simulated ? chip(t('status.simulated'), 'neutral') : null,
+          row.broadcasterName
+            ? el('span', {text: row.broadcasterName})
+            : broadcasterIdentityChip(row.broadcasterIdentity, t),
           el('span', {text: formatDateTime(row.startedAt, ctx.locale)}),
           aiChip(row.aiStatus, t))),
       el('div', {className: 'history-cell', text: formatDuration(duration, t)}),
@@ -115,6 +119,8 @@ async function renderDetail(container, ctx, sessionId) {
         statusChip(session, t),
         session.simulated ? chip(t('status.simulated'), 'neutral') : null,
         chip(platformLabel(session.platform, t), 'neutral'),
+        session.broadcasterName ? chip(session.broadcasterName, 'accent') : null,
+        broadcasterIdentityChip(session.broadcasterIdentity, t),
         el('span', {text: session.endedAt
           ? `${formatDateTime(session.startedAt, ctx.locale)} → ${formatTime(session.endedAt, ctx.locale)}`
           : formatDateTime(session.startedAt, ctx.locale)}),

@@ -39,6 +39,8 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
       platformRoomId: session.platform_room_id,
       roomTitle: session.room_title,
       broadcasterName: session.broadcaster_name,
+      broadcasterId: session.broadcaster_id ?? null,
+      broadcasterIdentity: session.broadcaster_identity ?? 'unresolved',
       status: session.status,
       storageMode: session.storage_mode,
       sourceQuality: session.source_quality,

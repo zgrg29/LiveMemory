@@ -1,10 +1,11 @@
-import {createReadStream, existsSync, statSync} from 'node:fs';
-import {join} from 'node:path';
+import {createReadStream, existsSync, statSync, statfsSync} from 'node:fs';
+import {join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
 import {normalizeLocale} from '../shared/locale.mjs';
 import {resolveLocale} from '../shared/locale.mjs';
 import {
+  serializeBroadcasterRow,
   serializeEvent,
   serializePackage,
   serializeSessionRow,
@@ -14,12 +15,29 @@ import {getSession, listSessions} from '../storage/repositories/sessions.mjs';
 import {listEvents, contentStats} from '../storage/repositories/events.mjs';
 import {buildSessionSummary} from '../analytics/sessions/summary.mjs';
 import {buildViewerProfile} from '../analytics/viewers/profile.mjs';
+import {groupCurrencyTotals} from '../analytics/payments/totals.mjs';
 import {listViewers, setViewerFocused, sessionSupportBySessionIds, viewerSupportByViewerIds} from '../storage/repositories/viewers.mjs';
+import {
+  broadcasterAudienceSummary,
+  broadcasterSupportByViewerIds,
+  broadcasterSupportTotals,
+  currentBroadcasterId,
+  getBroadcaster,
+  listBroadcasterViewers,
+  listBroadcasters,
+  listUnassignedViewers,
+  unassignedOverview,
+  unassignedSupportByViewerIds
+} from '../storage/repositories/broadcasters.mjs';
 import {getPackage, listPackages} from '../storage/repositories/ai-packages.mjs';
 import {buildAnalysisPackage, ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
 import {buildInstructions} from '../ai/prompts/instructions.mjs';
 import {currentSchemaVersion} from '../storage/database/migrations/index.mjs';
 import {databaseSizeBytes} from '../storage/database/connection.mjs';
+import {readDataLocation} from '../shared/data-location.mjs';
+import {relocateDataDir, validateTarget, __internal as relocationInternal} from './relocation.mjs';
+import {openFolder, pickFolder} from './native-dialog.mjs';
+import {backupDirectory, clearData, clearPreview, createDatabaseBackup} from './maintenance.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
 import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
 
@@ -69,6 +87,88 @@ function effectiveSettings(deps) {
 
 function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
   return new AppError(code, {messageKey, httpStatus: 404});
+}
+
+function freeBytesFor(directory) {
+  try {
+    const stats = statfsSync(directory);
+    return Number(stats.bavail) * Number(stats.bsize);
+  } catch {
+    return null;
+  }
+}
+
+function defaultDataDir(env) {
+  if (env.LOCALAPPDATA) return join(env.LOCALAPPDATA, 'LiveMemory');
+  if (env.APPDATA) return join(env.APPDATA, 'LiveMemory');
+  return null;
+}
+
+/** Everything the settings page needs to describe and move the data folder. */
+function storageLocation(deps) {
+  const pointer = readDataLocation({env: deps.env});
+  const dataDir = deps.paths.root;
+  const pointerMatches = pointer && resolve(pointer.dataDir) === resolve(dataDir);
+  const fallbackDefault = defaultDataDir(deps.env);
+  const isDefault = fallbackDefault && resolve(fallbackDefault) === resolve(dataDir);
+  const sessions = deps.db.prepare('SELECT COUNT(*) AS count FROM sessions').get();
+  const viewers = deps.db.prepare('SELECT COUNT(*) AS count FROM viewers').get();
+  const events = deps.db.prepare('SELECT COUNT(*) AS count FROM events').get();
+  const live = deps.db.prepare("SELECT id FROM sessions WHERE status = 'live' LIMIT 1").get();
+  return {
+    dataDir,
+    source: pointerMatches ? 'pointer' : (isDefault ? 'default' : 'override'),
+    pointerFile: pointer?.pointerFile ?? null,
+    pointerUpdatedAt: pointer?.updatedAt ?? null,
+    writable: true,
+    freeBytes: freeBytesFor(dataDir),
+    requiredBytes: relocationInternal.managedSize(deps.paths),
+    managedBytes: relocationInternal.managedSize(deps.paths),
+    databaseBytes: databaseSizeBytes(deps.paths.databaseFile),
+    dirs: {
+      data: dataDir,
+      exports: deps.paths.exports,
+      backups: deps.paths.backups,
+      logs: deps.paths.logs
+    },
+    backupDir: backupDirectory({env: deps.env}),
+    counts: {
+      sessions: Number(sessions?.count ?? 0),
+      viewers: Number(viewers?.count ?? 0),
+      events: Number(events?.count ?? 0)
+    },
+    recording: Boolean(live),
+    activeSessionId: live?.id ?? null
+  };
+}
+
+/**
+ * A viewer row inside one broadcaster scope. `scoped` never includes activity
+ * from another channel; `lifetime` is the explicit global total.
+ */
+function scopedViewerRow(row, support = []) {
+  const base = serializeViewerRow({
+    ...row,
+    session_count: row.lifetime_session_count,
+    message_count: row.lifetime_message_count,
+    payment_event_count: row.lifetime_payment_event_count
+  });
+  return {
+    ...base,
+    lifetime: {
+      messageCount: base.messageCount,
+      paymentEventCount: base.paymentEventCount,
+      sessionCount: base.sessionCount
+    },
+    scoped: {
+      messageCount: Number(row.scoped_message_count ?? 0),
+      paymentEventCount: Number(row.scoped_payment_event_count ?? 0),
+      sessionCount: Number(row.scoped_session_count ?? 0),
+      firstSeenAt: row.scoped_first_seen_at ?? null,
+      lastSeenAt: row.scoped_last_seen_at ?? null,
+      support: groupCurrencyTotals(support)
+    }
+  };
 }
 
 /** Bodies are optional on the small command endpoints. */
@@ -195,7 +295,9 @@ export function buildRoutes() {
         const limit = Number(url.searchParams.get('limit') ?? 50);
         const offset = Number(url.searchParams.get('offset') ?? 0);
         const platform = url.searchParams.get('platform');
-        const rows = listSessions(deps.db, {limit, offset, platform});
+        const broadcasterId = url.searchParams.get('broadcasterId');
+        const unassigned = url.searchParams.get('scope') === 'unassigned';
+        const rows = listSessions(deps.db, {limit, offset, platform, broadcasterId, unassigned});
         const support = sessionSupportBySessionIds(deps.db, rows.map((row) => row.id));
         sendJson(res, 200, {
           sessions: rows.map((row) => ({...serializeSessionRow(row), support: support.get(row.id) ?? []}))
@@ -267,23 +369,112 @@ export function buildRoutes() {
     },
     {
       method: 'GET',
+      path: '/api/broadcasters',
+      handler: ({res, url, deps}) => {
+        const query = url.searchParams.get('query') ?? '';
+        const limit = Number(url.searchParams.get('limit') ?? 200);
+        const rows = listBroadcasters(deps.db, {query, limit});
+        sendJson(res, 200, {
+          broadcasters: rows.map(serializeBroadcasterRow),
+          currentId: currentBroadcasterId(deps.db),
+          unassigned: unassignedOverview(deps.db)
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/broadcasters/:id',
+      handler: ({res, params, deps}) => {
+        const audience = broadcasterAudienceSummary(deps.db, params.id);
+        if (!audience) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.notFound');
+        sendJson(res, 200, {
+          broadcaster: serializeBroadcasterRow(audience.broadcaster),
+          audience: {
+            viewerCount: audience.viewerCount,
+            sessionCount: audience.sessionCount,
+            messageCount: audience.messageCount,
+            paymentEventCount: audience.paymentEventCount,
+            newViewers: audience.newViewers,
+            returningViewers: audience.returningViewers,
+            latestSession: audience.latestSession
+          },
+          support: groupCurrencyTotals(broadcasterSupportTotals(deps.db, params.id))
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/broadcasters/:id/viewers',
+      handler: ({res, url, params, deps}) => {
+        const broadcaster = getBroadcaster(deps.db, params.id);
+        if (!broadcaster) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.notFound');
+        const query = url.searchParams.get('query') ?? '';
+        const limit = Number(url.searchParams.get('limit') ?? 200);
+        const sort = url.searchParams.get('sort') ?? 'messages';
+        const rows = listBroadcasterViewers(deps.db, params.id, {query, limit, sort});
+        const support = broadcasterSupportByViewerIds(deps.db, params.id, rows.map((row) => row.id));
+        sendJson(res, 200, {
+          broadcaster: serializeBroadcasterRow(broadcaster),
+          summary: broadcasterAudienceSummary(deps.db, params.id),
+          support: groupCurrencyTotals(broadcasterSupportTotals(deps.db, params.id)),
+          viewers: rows.map((row) => scopedViewerRow(row, support.get(row.id) ?? []))
+        });
+      }
+    },
+    {
+      method: 'GET',
       path: '/api/viewers',
       handler: ({res, url, deps}) => {
         const query = url.searchParams.get('query') ?? '';
         const limit = Number(url.searchParams.get('limit') ?? 50);
         const platform = url.searchParams.get('platform');
+        const broadcasterId = url.searchParams.get('broadcasterId');
+        const unassigned = url.searchParams.get('scope') === 'unassigned';
+        if (broadcasterId) {
+          const broadcaster = getBroadcaster(deps.db, broadcasterId);
+          if (!broadcaster) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.notFound');
+          const rows = listBroadcasterViewers(deps.db, broadcasterId, {
+            query,
+            limit,
+            sort: url.searchParams.get('sort') ?? 'messages'
+          });
+          const support = broadcasterSupportByViewerIds(deps.db, broadcasterId, rows.map((row) => row.id));
+          sendJson(res, 200, {
+            scope: {kind: 'broadcaster', broadcaster: serializeBroadcasterRow(broadcaster)},
+            viewers: rows.map((row) => scopedViewerRow(row, support.get(row.id) ?? []))
+          });
+          return;
+        }
+        if (unassigned) {
+          const rows = listUnassignedViewers(deps.db, {query, limit});
+          const support = unassignedSupportByViewerIds(deps.db, rows.map((row) => row.id));
+          sendJson(res, 200, {
+            scope: {kind: 'unassigned', unassigned: unassignedOverview(deps.db)},
+            viewers: rows.map((row) => scopedViewerRow(row, support.get(row.id) ?? []))
+          });
+          return;
+        }
         const rows = listViewers(deps.db, {query, limit, platform});
         const support = viewerSupportByViewerIds(deps.db, rows.map((row) => row.id));
         sendJson(res, 200, {
-          viewers: rows.map((row) => ({...serializeViewerRow(row), support: support.get(row.id) ?? []}))
+          scope: {kind: 'all'},
+          viewers: rows.map((row) => ({
+            ...serializeViewerRow(row),
+            support: groupCurrencyTotals(support.get(row.id) ?? [])
+          }))
         });
       }
     },
     {
       method: 'GET',
       path: '/api/viewers/:id',
-      handler: ({res, params, deps}) => {
-        const profile = buildViewerProfile(deps.db, params.id);
+      handler: ({res, url, params, deps}) => {
+        const broadcasterId = url.searchParams.get('broadcasterId');
+        const unassigned = url.searchParams.get('scope') === 'unassigned';
+        const profile = buildViewerProfile(deps.db, params.id, {
+          broadcasterId: broadcasterId || null,
+          unassigned
+        });
         if (!profile) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotFound');
         sendJson(res, 200, profile);
       }
@@ -346,6 +537,144 @@ export function buildRoutes() {
             purgedEvents: Number(purged?.count ?? 0)
           }
         });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/storage/location',
+      handler: ({res, deps}) => sendJson(res, 200, storageLocation(deps))
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/location/validate',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const mode = body.mode === 'new' ? 'new' : 'migrate';
+        const validation = validateTarget({
+          targetDir: body.targetDir,
+          sourceDir: deps.paths.root,
+          mode,
+          env: deps.env,
+          sourceBytes: relocationInternal.managedSize(deps.paths)
+        });
+        sendJson(res, 200, validation);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/location/pick',
+      handler: async ({res}) => {
+        const selected = await pickFolder({});
+        sendJson(res, 200, {path: selected});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/location',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        if (deps.maintenance) {
+          throw new AppError('MAINTENANCE', {messageKey: 'errors.maintenance', httpStatus: 503});
+        }
+        deps.maintenance = true;
+        try {
+          const result = await relocateDataDir({
+            deps,
+            targetDir: body.targetDir,
+            mode: body.mode === 'new' ? 'new' : 'migrate',
+            acceptWarnings: body.acceptWarnings === true,
+            env: deps.env
+          });
+          deps.logger?.info({
+            event: 'storage.relocated',
+            mode: result.mode,
+            from: result.previousDir,
+            to: result.dataDir
+          });
+          sendJson(res, 200, {relocation: result, storage: storageLocation(deps)});
+        } finally {
+          deps.maintenance = false;
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/open',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const target = String(body.target ?? 'data');
+        const directories = {
+          data: deps.paths.root,
+          exports: deps.paths.exports,
+          backups: deps.paths.backups,
+          logs: deps.paths.logs
+        };
+        if (!Object.hasOwn(directories, target)) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const folder = directories[target];
+        const result = await openFolder(folder);
+        sendJson(res, 200, {opened: result.opened, path: folder});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/storage/clear/preview',
+      handler: ({res, deps}) => sendJson(res, 200, clearPreview(deps.db, deps.paths, {env: deps.env}))
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/backup',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const backup = createDatabaseBackup({db: deps.db, env: deps.env});
+        sendJson(res, 201, {backup});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/storage/clear',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const mode = body.mode === 'factory' ? 'factory' : (body.mode === 'data' ? 'data' : null);
+        if (!mode) {
+          throw new AppError('CLEAR_MODE_INVALID', {messageKey: 'errors.clearModeInvalid', httpStatus: 400});
+        }
+        const expected = mode === 'factory' ? 'RESET' : 'DELETE';
+        if (String(body.confirmText ?? '') !== expected) {
+          throw new AppError('CONFIRM_TEXT_MISMATCH', {
+            messageKey: 'errors.confirmTextMismatch',
+            details: {expected},
+            httpStatus: 400
+          });
+        }
+        if (deps.maintenance) {
+          throw new AppError('MAINTENANCE', {messageKey: 'errors.maintenance', httpStatus: 503});
+        }
+        deps.maintenance = true;
+        try {
+          const result = await clearData({
+            deps,
+            mode,
+            backupFirst: body.backupFirst === true,
+            env: deps.env
+          });
+          const effective = effectiveSettings(deps);
+          deps.logger?.info({
+            event: 'storage.cleared',
+            mode,
+            backup: Boolean(result.backup),
+            sessionsBefore: result.before.sessions,
+            eventsBefore: result.before.events
+          });
+          sendJson(res, 200, {
+            clear: result,
+            ...effective,
+            storage: storageLocation(deps)
+          });
+        } finally {
+          deps.maintenance = false;
+        }
       }
     },
     {

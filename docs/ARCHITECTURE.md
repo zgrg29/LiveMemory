@@ -11,8 +11,12 @@ LiveMemory.exe (Node SEA)
          ├─ src/server/routes.mjs       API 路由
          ├─ src/server/sse.mjs          EventStream（实时推送）
          ├─ src/server/settings-store.mjs  config/settings.json
-         ├─ src/server/logger.mjs       脱敏 JSONL 日志
-         ├─ src/storage/                node:sqlite + 迁移 + 仓储
+         ├─ src/server/relocation.mjs    数据目录迁移/回滚
+         ├─ src/server/maintenance.mjs   清空数据/出厂快照
+         ├─ src/server/native-dialog.mjs 原生目录选择/打开文件夹
+         ├─ src/server/logger.mjs        脱敏 JSONL 日志
+         ├─ src/storage/                node:sqlite + 迁移 + 仓储（含 broadcasters）
+         ├─ src/shared/data-location.mjs 启动位置记录（LOCALAPPDATA + APPDATA 镜像）
          ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
          ├─ src/platforms/mock/         模拟直播源
          ├─ src/platforms/bilibili/     真实直播适配器（WebSocket）
@@ -29,7 +33,7 @@ LiveMemory.exe (Node SEA)
 1. 解析参数（`--no-open`、`--port`、`--data-dir`、`--lang`）。
 2. `chcp 65001` 设置控制台 UTF-8；解析系统语言。
 3. 检查 Node 版本与 `node:sqlite`。
-4. 解析数据目录（显式路径优先，其次 `%LOCALAPPDATA%\LiveMemory`），创建子目录并写探针。
+4. 解析数据目录：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` 优先；否则读取 `data-location.json`（`%LOCALAPPDATA%\LiveMemory`，镜像 `%APPDATA%`）；只有记录目标已存在且含数据库才使用，否则显示不可用错误，不创建空库；最后才回退默认目录。创建子目录并写探针。
 5. 读取 `config/settings.json`，确定命令行语言（保存的偏好优先，`--lang` 覆盖）。
 6. 获取单实例锁 `runtime/instance.lock`；若已有存活实例，打印地址并打开浏览器后退出。
 7. `startServer()`：
@@ -51,13 +55,33 @@ LiveMemory.exe (Node SEA)
       └─ EventIngest.record()  [单事务]
           ├─ ensureViewer()              先建身份（满足外键）
           ├─ insertEvent()               INSERT OR IGNORE（唯一去重键）
-          ├─ recordViewerActivity()      观众计数/昵称/场次/币种累计
+          ├─ recordViewerActivity()      观众全局计数/昵称/场次/币种累计
+          ├─ recordViewerBroadcasterActivity()  当前主播维度的计数与币种累计
           ├─ recordSessionPayment()      场次币种累计（actual/display）
           └─ incrementSessionCounters()  消息/礼物/付费事件/最后事件时间
       └─ commit → SSE 'event' 广播 → 控制台即时渲染
 ```
 
 **关键保证**：重复事件在 `insertEvent` 处返回 `changes=0`，后续聚合全部跳过，因此金额与计数不会翻倍。表情元数据参与指纹去重，但不改变 `content` 原文。
+
+## 3.0 主播维度上下文（schema v5）
+
+```text
+SessionManager.startPlatform({platform, platformRoomId, broadcasterUid, broadcasterName})
+  └─ resolveBroadcasterIdentity()
+      ├─ youtube: channelId → youtube:<channelId>（verified）
+      ├─ bilibili: anchorUid → bilibili:<uid>（verified）
+      │           否则 roomId → bilibili:room:<roomId>（room_fallback）
+      ├─ mock → mock:simulation（simulated）
+      └─ 缺失 → id=null（unresolved；场次保留但不归入任何主播）
+  └─ upsertBroadcaster() → sessions.broadcaster_id / broadcaster_identity
+  └─ EventIngest 同事务更新 viewer_broadcasters 与 viewer_broadcaster_currency_totals
+```
+
+- 观众身份仍是平台全局 `platform:stable_uid`；主播维度只增加互动上下文，不复制观众身份。
+- 旧的 YouTube 场次只有视频 ID，迁移时保持 `unresolved`；Bilibili room fallback 明确标记质量。
+- 读模型：`buildViewerProfile(db, viewerId, {broadcasterId|unassigned})` 返回 `scope` + 全局 `lifetime`；榜单查询限定 `broadcaster_id`。
+- AI 包只导出当前主播的 `broadcaster_context`；`lifetime` 标注为全局；其他主播只给 `other_broadcaster_count`。
 
 ## 3.1 YouTube 凭据与数据流
 
@@ -122,8 +146,8 @@ LiveMemory.exe (Node SEA)
 | POST | `/api/sessions/:id/stop` | 结束指定场次 |
 | POST | `/api/simulate/start` | 开始模拟场次（`title`、`speed`） |
 | POST | `/api/simulate/stop` | 停止当前场次 |
-| GET | `/api/viewers` | 观众列表（`query`、`limit`） |
-| GET | `/api/viewers/:id` | 观众档案 |
+| GET | `/api/viewers` | 观众列表（`query`、`limit`、`broadcasterId`、`scope=unassigned`） |
+| GET | `/api/viewers/:id` | 观众档案（`broadcasterId` 或 `scope=unassigned`） |
 | PATCH | `/api/viewers/:id` | 关注标记 |
 | GET | `/api/bilibili/status` | Bilibili 登录与连接状态 |
 | POST | `/api/bilibili/login/qrcode` | 生成扫码二维码 |
@@ -143,10 +167,34 @@ LiveMemory.exe (Node SEA)
 | GET | `/api/events` | 场次事件（倒序、分页） |
 | GET | `/api/events/stream` | SSE（`event`、`status`） |
 | GET | `/api/storage` | 数据目录、占用、计数 |
+| GET | `/api/storage/location` | 当前数据目录、位置记录、空间、计数 |
+| POST | `/api/storage/location/validate` | 校验目标目录（安全/空间/警告） |
+| POST | `/api/storage/location/pick` | Windows 原生目录选择器 |
+| POST | `/api/storage/location` | 迁移或创建新数据空间（维护模式） |
+| POST | `/api/storage/open` | 在 Explorer 打开受管目录 |
+| GET | `/api/storage/clear/preview` | 删除范围与记录中状态 |
+| POST | `/api/storage/backup` | 数据库应急快照（`VACUUM INTO`） |
+| POST | `/api/storage/clear` | `data` / `factory` 清空（确认文字） |
+| GET | `/api/broadcasters` | 主播列表、当前主播、未确认历史 |
+| GET | `/api/broadcasters/:id` | 主播汇总、新/回访、支持 |
+| GET | `/api/broadcasters/:id/viewers` | 主播范围观众与排序 |
 | GET | `/api/ai/instructions` | 指定语言的提示词 |
 | POST | `/api/ai/packages` | 生成分析包 |
 | GET | `/api/ai/packages` | 已导出包列表 |
 | GET | `/api/ai/packages/:id/download` | 下载 ZIP |
+
+## 5.1 数据目录迁移（运行中切换）
+
+`src/server/relocation.mjs` 在同一个 HTTP 端口内切换数据目录：
+
+1. 校验直播未进行、路径安全、目标冲突、空间与云同步警告；
+2. `SessionManager`/平台服务停止、WAL checkpoint、关闭 SQLite；
+3. 复制受管目录到目标卷 staging，`PRAGMA integrity_check` + 表计数 + schema + 文件 SHA-256；
+4. 移入目标根目录（不碰无关文件），`buildRuntime()` 重新打开数据库；
+5. 调用 launcher 的 `beginLockMove` 转移单实例锁，写 `data-location.json`；
+6. `deps` 的 runtime getter 切换到新运行时；失败则回滚目录、位置记录与原运行时。
+
+维护期间 `deps.maintenance` 使除 relocation/clear/health/status 外的 API 返回 503。
 
 ## 6. 并发与一致性
 
@@ -165,7 +213,8 @@ LiveMemory.exe (Node SEA)
 
 ## 8. 前端结构
 
-- `js/app.js`：bootstrap、hash 路由、语言/主题切换、SSE、状态刷新。
+- `js/app.js`：bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
+- Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
 - `js/ui.js`：DOM 构造（只用 `textContent`）、格式化、toast、空状态。
 - `js/chart.js`：Canvas 时间线图，DPR 适配、主题重绘、hover 提示。

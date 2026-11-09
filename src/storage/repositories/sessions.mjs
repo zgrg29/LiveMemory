@@ -27,6 +27,8 @@ export function createSession(db, {
   platformRoomId = null,
   roomTitle = null,
   broadcasterName = null,
+  broadcasterId = null,
+  broadcasterIdentity = 'unresolved',
   storageMode = 'compact',
   sourceQuality = 'unknown',
   simulated = false,
@@ -37,16 +39,19 @@ export function createSession(db, {
   const sessionId = id ?? createId('ses');
   db.prepare(`
     INSERT INTO sessions (
-      id, platform, platform_room_id, room_title, broadcaster_name, status,
+      id, platform, platform_room_id, room_title, broadcaster_name, broadcaster_id,
+      broadcaster_identity, status,
       storage_mode, source_quality, simulated, started_at, platform_started_at, ended_at, last_event_at,
       message_count, gift_event_count, payment_event_count, ai_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
   `).run(
     sessionId,
     String(platform),
     platformRoomId === null ? null : String(platformRoomId),
     roomTitle === null ? null : String(roomTitle),
     broadcasterName === null ? null : String(broadcasterName),
+    broadcasterId === null || broadcasterId === undefined ? null : String(broadcasterId),
+    String(broadcasterIdentity ?? 'unresolved'),
     storageMode === 'full' ? 'full' : 'compact',
     String(sourceQuality),
     simulated ? 1 : 0,
@@ -63,9 +68,21 @@ export function getSession(db, sessionId) {
   return row ?? null;
 }
 
-export function listSessions(db, {limit = 50, offset = 0, platform = null} = {}) {
+export function listSessions(db, {limit = 50, offset = 0, platform = null, broadcasterId = null, unassigned = false} = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const safeOffset = Math.max(Number(offset) || 0, 0);
+  if (unassigned) {
+    return db.prepare(`${SESSION_SELECT} WHERE s.broadcaster_id IS NULL ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
+      .all(safeLimit, safeOffset);
+  }
+  if (platform && broadcasterId) {
+    return db.prepare(`${SESSION_SELECT} WHERE s.platform = ? AND s.broadcaster_id = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
+      .all(String(platform), String(broadcasterId), safeLimit, safeOffset);
+  }
+  if (broadcasterId) {
+    return db.prepare(`${SESSION_SELECT} WHERE s.broadcaster_id = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
+      .all(String(broadcasterId), safeLimit, safeOffset);
+  }
   if (platform) {
     return db.prepare(`${SESSION_SELECT} WHERE s.platform = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
       .all(String(platform), safeLimit, safeOffset);

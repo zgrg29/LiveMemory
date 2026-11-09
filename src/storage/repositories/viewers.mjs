@@ -58,7 +58,7 @@ const UPSERT_SESSION_TOTAL = `
 `;
 
 /** Countable value kinds. "unknown" amounts are never aggregated as money. */
-function countableValueKind(valueKind) {
+export function countableValueKind(valueKind) {
   return valueKind === 'actual' || valueKind === 'display' ? valueKind : null;
 }
 
@@ -156,7 +156,8 @@ export function listViewers(db, {query = '', limit = 50, offset = 0, platform = 
   return db.prepare(`
     SELECT v.*,
            (SELECT COUNT(*) FROM viewer_sessions vs WHERE vs.viewer_id = v.id) AS session_count,
-           (SELECT COUNT(*) FROM viewer_nicknames vn WHERE vn.viewer_id = v.id) AS nickname_count
+           (SELECT COUNT(*) FROM viewer_nicknames vn WHERE vn.viewer_id = v.id) AS nickname_count,
+           (SELECT COUNT(*) FROM viewer_broadcasters vb WHERE vb.viewer_id = v.id) AS broadcaster_count
       FROM viewers v
       ${where}
      ORDER BY v.last_seen_at DESC

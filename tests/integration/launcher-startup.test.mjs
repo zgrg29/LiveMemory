@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {writeFileSync, readdirSync, readFileSync, existsSync} from 'node:fs';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {runLauncher} from '../../src/launcher/launcher.mjs';
+import {writeDataLocation} from '../../src/shared/data-location.mjs';
 
 /**
  * The Windows failure these tests protect against: a normal account cannot use
@@ -99,6 +100,28 @@ test('the failure message is localised in Chinese and Japanese', async () => {
   assert.equal(ja.code, 1);
   assert.match(ja.output, /起動できません/);
   assert.match(ja.output, /失敗した手順/);
+  temp.cleanup();
+});
+
+test('an unavailable saved data folder is a hard error, never a new empty database', async () => {
+  const temp = createTempDir();
+  const missing = join(temp.dir, 'external-drive', 'data');
+  const env = {
+    LOCALAPPDATA: join(temp.dir, 'local'),
+    APPDATA: join(temp.dir, 'roaming'),
+    LIVE_MEMORY_LOCATION_DIR: join(temp.dir, 'location'),
+    LIVE_MEMORY_LOG_DIR: join(temp.dir, 'logs')
+  };
+  writeDataLocation(missing, {env});
+
+  const {code, output} = await launch(['--no-open', '--no-wait', '--lang', 'en'], env);
+  assert.equal(code, 1);
+  assert.match(output, /saved data folder is currently unavailable/i);
+  assert.match(output, /Startup location record/);
+  assert.match(output, /--data-dir/);
+  // The launcher must not create the missing folder or a default database.
+  assert.equal(existsSync(missing), false);
+  assert.equal(existsSync(join(temp.dir, 'local', 'LiveMemory', 'database')), false);
   temp.cleanup();
 });
 

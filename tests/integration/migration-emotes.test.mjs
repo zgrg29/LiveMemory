@@ -57,15 +57,27 @@ test('schema v1 databases upgrade to the current schema without losing old messa
 
   const result = migrate(db, {now: T + 1000});
   // v2 added emote metadata, v3 the platform broadcast start time, v4 author
-  // badges and the raw displayed amount.
-  assert.deepEqual(result.applied, [2, 3, 4]);
-  assert.equal(currentSchemaVersion(db), 4);
+  // badges and the raw displayed amount, v5 broadcaster identity and the
+  // broadcaster × viewer context.
+  assert.deepEqual(result.applied, [2, 3, 4, 5]);
+  assert.equal(currentSchemaVersion(db), 5);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
   assert.ok(columnsAfter.includes('badges'));
   assert.ok(columnsAfter.includes('amount_display'));
   const sessionColumnsAfter = db.prepare('PRAGMA table_info(sessions)').all().map((row) => row.name);
   assert.ok(sessionColumnsAfter.includes('platform_started_at'));
+  assert.ok(sessionColumnsAfter.includes('broadcaster_id'));
+  assert.ok(sessionColumnsAfter.includes('broadcaster_identity'));
+  // This old row has no room id, so it must stay unresolved rather than being
+  // guessed into a broadcaster.
+  const oldSession = db.prepare('SELECT broadcaster_id, broadcaster_identity FROM sessions WHERE id = ?').get(sessionId);
+  assert.equal(oldSession.broadcaster_id, null);
+  assert.equal(oldSession.broadcaster_identity, 'unresolved');
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
+  assert.ok(tables.includes('broadcasters'));
+  assert.ok(tables.includes('viewer_broadcasters'));
+  assert.ok(tables.includes('viewer_broadcaster_currency_totals'));
 
   const oldRows = listEvents(db, {sessionId: session.id});
   assert.equal(oldRows.length, 1);

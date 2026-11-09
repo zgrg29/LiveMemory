@@ -36,6 +36,21 @@ export function statusChip(session, t) {
   return chip(t('status.ended'), 'neutral');
 }
 
+/** How reliably a broadcaster identity is known. Never invents a channel. */
+export function broadcasterIdentityChip(identity, t) {
+  const key = `viewers.scope.identity.${identity ?? 'unresolved'}`;
+  const resolved = t(key);
+  const label = resolved === key ? t('viewers.scope.identity.unresolved') : resolved;
+  const tone = identity === 'verified'
+    ? 'accent'
+    : identity === 'room_fallback'
+      ? 'warn'
+      : identity === 'simulated'
+        ? 'neutral'
+        : 'warn';
+  return chip(label, tone);
+}
+
 export function aiChip(aiStatus, t) {
   if (aiStatus === 'imported') return chip(t('history.ai.imported'), 'accent');
   if (aiStatus === 'exported') return chip(t('history.ai.exported'), 'warn');

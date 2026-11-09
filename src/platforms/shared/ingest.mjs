@@ -2,6 +2,7 @@ import {isMessageEvent, isPaymentEvent, normalizeEvent} from '../../shared/event
 import {insertEvent} from '../../storage/repositories/events.mjs';
 import {getSession, incrementSessionCounters} from '../../storage/repositories/sessions.mjs';
 import {ensureViewer, recordSessionPayment, recordViewerActivity} from '../../storage/repositories/viewers.mjs';
+import {recordViewerBroadcasterActivity} from '../../storage/repositories/broadcasters.mjs';
 import {withTransaction} from '../../storage/database/connection.mjs';
 
 /**
@@ -57,6 +58,13 @@ export class EventIngest {
       if (!result.inserted) return;
       inserted = true;
       recordViewerActivity(this.db, event, {now: receivedNow, sessionId: event.session_id});
+      // Per-broadcaster context. Sessions whose broadcaster could not be
+      // identified keep global viewer statistics only; they are never folded
+      // into another channel's profile.
+      recordViewerBroadcasterActivity(this.db, event, {
+        broadcasterId: session.broadcaster_id ?? null,
+        now: receivedNow
+      });
       recordSessionPayment(this.db, event);
       incrementSessionCounters(this.db, event.session_id, {
         messages: isMessageEvent(event.event_type) ? 1 : 0,

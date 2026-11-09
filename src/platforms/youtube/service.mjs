@@ -30,6 +30,9 @@ function epochOrNull(value) {
 
 /** Map adapter/API errors to stable API errors with translatable keys. */
 export function toApiError(error) {
+  // Broadcaster identity comes from the channel, never from the video id. If a
+  // platform response ever omits the channel id the session is kept but marked
+  // unresolved, so it cannot be merged into another broadcaster by accident.
   if (error instanceof AppError) return error;
   const code = error?.code ?? 'UNKNOWN';
   const map = {
@@ -403,6 +406,7 @@ export class YouTubeService {
         platformRoomId: video.videoId,
         roomTitle: video.title ?? `YouTube ${video.videoId}`,
         broadcasterName,
+        broadcasterUid: video.channelId ?? null,
         sourceQuality,
         simulated: false,
         platformStartedAt: epochOrNull(video.actualStartTime),

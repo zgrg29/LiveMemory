@@ -1,5 +1,5 @@
 import {api} from './api.js';
-import {loadDictionary, createTranslator} from './i18n.js';
+import {loadDictionary, createTranslator, localeDisplayName} from './i18n.js';
 import {applyTheme} from './theme.js';
 import {
   clear,
@@ -31,8 +31,11 @@ const state = {
   status: null,
   liveSummary: null,
   version: '0.1.0',
-  pageCleanup: null
+  pageCleanup: null,
+  localePending: false
 };
+
+const LANGUAGE_CHOICES = Object.freeze(['zh-CN', 'ja', 'en']);
 
 let t = createTranslator({});
 
@@ -271,6 +274,83 @@ function renderShellMeta() {
   updateConnectionPill();
 }
 
+/**
+ * Header language control.
+ *
+ * The three language names are always rendered in their own language so the
+ * control stays usable when the current interface language is not readable.
+ * Wide layouts expose all three choices plus a globe button for "follow the
+ * system language"; narrow layouts collapse to one native <select>. Both
+ * controls read and write the same persisted preference.
+ */
+function languageChoiceLabel(value) {
+  return value === 'system' ? t('settings.language.system') : localeDisplayName(value);
+}
+
+function syncLanguageControls() {
+  const preference = state.settings?.locale ?? 'system';
+  const segmented = document.getElementById('language-segmented');
+  if (segmented) {
+    segmented.setAttribute('aria-label', t('a11y.languageSelect'));
+    segmented.replaceChildren(...LANGUAGE_CHOICES.map((value) => el('button', {
+      type: 'button',
+      text: localeDisplayName(value),
+      attrs: {
+        'aria-pressed': String(preference === value),
+        'data-locale': value,
+        lang: value,
+        title: localeDisplayName(value)
+      },
+      onClick: () => chooseLocale(value)
+    })));
+  }
+
+  const systemButton = document.getElementById('language-system');
+  if (systemButton) {
+    systemButton.setAttribute('aria-pressed', String(preference === 'system'));
+    systemButton.setAttribute('aria-label', t('a11y.languageSystem'));
+    systemButton.title = t('a11y.languageSystem');
+    systemButton.onclick = () => chooseLocale('system');
+  }
+
+  const select = document.getElementById('language-select');
+  if (select) {
+    const choices = ['system', ...LANGUAGE_CHOICES];
+    select.replaceChildren(...choices.map((value) => el('option', {
+      value,
+      text: languageChoiceLabel(value),
+      attrs: value === 'system' ? null : {lang: value}
+    })));
+    select.value = preference;
+    select.setAttribute('aria-label', t('a11y.languageSelect'));
+    select.onchange = () => chooseLocale(select.value);
+  }
+
+  const control = document.querySelector('.language-control');
+  if (control) control.setAttribute('aria-label', t('a11y.languageSelect'));
+  for (const node of document.querySelectorAll('#language-segmented button, #language-system, #language-select')) {
+    node.disabled = false;
+  }
+}
+
+/** Serialize header/settings language changes so a rapid double click cannot race. */
+async function chooseLocale(value) {
+  if (state.localePending) return;
+  if ((state.settings?.locale ?? 'system') === value) return;
+  state.localePending = true;
+  for (const node of document.querySelectorAll('#language-segmented button, #language-system, #language-select')) {
+    node.disabled = true;
+  }
+  try {
+    await setLocale(value);
+  } catch (error) {
+    toaster(describeError(error, t), {tone: 'error'});
+  } finally {
+    state.localePending = false;
+    syncLanguageControls();
+  }
+}
+
 async function applyLocale(locale) {
   state.locale = locale;
   state.dict = await loadDictionary(locale);
@@ -278,6 +358,7 @@ async function applyLocale(locale) {
   document.documentElement.lang = locale;
   applyStaticTranslations();
   renderShellMeta();
+  syncLanguageControls();
 }
 
 async function setLocale(preference) {
@@ -285,9 +366,11 @@ async function setLocale(preference) {
   state.settings = payload.settings;
   state.effective = payload.effective;
   await applyLocale(payload.effective.locale);
+  syncLanguageControls();
   toaster(t('toast.language'));
   emit('localechange', {locale: state.locale, preference});
   await renderRoute();
+  syncLanguageControls();
 }
 
 async function setTheme(preference) {

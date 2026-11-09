@@ -9,11 +9,11 @@
 
 ## 2. 启动流程（实现位置：`src/launcher/launcher.mjs`）
 
-1. 解析参数（`--no-open`、`--port`、`--data-dir`、`--lang`、`--version`、`--help`、`--no-wait`、`--diagnose`、`--error-dialog`）。
+1. 解析参数（`--no-open`、`--port`、`--data-dir`、`--forget-data-location`、`--lang`、`--version`、`--help`、`--no-wait`、`--diagnose`、`--error-dialog`）。
 2. **立即创建启动日志**（此时数据库、配置、数据目录都还不存在）：写入 `%LOCALAPPDATA%\LiveMemory\logs`，失败则逐级回退 `%TEMP%\LiveMemory-logs`、用户目录；解析出数据目录后再迁入 `<数据目录>\logs`。
 3. `chcp 65001` 将控制台代码页设为 UTF-8（仅 TTY）。
 4. 检查 Node ≥ 22.5 与 `node:sqlite` 可用性。
-5. 解析可写数据目录（真实写探测，见 §5），创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
+5. 解析可写数据目录（真实写探测，见 §5）：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` → 位置记录 → 默认目录。位置记录目标必须已存在且含 `database/livememory.db`；否则报错，不创建空库。创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
 6. 读取 `config/settings.json` → 决定命令行语言（保存偏好优先；`--lang` 临时覆盖）。配置损坏或不可读不阻塞启动。
 7. 单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
 8. 启动服务：绑定 `127.0.0.1`，端口 47800 → +1…+9 → 系统分配。
@@ -64,12 +64,33 @@
 ├── logs\
 ├── cache\
 ├── exports\            分析包
-├── backups\            未来备份
-└── runtime\            instance.lock / runtime.json / last-error.json
+├── backups\            备份（清空/出厂保留）
+├── runtime\            instance.lock / runtime.json / last-error.json
+└── data-location.json  数据目录位置记录（自定义目录时仍保存在这里）
+
+%LOCALAPPDATA%\LiveMemory-Backups\   删除前的数据库应急快照（数据目录之外）
 ```
 
 解析顺序：`--data-dir` → `LIVE_MEMORY_DATA_DIR` → `%LOCALAPPDATA%\LiveMemory` → `%APPDATA%\LiveMemory` → 用户目录。
 显式指定但不可写时**直接报错**，不会静默换目录。
+
+### 4.1 启动位置记录（v0.4.0）
+
+数据可以移动到其他磁盘。启动器用独立于数据库的位置记录找到它：
+
+```text
+%LOCALAPPDATA%\LiveMemory\data-location.json     （主）
+%APPDATA%\LiveMemory\data-location.json          （镜像，主损坏/缺失时读取）
+{ "version": 1, "dataDir": "D:\\LiveMemoryData", "updatedAt": "…" }
+```
+
+- 位置记录只含路径，不含数据库内容或凭据；原子写。
+- 位置目标已存在且包含 `database/livememory.db` 时才使用。
+- 目标缺失、被断开或没有数据库时：
+  - 显示“已保存的数据目录当前不可用”、实际路径、位置记录文件与日志路径；
+  - 提供 `--data-dir <路径>` 与 `--forget-data-location`；
+  - **不会回退到默认目录并创建空数据库**。
+- `--data-dir` / `LIVE_MEMORY_DATA_DIR` 仍优先于位置记录，便于临时排查；它们不会自动改写位置记录。
 
 ## 5. 权限
 
@@ -86,6 +107,29 @@
 - 发生回退时控制台打印 `提示: 默认数据目录不可写入，已改用 …`，用户能看到实际路径。
 - 数据目录不可写时：显示本地化错误、路径、错误码、失败步骤与 `--data-dir` 替代方案，不要求管理员身份。
 - 启动失败时的日志回退顺序：`<数据目录>\logs` → `%TEMP%\LiveMemory-logs` → `~/.livememory-logs`；控制台会打印实际使用的日志文件。
+
+## 5.1 运行中修改数据目录（v0.4.0）
+
+设置页的“修改存储位置”通过本地 API 完成；普通浏览器无法取得任意绝对目录，因此原生选择器由本地服务调用固定 PowerShell + WinForms 脚本（不经 shell）。
+
+迁移流程：
+
+1. 服务端校验：未在记录、路径绝对、非 UNC/系统目录/嵌套、目标无 LiveMemory 数据、空间足够、云同步/临时/长路径 warning；
+2. 停止适配器 → `wal_checkpoint(TRUNCATE)` → 关闭 SQLite；
+3. 复制受管目录到目标卷 staging；`PRAGMA integrity_check`、表计数、schema 版本、配置/凭据/导出文件 SHA-256；
+4. 移入目标根目录；重建设置/数据库/平台服务；再次核对表计数；
+5. 转移单实例锁（释放旧锁、建立新锁、写目标 `runtime.json`），更新位置记录；
+6. 同一 HTTP 端口继续服务；旧目录**不删除**。
+
+失败（权限、复制中断、校验失败、锁占用）回滚为原目录运行时，原数据保持。维护期间 API 返回 503（relocation/clear/health/status 除外）。
+
+恢复出厂/清空数据后的数据库快照默认位于：
+
+```text
+%LOCALAPPDATA%\LiveMemory-Backups\livememory-database-YYYYMMDD-HHmmss-SSS.db
+```
+
+可用 `LIVE_MEMORY_BACKUP_DIR` 覆盖；它位于数据目录之外，避免“先删目录再删备份”。
 
 ## 6. 单实例与重复启动
 
@@ -148,11 +192,11 @@ Node SEA（Single Executable Application）+ postject 注入。
 已验证（本机，2026-11-08，普通权限 = 非管理员令牌，最终源码构建）：
 
 - 构建成功，PE 子系统 = 3（Console）
-- 本轮构建：**90.2 MB，97 个资源文件，SHA-256 `9d586aa9cbe60274c6755b0b8ba8204cc111e6c8261b329868c38bb65190604c`**
-- 全新数据目录启动确认 SQLite schema=4、`badges` / `amount_display` 列存在、`live.js` 含 YouTube 来源标签
+- 本轮构建（v0.4.0）：**90.3 MB，103 个资源文件，SHA-256 `4aae59fe6f8d0a6cdc13811d27cc732e1e17cd6a6dac5d5fa4da450efbb1387f`**
+- 全新数据目录启动确认 SQLite schema=5、`broadcasters` / `viewer_broadcasters` / `broadcaster_id` 存在
 - `/api/youtube/status` 在未配置构建中返回 `configured=false`、`officialConfigured=false`、`captureMode=official`、`policy.days=30`，界面显示官方未配置与实验模式入口，不提供伪造登录
-- `LiveMemory.exe --version` → `LiveMemory 0.3.0`
-- `scripts/verify-exe.mjs` 自动矩阵：全新目录启动、HTTP API、SQLite 写入、重启保留、强制结束后恢复、端口占用顺延、第二实例、不可写目录报错、复制到 `Downloads` 运行、解压复用、`--version` / `--help --lang ja` / `--diagnose`
+- `LiveMemory.exe --version` → `LiveMemory 0.4.0`
+- `scripts/verify-exe.mjs` 自动矩阵：**9/9 通过**（全新目录启动、HTTP API、SQLite 写入、重启保留、强制结束后恢复、端口占用顺延、第二实例、不可写目录报错、复制到 `Downloads` 运行、解压复用、`--version` / `--help --lang ja` / `--diagnose`）
 - 默认数据目录不可写时自动回退到 `%TEMP%\LiveMemory` 并启动成功（本机沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，正好覆盖该分支）
 - 不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`
 - 第二实例：真实在运行时提示并退出 0；进程被强制结束后重启会接管陈旧锁

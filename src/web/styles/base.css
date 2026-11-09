@@ -302,6 +302,10 @@ ul, ol {
 }
 
 .topbar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.015em;

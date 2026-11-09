@@ -1,146 +1,131 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-08 · YouTube 免登录实验接入 · v0.3.0（schema v4）
+本轮：2026-11-08 · Header 语言快捷切换、数据目录迁移、清空/恢复出厂、多主播观众档案 · v0.4.0（schema v5）
 
-## 1. 本轮目标
+## 1. 本轮目标与结论
 
-1. 实际查看五个开源项目的源码、许可证与可用性，而不是只读 README；
-2. 实现无需用户 API Key / OAuth / Cookie 的 YouTube 直播聊天读取；
-3. 尽可能取得稳定 Channel ID、昵称、原文、Emoji、badge、Super Chat、Super Sticker、会员与 gift；
-4. 保持统一事件模型、去重、金额分账、SQLite、控制台、三语、主题与 EXE 不回归；
-5. 用真实直播验证，重建 EXE，更新文档并本地提交（不 Push）。
-
-## 2. 关键结论
-
-| 问题 | 结论 |
+| 目标 | 结论 |
 | --- | --- |
-| 有五套都能直接复用的开源实现吗？ | 否。`youtube-chat` 太脆弱且无 continuation；`pytchat` 已归档；`chat-downloader` 最完整但 Python 且停在 2023；`ytmemchat` 是 GPL-3.0 的 Go/桌面实现；`komet` 仓库没有源码。 |
-| 免登录聊天真的可用吗？ | 是。真实双房间 35 秒采样成功，详见 `YOUTUBE_ANONYMOUS_RESEARCH.md`。 |
-| 需要用户 API Key / Google 登录 / Cookie 吗？ | 不需要。请求不带 Cookie，不使用官方凭据。 |
-| 稳定 Channel ID？ | 聊天/SC 100%；gift 0%（接口无该字段）。绝不拿昵称代替。 |
-| Super Chat？ | 真实样本 `HK$2,000.00` → HKD 200000；保留原始显示字符串。 |
-| Super Sticker / 会员？ | 映射已实现，真实未观测，标记未验证。 |
-| 符合 YouTube 条款吗？ | **不能确认，且很可能违反 ToS。** 因此默认关闭，必须显式 opt-in；官方 API 仍是推荐。 |
-| 原有官方 API/OAuth 路径？ | 完整保留，默认模式仍为 `official`。 |
+| Header 语言快捷切换 | 完成。宽屏三个原生语言名 + 地球按钮（跟随系统），窄屏原生 select；与设置页共享状态，持久化，三语截图。 |
+| 修改数据存储目录 | 完成。位置记录 + staging 复制 + integrity/计数/校验和验证 + 运行时重建 + 单实例锁转移 + 失败回滚；原目录不删。 |
+| 清空数据 / 恢复出厂 | 完成。`DELETE` / `RESET` 确认文字、记录中禁止、默认数据库快照、事务清理 + `VACUUM` + 运行时重建；保留数据目录、无关文件与 `backups/`。 |
+| 多主播观众档案 | 完成。schema v5；平台全局观众身份 + 主播维度互动档案；范围选择、搜索、排序、详情、AI 包隔离。 |
 
-## 3. 新增代码
+## 2. 关键设计决定
 
-```text
-src/platforms/youtube/anonymous/parser.mjs   watch/live_chat/continuation/金额/emoji/badge 纯解析
-src/platforms/youtube/anonymous/client.mjs   HTTP、页面重开、429/400/5xx 错误分层
-src/platforms/youtube/anonymous/adapter.mjs  轮询、timeout、退避、重连、结束、gap 诊断
-src/platforms/youtube/mapper.mjs             + mapYouTubeAnonymousChatItem
-src/shared/badges.mjs                        badge 规范化
-src/shared/capture-mode.mjs                  official / anonymous
-src/storage/database/migrations/index.mjs    v4
-src/storage/retention.mjs                    30 天上限 + nickname 清理
-scripts/verify-youtube-anonymous.mjs         真实网络 E2E 采样
-```
+### 2.1 语言切换
 
-服务端新增/变化：
+- `index.html` 顶栏 `language-control`：`#language-system` 地球按钮、`#language-segmented` 三个原生语言名、`#language-select` 窄屏 select。
+- `app.js` 的 `syncLanguageControls()` 从同一 `state.settings.locale` 构建两种控件；`chooseLocale()` 串行化切换；`setLocale()` PATCH 后重载字典并重渲染当前页。
+- 设置页语言卡保留，仅补充 header 提示；两侧都调用 `ctx.setLocale`，不存在第二份状态。
 
-- `/api/youtube/video`、`/api/youtube/connect` 接受 `{mode}`；
-- `/api/youtube/status` 增加 `officialConfigured`、`captureMode`、`anonymous`、`capabilities.modes`；
-- `/api/settings` 增加 `youtubeCaptureMode`，`youtubeRawRetentionDays` 限制 1–30；
-- `startServer` 新增 `youtubeWebBase`（只用于测试/自托管代理）。
+### 2.2 数据位置与迁移
 
-## 4. 数据模型变化
+- 位置记录模块：`src/shared/data-location.mjs`
+  - 主：`%LOCALAPPDATA%\LiveMemory\data-location.json`
+  - 镜像：`%APPDATA%\LiveMemory\data-location.json`
+  - 原子写；主损坏时读镜像；相对路径/非法版本忽略。
+- 启动器：`--data-dir` / `LIVE_MEMORY_DATA_DIR` 优先；否则读位置记录；目标**必须已存在且含数据库**，否则 `DATA_DIR_UNAVAILABLE`，提供 `--data-dir` 与 `--forget-data-location`。不会创建空数据库。
+- 迁移：`src/server/relocation.mjs`
+  - 校验安全目录、UNC 拒绝、OneDrive/Dropbox/Google Drive/临时目录/长路径警告、目标冲突、可用空间；
+  - 停止适配器 → WAL checkpoint → 关闭 DB → staging 复制 → `integrity_check` + 表计数 + schema 版本 + 文件 SHA-256 → 移入目标 → 重新构建 runtime → 调用方锁转移 → 写位置记录 → 切换；
+  - 失败：回滚已移动目录、删除 staging、恢复位置记录、重新打开原目录；原目录永不删除；
+  - `hooks.afterCopy/afterMove/beforePointer` 仅供测试注入失败。
+- 服务端 `startServer` 已重构为 `buildRuntime/stopRuntime`，可以在同一 HTTP 端口内切换数据库与服务；`deps` 使用 getter 暴露当前 runtime。
+- 单实例锁：launcher 传入 `beginLockMove`，提交时释放旧锁、建立新锁、写目标 `runtime.json`；失败时 abort。
+- 目录选择器：`src/server/native-dialog.mjs`，固定 PowerShell + WinForms 脚本，不经 shell；打开文件夹只接受受管目录键。
 
-- schema **4**：
-  - `events.badges TEXT`：`[{type,label}]`，可空；
-  - `events.amount_display TEXT`：平台显示的金额字符串，可空。
-- `normalizeEvent` 会规范化 badges（最多 8 个，类型 owner/moderator/verified/member/unknown）。
-- `events` 仓储、serializer、AI 包导出同步。
-- `EventIngest` 与观众档案逻辑不变；所有匿名事件仍走同一写入路径。
+### 2.3 清空与恢复出厂
 
-## 5. 身份、金额、去重
+- `src/server/maintenance.mjs`
+  - 模式 `data`：删业务表 + 导出/缓存；保留设置、凭据、位置记录、`backups/`、日志、根目录无关文件。
+  - 模式 `factory`：额外删偏好/凭据/日志/缓存并重置设置默认值；仍保留位置记录、`backups/`、根目录无关文件。
+  - 事务删除 + `VACUUM` + WAL checkpoint；异常时抛出可本地化错误。
+  - 备份：`VACUUM INTO` 到 `%LOCALAPPDATA%\LiveMemory-Backups`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖），默认不在数据目录内；是数据库应急快照，不是 M5 `.livememory`。
+  - 完成后通过 `deps.relocation.stop/build/swap` 重建运行时，清掉内存中的服务与凭据状态。
+- API：
+  - `GET /api/storage/location`
+  - `POST /api/storage/location/validate`
+  - `POST /api/storage/location/pick`
+  - `POST /api/storage/location`
+  - `POST /api/storage/open`
+  - `GET /api/storage/clear/preview`
+  - `POST /api/storage/backup`
+  - `POST /api/storage/clear`
+- `deps.maintenance` 期间除 relocation/clear/health/status 外返回 503，防止复制中并发写库。
 
-- 身份：`authorExternalChannelId` → `youtube:<channelId>`。
-- 无 Channel ID：
-  - gift / 缺失字段 → `viewer_uid=null`、`identity_complete=false`、`source_quality=estimated/unknown`；
-  - 不按昵称合并、不创建档案。
-- 金额：
-  - `purchaseAmountText.simpleText` 只提供格式化字符串；
-  - 明确 `HK$`/`US$`/`A$`/`€`/`£`/`₹`/ISO code 等才解析；
-  - 裸 `$`/`¥` 用页面 `client.gl`；无法确认则 null；
-  - `amount_display` 始终保留可确认的原始字符串；
-  - gift/会员数量/等级不换算金额。
-- 去重：`ext:<message.id>`；ticker 展示不产生事件，所以不会重复累计 SC。
-- 会员与 gift 的 `payment_event_count` 只在 `is_paid=true` 时计数；gift 金额未知但仍是付费互动。
+### 2.4 多主播身份
 
-## 6. 稳定性行为
+- `src/shared/broadcaster.mjs`：`resolveBroadcasterIdentity()`。
+  - YouTube：仅 `channelId`；视频 ID 不作为长期身份。
+  - Bilibili：`anchorUid` → `bilibili:<uid>`；否则 room id → `bilibili:room:<id>`（`room_fallback`）。
+  - mock：`mock:simulation`。
+- schema v5：
+  - `broadcasters`、`viewer_broadcasters`、`viewer_broadcaster_currency_totals`；
+  - `sessions.broadcaster_id`（可空）+ `broadcaster_identity`；
+  - 迁移回填 Bilibili room fallback、mock；YouTube 旧场次保持 unresolved。
+- `EventIngest` 同事务调用 `recordViewerBroadcasterActivity`；重复事件不重复计数。
+- 读模型：`analytics/viewers/profile.mjs` 支持 `{broadcasterId}` / `{unassigned}`，返回 `scope` 与 `broadcasters[]`；全局 `lifetime` 独立标注。
+- API 与 UI：见 `docs/STATUS.md` §2.4。
+- AI 包：`viewer_context[].broadcaster_context`、`lifetime`、`other_broadcaster_count`；`instructions.md` 有“主播上下文”规则。
 
-- 轮询间隔来自服务端 `timeoutMs`（真实 10000ms），clamp 2–30s。
-- 400 / `failedPrecondition`：重开 live_chat，保留 session；重复消息由 ingest 去重。
-- 429：至少 30 秒退避 + `Retry-After`；连续 8 次失败停止并保存。
-- 网络 / 5xx：指数退避 1→60 秒，不结束场次。
-- 每 60 秒 watch 页检查直播状态；结束则自动结束场次。
-- `chat disabled/ended/unavailable`：明确失败或结束。
-- 相邻消息跨度 > 90 秒：`gapSuspected++`，UI 显示“可能漏消息”，不虚构确定遗漏。
-- 启动失败不会留下 `live` 行；SessionManager 会结束失败场次。
+## 3. 数据模型变化
 
-## 7. 保留策略（本轮修正）
+- schema **5**；`MIGRATIONS` v5。
+- v1→v5 迁移测试覆盖：
+  - Bilibili 有 room id → room fallback；
+  - YouTube 视频 ID → unresolved；
+  - mock → simulated；
+  - `viewer_broadcasters` 与币种合计回填。
+- 旧 `viewer_id`、事件引用、计数、金额不变。
+- 清空数据不删 `schema_migrations`；数据库仍为 v5 空库。
 
-- 旧上限 3650 天与新上限 **30 天** 不一致，已改为 1–30。
-- 清理：`content`、`emotes`、`badges`、`amount_display` + 过期 YouTube 观众昵称历史/当前昵称。
-- 保留：事件行、计数、稳定 Channel ID、金额合计。
-- 仍不等于完全删除个人数据；严格删除模式未实现，文档已明确。
+## 4. 测试与验证
 
-## 8. 真实验证
+- 全量：**305 passed / 0 failed**（`node --test --test-isolation=none ...`，约 22.8 秒）。
+- 新增：`broadcaster.test.mjs`、`header-language.test.mjs`、`broadcaster-identity.test.mjs`、`storage-management.test.mjs`。
+- 数据验证：
+  - 迁移前后旧/新目录：integrity=ok、schema=5、3 sessions / 12 events / 4 viewers / 8 viewer_sessions / 5 viewer_broadcasters / 2 broadcasters。
+  - 清空后：全部业务表 0、integrity=ok、schema=5；备份保留 3/12/4。
+- EXE：`dist/LiveMemory.exe` 90.3 MB，103 资源，SHA-256 `4aae59fe6f8d0a6cdc13811d27cc732e1e17cd6a6dac5d5fa4da450efbb1387f`；`verify-exe.mjs` **9/9 通过**（`--version` = 0.4.0）。
+- 截图 18 张，见 `STATUS.md` §7。
 
-| 房间 | 时长 | events | chat | 经济 | 身份 | 错误 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `FKLZiufsCk0` | 35s | 86 | 85 | 1 SC HKD 200000 | 86/86 | 0 |
-| `gXawf8GZDI8` | 35s | 100 | 87 | 13 gift（无金额） | chat 87/87；gift 0/13 | 0 |
+## 5. 未验证 / 边界（必须如实保留）
 
-- EXE 内真实匿名模式：72 条事件、72/72 Channel ID、0 错误；最终样本未出现付费事件。
-- 未观测到 Super Sticker / 会员 / 赠送会员。
-- 无官方凭据，未做官方 API 并排对照。
+- 原生目录选择器未在无桌面会话/真实双击桌面验证；测试环境无法弹出 WinForms 对话框。
+- 迁移中断回滚通过测试注入 `afterMove` 失败验证；**未做真实拔盘、断电、磁盘写满**演练。
+- 映射网络盘（盘符）未自动识别；UNC 明确拒绝，OneDrive 等仅警告。
+- 清空/出厂的文件删除是尽力而为；数据库删除是事务 + `VACUUM`。
+- 旧 YouTube 场次 unresolved；无手动归属 UI。
+- 无删除单场/单观众/单主播 UI。
+- M6 AI 导入未实现；本轮未扩展 YouTube 未公开接口，未改变匿名模式默认关闭与合规提示。
+- EXE 未在第二台干净 Windows 验收；未签名；未 Push。
 
-## 9. 测试与 EXE
-
-- 自动化：**287 通过 / 0 失败 / ~17.7s**。
-- 新增测试：匿名 parser、adapter 重连、完整 HTTP 集成、v1→v4 迁移、retention badges/nickname、settings 模式。
-- EXE：**90.2 MB**，SHA-256 `9d586aa9cbe60274c6755b0b8ba8204cc111e6c8261b329868c38bb65190604c`，`verify-exe.mjs` **9/9**。
-- 截图：`docs/screenshots/live-youtube-anonymous-*.png`、`settings-youtube-anonymous-zh-CN.png`。
-
-## 10. 未验证 / 阻塞（必须如实保留）
-
-- **条款合规未确认**：匿名网页接口很可能违反 YouTube ToS；正式发布前必须评估或取得许可。
-- 官方 YouTube 真实验收仍缺凭据。
-- Super Sticker、会员、赠送会员未在真实直播中出现。
-- 真实 429、验证码、consent/age wall、长时断网、数小时直播未验证（只有自动化模拟）。
-- 匿名接口只有 35 秒与 15 秒级真实样本，不能代表全部频道与地区。
-- EXE 未在第二台干净 Windows 验收；未签名。
-- 30 天清理不等同完全删除个人数据。
-
-## 11. 常用命令
+## 6. 常用命令
 
 ```bat
 :: 测试
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: 真实匿名采样（聚合输出，不打印正文）
-node scripts/verify-youtube-anonymous.mjs https://www.youtube.com/live/<ID> 35
+:: 启动
+node src/launcher/launcher.mjs --no-open --port 48300
 
-:: 官方路径（可选，环境变量）
-set LIVE_MEMORY_YOUTUBE_API_KEY=AIza...
-set LIVE_MEMORY_YOUTUBE_CLIENT_ID=....apps.googleusercontent.com
-set LIVE_MEMORY_YOUTUBE_CLIENT_SECRET=...
+:: 忘记自定义位置（恢复到默认目录）
+node src/launcher/launcher.mjs --forget-data-location --no-open
 
 :: 构建与验证 EXE
 node scripts/build-windows.mjs
 node scripts/verify-exe.mjs
 ```
 
-## 12. 下一轮建议
+## 7. 下一轮建议
 
-1. 合规评估匿名路径；若不允许发布，保留为开发者/内部模式。
-2. 有官方凭据时做并排对照（消息数、身份率、付费事件、延迟、稳定性）。
-3. **M6 AI 结果导入**：Schema、事务、重复导入保护。
-4. M4 严格删除/去标识化与存储管理。
+1. M6 AI 结果导入：Schema、事务、重复导入保护、任务状态。
+2. 旧场次主播归属 UI；单场/观众删除；严格删除/去标识化。
+3. M5 可移植备份，复用迁移的安全切换与校验逻辑。
+4. 真实断盘/断电迁移演练、映射网络盘检测、干净 Windows EXE 验收。
 
-## 13. 本轮 Commit
+## 8. 本轮 Commit
 
-- 本轮：`d314984` feat: record public YouTube Live chat without a developer key（本地，未 Push）
-- 上一轮：`7a86e58` docs: cite the primary YouTube authorization and policy sources
+- 本轮：`（提交后填写）` feat: add header language switch, data relocation and broadcaster memory
+- 上一轮：`c8d72c5` docs: anonymize public chat data in YouTube screenshots

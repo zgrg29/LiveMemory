@@ -14,13 +14,17 @@ import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
 import {serializeEvent} from './serializers.mjs';
 import {detectSystemLocale} from '../shared/locale.mjs';
-import {AppError, ERROR_CODES} from '../shared/errors.mjs';
+import {AppError} from '../shared/errors.mjs';
 import {APP_VERSION} from '../shared/app-info.mjs';
 import {isoFromEpochMs} from '../shared/time.mjs';
 
 /**
  * Start the full application (settings, database, platform manager, HTTP).
  * Shared by the Windows launcher, development runs and integration tests.
+ *
+ * The database-dependent services are built by `buildRuntime`, so a verified
+ * data-folder relocation can stop the old runtime, build a new one at the
+ * target and keep the same HTTP socket (and open console) alive.
  */
 
 function writeRuntime(paths, payload) {
@@ -51,73 +55,116 @@ export async function startServer({
   webRoot = null,
   systemLocale = null,
   youtubeApiBase = null,
-  youtubeWebBase = null
+  youtubeWebBase = null,
+  beginLockMove = null,
+  env = process.env
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
-  const paths = ensureDirectories(createPaths(dataDir));
-  assertWritable(paths);
-
-  const settingsStore = new SettingsStore({file: paths.settingsFile, logger});
-  settingsStore.load();
-
-  const db = openDatabase({file: paths.databaseFile});
-  const migration = migrate(db, {now: now(), log: (record) => logger?.info(record)});
-
   const hub = new EventStream();
-  const sessionManager = new SessionManager({
-    db,
-    settings: settingsStore,
-    logger,
-    now,
-    onEvent: (event) => hub.broadcast('event', serializeEvent(event)),
-    onStatusChange: (status) => hub.broadcast('status', status)
-  });
-  const recovered = sessionManager.recoverInterrupted();
-  const bilibili = new BilibiliService({
-    secretsDir: paths.secrets,
-    sessionManager,
-    logger,
-    now
-  });
-  const youtube = new YouTubeService({
-    secretsDir: paths.secrets,
-    sessionManager,
-    db,
-    settings: settingsStore,
-    logger,
-    now,
-    configFile: join(paths.config, OAUTH_CONFIG_FILE_NAME),
-    apiKeyConfigFile: join(paths.config, API_KEY_FILE_NAME),
-    apiBase: youtubeApiBase,
-    webBase: youtubeWebBase
-  });
-  // YouTube raw chat content is subject to the platform retention policy; run it
-  // once per start so a long-unused installation also converges.
-  runRetention(db, {
-    now: now(),
-    days: settingsStore.get().youtubeRawRetentionDays,
-    logger
-  });
+  let runtime = null;
 
+  function buildRuntime(dir) {
+    const paths = ensureDirectories(createPaths(dir));
+    assertWritable(paths);
+    const settingsStore = new SettingsStore({file: paths.settingsFile, logger});
+    settingsStore.load();
+    const db = openDatabase({file: paths.databaseFile});
+    let migration;
+    try {
+      migration = migrate(db, {now: now(), log: (record) => logger?.info(record)});
+    } catch (error) {
+      closeDatabase(db);
+      throw error;
+    }
+    const sessionManager = new SessionManager({
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      onEvent: (event) => hub.broadcast('event', serializeEvent(event)),
+      onStatusChange: (status) => hub.broadcast('status', status)
+    });
+    const recovered = sessionManager.recoverInterrupted();
+    const bilibili = new BilibiliService({
+      secretsDir: paths.secrets,
+      sessionManager,
+      logger,
+      now
+    });
+    const youtube = new YouTubeService({
+      secretsDir: paths.secrets,
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      configFile: join(paths.config, OAUTH_CONFIG_FILE_NAME),
+      apiKeyConfigFile: join(paths.config, API_KEY_FILE_NAME),
+      apiBase: youtubeApiBase,
+      webBase: youtubeWebBase
+    });
+    runRetention(db, {
+      now: now(),
+      days: settingsStore.get().youtubeRawRetentionDays,
+      logger
+    });
+    return {paths, db, settingsStore, sessionManager, bilibili, youtube, recovered, migration};
+  }
+
+  async function stopAdapters(instance) {
+    try {
+      await instance.sessionManager.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.session.failed', code: error?.code ?? 'unknown'});
+    }
+    try {
+      await instance.bilibili.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.bilibili.failed', code: error?.code ?? 'unknown'});
+    }
+    try {
+      await instance.youtube.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.youtube.failed', code: error?.code ?? 'unknown'});
+    }
+  }
+
+  async function stopRuntime(instance) {
+    await stopAdapters(instance);
+    closeDatabase(instance.db);
+  }
+
+  runtime = buildRuntime(dataDir);
   const startedAt = now();
-  const state = {port: 0};
+  const state = {port: 0, maintenance: false};
   const deps = {
-    paths,
-    db,
-    settingsStore,
-    sessionManager,
-    bilibili,
-    youtube,
+    get paths() { return runtime.paths; },
+    get db() { return runtime.db; },
+    get settingsStore() { return runtime.settingsStore; },
+    get sessionManager() { return runtime.sessionManager; },
+    get bilibili() { return runtime.bilibili; },
+    get youtube() { return runtime.youtube; },
+    get maintenance() { return state.maintenance; },
+    set maintenance(value) { state.maintenance = Boolean(value); },
     hub,
     logger,
     startedAt,
     webRoot: webRoot ?? resolveWebRoot(),
     getPort: () => state.port,
-    systemLocale: systemLocale ?? detectSystemLocale()
+    systemLocale: systemLocale ?? detectSystemLocale(),
+    env,
+    relocation: {
+      get current() { return runtime; },
+      stop: () => stopRuntime(runtime),
+      build: (dir) => buildRuntime(dir),
+      close: (instance) => stopRuntime(instance),
+      swap: (next) => { runtime = next; },
+      beginLockMove
+    }
   };
   const handler = createApp(deps);
 
-  const preferred = port ?? settingsStore.get().preferredPort ?? 47800;
+  const preferred = port ?? deps.settingsStore.get().preferredPort ?? 47800;
   const candidates = port === 0 ? [0] : buildPortCandidates(preferred);
   let server = null;
   let lastError = null;
@@ -130,12 +177,12 @@ export async function startServer({
         lastError = error;
         continue;
       }
-      closeDatabase(db);
+      closeDatabase(runtime.db);
       throw error;
     }
   }
   if (!server) {
-    closeDatabase(db);
+    closeDatabase(runtime.db);
     throw new AppError('PORT_UNAVAILABLE', {
       messageKey: 'errors.portUnavailable',
       httpStatus: 409,
@@ -145,7 +192,7 @@ export async function startServer({
 
   state.port = server.address().port;
   const url = `http://127.0.0.1:${state.port}/`;
-  writeRuntime(paths, {
+  writeRuntime(deps.paths, {
     pid: process.pid,
     port: state.port,
     url,
@@ -156,9 +203,9 @@ export async function startServer({
     event: 'server.ready',
     port: state.port,
     url,
-    dataDir: paths.root,
-    schemaVersion: migration.to,
-    recoveredSessions: recovered.length
+    dataDir: deps.paths.root,
+    schemaVersion: runtime.migration.to,
+    recoveredSessions: runtime.recovered.length
   });
 
   let closed = false;
@@ -170,21 +217,7 @@ export async function startServer({
     } catch {
       /* ignore */
     }
-    try {
-      await sessionManager.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.session.failed', code: error?.code ?? 'unknown'});
-    }
-    try {
-      await bilibili.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.bilibili.failed', code: error?.code ?? 'unknown'});
-    }
-    try {
-      await youtube.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.youtube.failed', code: error?.code ?? 'unknown'});
-    }
+    await stopAdapters(runtime);
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 3000);
       timer.unref?.();
@@ -195,8 +228,8 @@ export async function startServer({
       server.closeIdleConnections?.();
     });
     server.closeAllConnections?.();
-    closeDatabase(db);
-    removeRuntime(paths);
+    closeDatabase(runtime.db);
+    removeRuntime(runtime.paths);
     logger?.info({event: 'server.closed', port: state.port});
     return true;
   }
@@ -205,15 +238,17 @@ export async function startServer({
     server,
     url,
     port: state.port,
-    paths,
-    db,
-    settings: settingsStore,
-    sessionManager,
-    bilibili,
-    youtube,
+    get paths() { return runtime.paths; },
+    get db() { return runtime.db; },
+    get settings() { return runtime.settingsStore; },
+    get sessionManager() { return runtime.sessionManager; },
+    get bilibili() { return runtime.bilibili; },
+    get youtube() { return runtime.youtube; },
+    get runtime() { return runtime; },
+    get deps() { return deps; },
     hub,
-    recovered,
-    migration,
+    get recovered() { return runtime.recovered; },
+    get migration() { return runtime.migration; },
     startedAt,
     systemLocale: deps.systemLocale,
     close,

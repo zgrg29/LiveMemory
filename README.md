@@ -12,10 +12,13 @@ Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no A
 
 LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析通过「导出 AI 分析包 → 手动交给任意 AI 服务 → 导入结果」完成，软件本身不连接任何 AI 服务，也不绑定 AI 品牌。
 
-### 现在能做什么（v0.3.0）
+### 现在能做什么（v0.4.0）
 
 - 双击启动本地控制台，自动打开系统默认浏览器，数据保存在 `%LOCALAPPDATA%\LiveMemory\`
-- 中文 / 日本語 / English 三语界面与命令行，默认跟随系统语言，可手动覆盖并持久保存
+- 中文 / 日本語 / English 三语界面与命令行；语言切换同时放在**页面顶栏**（外观切换旁），三种语言名始终以各自语言显示，默认跟随系统、可手动覆盖并持久保存
+- 数据存储位置可在设置页修改：迁移现有数据或创建新数据空间；迁移前校验、失败回滚、旧目录不自动删除；外接盘断开时不会创建空库
+- 清空全部直播/观众数据或恢复出厂设置：二次确认 + `DELETE`/`RESET` 文字 + 记录中禁止 + 数据目录外的数据库快照
+- **多主播观众档案**：同一平台账号保持一个稳定身份，但按主播分别保留发言、场次、经济支持与未来 AI 画像；观众页可切换主播范围、搜索、排序
 - 跟随系统 / 明亮 / 黑暗三种主题，独立设计，切换不闪烁、不丢失内容
 - 模拟直播：完整验证「事件 → SQLite → 统计 → 时间线 → 事件流」记录链路
 - 直播记录、直播历史（含单场详情与热度曲线）、观众档案、AI 分析中心、设置五个页面
@@ -24,6 +27,14 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
 - 普通文字、Unicode Emoji 与平台表情正确保存；AI 包用文字名称/代码表达，不强制下载表情图片
 - 单场直播的所有金额按币种和「实际支付 / 展示价值」分别精确累计，重复事件不会翻倍
+
+![Header 语言切换（中文）](docs/screenshots/header-language-zh-CN.png)
+
+![多主播观众档案（同一观众分别统计）](docs/screenshots/viewer-detail-two-broadcasters-zh-CN.png)
+
+![数据存储位置与迁移](docs/screenshots/settings-data-location-after-move-zh-CN.png)
+
+![清空数据确认](docs/screenshots/settings-clear-dialog-zh-CN.png)
 
 ![YouTube 免登录实验模式（明亮 / 中文）](docs/screenshots/live-youtube-anonymous-light-zh-CN.png)
 
@@ -59,6 +70,7 @@ node src/launcher/launcher.mjs
 --no-open            启动后不自动打开浏览器
 --port <端口>        指定本地端口（默认 47800，占用时自动顺延）
 --data-dir <路径>    指定用户数据目录
+--forget-data-location  清除已保存的数据目录位置记录，回到默认目录
 --lang <语言>        zh-CN | ja | en
 --version / --help
 ```
@@ -108,7 +120,7 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 
 LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis is a manual round trip: export an AI analysis package, give it to any AI service you choose, import the result. No cloud service, no API key, no vendor account.
 
-Current build (v0.3.0) delivers the Windows launcher, tri-language Apple-style console, theme system, persistent settings, a simulated recording pipeline backed by SQLite, real Bilibili chat with Unicode emoji and platform emotes, and two YouTube paths: the recommended official Data API / OAuth path, plus an **experimental no-login web-chat path** that needs no API key, Google login or cookie. The experimental path is explicitly opt-in, is not an official API, and may conflict with YouTube's Terms of Service; it is therefore not the default. Both paths feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. AI result import and portable backup are scheduled for later milestones — see [docs/STATUS.md](docs/STATUS.md).
+Current build (v0.4.0) delivers the Windows launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, real Bilibili chat with Unicode emoji and platform emotes, and two YouTube paths: the recommended official Data API / OAuth path, plus an **experimental no-login web-chat path** that needs no API key, Google login or cookie. The experimental path is explicitly opt-in, is not an official API, and may conflict with YouTube's Terms of Service; it is therefore not the default. Both paths feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v5). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. AI result import and portable backup are scheduled for later milestones — see [docs/STATUS.md](docs/STATUS.md).
 
 Streamers never create their own API key or Google Cloud project: the published build either carries an application key for public data or offers one-click sign-in. A stock source checkout carries neither, and the UI says so explicitly. The no-login path was sampled on two real broadcasts; the official path still lacks a real-credential live sample (see [docs/STATUS.md](docs/STATUS.md) and [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md)).
 

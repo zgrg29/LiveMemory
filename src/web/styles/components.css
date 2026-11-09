@@ -219,6 +219,8 @@
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  /* Keep anchored cards below the sticky topbar when scrolled into view. */
+  scroll-margin-top: calc(var(--topbar-height) + var(--space-4));
 }
 
 .card--padded {
@@ -603,6 +605,108 @@
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-xs);
+}
+
+/* Header language switcher: always-visible native names on wide layouts, one
+   compact select on narrow layouts. The globe stays a cross-language marker. */
+
+.language-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.language-globe {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.language-system-button {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.language-system-button[aria-pressed="true"] {
+  background: var(--surface-sunken);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.language-segmented {
+  flex-wrap: nowrap;
+  gap: 1px;
+  padding: 1px;
+}
+
+.language-segmented button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.language-compact {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.language-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 28px;
+  max-width: 132px;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 12px,
+    calc(100% - 8px) 12px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.language-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .language-segmented,
+  .language-system-button {
+    display: none;
+  }
+
+  .language-compact {
+    display: inline-flex;
+  }
+
+  .language-control {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 420px) {
+  .language-select {
+    max-width: 112px;
+  }
 }
 
 /* Theme choice cards */
