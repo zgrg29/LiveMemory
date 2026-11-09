@@ -279,15 +279,27 @@ function groupTotalsByOwner(rows) {
   return map;
 }
 
-/** Top speakers and supporters for a single session (read model). */
+/**
+ * Top speakers and supporters for a single session (read model).
+ *
+ * The speaker ranking is deliberately capped at 100 for the live leaderboard and
+ * ordered by:
+ *   1. valid messages in this session (chat + Super Chat),
+ *   2. stable platform uid (never the nickname),
+ *   3. viewer id.
+ * The latter two only break ties, so equal message counts cannot swap places
+ * between two refreshes and different people with the same nickname stay apart.
+ */
 export function topSessionViewers(db, sessionId, {limit = 5} = {}) {
-  const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 20);
+  const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 100);
   const speakers = db.prepare(`
-    SELECT vs.viewer_id, v.nickname, v.platform, vs.message_count, vs.payment_event_count
+    SELECT vs.viewer_id, v.nickname, v.platform, v.platform_uid,
+           vs.message_count, vs.payment_event_count,
+           vs.last_seen_at
       FROM viewer_sessions vs
       JOIN viewers v ON v.id = vs.viewer_id
      WHERE vs.session_id = ? AND vs.message_count > 0
-     ORDER BY vs.message_count DESC, v.nickname
+     ORDER BY vs.message_count DESC, v.platform_uid ASC, v.id ASC
      LIMIT ?
   `).all(String(sessionId), safeLimit);
   const supporters = db.prepare(`
@@ -303,8 +315,18 @@ export function topSessionViewers(db, sessionId, {limit = 5} = {}) {
        AND e.value_kind = 'actual'
        AND e.viewer_id IS NOT NULL
      GROUP BY e.viewer_id
-     ORDER BY total_minor DESC
+     ORDER BY total_minor DESC, e.viewer_id ASC
      LIMIT ?
-  `).all(String(sessionId), safeLimit);
+  `).all(String(sessionId), Math.min(safeLimit, 20));
   return {speakers, supporters};
+}
+
+/** Number of viewers with at least one valid message in one session. */
+export function countSessionSpeakers(db, sessionId) {
+  const row = db.prepare(`
+    SELECT COUNT(*) AS count
+      FROM viewer_sessions
+     WHERE session_id = ? AND message_count > 0
+  `).get(String(sessionId));
+  return Number(row?.count ?? 0);
 }

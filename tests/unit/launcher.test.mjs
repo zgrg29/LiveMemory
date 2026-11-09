@@ -34,6 +34,12 @@ test('keeps unknown flags for diagnostics without failing', () => {
   assert.equal(options.help, true);
 });
 
+test('the launcher console defaults to English and only --lang overrides it', () => {
+  assert.equal(__internal.resolveConsoleLocale({lang: null}), 'en');
+  assert.equal(__internal.resolveConsoleLocale({lang: 'ja'}), 'ja');
+  assert.equal(__internal.resolveConsoleLocale({lang: 'zh-CN'}), 'zh-CN');
+});
+
 test('launcher status line reflects recording state', () => {
   const idle = __internal.statusLineText({connection: 'idle', activeSession: null}, 'en');
   assert.match(idle, /Idle/);
@@ -45,4 +51,11 @@ test('launcher status line reflects recording state', () => {
   assert.match(live, /12/);
   const ja = __internal.statusLineText({connection: 'connecting', activeSession: null}, 'ja');
   assert.match(ja, /接続/);
+  const multiple = __internal.statusLineText({
+    connection: 'connected',
+    activeCount: 3,
+    activeSession: {id: 'ses_1', roomTitle: 'Late night'}
+  }, 'en');
+  assert.match(multiple, /3/);
+  assert.match(multiple, /Recording/);
 });

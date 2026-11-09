@@ -1,121 +1,139 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-09 · 文件夹选择器修复、YouTube 单一公开网页接入、管理员权限 EXE · v0.5.0（schema v5）
+本轮：2026-11-09 · 多直播间并发记录、直播标签页、Top 100 排行榜 · v0.6.0（schema v6）
 
 ## 1. 本轮结果
 
 | 目标 | 结论 |
 | --- | --- |
-| 修复「浏览」文件夹选择器 | 已定位为 `execFile` stdout 管道导致的 `spawn EPERM`；改为 `stdio:'ignore'` + 临时结果文件 + `-EncodedCommand`。逻辑测试通过；真实人工点击未验证（无交互桌面）。 |
-| YouTube 只保留公开网页路径 | 删除官方 Data API/OAuth/API Key/token-store/capture-mode 与 5 个官方测试；服务/路由/UI/三语只保留单一入口。 |
-| 管理员权限 EXE | RT_MANIFEST 已实际写入 `requireAdministrator`；非提升启动被 Windows 拒绝（EACCES）。UAC 批准后的真实启动未在当前会话验证。 |
-| 数据兼容 | schema 仍为 5；未改表/迁移；旧历史、观众、主播关系不会被重新归属。 |
+| 同时记录多场直播 | 已完成。`SessionManager` 管理独立 recording/adapter/session，同一房间重复启动被内存 + 数据库双重拒绝；停止、失败、结束互不影响。 |
+| 直播记录标签页 | 已完成。顶部「＋ 新建记录」固定可见，直播标签横向滚动，显示名称与状态；切换标签只切视图；运行中标签不能关闭，只能停止。 |
+| 每场独立展示 | 已完成。状态、统计、图表、最近动态、Top 100、经济支持均按当前选中场次读取；`viewToken` 防止旧响应覆盖新页面。 |
+| Top 100 | 已完成。数据库查询上限 100，稳定次级排序，默认约 10 行可视、容器滚动，搜索、档案跳转与主播上下文均可用。 |
+| 数据兼容 | schema 6 仅新增排行榜索引；旧库原地升级，历史场次/观众/主播关系未重写。 |
+| 启动器英文 | 控制台默认英文，`--lang` 可覆盖；网页界面仍保留三语与系统语言。 |
 
-## 1.1 后续修复：新数据空间误报校验失败
+## 2. 后端架构变化
 
-- 用户实测：选择“在新目录创建新的数据空间”报“迁移校验失败，已回滚到原目录”；迁移现有数据正常。
-- 根因：`src/server/relocation.mjs` 的 `copyIntoStage()` 无论 `mode` 都复制旧 `database/livememory.db`；`createFreshDatabase()` 实际打开旧库，`new_space_not_empty` 校验失败。
-- 修复：`copyIntoStage(..., {includeDatabase: mode === 'migrate'})`；新空间只复制 `config`/`secrets`，空库由 migrations 创建。
-- 新空间失败文案改为 `errors.newSpaceVerifyFailed` / `errors.newSpaceFailed`。
-- 回归测试：`tests/integration/storage-management.test.mjs` 新增新空间用例，验证 200、counts 0、设置/凭据保留、原目录不动。
-- 自动化 277 通过；EXE 已重建（新哈希见 §5）。
+### 2.1 SessionManager
 
-## 2. 文件夹选择器
+`src/platforms/shared/session-manager.mjs`
 
-### 根因
+- `recordings: Map<sessionId, recording>`；
+- recording 包含 adapter、connection/detail、sessionId、platform、room、broadcaster、startedAt、meta、onEnded、stopping；
+- `startPlatform` / `startSimulation`：
+  - `findDuplicate(platform, roomId)` 先查内存，再查 `sessions WHERE status='live'`；
+  - 创建 session，把 recording 放入 map，再 await adapter.start；
+  - adapter 的 `onEvent` 闭包固定写入该 session；
+  - adapter.start 失败只结束该 session 并从 map 移除。
+- `stopSession(id)`：只停指定 adapter，结束该 DB session，调用平台 onEnded，广播状态；
+- `stopPlatform(platform, {sessionId})`：有 ID 精确停；无 ID 且多场时返回 `session_id_required`；
+- `status()` 返回 `{connection, recordings, activeCount, activeSession, adapter}`，`activeSession` 仅兼容旧状态行；
+- `shutdown()` 逐场 interrupted 并兜底处理 orphan live 行。
 
-旧 `native-dialog.mjs` 使用：
+### 2.2 平台服务
 
-```js
-execFile('powershell.exe', args, {stdio: ['ignore','pipe','pipe']})
-```
+- `BilibiliService`：只保留 CookieStore、BilibiliApi、BilibiliLogin、checkRoom；连接交给 manager。
+- `YouTubeService`：只保留 checkVideo、adapter 创建、lastEnd/retention；不再维护“唯一 adapter”。
+- `disconnect` 接受 `sessionId`；多场且缺 ID 返回 409 `SESSION_ID_REQUIRED`。
+- `GET /api/bilibili/status` / `/api/youtube/status` 现在同时返回 `recordings[]`。
 
-Node 在受限/打包/无控制台父进程环境中无法创建捕获管道，直接以 `spawn EPERM` 失败。前端只看到 `PICKER_FAILED`，PowerShell 脚本未执行。开发探测复现：
+### 2.3 API
 
-```text
-{"code":"PICKER_FAILED","details":{"code":"EPERM"},"causeMessage":"spawn EPERM"}
-```
-
-### 修复
-
-- `spawn(..., {stdio:'ignore'})`，不创建 stdout/stderr 管道。
-- PowerShell 脚本通过 `-EncodedCommand`（UTF-16LE Base64）传入；结果路径与初始目录也以 Base64 嵌入，避免中文/空格/引号/换行。
-- 结果写入 `<数据目录>/cache/picker-*.txt`（UTF-8），Node 读取后删除。
-- `FolderBrowserDialog` + `-STA` + 隐藏 owner form（TopMost）；取消不写文件 → 返回 `null`；脚本错误写 `ERROR:`；spawn 错误/超时分别返回 `PICKER_FAILED`/`PICKER_TIMEOUT`。
-- PowerShell 绝对路径优先，`powershell.exe`/`pwsh.exe` 仅在 ENOENT 时回退。
-- API 传入 `cache` 工作目录与当前数据目录作为初始目录；日志只记录错误码/消息摘要。
-
-### 验证
-
-- 修复前同环境 `pickFolder` → `EPERM`；修复后同环境 → `PICKER_TIMEOUT`（PowerShell 已启动并保持对话框），不再 spawn 失败。
-- 单元测试：成功路径（中文/空格）、取消、脚本 ERROR、spawn EPERM、脚本结构/Base64。
-- **未验证**：真实桌面点击、取消、选择目录；需要用户在有交互桌面的 Windows 上确认。
-
-## 3. YouTube 单一接入
-
-删除：
+新增：
 
 ```text
-src/platforms/youtube/adapter.mjs
-src/platforms/youtube/api.mjs
-src/platforms/youtube/oauth.mjs
-src/platforms/youtube/oauth-manager.mjs
-src/platforms/youtube/oauth-config.mjs
-src/platforms/youtube/token-store.mjs
-src/shared/capture-mode.mjs
-tests/unit/youtube-adapter.test.mjs
-tests/unit/youtube-api.test.mjs
-tests/unit/youtube-oauth.test.mjs
-tests/unit/youtube-token-store.test.mjs
-tests/integration/youtube-session.test.mjs
+GET  /api/live/recordings
+POST /api/live/recordings/:sessionId/stop
+GET  /api/sessions/:id/top-viewers?limit=100&query=
 ```
 
-新增 `src/platforms/youtube/errors.mjs`，匿名 client/adapter 改用它。
+兼容保留：
 
-服务：
+```text
+GET  /api/sessions/current          -> 最近开始的一场
+POST /api/sessions/:id/stop
+POST /api/simulate/stop             -> 只停 mock
+POST /api/bilibili/disconnect       -> body.sessionId 可选
+POST /api/youtube/disconnect        -> body.sessionId 可选
+```
 
-- `YouTubeService` 仅 `checkVideo()` / `connect()` / `disconnect()` / `status()` / `applyRetention()`。
-- `status.mode='web'`，`capabilities.requiresApiKey/Login/Cookie=false`。
-- 路由删除 `/api/youtube/login/start|status|logout`；`video`/`connect` 不再接受 `mode`。
-- `settings.youtubeCaptureMode` 从默认值/键/校验/UI 删除；旧 settings 中的值加载时忽略。
-- 直播页删除官方/实验模式、Google 登录、API Key/OAuth、配额、实验 badge；只保留链接输入、检查、开始、连接状态、消息数、可能漏消息与保留说明。
-- 设置页只读说明：无需登录/Key/Cookie；不是官方稳定 API、可能失效；30 天保留。
-- 保留匿名适配器全部能力与错误/重连/去重/身份规则。
+## 3. 前端变化
 
-## 4. 管理员 Manifest
+`src/web/js/pages/live.js` 重写：
 
-- `scripts/pe-manifest.mjs` 解析 PE `.rsrc` 的 RT_MANIFEST，替换 `requestedExecutionLevel` 并更新 data-entry size。
-- 构建脚本在写 EXE 前调用 `setManifestLevel(binary,'requireAdministrator')`。
-- 当前构建 manifest：773 bytes，level=`requireAdministrator`。
-- 非提升进程启动最终 EXE：`EACCES`；这是 Windows 在程序启动前执行的 UAC 限制，EXE 内无法捕获。
-- 启动器 `isAdministrator()` 防御性检查（`net session` + `stdio:'ignore'`），仅在打包 EXE 中启用；失败打印三语消息。`LIVE_MEMORY_SKIP_ADMIN_CHECK=1` 只供 asInvoker 自动化副本使用。
-- 跨用户数据目录：打包启动且当前默认目录无数据库时扫描 `C:\Users\*\AppData\Local|Roaming\LiveMemory\database\livememory.db`；恰好 1 个则使用；多个则 `DATA_DIR_AMBIGUOUS` 并要求 `--data-dir`。这是 UAC 切换管理员账号时的防新建空库兜底，不是完整跨账号迁移。
+- 顶部标签：固定“新建记录” + 可滚动标签组；状态点/短文案；已结束标签可关闭；
+- `viewToken`：每次切换/刷新递增，所有异步请求返回后校验 `token === viewToken`；
+- 缓存：summary、最近 40 条 feed、Top 100、搜索词按 session 分开；
+- 轮询：4 秒刷新 recordings + 选中 summary + leaderboard；事件触发 summary 700ms、leaderboard 2.5s 节流；
+- 排行榜：固定高度滚动、搜索、`rank` 使用服务端值、签名未变不重建 DOM；
+- 标签切换/页面重入：从 `/api/live/recordings` 恢复全部运行任务；
+- 旧 `livesummary` 全局轮询已从 `app.js` 删除，避免每个事件触发全量 summary 查询。
 
-## 5. 测试 / EXE
+`src/web/js/app.js`：
 
-- 全量：**277 passed / 0 failed / 约 21.8 秒**。
-- 删除官方 YouTube 测试后新增 5 个测试文件（选择器、PE manifest、admin、profile scan、简化约束）。
-- 本地假网页 YouTube 端到端：通过。
-- EXE：90.2 MB / 99 资源，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`；`verify-exe.mjs` 10/10（manifest + 9 功能场景；非提权会话使用 asInvoker 副本）。
-- `--version` 见构建 / 最终报告。
+- 移除 `liveSummary` / `refreshLive` / `livesummary`；
+- SSE `event` 只广播给页面；`status` 更新连接状态；
+- 连接胶囊在多场时显示“记录中 · N 场”。
+
+样式：
+
+- `.recording-tabs-*`、`.leaderboard-*`、`.hero-note`、`.live-background-notice`；
+- 桌面/700px 以下/390px 无横向溢出；标签区独立滚动。
+
+## 4. 数据模型
+
+- schema **6**：`CREATE INDEX idx_viewer_sessions_speakers ON viewer_sessions (session_id, message_count DESC)`。
+- 查询：
+
+```sql
+SELECT vs.viewer_id, v.nickname, v.platform, v.platform_uid,
+       vs.message_count, vs.payment_event_count, vs.last_seen_at
+  FROM viewer_sessions vs JOIN viewers v ON v.id = vs.viewer_id
+ WHERE vs.session_id = ? AND vs.message_count > 0
+ ORDER BY vs.message_count DESC, v.platform_uid ASC, v.id ASC
+ LIMIT 100;
+```
+
+- 排行榜是单场读模型；不读取 `viewers.message_count` 长期累计或 `viewer_broadcasters` 跨场汇总。
+- 搜索先取 Top 100，再按昵称/UID 过滤，保留原始 rank；不会把第 101 名补进前 100。
+
+## 5. 测试 / 构建
+
+- 全量：**296 passed / 0 failed / 约 24.5 秒**。
+- 新增：`session-multi.test.mjs`、`live-api-multi.test.mjs`、`live-multi-ui.test.mjs`；更新 launcher / migration 测试。
+- UI 验证：`scripts/verify-live-ui.mjs` 10/10（3 个模拟标签、100 行列表、搜索、档案跳转、页面重入、390px）。
+- EXE：90.3 MB / 101 资源 / SHA-256 `cbf17f0c83d9af40003085c0f0acba8b3f9e12e4663bfe50f5bfc61965ec1598`。
+- `verify-exe.mjs` 10/10；`--version` = 0.6.0。
+- 真实直播验证：
+  - 2 YouTube：80 / 63，`wrongSession=0`，重复 409，停 A 后 B connected；
+  - YouTube + Bilibili：76 / 11，停 A 后 B +1；
+  - 3 场（2 YouTube + Bilibili）：85 / 66 / 6，停 A 后 2 场仍 connected，B +1；
+  - 构建后 EXE 附加同样 3 场真实直播：73 / 67 / 5，3/3 connected，重复 409，停 A 后 2 场仍在记录。
 
 ## 6. 未验证 / 边界
 
-- 真实 UAC 同意与管理员权限下的完整 UI 流程（当前 Low Mandatory Level）。
-- 真实文件夹选择器点击/取消/选择。
-- v0.5.0 真实 YouTube 直播采样（旧样本属于 v0.3.0，不能复用）。
-- 干净 Windows 虚拟机、代码签名、UAC 拒绝后的自定义提示（Windows 启动前终止）。
-- 多用户 profile 扫描在真实多账号环境下的 ACL/性能。
-- 端口/数据库/磁盘错误仍按各自错误路径显示，未被统一成权限错误。
+- 真实 UAC 同意、管理员桌面下的完整流程。
+- 真实文件夹选择器点击。
+- 同一真实观众跨两个主播的实测；自动化测试覆盖了身份关系与隔离。
+- 真实 Bilibili 礼物/SC/大航海样本未在本轮出现。
+- 运行中标签不支持隐藏/关闭；必须先停止，再关闭已停止标签（有意设计）。
+- 无并发上限；未做 10+ 场长时间压力测试。
+- 干净 Windows 虚拟机、代码签名、M5 备份、M6 导入。
 
 ## 7. 常用命令
 
 ```bat
-:: 测试
+:: 全量测试
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: 真实匿名采样（不要复用旧结果）
-node scripts/verify-youtube-anonymous.mjs https://www.youtube.com/live/<ID> 35
+:: 多场 UI 模拟 + 截图
+node scripts/demo-multi-recording.mjs --port 48350
+node scripts/verify-live-ui.mjs --port 9223 --base http://127.0.0.1:48350
+
+:: 真实并发（至少两个输入）
+node scripts/verify-live-multi.mjs --youtube <url> --bilibili <roomId> --seconds 30
+node scripts/verify-live-multi.mjs --base http://127.0.0.1:49160 --youtube <url> --youtube <url> --seconds 20
 
 :: 构建 / 验证 EXE
 node scripts/build-windows.mjs
@@ -124,6 +142,5 @@ node scripts/verify-exe.mjs
 
 ## 8. 本轮 Commit
 
-- 新数据空间修复：`761a54d` fix: create an empty database for a new data space
-- 本轮功能：`3efb791` feat: fix folder picker and unify YouTube on public web chat
-- 上一轮：`452905c` docs: record the v0.4.0 feature commit
+- 本轮功能与文档提交：见 `git log -1`（本地 commit，未 Push）。
+- 上一轮：`06119c9 docs: record the new-space fix commit`。

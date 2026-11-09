@@ -111,6 +111,7 @@ node scripts/build-windows.mjs
 12. **平台接入边界（v0.5.0 产品决定）**：Bilibili 继续使用其公开直播接口。YouTube **只保留** `src/platforms/youtube/anonymous/` 的公开网页聊天路径，不再提供官方 Data API/OAuth/API Key 实现。该路径必须同时满足：不发送 Cookie/OAuth/用户 API Key；不绕过登录、验证码、年龄墙、地区限制；失败不静默切换、不伪造成功；界面不反复展示技术模式选择，但在设置/隐私说明中如实告知它不是 YouTube 官方稳定 API、可能失效；不得描述为“官方授权”或“合规”。`liveChatMessages.streamList` 是 gRPC，REST 路径不存在，不得臆造。
 13. **凭据不进仓库**：任何 API Key、OAuth client secret、access/refresh token 都不得提交，也不得默认打进 EXE。凭据由发布者通过环境变量或数据目录私有文件一次性配置；缺少配置时必须明确提示，不得伪造登录或成功。
 14. **数据保留合规**：YouTube 公开聊天属于平台数据；超过保留窗口（默认/上限 30 天）必须清理原文、emote/badge 元数据与过期昵称。即使 v0.5.0 不再使用 OAuth/官方 API，也采用同样的 30 天上限，不得认为“免登录/非 API”就可以无限保存。保留计数、稳定 ID 与金额合计，但这不等同于完全删除个人数据，文档必须如实说明。
+15. **多直播隔离（v0.6.0）**：允许多场同时记录；每场必须有独立 adapter、连接状态、session、事件闭包与停止操作。同一 `platform + room` 不得重复启动。所有事件仍只经 `EventIngest`，去重键限定在 `session_id` 内；不得用全局单例 adapter/全局唯一“当前场次”实现多场。前端切换标签不得停止后台采集，旧页面异步响应不得覆盖新标签。
 
 ---
 

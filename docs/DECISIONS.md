@@ -272,3 +272,52 @@
 - 打包启动且当前默认目录无数据库时扫描本地用户配置：恰好一个现有库则使用，多个则拒绝猜测并要求 `--data-dir`。
 
 **后果**：同账号 UAC 通常保持 `%LOCALAPPDATA%`；跨管理员账号的 UAC 会切换用户配置，profile 扫描只是防新建空库的兜底。真实 UAC 批准后的完整流程仍需人工验证。
+
+## ADR-024 多直播间：进程内独立 recording，数据库为真源
+
+**状态**：已采纳（v0.6.0）
+
+**背景**：直播页原假设“同一时间只有一场”。用户需要同时记录多个 YouTube/Bilibili 直播间，且切换页面、关闭浏览器不得停止采集。
+
+**决定**：
+
+- `SessionManager` 用 `Map<sessionId, recording>` 管理任意数量的运行任务；每个 recording 拥有独立 adapter、连接状态、detail、onEnded 与事件闭包。
+- 重复启动以 `platform + room` 为键，先查内存、再查数据库 live 行；同步检查后才插入，避免同一进程内竞态。
+- 不使用数据库唯一索引限制 live 行，因为需要同时保留多场；单实例锁负责跨进程互斥。
+- 所有事件仍只经 `EventIngest`；去重键 `(session_id, dedupe_key)` 允许同一平台消息 ID 在不同场次合法存在。
+- 平台服务不再持有唯一 adapter；start/stop 的生命周期归 manager。
+- 停止接口按 `sessionId` 精确操作；旧的无 ID disconnect 在多场时拒绝，避免误停。
+- 前端标签只读服务端状态；切换用 `viewToken` 丢弃过期响应；不再依赖全局 `livesummary`。
+
+**后果**：任意数量并发受资源而非人为上限约束；1 场失败/停止不影响其他；运行中标签不能关闭，必须先停止（产品选择，避免静默停止或误导）。
+
+## ADR-025 Top 100：单场读模型 + 稳定次级排序
+
+**状态**：已采纳（v0.6.0）
+
+**背景**：原“最活跃观众”只取前 5，数据库查询上限 20；用户需要当前场次 Top 100、搜索、滚动与档案跳转。
+
+**决定**：
+
+- 查询上限 100，排序 `message_count DESC, platform_uid ASC, viewer_id ASC`；昵称不参与身份或次级排序。
+- 新 `analytics/sessions/leaderboard.mjs` 只读当前 `session_id` 的 `viewer_sessions`，不读取长期累计或跨主播汇总。
+- 搜索在已取出的 Top 100 内过滤，保留原始 `rank`；第 101 名不补位。
+- schema v6 新增 `(session_id, message_count DESC)` 索引。
+- UI 固定高度滚动容器，默认约 10 行；服务端 rank，不在前端重排；刷新做内容签名与节流。
+
+**后果**：排行榜可复现、不会因同名或同分跳动；跨主播长期统计仍只在观众档案与 AI 包中单独展示。
+
+## ADR-026 启动器控制台默认英文，与网页语言分离
+
+**状态**：已采纳（v0.6.0，用户请求）
+
+**背景**：用户希望双击 EXE 时控制台显示英文；网页界面仍需保留三语与跟随系统。
+
+**决定**：
+
+- `resolveConsoleLocale(options)` 默认 `en`；只有显式 `--lang` 覆盖。
+- 启动器不再读取 `settings.json` 的网页语言作为控制台语言。
+- 网页界面继续使用 `settings.locale` / 系统语言；两者互不覆盖。
+- 三语 CLI 字典保留，`--lang zh-CN|ja` 可切回。
+
+**后果**：控制台输出稳定可读；用户若希望 CLI 中文，需显式 `--lang zh-CN`。文档与截图需说明这一点。

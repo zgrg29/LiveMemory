@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**5**
+Schema 版本：**6**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -49,6 +49,8 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | created_at / updated_at | INTEGER | 毫秒 |
 
 索引：`started_at DESC`、`status`。
+
+**多场并发（v0.6.0）**：`sessions` 允许同时存在多条 `status='live'`，每行对应一场独立广播。`platform + platform_room_id` 的重复启动由 `SessionManager` 在进程内同步检查（先内存、再数据库）拒绝，不依赖数据库唯一索引；单实例锁保证不会有两个进程同时写入。启动时所有残留 `live` 行会标记为 `interrupted`，不会自动恢复。
 
 ### events
 
@@ -113,6 +115,15 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 ### viewer_sessions
 
 `(viewer_id, session_id)` 主键 + 本场 `message_count` / `payment_event_count` / 首末见时间。用于计算“累计参与场次”与观众页的参与列表。
+
+`schema v6` 新增索引：
+
+```sql
+CREATE INDEX idx_viewer_sessions_speakers
+  ON viewer_sessions (session_id, message_count DESC);
+```
+
+该索引只服务单场 Top 100 排行榜；不改变数据含义，也不把长期累计混入场次排名。排行榜排序为 `message_count DESC, platform_uid ASC, viewer_id ASC`，因此同分时名次稳定且可复现。搜索在已取出的 Top 100 内过滤，保留原始名次；第 101 名不会补位进前 100。
 
 ### viewer_currency_totals
 

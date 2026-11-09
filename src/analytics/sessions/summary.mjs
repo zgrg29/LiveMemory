@@ -12,7 +12,7 @@ import {groupCurrencyTotals} from '../payments/totals.mjs';
  * the database; no AI service is involved. AI results are attached separately
  * (M6) and are always labelled as AI output in the UI.
  */
-export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuckets = 60} = {}) {
+export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuckets = 60, topLimit = 5} = {}) {
   const session = getSession(db, sessionId);
   if (!session) return null;
   const rows = listTimelineRows(db, sessionId);
@@ -25,7 +25,7 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
     dropInProgressBucket: session.ended_at === null
   });
   const totals = groupCurrencyTotals(sessionCurrencyTotals(db, sessionId));
-  const top = topSessionViewers(db, sessionId, {limit: 5});
+  const top = topSessionViewers(db, sessionId, {limit: Math.min(Math.max(Number(topLimit) || 5, 1), 100)});
   const content = contentStats(db, sessionId);
   const durationMs = Math.max(0, endedAt - session.started_at);
   const peakPerMinute = timeline.stepMs > 0

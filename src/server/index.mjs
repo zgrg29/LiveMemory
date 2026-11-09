@@ -105,20 +105,11 @@ export async function startServer({
   }
 
   async function stopAdapters(instance) {
+    // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
     } catch (error) {
       logger?.error({event: 'shutdown.session.failed', code: error?.code ?? 'unknown'});
-    }
-    try {
-      await instance.bilibili.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.bilibili.failed', code: error?.code ?? 'unknown'});
-    }
-    try {
-      await instance.youtube.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.youtube.failed', code: error?.code ?? 'unknown'});
     }
   }
 

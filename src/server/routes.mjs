@@ -14,9 +14,16 @@ import {
 import {getSession, listSessions} from '../storage/repositories/sessions.mjs';
 import {listEvents, contentStats} from '../storage/repositories/events.mjs';
 import {buildSessionSummary} from '../analytics/sessions/summary.mjs';
+import {buildSessionLeaderboard, LEADERBOARD_LIMIT} from '../analytics/sessions/leaderboard.mjs';
 import {buildViewerProfile} from '../analytics/viewers/profile.mjs';
 import {groupCurrencyTotals} from '../analytics/payments/totals.mjs';
-import {listViewers, setViewerFocused, sessionSupportBySessionIds, viewerSupportByViewerIds} from '../storage/repositories/viewers.mjs';
+import {
+  listViewers,
+  sessionCurrencyTotals,
+  setViewerFocused,
+  sessionSupportBySessionIds,
+  viewerSupportByViewerIds
+} from '../storage/repositories/viewers.mjs';
 import {
   broadcasterAudienceSummary,
   broadcasterSupportByViewerIds,
@@ -40,6 +47,7 @@ import {openFolder, pickFolder} from './native-dialog.mjs';
 import {backupDirectory, clearData, clearPreview, createDatabaseBackup} from './maintenance.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
 import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
+import {sessionIdRequiredError} from '../shared/recording.mjs';
 
 /**
  * Route table. Every handler is async, returns void and writes the response
@@ -140,6 +148,43 @@ function storageLocation(deps) {
     recording: Boolean(live),
     activeSessionId: live?.id ?? null
   };
+}
+
+/**
+ * Lightweight overview of one active recording. Full timelines and leaderboards
+ * stay on their own endpoints so a tab refresh never scans every event row.
+ */
+function liveRecordingOverview(deps, recording) {
+  const row = getSession(deps.db, recording.sessionId);
+  return {
+    sessionId: recording.sessionId,
+    platform: recording.platform,
+    platformRoomId: recording.platformRoomId,
+    roomTitle: recording.roomTitle,
+    broadcasterName: recording.broadcasterName,
+    broadcasterId: recording.broadcasterId ?? null,
+    broadcasterIdentity: recording.broadcasterIdentity ?? 'unresolved',
+    simulated: Boolean(recording.simulated),
+    startedAt: recording.startedAt,
+    platformStartedAt: recording.platformStartedAt ?? null,
+    connection: {
+      state: recording.connection,
+      detail: recording.detail ?? null
+    },
+    meta: recording.meta ?? null,
+    status: row?.status ?? 'live',
+    messageCount: Number(row?.message_count ?? 0),
+    uniqueViewerCount: Number(row?.unique_viewer_count ?? 0),
+    paymentEventCount: Number(row?.payment_event_count ?? 0),
+    lastEventAt: row?.last_event_at ?? null,
+    support: groupCurrencyTotals(sessionCurrencyTotals(deps.db, recording.sessionId))
+  };
+}
+
+function readTopLimit(url, fallback = 5) {
+  const raw = Number(url.searchParams.get('topLimit'));
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.min(Math.max(Math.trunc(raw), 1), LEADERBOARD_LIMIT);
 }
 
 /**
@@ -306,21 +351,61 @@ export function buildRoutes() {
     },
     {
       method: 'GET',
+      path: '/api/live/recordings',
+      handler: ({res, deps}) => {
+        const manager = deps.sessionManager.status();
+        const recordings = deps.sessionManager.listRecordings()
+          .map((recording) => liveRecordingOverview(deps, recording));
+        sendJson(res, 200, {
+          recordings,
+          count: recordings.length,
+          connection: manager.connection,
+          activeCount: manager.activeCount
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/live/recordings/:sessionId/stop',
+      handler: async ({res, params, deps}) => {
+        const result = await deps.sessionManager.stopSession(params.sessionId, {status: 'ended', reason: 'user'});
+        if (!result.session) {
+          throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        }
+        sendJson(res, 200, {
+          stopped: Boolean(result.stopped),
+          session: serializeSessionRow(result.session)
+        });
+      }
+    },
+    {
+      method: 'GET',
       path: '/api/sessions/current',
       handler: ({res, deps}) => {
-        const live = deps.sessionManager.status().activeSession;
-        if (!live) {
+        const active = deps.sessionManager.listRecordings().at(-1) ?? null;
+        if (!active) {
           sendJson(res, 200, {session: null});
           return;
         }
-        sendJson(res, 200, {session: buildSessionSummary(deps.db, live.id)});
+        sendJson(res, 200, {session: buildSessionSummary(deps.db, active.sessionId, {topLimit: 5})});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/sessions/:id/top-viewers',
+      handler: ({res, url, params, deps}) => {
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || LEADERBOARD_LIMIT, 1), LEADERBOARD_LIMIT);
+        const query = url.searchParams.get('query') ?? '';
+        const leaderboard = buildSessionLeaderboard(deps.db, params.id, {limit, query});
+        if (!leaderboard) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        sendJson(res, 200, leaderboard);
       }
     },
     {
       method: 'GET',
       path: '/api/sessions/:id',
-      handler: ({res, params, deps}) => {
-        const summary = buildSessionSummary(deps.db, params.id);
+      handler: ({res, url, params, deps}) => {
+        const summary = buildSessionSummary(deps.db, params.id, {topLimit: readTopLimit(url)});
         if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
         sendJson(res, 200, summary);
       }
@@ -334,7 +419,7 @@ export function buildRoutes() {
         if (session.status !== 'live') {
           throw new AppError(ERROR_CODES.SESSION_NOT_ACTIVE, {messageKey: 'errors.sessionNotActive', httpStatus: 409});
         }
-        const result = await deps.sessionManager.stopActive();
+        const result = await deps.sessionManager.stopSession(params.id, {status: 'ended', reason: 'user'});
         sendJson(res, 200, {session: serializeSessionRow(result.session)});
       }
     },
@@ -363,7 +448,7 @@ export function buildRoutes() {
       method: 'POST',
       path: '/api/simulate/stop',
       handler: async ({res, deps}) => {
-        const result = await deps.sessionManager.stopActive();
+        const result = await deps.sessionManager.stopPlatform('mock', {status: 'ended', reason: 'user'});
         sendJson(res, 200, {session: result.session ? serializeSessionRow(result.session) : null});
       }
     },
@@ -838,8 +923,11 @@ export function buildRoutes() {
       method: 'POST',
       path: '/api/bilibili/disconnect',
       handler: async ({req, res, deps}) => {
-        await readOptionalJson(req);
-        const result = await deps.bilibili.disconnect();
+        const body = await readOptionalJson(req);
+        const result = await deps.bilibili.disconnect({sessionId: body.sessionId ?? null});
+        if (result.reason === 'session_id_required') {
+          throw sessionIdRequiredError({count: result.count, platform: 'bilibili'});
+        }
         sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
       }
     },
@@ -884,9 +972,13 @@ export function buildRoutes() {
       method: 'POST',
       path: '/api/youtube/disconnect',
       handler: async ({req, res, deps}) => {
-        await readOptionalJson(req);
-        const result = await deps.youtube.disconnect();
-        sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.youtube.disconnect({sessionId: body.sessionId ?? null});
+          sendJson(res, 200, {stopped: Boolean(result?.stopped), session: serializeSessionRow(result?.session ?? null)});
+        } catch (error) {
+          throw youtubeError(error);
+        }
       }
     },
     {

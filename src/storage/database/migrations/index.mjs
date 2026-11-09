@@ -183,8 +183,7 @@ export const MIGRATIONS = Object.freeze([
   {
     version: 5,
     name: 'broadcaster-identity-and-viewer-context',
-    up(db) {
-      // A stable broadcaster (channel) is the third identity axis. Viewers keep
+    up(db) {      // A stable broadcaster (channel) is the third identity axis. Viewers keep
       // one global platform identity, but every "broadcaster × viewer" pair gets
       // its own interaction context so statistics and future AI profiles from
       // different channels are never mixed.
@@ -324,6 +323,19 @@ export const MIGRATIONS = Object.freeze([
            AND e.value_kind IN ('actual', 'display')
            AND e.currency IS NOT NULL
          GROUP BY e.viewer_id, s.broadcaster_id, e.currency, e.value_kind;
+      `);
+    }
+  },
+  {
+    version: 6,
+    name: 'session-leaderboard-index',
+    up(db) {
+      // The live page shows the top 100 speakers of one session. A covering
+      // index (session, message count) keeps that query cheap even for a very
+      // busy broadcast and is the only schema change required for the feature.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_viewer_sessions_speakers
+          ON viewer_sessions (session_id, message_count DESC);
       `);
     }
   }

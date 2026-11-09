@@ -58,9 +58,9 @@ test('schema v1 databases upgrade to the current schema without losing old messa
   const result = migrate(db, {now: T + 1000});
   // v2 added emote metadata, v3 the platform broadcast start time, v4 author
   // badges and the raw displayed amount, v5 broadcaster identity and the
-  // broadcaster × viewer context.
-  assert.deepEqual(result.applied, [2, 3, 4, 5]);
-  assert.equal(currentSchemaVersion(db), 5);
+  // broadcaster × viewer context, v6 the session leaderboard index.
+  assert.deepEqual(result.applied, [2, 3, 4, 5, 6]);
+  assert.equal(currentSchemaVersion(db), 6);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
   assert.ok(columnsAfter.includes('badges'));

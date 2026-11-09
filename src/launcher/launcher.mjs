@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createPaths, ensureDirectories} from '../server/paths.mjs';
 import {AppError} from '../shared/errors.mjs';
-import {detectSystemLocale, normalizeLocale, resolveLocale} from '../shared/locale.mjs';
+import {detectSystemLocale, normalizeLocale} from '../shared/locale.mjs';
 import {APP_NAME, APP_VERSION} from '../shared/app-info.mjs';
 import {SettingsStore} from '../server/settings-store.mjs';
 import {createLogger} from '../server/logger.mjs';
@@ -134,13 +134,25 @@ export function parseArguments(argv = []) {
   return options;
 }
 
+/**
+ * Console language is independent from the web UI locale. It defaults to
+ * English so double-clicking the EXE always yields readable, stable CLI text;
+ * `--lang zh-CN|ja|en` still overrides it. The web console keeps its own
+ * three-language setting and system detection.
+ */
+function resolveConsoleLocale(options) {
+  return options?.lang ?? 'en';
+}
+
 function statusLineText(status, locale) {
   const session = status?.activeSession ?? null;
+  const count = Number(status?.activeCount ?? (session ? 1 : 0));
   if (!session) {
     return ['connecting', 'reconnecting'].includes(status?.connection)
       ? t(locale, 'statusStarting')
       : t(locale, 'statusIdle');
   }
+  if (count > 1) return t(locale, 'statusRecordingMultiple', {count});
   if (status.connection === 'connected') {
     return `${t(locale, 'statusRecording', {title: session.roomTitle ?? ''})} · ${t(locale, 'statusRecordingStats', {
       messages: session.messageCount ?? 0,
@@ -198,7 +210,10 @@ export async function runLauncher({
   const startupLog = createStartupLog({env, argv, version: APP_VERSION});
   const utf8 = enableUtf8Console({stdout});
   const systemLocale = detectSystemLocale(env);
-  let locale = options.lang ?? resolveLocale('system', systemLocale);
+  // The launcher console defaults to English and does not depend on the web
+  // console's saved locale. `--lang zh-CN|ja|en` still overrides it; the web UI
+  // keeps its own three-language setting and system detection.
+  let locale = resolveConsoleLocale(options);
   const unicode = process.platform !== 'win32' || utf8.changed;
   let ui = createConsole({locale, stdout, stderr, unicode});
   startupLog.record('console.ready', {utf8: utf8.changed, reason: utf8.reason ?? null, locale});
@@ -467,7 +482,9 @@ export async function runLauncher({
       const settingsStore = new SettingsStore({file: paths.settingsFile});
       settingsStore.load();
       settingsLoaded = true;
-      if (!options.lang) locale = resolveLocale(settingsStore.get().locale, systemLocale);
+      // Deliberately ignored for the console language: the web console chooses
+      // its own locale from settings. The launcher stays English unless --lang
+      // was supplied.
     } catch (error) {
       // Preferences are optional: never block startup because of them.
       startupLog.fail('settings.load', error, {degraded: true});
@@ -798,4 +815,4 @@ if (invokedDirectly) {
     });
 }
 
-export const __internal = {statusLineText};
+export const __internal = {statusLineText, resolveConsoleLocale};

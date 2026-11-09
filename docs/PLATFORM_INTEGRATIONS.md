@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API，已通过本地假网页端到端测试，真实直播采样需按 v0.5.0 重新确认。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。** 模拟平台（mock）保持可用。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -215,10 +215,18 @@ node scripts/verify-bilibili.mjs 5050 20
 
 ### 3.6 验证状态（必须如实区分）
 
-- **本地假网页端到端**：`tests/integration/youtube-anonymous-session.test.mjs` 覆盖检查、连接、聊天/SC/Sticker/会员/gift、badge、稳定身份、自动结束、保留上限、AI 包。
-- **真实直播间采样**：2026-11-08 曾对 `FKLZiufsCk0` 与 `gXawf8GZDI8` 完成 35 秒采样（见 TEST_PLAN 第 10 节）。v0.5.0 简化官方代码后，接入代码路径保持不变但**仍需重新做真实采样确认**；若本轮未执行，不得把旧样本当作 v0.5.0 已验收。
-- **未验证**：真实 429/验证码/consent/age wall、数小时长直播、不同地区币种、Super Sticker/会员/赠送会员真实样本、官方授权（不存在）。
+- **本地假网页端到端**：`tests/integration/youtube-anonymous-session.test.mjs` 覆盖检查、连接、聊天/SC/Sticker/会员/gift、badge、稳定身份、自动结束、保留上限、AI 包；`live-api-multi.test.mjs` 覆盖两个假直播的并发、隔离、Top 100、停止一场另一场继续、重启恢复。
+- **真实直播间并发采样（v0.6.0，2026-11-09）**：两个 YouTube（Lofi Girl + Al Jazeera English 当日直播）各收到 80 / 63 条事件；跨场 `wrongSession=0`；重复启动 409；停止 A 后 B 仍 connected。另与 Bilibili room 6、三场并发、构建后 EXE 附加验证均通过。详见 TEST_PLAN §12.3。
+- **未验证**：真实 429/验证码/consent/age wall、数小时长直播、不同地区币种、Super Sticker/会员/赠送会员真实样本、同一真实观众跨两个主播的观测、官方授权（不存在）。
 - 该路径不是官方 API，可能违反 YouTube 服务条款；正式发布前仍需平台合规评估。
+
+### 3.7 多直播间并发与资源控制（v0.6.0）
+
+- 每个 YouTube 直播一个独立 adapter 和 continuation 轮询定时器；Bilibili 每个房间一个 WebSocket + 心跳。
+- 轮询/重连完全由各 adapter 自身管理，避免全局轮询；一个直播的 429/断线退避不影响其他直播。
+- 重复启动同一视频/房间被 `SessionManager` 拒绝，不会重复请求页面或重复统计。
+- 没有人为并发上限；实际受 CPU、内存、网络与平台限流约束。每个直播的前端缓存上限为 40 条 feed + 100 行排行榜。
+- 长时间多场压力、内存增长与平台限流叠加尚未做 10+ 场数小时验证。
 
 
 ## 4. 统一事件模型

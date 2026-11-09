@@ -1,5 +1,63 @@
 # 版本变化（CHANGELOG）
 
+## 0.6.0 — 2026-11-09（多直播间并发记录、标签页、Top 100）
+
+### 新增
+
+- **多直播间同时记录**
+  - `SessionManager` 改为每个 `sessionId` 独立 recording/adapter/连接状态/结束回调；
+  - 同一 `platform + room` 重复启动在内存与数据库双重拒绝，返回 `409 SESSION_DUPLICATE_ROOM`；
+  - 停止、失败、自动结束只影响对应场次；启动恢复仍把所有残留 live 标记 interrupted；
+  - 新 `GET /api/live/recordings`、`POST /api/live/recordings/:sessionId/stop`；
+  - 平台 disconnect 支持 `sessionId`；同平台多场且缺 ID 时返回 409 `SESSION_ID_REQUIRED`。
+
+- **直播记录标签页**
+  - 顶部固定「＋ 新建记录」+ 可横向滚动的直播标签；
+  - 标签显示主播/直播间名称、状态点与连接中/记录中/重连中/已停止/连接失败；
+  - 切换标签只切视图，不改后台采集；`viewToken` 丢弃旧响应，避免串场；
+  - 每场独立 Hero、统计卡、消息密度图、最近动态、Top 100 与经济支持；
+  - 运行中标签不提供关闭按钮；已停止标签可关闭，数据保留在直播历史。
+
+- **最活跃观众 Top 100**
+  - 查询上限从 20 提到 100，排序 `message_count DESC, platform_uid, viewer_id`；
+  - 新 `GET /api/sessions/:id/top-viewers`，返回固定 rank；
+  - UI 默认约 10 行可视、区域滚动最多 100 名；搜索昵称/UID 保留 rank；
+  - 点击观众进入 `/viewers/<id>?broadcaster=<当前主播>`；
+  - schema v6 新增 `idx_viewer_sessions_speakers`。
+
+- **启动器控制台默认英文**
+  - 双击 EXE 时控制台输出英文，不再跟随网页语言；
+  - `--lang zh-CN|ja|en` 仍覆盖；网页界面继续三语/跟随系统；
+  - 多场时状态行显示“Recording N live streams”。
+
+- **开发/验证工具**
+  - `scripts/demo-multi-recording.mjs`：3 场模拟记录，仅用于 UI 截图/联调；
+  - `scripts/verify-live-ui.mjs`：DevTools 协议验证标签、Top 100、搜索、档案跳转、重入、窄屏；
+  - `scripts/verify-live-multi.mjs`：真实网络并发验证，支持 `--base` 附加到 EXE。
+
+### 变更
+
+- 所有事件仍统一经 `EventIngest`；去重作用域仍是 `(session_id, dedupe_key)`，因此同一 external id 可以合法存在于不同场次。
+- `app.js` 移除全局 `livesummary` 轮询，避免每个事件触发全量 summary 查询。
+- schema 6；旧库原地升级，历史数据不重写。
+
+### 测试 / 构建
+
+- 自动化：**296 passed / 0 failed / 约 24.5 秒**。
+- UI：`verify-live-ui.mjs` **10/10**。
+- EXE：90.3 MB / 101 资源，SHA-256 `cbf17f0c83d9af40003085c0f0acba8b3f9e12e4663bfe50f5bfc61965ec1598`；`verify-exe.mjs` **10/10**；`--version` 0.6.0。
+- 真实并发：
+  - 2 YouTube：80 / 63 事件，隔离 0 串场，重复启动 409；
+  - YouTube + Bilibili room 6：76 / 11，停 A 后 B 收到新事件；
+  - 3 场：85 / 66 / 6，停 A 后 2 场仍 connected；
+  - EXE 附加 3 场真实直播：73 / 67 / 5，3/3 connected。
+
+### 已知限制
+
+- 运行中标签不能隐藏/关闭；必须先停止。没有静默停止。
+- 无并发上限；未做 10+ 场数小时压力测试。
+- 真实 UAC、真实同观众跨主播观测、Bilibili 礼物/SC/大航海真实样本仍未完成。
+
 ## 0.5.0 — 2026-11-09（文件夹选择器、YouTube 单一公开网页、管理员 EXE）
 
 ### 修复

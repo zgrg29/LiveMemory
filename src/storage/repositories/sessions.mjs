@@ -95,6 +95,25 @@ export function findLiveSession(db) {
   return db.prepare(`${SESSION_SELECT} WHERE s.status = 'live' ORDER BY s.started_at DESC LIMIT 1`).get() ?? null;
 }
 
+/** Every session that is currently marked live, oldest first. */
+export function listLiveSessions(db) {
+  return db.prepare(`${SESSION_SELECT} WHERE s.status = 'live' ORDER BY s.started_at ASC`).all();
+}
+
+/**
+ * The database-side duplicate guard. In-memory recordings are checked first by
+ * SessionManager; this catches a live row that has no in-memory adapter (for
+ * example after a partial failure) so the same room is never recorded twice.
+ */
+export function findLiveSessionByRoom(db, platform, platformRoomId) {
+  if (platformRoomId === null || platformRoomId === undefined) return null;
+  return db.prepare(`
+    ${SESSION_SELECT}
+     WHERE s.status = 'live' AND s.platform = ? AND s.platform_room_id = ?
+     ORDER BY s.started_at ASC LIMIT 1
+  `).get(String(platform), String(platformRoomId)) ?? null;
+}
+
 /**
  * Mark every still-live session as interrupted. Called once at startup: if the
  * process was killed (console closed, power loss) no honest "live" session can

@@ -1,16 +1,18 @@
-import {BilibiliApi, BilibiliError} from './api.mjs';
+import {BilibiliApi} from './api.mjs';
 import {BilibiliLiveAdapter} from './adapter.mjs';
 import {BilibiliLogin} from './login.mjs';
 import {CookieStore} from './cookie-store.mjs';
-import {AppError, ERROR_CODES} from '../../shared/errors.mjs';
+import {AppError} from '../../shared/errors.mjs';
+import {duplicateRoomError} from '../../shared/recording.mjs';
 import {SOURCE_QUALITY} from '../../shared/events.mjs';
 
 /**
  * Glue between the HTTP layer, the login flow and the live adapter.
  *
- * One Bilibili account and one live room per data folder. The service owns the
- * credential store, the shared HTTP client (WBI cache + buvid) and the active
- * adapter; recording itself still goes through SessionManager -> EventIngest.
+ * One Bilibili account per data folder, but any number of rooms may be recorded
+ * at the same time. The service owns the credential store and the shared HTTP
+ * client (WBI cache + buvid); recording lifecycle belongs to SessionManager, so
+ * starting/stopping one room never touches another.
  */
 
 const ROOM_ID_PATTERN = /^\d{1,12}$/;
@@ -40,23 +42,37 @@ export class BilibiliService {
     this.store = store ?? new CookieStore({dir: secretsDir});
     this.api = api ?? new BilibiliApi({cookie: this.store.cookie(), now});
     this.login = new BilibiliLogin({store: this.store, api: this.api, logger, now});
-    this.adapter = null;
-    this.room = null;
+  }
+
+  #recordings() {
+    return this.sessionManager.status().recordings.filter((recording) => recording.platform === 'bilibili');
   }
 
   status() {
-    const live = this.sessionManager.status();
+    const recordings = this.#recordings();
+    const latest = recordings.at(-1) ?? null;
     return {
       login: this.login.status(),
-      connection: {
-        state: this.adapter?.state ?? 'idle',
-        detail: this.adapter?.snapshot().detail ?? null,
-        roomId: this.room?.roomId ?? null,
-        title: this.room?.title ?? null,
-        popularity: this.adapter?.popularity ?? null
-      },
-      recording: live.connection,
-      session: live.activeSession
+      connection: latest
+        ? {
+          state: latest.connection.state,
+          detail: latest.connection.detail,
+          roomId: latest.meta?.room?.roomId ?? latest.platformRoomId,
+          title: latest.meta?.room?.title ?? latest.roomTitle,
+          popularity: latest.connection.detail?.popularity ?? latest.meta?.room?.online ?? null
+        }
+        : {state: 'idle', detail: null, roomId: null, title: null, popularity: null},
+      recordings,
+      recording: latest?.connection.state ?? 'idle',
+      session: latest
+        ? {
+          id: latest.sessionId,
+          platform: latest.platform,
+          broadcasterId: latest.broadcasterId,
+          broadcasterIdentity: latest.broadcasterIdentity,
+          roomTitle: latest.roomTitle
+        }
+        : null
     };
   }
 
@@ -69,8 +85,7 @@ export class BilibiliService {
   }
 
   async logout() {
-    await this.disconnect();
-    return this.login.logout();
+    await this.login.logout();
   }
 
   async refreshLogin() {
@@ -97,14 +112,6 @@ export class BilibiliService {
   }
 
   async connect(roomId, {sourceQuality = SOURCE_QUALITY.ESTIMATED} = {}) {
-    const existing = this.sessionManager.status().activeSession;
-    if (existing) {
-      throw new AppError(ERROR_CODES.SESSION_ACTIVE, {
-        messageKey: 'errors.sessionActive',
-        details: {sessionId: existing.id},
-        httpStatus: 409
-      });
-    }
     const room = await this.checkRoom(roomId);
     const adapter = new BilibiliLiveAdapter({
       roomId: room.roomId,
@@ -113,58 +120,23 @@ export class BilibiliService {
       logger: this.logger,
       now: this.now
     });
-    this.adapter = adapter;
-    this.room = room;
-    try {
-      const result = await this.sessionManager.startPlatform({
-        platform: 'bilibili',
-        platformRoomId: String(room.roomId),
-        roomTitle: room.title ?? `Bilibili ${room.roomId}`,
-        broadcasterName: room.anchorName ?? null,
-        broadcasterUid: room.anchorUid ?? null,
-        sourceQuality,
-        simulated: false,
-        createAdapter: () => adapter
-      });
-      if (!result.started) {
-        throw new AppError(ERROR_CODES.SESSION_ACTIVE, {
-          messageKey: 'errors.sessionActive',
-          details: {sessionId: result.session?.id ?? null},
-          httpStatus: 409
-        });
-      }
-      this.logger?.info({event: 'bilibili.session.started', sessionId: result.session.id, roomId: room.roomId});
-      return {session: result.session, room, connection: adapter.snapshot()};
-    } catch (error) {
-      try {
-        await adapter.stop();
-      } catch {
-        /* ignore */
-      }
-      if (this.adapter === adapter) this.adapter = null;
-      throw error;
-    }
+    const result = await this.sessionManager.startPlatform({
+      platform: 'bilibili',
+      platformRoomId: String(room.roomId),
+      roomTitle: room.title ?? `Bilibili ${room.roomId}`,
+      broadcasterName: room.anchorName ?? null,
+      broadcasterUid: room.anchorUid ?? null,
+      sourceQuality,
+      simulated: false,
+      createAdapter: () => adapter,
+      meta: {room}
+    });
+    if (!result.started) throw duplicateRoomError(result.duplicate);
+    this.logger?.info({event: 'bilibili.session.started', sessionId: result.session.id, roomId: room.roomId});
+    return {session: result.session, room, connection: adapter.snapshot()};
   }
 
-  async disconnect() {
-    if (!this.sessionManager.status().activeSession) {
-      if (this.adapter) {
-        await this.adapter.stop().catch(() => {});
-        this.adapter = null;
-      }
-      return {stopped: false};
-    }
-    const result = await this.sessionManager.stopActive();
-    this.adapter = null;
-    return result;
-  }
-
-  async shutdown() {
-    if (this.adapter) {
-      await this.adapter.stop().catch(() => {});
-      this.adapter = null;
-    }
+  async disconnect({sessionId = null} = {}) {
+    return this.sessionManager.stopPlatform('bilibili', {sessionId});
   }
 }
-
-export const __internal = {ROOM_ID_PATTERN};

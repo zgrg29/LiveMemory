@@ -7,8 +7,8 @@
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围 | 手工 + 无头 Chrome/Edge 截图 |
-| 真实平台 | Bilibili 真实直播事件与表情元数据 | 已采样（见第 8 节）；YouTube 公开网页路径 v0.5.0 尚未重新采样 |
+| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` |
+| 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 8/10/12 节） |
 | 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
 
 ## 2. 运行方式
@@ -67,42 +67,50 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
 | `broadcaster.test.mjs` | YouTube channelId vs 视频 ID、Bilibili anchor uid/room fallback/unresolved、mock、质量排序、控制字符清洗 |
 | `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
+| `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
 
 ### 3.2 集成
 
 | 文件 | 覆盖 |
 | --- | --- |
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
-| `migration-emotes.test.mjs` | v1 旧库升级到 v5；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表存在 |
+| `migration-emotes.test.mjs` | v1 旧库升级到 v6；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表/索引存在 |
 | `youtube-anonymous-session.test.mjs` | 本地假公开网页：唯一 web 模式、无登录/Key、watch/chat 检查、SC `HK$`、gift 无 Channel ID、badge、会员/Sticker、重复与 ticker 去重、自动结束、30 天上限、AI 包 |
+| `session-multi.test.mjs` | 多场独立 adapter/会话/事件、重复房间拒绝、停止/失败隔离、交错写入去重、启动恢复、Top 100 稳定排序/搜索/同名不合并 |
+| `live-api-multi.test.mjs` | 双 YouTube HTTP 并发、事件归属、重复 409、Top 100、共享观众跨主播 scope、停止一场另一场继续、重启恢复 |
 | `api.test.mjs` | health/bootstrap、CSP、设置校验与持久化、模拟记录、事件列表、重复开始 409、停止、历史与详情、分析包下载与校验和、观众列表/档案/关注、SSE、Host/Origin/路径穿越/404、runtime 文件、重启后设置保持 |
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
 | `broadcaster-identity.test.mjs` | 同一 YouTube 账号在两个主播、同一主播多场、重名不合并、改名不拆分、跨平台同名不合并、主播维度发言/付费/币种、新/回访、v4→v5 迁移、AI 包 context 隔离、HTTP 范围接口 |
 | `storage-management.test.mjs` | 位置记录原子写/镜像/相对路径拒绝、目标安全校验/UNC/冲突/空间、迁移复制校验与旧目录保留、复制中断回滚、**新数据空间空库+设置/凭据保留**、清空保留设置与凭据、出厂重置、应急快照一致性 |
 
-## 4. 本轮结果（2026-11-09，v0.5.0）
+## 4. 本轮结果（2026-11-09，v0.6.0）
 
 ```text
-tests 277
-pass  277
+tests 296
+pass  296
 fail  0
-duration ≈ 21.8s
+duration ≈ 24.5s
 ```
 
-无跳过、无 todo。官方 YouTube Data API/OAuth/API Key 测试已随实现删除；新增选择器、管理员、manifest、profile scan、简化约束与匿名 web 端到端测试。
+无跳过、无 todo。新增多场并发、Top 100、UI 结构守卫、启动器默认英文；更新 schema 6 迁移测试。
 
 新增覆盖重点：
 
-- **文件夹选择器**：`stdio:'ignore'` + 临时结果文件、Base64 路径、成功/取消/脚本错误/spawn EPERM/超时错误分支、中文与空格路径。
-- **管理员**：Manifest `requireAdministrator` 写入/读取、非提升启动 EACCES、三语管理员提示、profile scan 单/多数据目录。
-- **YouTube 单一入口**：官方模块/路由/登录/配额/模式参数删除；三语只保留链接输入、检查、开始、连接状态、保留说明；旧 settings 模式键被忽略。
-- **数据兼容**：schema 5 未变；历史场次/观众/主播关系/M6 未导入状态不受影响。
+- **多场并发**：独立 adapter/connection/session、同房间重复拒绝、停止/失败隔离、交错写入去重、启动恢复、Top 100 稳定排序与搜索。
+- **HTTP 并发**：两个假 YouTube 直播端到端、共享观众跨主播上下文、停止一场另一场继续、重启恢复。
+- **UI**：标签切换、Top 100 滚动/搜索、档案跳转带 broadcaster、重入、390px。
+- **数据兼容**：schema 6 仅新增索引；历史场次/观众/主播关系不重写。
+- **启动器**：控制台默认英文；`--lang` 覆盖；网页三语不受影响。
 
 ## 5. 手工 / 脚本验证记录
 
 | 项目 | 方法 | 结果 |
 | --- | --- | --- |
-| 启动器中文控制台 | `node src/launcher/launcher.mjs --no-open` | ✅ 名称/版本/数据目录/地址/记录状态/退出方式 |
+| 启动器中文控制台 | `node src/launcher/launcher.mjs --no-open --lang zh-CN` | ✅ 名称/版本/数据目录/地址/记录状态/退出方式 |
+| 启动器默认英文控制台 | EXE asInvoker 副本无 `--lang` | ✅ “Local-first livestream memory system / Idle (not recording)” |
+| 多直播标签界面 | `demo-multi-recording.mjs` + `verify-live-ui.mjs` | ✅ 3 标签、Top 100、搜索、档案跳转、重入、390px，10/10 |
+| 真实多场并发 | `verify-live-multi.mjs` | ✅ 2 YouTube、YouTube+Bilibili、3 场；隔离 0 串场；停止一场其余继续（见 §12.3） |
+| 真实 EXE 多场并发 | EXE asInvoker 副本 + `--base` 附加 | ✅ 3 场真实直播，3/3 connected，重复 409，停 A 后 2 场 connected |
 | 启动器日文控制台 | 保存语言=ja 后再次启动 | ✅ 日文提示 |
 | 单实例 | 第二个进程同数据目录 | ✅ 提示已在运行，显示 URL，退出 0 |
 | 非法参数 | `--port abc` | ✅ 退出 2 |
@@ -118,18 +126,18 @@ duration ≈ 21.8s
 | 数据目录迁移界面 | Headless Chrome + 真实本地服务 | ✅ 迁移对话框、结果 12→12 事件、新位置卡、位置记录 |
 | 清空数据界面 | Headless Chrome + 真实本地服务 | ✅ DELETE/RESET 对话框、结果 3/12/4→0/0/0、清空后观众页为空 |
 | 多主播界面 | Headless Chrome + 真实本地服务 | ✅ 范围选择、排序、Mika 在 A/B 分别统计、全局概览 |
-| 迁移完整性 | SQLite 直接校验 | ✅ 旧/新 schema=5、integrity=ok、3/12/4/8/5/2 一致 |
+| 迁移完整性 | SQLite 直接校验 | ✅ 旧/新 schema=6、integrity=ok、3/12/4/8/5/2 一致 |
 | 清空完整性 | SQLite 直接校验 | ✅ 全部业务表 0、integrity=ok；备份 3/12/4、integrity=ok |
 | 备份快照 | `VACUUM INTO` + 直接校验 | ✅ 快照在数据目录之外、integrity=ok、内容保留 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.2 MB，99 资源，SHA-256 `3ac16ddc…`；Manifest `requireAdministrator` |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.3 MB，101 资源，SHA-256 `cbf17f0c…`；Manifest `requireAdministrator` |
 | EXE Manifest | `scripts/pe-manifest.mjs` / `verify-exe.mjs` | ✅ level=`requireAdministrator`，773 bytes |
 | EXE 非提升启动 | `spawnSync` 最终 EXE | ✅ Windows 返回 `EACCES`（未进入程序） |
 | EXE 功能矩阵 | `scripts/verify-exe.mjs` | ✅ **10/10**（manifest + 9 场景；非提升会话使用 asInvoker 副本并明确打印） |
 | EXE 管理员提示 | asInvoker 副本 `--lang zh/ja/en` | ✅ 三语消息、退出 1 |
-| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=5、version=0.5.0 |
+| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=6、version=0.6.0 |
 | YouTube 公开网页本地端到端 | 假网页 + `startServer` | ✅ 唯一 web 路径、5 条事件、SC HKD、gift 无身份、badge、自动结束 |
-| YouTube 真实房间 A（历史 v0.3.0） | `FKLZiufsCk0` 35 秒 | ⚠️ 旧样本，不能作为 v0.5.0 验收 |
-| YouTube 真实房间 B（历史 v0.3.0） | `gXawf8GZDI8` 35 秒 | ⚠️ 旧样本，不能作为 v0.5.0 验收 |
+| YouTube 真实房间 A（历史 v0.3.0） | `FKLZiufsCk0` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
+| YouTube 真实房间 B（历史 v0.3.0） | `gXawf8GZDI8` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
 
 ## 6. 尚未验证（必须如实保留）
 
@@ -138,7 +146,7 @@ duration ≈ 21.8s
 3. EXE 代码签名/杀毒误报。
 4. **真实 UAC 交互**：当前进程 Low Mandatory Level，未点击“是”；最终 EXE 只验证 Manifest 与非提升启动 EACCES，管理员批准后的完整启动/选择器/迁移/SQLite 未人工验证。
 5. **真实文件夹选择器点击/取消/选择**：无交互桌面；只验证 PowerShell 可启动（PICKER_TIMEOUT）与假进程单元测试。
-6. **v0.5.0 YouTube 真实直播采样**：未重新执行；旧 35 秒样本属于 v0.3.0。
+6. **YouTube 真实直播采样**：v0.6.0 已完成真实并发采样（2 YouTube、YouTube+Bilibili、3 场、EXE 附加），见 §12.3；仍未覆盖数小时长直播、真实 429/验证码/年龄墙、全部事件类型与官方授权。
 7. YouTube 公开网页真实 429/验证码/consent/age wall、长时断网（只有逻辑分支测试）。
 8. 跨电脑备份迁移（M5）。
 9. AI 结果导入与 Schema 校验（M6）。
@@ -204,7 +212,7 @@ duration ≈ 21.8s
 | `FKLZiufsCk0` | 35s | 92 | 86 | 85 | 1 SC `HK$2,000.00` → HKD 200000 | 86/86（100%） | 49 | 0 / 0 |
 | `gXawf8GZDI8` | 35s | 103 | 100 | 87 + 13 gift | 13 gift，金额未知 | chat 87/87；gift 0/13 | 3 | 0 / 0 |
 
-- **重要：以上是 v0.3.0 的历史样本；v0.5.0 删除官方双轨后尚未重新采样，不能作为 v0.5.0 验收。**
+- **重要：以上是 v0.3.0 的历史样本；v0.6.0 已另行完成真实并发采样（§12.3），不得把旧样本当作当前版本验收。**
 - 2026-11-09 尝试重新运行这两个旧链接，均返回 `YOUTUBE_NOT_LIVE_ENDED`；没有可用直播，因此没有新样本。
 - `pollCount=3`，`failures=0`，`endReason=null`；手动停止后场次 `ended`。
 - 未观测到 Super Sticker、会员里程碑、赠送会员；这些只有结构化测试，不是真实样本。
@@ -229,7 +237,7 @@ duration ≈ 21.8s
 | 平台数据到期清理后的关联一致性 | ✅ 清理只删原文/badge/金额显示/过期昵称；关系计数/稳定 ID/合计保留 |
 | AI 分析包主播上下文 | ✅ `broadcaster_context` / `lifetime` / `other_broadcaster_count` |
 | 修改到新本地目录 | ✅ 迁移成功，位置记录更新，运行时同端口切换 |
-| 创建新的空数据空间 | ✅ 新库 schema=5、业务表 0；旧目录保留 |
+| 创建新的空数据空间 | ✅ 新库 schema=6、业务表 0；旧目录保留 |
 | 软件重启后仍使用新目录 | ✅ 位置记录读取；目标存在且含数据库才使用 |
 | 新目录无权限 / 空间不足 | ✅ 注入 `statfs` 与写探测错误路径 |
 | 复制中断 / 迁移失败回滚 | ✅ 注入 `afterMove` 失败后回滚到原目录，原数据可用 |
@@ -240,6 +248,68 @@ duration ≈ 21.8s
 | 恢复出厂设置 | ✅ 设置默认、凭据/日志/缓存/导出删除；backups/无关文件保留 |
 | 取消 / 确认文字错误 | ✅ 前端禁用 + 服务端 400 |
 | 直播正在记录 | ✅ 设置页禁用 + 服务端 409 |
-| 清理后数据库可初始化 | ✅ 重建运行时、schema=5、空库可服务 |
+| 清理后数据库可初始化 | ✅ 重建运行时、schema=6、空库可服务 |
 | 旧数据不会从缓存重新出现 | ✅ 观众页为空；服务端重建运行时 |
+
+## 12. 多直播并发与 Top 100 专项验证（v0.6.0）
+
+### 12.1 自动化结果
+
+- 全量：**296 passed / 0 failed / 约 24.5 秒**。
+- `tests/integration/session-multi.test.mjs`：
+  - 两个独立 adapter/session 同时运行，A/B 事件分别归属；
+  - 同一 YouTube 观众在两个主播时全局身份 1 行、`viewer_broadcasters` 按主播独立；
+  - 同一房间重复启动返回 duplicate，不新增 session；
+  - 停止 A 后 B 继续写入；B 连接失败只结束 B；
+  - A/B 各交错写入 100 条相同 `external_id`，两场各 100 条且重复投递被忽略；
+  - 新 manager `recoverInterrupted()` 把残留 live 标为 interrupted，recordings 为 0；
+  - 122 位有效观众 → 返回 100 行，rank 1–100；同分按 UID 稳定排序；同名不同 UID 两行；搜索保留 rank。
+- `tests/integration/live-api-multi.test.mjs`（本地假 YouTube 双直播）：
+  - 两场同时 201 连接，`/api/live/recordings` count=2；
+  - 事件 A 131 / B 13，`wrongSession=0`；
+  - 关闭浏览器 SSE 连接后两场仍为 live/connected；
+  - 共享观众在两个主播的 scope 各 1 条、全局 2 条、broadcasters=2；
+  - 重复 A 409 `SESSION_DUPLICATE_ROOM`；
+  - Top 100：total 123、returned 100、rank/同分稳定、搜索；
+  - 停止 A 后 B 仍 connected 且收到新事件；
+  - 停止 B 后 recordings 0；重启后残留 live 为 interrupted，不自动新建。
+- `tests/unit/live-multi-ui.test.mjs`：前端 API/令牌/容器/无 innerHTML、无旧单场轮询。
+- `tests/unit/launcher.test.mjs`：控制台默认英文、`--lang` 覆盖、多场状态行。
+
+### 12.2 无头浏览器 UI 验证
+
+`scripts/verify-live-ui.mjs` 对 3 个模拟运行场次执行：**10/10 通过**。
+
+> 最后一次完整运行后又增加了“排行榜刷新时保持 scrollTop”的改进；该改动由 `live-multi-ui.test.mjs` 静态守卫覆盖，最终复跑时本机无头浏览器未能再次启动，因此没有重新做浏览器滚动实测。
+
+| 检查 | 结果 |
+| --- | --- |
+| 3 个标签渲染，默认选中最后一场 | ✅ |
+| 新建记录按钮固定可见 | ✅ |
+| Top 100 有 100 行且容器可滚动 | ✅ |
+| 切换标签后 Hero 标题变化 | ✅ |
+| 每场排行榜独立读取 | ✅ |
+| 搜索 “Top Viewer” 只剩 1 行且保留 rank | ✅ |
+| 点击观众跳转带 `broadcaster=` 的档案 URL | ✅ |
+| 离开再回直播页仍显示 3 场 | ✅ |
+| 390px 新建按钮可见、无横向溢出 | ✅ |
+| 390px Top 100 仍可滚动 | ✅ |
+
+### 12.3 真实直播并发结果（2026-11-09）
+
+| 场景 | 结果 |
+| --- | --- |
+| 两个真实 YouTube 直播 | 2/2 connected；80 / 63 事件；`wrongSession=0`；重复启动 409；停 A 后 B connected（聊天安静，20s 无新消息） |
+| YouTube + Bilibili room 6 | 2/2 connected；76 / 11 事件；`wrongSession=0`；停 A 后 B +1 事件并 connected |
+| 3 场（2 YouTube + Bilibili room 6） | 3/3 connected；85 / 66 / 6 事件；`wrongSession=0`；停 A 后剩余 2 场 connected，B +1 |
+| 构建后 EXE asInvoker 副本 + 3 场真实直播 | 3/3 connected；73 / 67 / 5 事件；`wrongSession=0`；重复启动 409；停 A 后剩余 2 场 connected |
+
+脚本：`scripts/verify-live-multi.mjs`；只输出聚合，不输出标题/昵称/正文；数据目录结束后删除。
+
+### 12.4 未完成
+
+- 没有在真实直播中恰好观测到“同一 Channel ID 出现在两个主播”，该身份关系由自动化 SQLite/HTTP 测试覆盖。
+- 真实 Bilibili 本轮仅收到普通弹幕，未观测礼物/SC/大航海。
+- 未做 10+ 场、数小时压力与内存增长测试。
+- 运行中标签不能关闭/隐藏；必须先停止。此行为有意，避免静默停止或误导。
 | 不删除用户无关文件 / 外部备份 | ✅ 根目录 `personal-note.txt` 与备份保留 |

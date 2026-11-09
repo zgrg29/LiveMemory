@@ -1,4 +1,5 @@
-import {AppError, ERROR_CODES} from '../../shared/errors.mjs';
+import {AppError} from '../../shared/errors.mjs';
+import {duplicateRoomError, sessionIdRequiredError} from '../../shared/recording.mjs';
 import {SOURCE_QUALITY} from '../../shared/events.mjs';
 import {YouTubeApiError, YOUTUBE_ERRORS} from './errors.mjs';
 import {YouTubeAnonymousClient} from './anonymous/client.mjs';
@@ -14,8 +15,10 @@ import {retentionStatus, runRetention, normalizeRetentionDays} from '../../stora
  * interface is not a stable official API and may change; the UI explains this
  * once in the settings/about area instead of blocking every connection attempt.
  *
- * All events still flow through SessionManager -> EventIngest. Stable identities
- * are preserved; events without a Channel ID remain identity-incomplete.
+ * Several broadcasts may be recorded concurrently; each one has its own adapter
+ * owned by SessionManager. All events still flow through EventIngest. Stable
+ * identities are preserved; events without a Channel ID remain
+ * identity-incomplete.
  */
 
 const SOURCE_QUALITY_ESTIMATED = SOURCE_QUALITY.ESTIMATED;
@@ -74,30 +77,43 @@ export class YouTubeService {
       logger,
       ...(webBase ? {baseUrl: webBase} : {})
     });
-    this.adapter = null;
-    this.video = null;
     this.lastEnd = null;
-    this.ending = false;
+  }
+
+  #recordings() {
+    return this.sessionManager.status().recordings.filter((recording) => recording.platform === 'youtube');
   }
 
   status() {
-    const live = this.sessionManager.status();
+    const recordings = this.#recordings();
+    const latest = recordings.at(-1) ?? null;
     const days = this.#retentionDays();
     return {
       // Deliberately simple: there is no credential or mode to configure.
       available: true,
       mode: 'web',
-      connection: {
-        state: this.adapter?.state ?? 'idle',
-        detail: this.adapter?.snapshot().detail ?? null,
-        videoId: this.video?.videoId ?? null,
-        title: this.video?.title ?? null,
-        viewers: this.adapter?.hotness ?? this.video?.concurrentViewers ?? null,
-        lastEnd: this.lastEnd
-      },
+      connection: latest
+        ? {
+          state: latest.connection.state,
+          detail: latest.connection.detail,
+          videoId: latest.meta?.video?.videoId ?? latest.platformRoomId,
+          title: latest.meta?.video?.title ?? latest.roomTitle,
+          viewers: latest.connection.detail?.viewers ?? latest.meta?.video?.concurrentViewers ?? null,
+          lastEnd: this.lastEnd
+        }
+        : {state: 'idle', detail: null, videoId: null, title: null, viewers: null, lastEnd: this.lastEnd},
+      recordings,
+      recording: latest?.connection.state ?? 'idle',
+      session: latest
+        ? {
+          id: latest.sessionId,
+          platform: latest.platform,
+          broadcasterId: latest.broadcasterId,
+          broadcasterIdentity: latest.broadcasterIdentity,
+          roomTitle: latest.roomTitle
+        }
+        : null,
       policy: this.db ? retentionStatus(this.db, {days, now: this.now()}) : null,
-      recording: live.connection,
-      session: live.activeSession,
       capabilities: {
         requiresApiKey: false,
         requiresLogin: false,
@@ -153,14 +169,6 @@ export class YouTubeService {
   }
 
   async connect(input) {
-    const existing = this.sessionManager.status().activeSession;
-    if (existing) {
-      throw new AppError(ERROR_CODES.SESSION_ACTIVE, {
-        messageKey: 'errors.sessionActive',
-        details: {sessionId: existing.id},
-        httpStatus: 409
-      });
-    }
     const video = await this.checkVideo(input);
     const blocker = checkAnonymousRecordable(video);
     if (blocker) throw toApiError(blocker);
@@ -172,85 +180,49 @@ export class YouTubeService {
       logger: this.logger,
       now: this.now
     });
-    adapter.onEnd = ({reason}) => {
-      this.lastEnd = {reason, at: this.now(), mode: 'web'};
-      this.#endSession(reason).catch(() => {});
-    };
-    this.adapter = adapter;
-    this.video = video;
-    return this.#startAdapter({adapter, input, video});
-  }
-
-  async #startAdapter({adapter, input, video}) {
-    try {
-      const result = await this.sessionManager.startPlatform({
-        platform: 'youtube',
-        platformRoomId: video.videoId,
-        roomTitle: video.title ?? `YouTube ${video.videoId}`,
-        broadcasterName: video.channelTitle ?? null,
-        broadcasterUid: video.channelId ?? null,
-        sourceQuality: SOURCE_QUALITY_ESTIMATED,
-        simulated: false,
-        platformStartedAt: epochOrNull(video.actualStartTime),
-        createAdapter: () => adapter
-      });
-      if (!result.started) {
-        throw new AppError(ERROR_CODES.SESSION_ACTIVE, {
-          messageKey: 'errors.sessionActive',
-          details: {sessionId: result.session?.id ?? null},
-          httpStatus: 409
-        });
+    const result = await this.sessionManager.startPlatform({
+      platform: 'youtube',
+      platformRoomId: video.videoId,
+      roomTitle: video.title ?? `YouTube ${video.videoId}`,
+      broadcasterName: video.channelTitle ?? null,
+      broadcasterUid: video.channelId ?? null,
+      sourceQuality: SOURCE_QUALITY_ESTIMATED,
+      simulated: false,
+      platformStartedAt: epochOrNull(video.actualStartTime),
+      createAdapter: () => adapter,
+      meta: {video},
+      onEnded: ({reason}) => {
+        this.lastEnd = {reason, at: this.now(), mode: 'web'};
+        this.#applyRetention();
       }
-      this.logger?.info({
-        event: 'youtube.session.started',
-        sessionId: result.session.id,
-        videoId: video.videoId,
-        mode: 'web'
-      });
-      return {
-        session: result.session,
-        video: {...video, input: String(input ?? '')},
-        connection: adapter.snapshot()
-      };
-    } catch (error) {
+    });
+    if (!result.started) {
       try {
         await adapter.stop();
       } catch {
         /* ignore */
       }
-      if (this.adapter === adapter) this.adapter = null;
-      throw toApiError(error);
+      throw duplicateRoomError(result.duplicate);
     }
+    this.logger?.info({
+      event: 'youtube.session.started',
+      sessionId: result.session.id,
+      videoId: video.videoId,
+      mode: 'web'
+    });
+    return {
+      session: result.session,
+      video: {...video, input: String(input ?? '')},
+      connection: adapter.snapshot()
+    };
   }
 
-  async #endSession(reason) {
-    if (this.ending) return;
-    this.ending = true;
-    try {
-      const active = this.sessionManager.status().activeSession;
-      if (active && active.platform === 'youtube') {
-        await this.sessionManager.stopActive({status: 'ended'});
-        this.logger?.info({event: 'youtube.session.autoEnded', reason});
-      }
-    } finally {
-      this.adapter = null;
-      this.ending = false;
-      this.#applyRetention();
+  async disconnect({sessionId = null} = {}) {
+    const result = await this.sessionManager.stopPlatform('youtube', {sessionId});
+    if (result.reason === 'session_id_required') {
+      throw sessionIdRequiredError({count: result.count, platform: 'youtube'});
     }
-  }
-
-  async disconnect() {
-    const active = this.sessionManager.status().activeSession;
-    if (!active || active.platform !== 'youtube') {
-      if (this.adapter) {
-        await this.adapter.stop().catch(() => {});
-        this.adapter = null;
-      }
-      return {stopped: false};
-    }
-    const result = await this.sessionManager.stopActive({status: 'ended'});
-    this.adapter = null;
-    this.#applyRetention();
+    if (result.stopped) this.#applyRetention();
     return result;
   }
 
@@ -262,13 +234,6 @@ export class YouTubeService {
   applyRetention() {
     const summary = this.#applyRetention();
     return {summary, status: this.db ? retentionStatus(this.db, {days: this.#retentionDays(), now: this.now()}) : null};
-  }
-
-  async shutdown() {
-    if (this.adapter) {
-      await this.adapter.stop().catch(() => {});
-      this.adapter = null;
-    }
   }
 }
 

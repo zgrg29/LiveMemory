@@ -2,7 +2,7 @@
 
 ## 1. 交付形态
 
-- 单一可执行文件 `LiveMemory.exe`（当前构建约 90.2 MB）。
+- 单一可执行文件 `LiveMemory.exe`（当前构建约 90.3 MB）。
 - 用户无需安装 Python、Node.js、npm、数据库或任何开发依赖。
 - 双击运行，Windows 通过内嵌 **`requireAdministrator`** Manifest 弹出 UAC；同意后显示命令行窗口并打开默认浏览器控制台。
 - 安装目录可以只读；用户数据仍写入 `%LOCALAPPDATA%\LiveMemory\`（或显式指定的可写目录）。
@@ -15,8 +15,8 @@
 3. `chcp 65001` 将控制台代码页设为 UTF-8（仅 TTY）。
 4. 检查 Node ≥ 22.5 与 `node:sqlite` 可用性。
 5. 解析可写数据目录（真实写探测，见 §5）：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` → 位置记录 → 默认目录。位置记录目标必须已存在且含 `database/livememory.db`；否则报错，不创建空库。打包启动且当前默认目录无数据库时，扫描本地用户配置；恰好一个现有 LiveMemory 数据库则使用，多个则报 `DATA_DIR_AMBIGUOUS`，不猜测。创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
-6. 读取 `config/settings.json` → 决定命令行语言（保存偏好优先；`--lang` 临时覆盖）。配置损坏或不可读不阻塞启动。
-7. 打包 EXE 防御性管理员检查（`net session`，`stdio: 'ignore'`）；失败时用保存语言（或三语）提示“需要管理员权限”并退出 1。随后获取单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
+6. 控制台语言：默认 **English**；只有 `--lang zh-CN|ja|en` 覆盖。`config/settings.json` 的网页语言偏好不再影响控制台；配置损坏或不可读不阻塞启动。
+7. 打包 EXE 防御性管理员检查（`net session`，`stdio: 'ignore'`）；失败时用当前控制台语言提示“需要管理员权限”并退出 1。随后获取单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
 8. 启动服务：绑定 `127.0.0.1`，端口 47800 → +1…+9 → 系统分配。
 9. 服务就绪后写 `runtime/runtime.json`（pid/port/url/version），打印状态，打开默认浏览器。
 10. 等待信号；收到 SIGINT/SIGTERM 后：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。
@@ -190,19 +190,21 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 资源哈希变化会生成新目录；旧目录可在升级时清理（M8）。
 
 
-## 9. 已验证 / 未验证（v0.5.0）
+## 9. 已验证 / 未验证（v0.6.0）
 
 已验证（本机，2026-11-09）：
 
 - 构建成功，PE 子系统 = 3（Console）。
-- 本轮构建：**90.2 MB，99 个资源文件，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`**。
+- 本轮构建：**90.3 MB，101 个资源文件，SHA-256 `cbf17f0c83d9af40003085c0f0acba8b3f9e12e4663bfe50f5bfc61965ec1598`**。
 - **PE Manifest 实测**：`scripts/pe-manifest.mjs` 读取 `RT_MANIFEST`，level=`requireAdministrator`，Manifest 773 bytes。
 - 非提升进程启动最终 EXE：`spawnSync` 返回 `EACCES`，说明 Windows 在程序代码执行前拒绝启动（Manifest 生效）。
 - `scripts/verify-exe.mjs`：**manifest 检查 + 9 个功能场景 = 10/10 通过**；由于当前会话不是管理员，功能场景使用同一二进制的临时 `asInvoker` 副本，并明确打印该事实。若在管理员会话运行，则直接使用最终 EXE。
 - 管理员检查消息：asInvoker EXE 副本在未设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 时，`--lang zh-CN/ja/en` 分别打印对应“需要管理员权限”消息并以 1 退出（真实 EXE 启动器代码路径）。
-- `LiveMemory.exe --version`（asInvoker 副本）→ `LiveMemory 0.5.0`。
-- 全新数据目录启动确认 SQLite schema=5、`broadcasters` / `viewer_broadcasters` / `broadcaster_id` 存在。
+- `LiveMemory.exe --version`（asInvoker 副本）→ `LiveMemory 0.6.0`。
+- 默认无 `--lang` 的 asInvoker EXE 控制台输出英文；`--lang zh-CN`/`ja` 仍可切换。
+- 全新数据目录启动确认 SQLite schema=6、`broadcasters` / `viewer_broadcasters` / `broadcaster_id` 存在。
 - `/api/youtube/status` 只含 `mode=web`、`capabilities.requiresApiKey/Login/Cookie=false` 与 30 天保留策略；`/api/youtube/login/status` 返回 404；PATCH `youtubeCaptureMode` 返回 400。
+- 真实多场：EXE asInvoker 副本附加 3 场真实直播（2 YouTube + Bilibili），3/3 connected，停止一场后 2 场仍 connected；详见 STATUS §4 / TEST_PLAN §12.3。
 - 默认数据目录不可写时回退 `%TEMP%\LiveMemory` 并启动；不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`。
 - 第二实例、强杀恢复、端口顺延、解压复用、跨目录运行均通过。
 
@@ -210,7 +212,7 @@ Node SEA（Single Executable Application）+ postject 注入。
 
 - **真实 UAC 交互**：当前进程为 Low Mandatory Level，无法点击“是”。最终 EXE 只验证了 Manifest 内容与非提升启动被拒绝；管理员批准后的完整启动、文件夹选择、迁移、SQLite 写入需要在真实桌面复核。
 - **真实文件夹选择器点击/取消/选择**：无交互桌面；已用 PowerShell 启动探测（修复后为 `PICKER_TIMEOUT`，不再 EPERM）与假进程单元测试覆盖逻辑，但没有人工操作。
-- **v0.5.0 真实 YouTube 直播采样**：未重新执行；旧样本属于 v0.3.0，不能冒充新验收。
+- **真实 UAC 后的多场运行**：本轮 EXE 多场验证使用临时 asInvoker 副本，不是最终 requireAdministrator 进程。
 - 干净 Windows 10/11 虚拟机（无 Node、无开发环境）。
 - 只读安装目录（`Program Files`）下的实际安装形态。
 - 杀毒软件误报、代码签名。

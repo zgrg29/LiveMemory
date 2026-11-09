@@ -29,7 +29,6 @@ const state = {
   dict: null,
   locale: 'en',
   status: null,
-  liveSummary: null,
   version: '0.1.0',
   pageCleanup: null,
   localePending: false
@@ -70,7 +69,6 @@ const ctx = {
   toast: (message, options) => toaster(message, options),
   navigate,
   refreshStatus,
-  refreshLive,
   setLocale,
   setTheme,
   describeError: (error) => describeError(error, t)
@@ -173,9 +171,12 @@ async function renderRoute() {
 function updateConnectionPill() {
   const platform = state.status?.platform;
   const active = platform?.activeSession ?? null;
+  const count = Number(platform?.activeCount ?? (active ? 1 : 0));
   const connected = platform?.connection === 'connected' || Boolean(active);
   connectionPill.dataset.state = connected ? 'connected' : 'idle';
-  connectionText.textContent = connected ? t('status.connected') : t('status.idle');
+  connectionText.textContent = count > 1
+    ? t('status.recordingCount', {n: count})
+    : (connected ? t('status.connected') : t('status.idle'));
 }
 
 async function refreshStatus() {
@@ -184,31 +185,6 @@ async function refreshStatus() {
   updateConnectionPill();
   emit('status', status);
   return status;
-}
-
-let liveRefreshTimer = null;
-let liveRefreshPending = false;
-async function refreshLive() {
-  if (liveRefreshPending) return state.liveSummary;
-  liveRefreshPending = true;
-  try {
-    const payload = await api.get('/api/sessions/current');
-    state.liveSummary = payload.session ?? null;
-    emit('livesummary', state.liveSummary);
-    return state.liveSummary;
-  } catch {
-    return state.liveSummary;
-  } finally {
-    liveRefreshPending = false;
-  }
-}
-
-function scheduleLiveRefresh() {
-  if (liveRefreshTimer) return;
-  liveRefreshTimer = window.setTimeout(() => {
-    liveRefreshTimer = null;
-    refreshLive();
-  }, 700);
 }
 
 function connectEvents() {
@@ -222,7 +198,6 @@ function connectEvents() {
     try {
       const payload = JSON.parse(event.data);
       emit('event', payload);
-      scheduleLiveRefresh();
     } catch {
       /* ignore malformed frame */
     }
@@ -233,7 +208,6 @@ function connectEvents() {
       state.status = {...(state.status ?? {}), platform};
       updateConnectionPill();
       emit('status', state.status);
-      scheduleLiveRefresh();
     } catch {
       /* ignore malformed frame */
     }
@@ -431,9 +405,6 @@ async function boot() {
     window.setInterval(() => {
       refreshStatus().catch(() => {});
     }, 15000);
-    window.setInterval(() => {
-      if (state.liveSummary) refreshLive().catch(() => {});
-    }, 5000);
   } catch (error) {
     state.dict = await loadDictionary('en').catch(() => ({}));
     t = createTranslator(state.dict);

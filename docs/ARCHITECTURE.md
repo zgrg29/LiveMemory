@@ -17,10 +17,10 @@ LiveMemory.exe (Node SEA)
          ├─ src/server/logger.mjs        脱敏 JSONL 日志
          ├─ src/storage/                node:sqlite + 迁移 + 仓储（含 broadcasters）
          ├─ src/shared/data-location.mjs 启动位置记录（LOCALAPPDATA + APPDATA 镜像）
-         ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
+         ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager（多场并发）
          ├─ src/platforms/mock/         模拟直播源
-         ├─ src/platforms/bilibili/     真实直播适配器（WebSocket）
-         ├─ src/platforms/youtube/      公开网页聊天（唯一路径；无官方 API/OAuth）
+         ├─ src/platforms/bilibili/     真实直播适配器（WebSocket，可多房间）
+         ├─ src/platforms/youtube/      公开网页聊天（唯一路径；可多直播）
          ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
          ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像）
@@ -110,10 +110,46 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 
 `src/storage/retention.mjs` 在启动、YouTube 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的 YouTube 聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定 Channel ID 与金额合计。目的与局限见 `PRIVACY_SECURITY.md` §14。
 
+## 3.3 多场并发记录（v0.6.0）
+
+```text
+SessionManager.recordings: Map<sessionId, recording>
+  recording = {
+    sessionId, platform, platformRoomId, adapter,
+    connection, detail, startedAt, broadcasterId, meta, onEnded, stopping
+  }
+
+startPlatform()
+  ├─ findDuplicate(platform, roomId)
+  │    ├─ 内存 recordings 同 platform+room → 拒绝
+  │    └─ sessions WHERE status='live' 同房间 → 拒绝
+  ├─ createSession() → 独立 DB 行
+  ├─ recordings.set(sessionId, recording)
+  ├─ adapter.start({onEvent, onStateChange, onEnd})
+  │    └─ onEvent 闭包固定写入该 session.id
+  └─ 失败：只结束该 session 并从 map 移除
+
+stopSession(sessionId)
+  ├─ 只停止该 recording 的 adapter
+  ├─ endSession(该 id)
+  ├─ onEnded（YouTube 保留清理等）
+  └─ 广播 status
+```
+
+关键保证：
+
+- 每场有独立 adapter、连接状态、错误状态、事件闭包与数据库行；一场失败/结束/停止不会触碰其他场。
+- 同一 `platform + room` 不会创建第二个 live session；重复启动返回 `409 SESSION_DUPLICATE_ROOM`。
+- 所有事件仍进入唯一写入路径 `EventIngest`；去重键为 `(session_id, dedupe_key)`，所以同一 `external_id` 可以合法存在于两个不同场次。
+- 前端通过 `GET /api/live/recordings` 读取运行任务；采集不依赖任何浏览器页面是否打开。
+- 软件启动时 `recoverInterrupted()` 把所有残留 live 行标记 interrupted，不自动恢复或新建场次。
+- 单进程 `node:sqlite` 同步写入；多个 adapter 的回调在事件循环中串行进入事务，WAL + `busy_timeout` 保证一致性。
+
 ## 4. 读模型
 
 - `analytics/sessions/hotness.mjs`：按场次时长选择 10s–1h 的桶；输出消息数、独立观众、按币种支付；直播中不绘制未完成的桶。
-- `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众 + 存储统计。
+- `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众（默认前 5，可传 `topLimit`）+ 存储统计。
+- `analytics/sessions/leaderboard.mjs`：单场 Top 100 读模型；`rank` 按有效弹幕数 → `platform_uid` → `viewer_id` 稳定排序；搜索只在 Top 100 内过滤且保留原始名次。
 - `analytics/viewers/profile.mjs`：观众档案（身份、累计、昵称历史、参与场次）。
 - `analytics/payments/totals.mjs`：按币种合并 actual/display，绝不混加。
 
@@ -134,9 +170,12 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 | GET | `/api/status` | 服务/平台/数据库状态 |
 | GET/PATCH | `/api/settings` | 读取/更新偏好（校验后持久化） |
 | GET | `/api/sessions` | 场次列表（含币种支持） |
-| GET | `/api/sessions/current` | 当前记录中的场次摘要 |
-| GET | `/api/sessions/:id` | 单场摘要 + 时间线 |
+| GET | `/api/sessions/current` | 最近开始的一场记录摘要（兼容；标签页改用 recordings） |
+| GET | `/api/sessions/:id` | 单场摘要 + 时间线（`topLimit` 可选，最多 100） |
+| GET | `/api/sessions/:id/top-viewers` | 单场 Top 100（`limit`、`query`） |
 | POST | `/api/sessions/:id/stop` | 结束指定场次 |
+| GET | `/api/live/recordings` | 所有运行中记录任务及独立状态/统计 |
+| POST | `/api/live/recordings/:sessionId/stop` | 只停止指定记录任务 |
 | POST | `/api/simulate/start` | 开始模拟场次（`title`、`speed`） |
 | POST | `/api/simulate/stop` | 停止当前场次 |
 | GET | `/api/viewers` | 观众列表（`query`、`limit`、`broadcasterId`、`scope=unassigned`） |
@@ -147,12 +186,12 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 | POST | `/api/bilibili/login/poll` | 轮询扫码结果 |
 | POST | `/api/bilibili/login/logout` | 退出 Bilibili 登录 |
 | POST | `/api/bilibili/room` | 校验直播间 |
-| POST | `/api/bilibili/connect` | 开始记录 Bilibili 直播 |
-| POST | `/api/bilibili/disconnect` | 停止记录 |
-| GET | `/api/youtube/status` | 唯一 web 模式、连接、保留策略（无登录/配额字段） |
+| POST | `/api/bilibili/connect` | 开始记录 Bilibili 直播（可与其他场次并存） |
+| POST | `/api/bilibili/disconnect` | 停止指定 `sessionId`；多场且缺 ID 时返回 409 |
+| GET | `/api/youtube/status` | 唯一 web 模式、连接、运行任务、保留策略（无登录/配额字段） |
 | POST | `/api/youtube/video` | 解析直播链接并返回可记录性 |
-| POST | `/api/youtube/connect` | 开始记录 YouTube 直播（无 mode 参数） |
-| POST | `/api/youtube/disconnect` | 停止记录 |
+| POST | `/api/youtube/connect` | 开始记录 YouTube 直播（无 mode 参数，可多场并存） |
+| POST | `/api/youtube/disconnect` | 停止指定 `sessionId`；多场且缺 ID 时返回 409 |
 | POST | `/api/youtube/retention/apply` | 立即执行 YouTube 原文保留清理 |
 | GET | `/api/events` | 场次事件（倒序、分页） |
 | GET | `/api/events/stream` | SSE（`event`、`status`） |
@@ -189,10 +228,12 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 ## 6. 并发与一致性
 
 - `node:sqlite` 同步 API，单进程串行写入；`BEGIN IMMEDIATE` 包裹一次事件写入。
+- 多个直播 adapter 可以同时运行；它们的回调在 Node 事件循环中依次进入同一数据库连接，不存在线程级同时写。
 - WAL + `busy_timeout=5000`；退出时 `wal_checkpoint(TRUNCATE)`。
 - 单实例锁避免两个进程写同一数据库。
 - 事件插入与聚合同事务，避免“计数成功但事件缺失”。
-- 场次状态由数据库读取，内存状态仅作缓存。
+- 场次状态由数据库读取，内存 recordings 只作运行期索引；启动时恢复 interrupted。
+- 前端每个标签用 `viewToken` 丢弃过期请求，避免旧页面响应覆盖新选中场次。
 
 ## 7. 错误处理
 
@@ -206,6 +247,7 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 - `js/app.js`：bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
 - Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
+- `js/pages/live.js`：多场标签页；每个 session 独立缓存 summary/feed/leaderboard；`viewToken` 防止串场；`/api/live/recordings` 恢复运行任务。
 - `js/ui.js`：DOM 构造（只用 `textContent`）、格式化、toast、空状态。
 - `js/chart.js`：Canvas 时间线图，DPR 适配、主题重绘、hover 提示。
 - `js/i18n.js`：按需加载 JSON 字典，`t(key, params)`。

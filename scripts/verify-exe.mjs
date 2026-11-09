@@ -215,27 +215,37 @@ function readStartupLogs(dataDir) {
 }
 
 /** The bootstrap may extract outside the data folder when the profile is read-only. */
-function bootstrapLogText() {
+function bootstrapLogFiles() {
   const candidates = [
     join(tmpdir(), 'LiveMemory-logs'),
     join(process.env.LOCALAPPDATA ?? '', 'LiveMemory', 'logs')
   ].filter((dir) => dir && existsSync(dir));
-  const texts = [];
+  const files = [];
   for (const dir of candidates) {
-    for (const name of readdirSync(dir).filter((entry) => entry.startsWith('bootstrap-')).sort().reverse()) {
-      texts.push(readFileSync(join(dir, name), 'utf8'));
+    for (const name of readdirSync(dir).filter((entry) => entry.startsWith('bootstrap-'))) {
+      const file = join(dir, name);
+      files.push({file, mtime: statSync(file).mtimeMs});
     }
   }
-  return texts.join('\n');
+  return files.sort((a, b) => b.mtime - a.mtime);
+}
+
+function bootstrapLogText() {
+  return bootstrapLogFiles().map((entry) => readFileSync(entry.file, 'utf8')).join('\n');
 }
 
 function findExtractedAppRoot() {
-  for (const line of bootstrapLogText().split('\n').filter(Boolean).reverse()) {
-    try {
-      const entry = JSON.parse(line);
-      if (entry.step === 'app-root.ready' && entry.path) return entry.path;
-    } catch {
-      /* skip malformed line */
+  for (const entry of bootstrapLogFiles()) {
+    // One bootstrap log is appended across runs, so the newest run is the last
+    // matching line inside the newest file.
+    const lines = readFileSync(entry.file, 'utf8').split('\n').filter(Boolean).reverse();
+    for (const line of lines) {
+      try {
+        const record = JSON.parse(line);
+        if (record.step === 'app-root.ready' && record.path) return record.path;
+      } catch {
+        /* skip malformed line */
+      }
     }
   }
   return null;
