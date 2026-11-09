@@ -55,6 +55,7 @@ export const api = {
   get: (path, options) => request(path, {...options, method: 'GET'}),
   post: (path, body = {}, options) => request(path, {...options, method: 'POST', body}),
   patch: (path, body = {}, options) => request(path, {...options, method: 'PATCH', body}),
+  delete: (path, body = {}, options) => request(path, {...options, method: 'DELETE', body}),
   download(path) {
     const anchor = document.createElement('a');
     anchor.href = path;

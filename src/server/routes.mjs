@@ -12,16 +12,24 @@ import {
   serializeViewerRow
 } from './serializers.mjs';
 import {getSession, listSessions} from '../storage/repositories/sessions.mjs';
-import {listEvents, contentStats} from '../storage/repositories/events.mjs';
+import {listEvents, contentStats, listViewerSessionMessages} from '../storage/repositories/events.mjs';
 import {buildSessionSummary} from '../analytics/sessions/summary.mjs';
 import {buildSessionLeaderboard, LEADERBOARD_LIMIT} from '../analytics/sessions/leaderboard.mjs';
+import {
+  HISTORY_MAX_LIMIT,
+  HISTORY_PAGE_SIZE,
+  searchHistory
+} from '../analytics/sessions/history-search.mjs';
+import {archiveSession, deleteSessionRecord, stopSessionRecording} from './session-admin.mjs';
 import {buildViewerProfile} from '../analytics/viewers/profile.mjs';
 import {groupCurrencyTotals} from '../analytics/payments/totals.mjs';
 import {
+  getViewer,
   listViewers,
   sessionCurrencyTotals,
   setViewerFocused,
   sessionSupportBySessionIds,
+  viewerSessionStats,
   viewerSupportByViewerIds
 } from '../storage/repositories/viewers.mjs';
 import {
@@ -342,7 +350,17 @@ export function buildRoutes() {
         const platform = url.searchParams.get('platform');
         const broadcasterId = url.searchParams.get('broadcasterId');
         const unassigned = url.searchParams.get('scope') === 'unassigned';
-        const rows = listSessions(deps.db, {limit, offset, platform, broadcasterId, unassigned});
+        const includeArchived = url.searchParams.get('includeArchived') === '1';
+        const archivedOnly = url.searchParams.get('archivedOnly') === '1';
+        const rows = listSessions(deps.db, {
+          limit,
+          offset,
+          platform,
+          broadcasterId,
+          unassigned,
+          includeArchived,
+          archivedOnly
+        });
         const support = sessionSupportBySessionIds(deps.db, rows.map((row) => row.id));
         sendJson(res, 200, {
           sessions: rows.map((row) => ({...serializeSessionRow(row), support: support.get(row.id) ?? []}))
@@ -368,14 +386,34 @@ export function buildRoutes() {
       method: 'POST',
       path: '/api/live/recordings/:sessionId/stop',
       handler: async ({res, params, deps}) => {
-        const result = await deps.sessionManager.stopSession(params.sessionId, {status: 'ended', reason: 'user'});
-        if (!result.session) {
-          throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-        }
+        // Same service as the history page: one stop implementation, one set of
+        // rules. Only the addressed session is stopped.
+        const result = await stopSessionRecording({deps, sessionId: params.sessionId});
         sendJson(res, 200, {
           stopped: Boolean(result.stopped),
           session: serializeSessionRow(result.session)
         });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/history/search',
+      handler: ({res, url, deps}) => {
+        const limit = Number(url.searchParams.get('limit') ?? HISTORY_PAGE_SIZE);
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        const payload = searchHistory(deps.db, {
+          query: url.searchParams.get('q') ?? '',
+          scope: url.searchParams.get('scope') ?? 'all',
+          platform: url.searchParams.get('platform'),
+          status: url.searchParams.get('status'),
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+          includeArchived: url.searchParams.get('includeArchived') === '1',
+          archivedOnly: url.searchParams.get('archivedOnly') === '1',
+          limit: Math.min(Math.max(limit || HISTORY_PAGE_SIZE, 1), HISTORY_MAX_LIMIT),
+          offset
+        });
+        sendJson(res, 200, payload);
       }
     },
     {
@@ -414,13 +452,61 @@ export function buildRoutes() {
       method: 'POST',
       path: '/api/sessions/:id/stop',
       handler: async ({res, params, deps}) => {
+        const result = await stopSessionRecording({deps, sessionId: params.id});
+        sendJson(res, 200, {stopped: Boolean(result.stopped), session: serializeSessionRow(result.session)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/sessions/:id/archive',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readOptionalJson(req);
+        const archived = body.archived !== false;
+        const session = archiveSession({
+          db: deps.db,
+          sessionId: params.id,
+          archived,
+          manager: deps.sessionManager
+        });
+        deps.logger?.info({event: 'session.archived', sessionId: params.id, archived});
+        sendJson(res, 200, {session: serializeSessionRow(session)});
+      }
+    },
+    {
+      method: 'DELETE',
+      path: '/api/sessions/:id',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readOptionalJson(req);
+        const result = await deleteSessionRecord({
+          deps,
+          sessionId: params.id,
+          confirm: body.confirm === true
+        });
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/sessions/:id/viewers/:viewerId',
+      handler: ({res, url, params, deps}) => {
         const session = getSession(deps.db, params.id);
         if (!session) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-        if (session.status !== 'live') {
-          throw new AppError(ERROR_CODES.SESSION_NOT_ACTIVE, {messageKey: 'errors.sessionNotActive', httpStatus: 409});
-        }
-        const result = await deps.sessionManager.stopSession(params.id, {status: 'ended', reason: 'user'});
-        sendJson(res, 200, {session: serializeSessionRow(result.session)});
+        const viewer = getViewer(deps.db, params.viewerId);
+        if (!viewer) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotFound');
+        const stats = viewerSessionStats(deps.db, params.id, params.viewerId);
+        if (!stats) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotInSession');
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 50), 1), 200);
+        const messages = listViewerSessionMessages(deps.db, {
+          sessionId: params.id,
+          viewerId: params.viewerId,
+          limit
+        });
+        sendJson(res, 200, {
+          session: serializeSessionRow(session),
+          viewer: serializeViewerRow(viewer),
+          participation: stats,
+          messages: messages.map(serializeEvent)
+        });
       }
     },
     {

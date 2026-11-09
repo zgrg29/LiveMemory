@@ -338,6 +338,36 @@ export const MIGRATIONS = Object.freeze([
           ON viewer_sessions (session_id, message_count DESC);
       `);
     }
+  },
+  {
+    version: 7,
+    name: 'session-archive-end-reason-and-history-search',
+    up(db) {
+      // Archive is a management attribute, deliberately separate from the
+      // capture `status`: an ended/interrupted session can be archived and
+      // unarchived without ever looking like a running capture again.
+      db.exec('ALTER TABLE sessions ADD COLUMN archived_at INTEGER');
+      // Why the local capture ended. `status = ended` means "no capture is
+      // running"; it must not be presented as "the platform broadcast ended".
+      // Values: user / adapter_end / failed / shutdown / startup_recovery.
+      db.exec('ALTER TABLE sessions ADD COLUMN end_reason TEXT');
+
+      // History lists filter by archive/platform/status and order by start time;
+      // search only ever scans sessions + viewers + viewer_sessions (never the
+      // raw event table), so these indexes bound the cost as data grows.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_sessions_history
+          ON sessions (archived_at, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_sessions_platform_started
+          ON sessions (platform, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_viewers_nickname
+          ON viewers (nickname);
+        CREATE INDEX IF NOT EXISTS idx_viewer_nicknames_nickname
+          ON viewer_nicknames (nickname);
+        CREATE INDEX IF NOT EXISTS idx_viewer_sessions_viewer_seen
+          ON viewer_sessions (viewer_id, last_seen_at DESC);
+      `);
+    }
   }
 ]);
 

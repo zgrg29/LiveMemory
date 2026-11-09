@@ -137,6 +137,6 @@ export class BilibiliService {
   }
 
   async disconnect({sessionId = null} = {}) {
-    return this.sessionManager.stopPlatform('bilibili', {sessionId});
+    return this.sessionManager.stopPlatform('bilibili', {sessionId, status: 'ended', reason: 'user'});
   }
 }

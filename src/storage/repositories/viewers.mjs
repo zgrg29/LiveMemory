@@ -213,6 +213,29 @@ export function viewerSessionHistory(db, viewerId, {limit = 20} = {}) {
   `).all(String(viewerId), Math.min(Math.max(Number(limit) || 20, 1), 100));
 }
 
+/**
+ * One viewer's participation row in one session. Returns null when the viewer
+ * has no recorded participation there (for example after the session was
+ * deleted), so callers never invent a relationship.
+ */
+export function viewerSessionStats(db, sessionId, viewerId) {
+  const row = db.prepare(`
+    SELECT vs.session_id, vs.viewer_id, vs.message_count, vs.payment_event_count,
+           vs.first_seen_at, vs.last_seen_at
+      FROM viewer_sessions vs
+     WHERE vs.session_id = ? AND vs.viewer_id = ?
+  `).get(String(sessionId), String(viewerId));
+  if (!row) return null;
+  return {
+    sessionId: row.session_id,
+    viewerId: row.viewer_id,
+    messageCount: Number(row.message_count ?? 0),
+    paymentEventCount: Number(row.payment_event_count ?? 0),
+    firstSeenAt: row.first_seen_at ?? null,
+    lastSeenAt: row.last_seen_at ?? null
+  };
+}
+
 export function setViewerFocused(db, viewerId, focused, {now = Date.now()} = {}) {
   const result = db.prepare('UPDATE viewers SET focused = ?, updated_at = ? WHERE id = ?')
     .run(focused ? 1 : 0, now, String(viewerId));
@@ -319,6 +342,105 @@ export function topSessionViewers(db, sessionId, {limit = 5} = {}) {
      LIMIT ?
   `).all(String(sessionId), Math.min(safeLimit, 20));
   return {speakers, supporters};
+}
+
+/**
+ * Rebuild one viewer's derived aggregates from the rows that still exist.
+ *
+ * Used after permanently deleting a session: global counters, per-session
+ * participation and currency totals must describe the remaining data only.
+ * A viewer whose only evidence was the deleted session is removed, unless the
+ * user explicitly marked them as important (`focused = 1`), which is treated as
+ * independently retained user data. A viewer that still has raw events but no
+ * `viewer_sessions` row (legacy or manually repaired data) is kept and rebuilt
+ * from those events instead of being deleted.
+ *
+ * @returns {{kept:boolean, removed:boolean, sessionCount:number}}
+ */
+export function rebuildViewerAggregates(db, viewerId, {now = Date.now()} = {}) {
+  const id = String(viewerId);
+  const viewer = db.prepare('SELECT id, focused FROM viewers WHERE id = ?').get(id) ?? null;
+  if (!viewer) return {kept: false, removed: false, sessionCount: 0};
+
+  const sessionRow = db.prepare(`
+    SELECT COALESCE(SUM(message_count), 0) AS message_count,
+           COALESCE(SUM(payment_event_count), 0) AS payment_event_count,
+           MIN(first_seen_at) AS first_seen_at,
+           MAX(last_seen_at) AS last_seen_at,
+           COUNT(*) AS session_count
+      FROM viewer_sessions
+     WHERE viewer_id = ?
+  `).get(id);
+  const sessionCount = Number(sessionRow?.session_count ?? 0);
+
+  if (sessionCount === 0) {
+    const eventRow = db.prepare(`
+      SELECT COUNT(*) AS event_count,
+             SUM(CASE WHEN event_type IN ('chat', 'super_chat') THEN 1 ELSE 0 END) AS message_count,
+             SUM(CASE WHEN is_paid = 1 AND event_type IN
+                   ('gift', 'super_chat', 'super_sticker', 'guard', 'membership')
+                 THEN 1 ELSE 0 END) AS payment_event_count,
+             MIN(occurred_at) AS first_seen_at,
+             MAX(occurred_at) AS last_seen_at
+        FROM events
+       WHERE viewer_id = ?
+    `).get(id);
+    if (Number(eventRow?.event_count ?? 0) === 0) {
+      if (Number(viewer.focused) === 1) {
+        db.prepare('UPDATE viewers SET message_count = 0, payment_event_count = 0, updated_at = ? WHERE id = ?')
+          .run(now, id);
+        db.prepare('DELETE FROM viewer_currency_totals WHERE viewer_id = ?').run(id);
+        return {kept: true, removed: false, sessionCount: 0};
+      }
+      db.prepare('DELETE FROM viewers WHERE id = ?').run(id);
+      return {kept: false, removed: true, sessionCount: 0};
+    }
+    db.prepare(`
+      UPDATE viewers
+         SET message_count = ?, payment_event_count = ?,
+             first_seen_at = COALESCE(?, first_seen_at),
+             last_seen_at = COALESCE(?, last_seen_at),
+             updated_at = ?
+       WHERE id = ?
+    `).run(
+      Number(eventRow.message_count ?? 0),
+      Number(eventRow.payment_event_count ?? 0),
+      eventRow.first_seen_at ?? null,
+      eventRow.last_seen_at ?? null,
+      now,
+      id
+    );
+  } else {
+    db.prepare(`
+      UPDATE viewers
+         SET message_count = ?, payment_event_count = ?,
+             first_seen_at = ?, last_seen_at = ?, updated_at = ?
+       WHERE id = ?
+    `).run(
+      Number(sessionRow.message_count ?? 0),
+      Number(sessionRow.payment_event_count ?? 0),
+      Number(sessionRow.first_seen_at ?? now),
+      Number(sessionRow.last_seen_at ?? now),
+      now,
+      id
+    );
+  }
+
+  // Currency totals are derived from raw events, so they are rebuilt exactly
+  // from the remaining paid events (same rules as the ingest path).
+  db.prepare('DELETE FROM viewer_currency_totals WHERE viewer_id = ?').run(id);
+  db.prepare(`
+    INSERT INTO viewer_currency_totals (viewer_id, currency, value_kind, total_minor, event_count)
+    SELECT viewer_id, currency, value_kind, SUM(amount_minor), COUNT(*)
+      FROM events
+     WHERE viewer_id = ?
+       AND is_paid = 1
+       AND amount_minor > 0
+       AND value_kind IN ('actual', 'display')
+       AND currency IS NOT NULL
+     GROUP BY currency, value_kind
+  `).run(id);
+  return {kept: true, removed: false, sessionCount};
 }
 
 /** Number of viewers with at least one valid message in one session. */

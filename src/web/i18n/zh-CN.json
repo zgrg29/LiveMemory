@@ -26,7 +26,8 @@
     "live": "直播中",
     "ended": "已结束",
     "interrupted": "已中断",
-    "simulated": "模拟"
+    "simulated": "模拟",
+    "stopped": "已停止记录"
   },
   "common": {
     "loading": "正在载入…",
@@ -238,7 +239,8 @@
       "duration": "时长",
       "messages": "消息",
       "viewers": "观众",
-      "support": "支持"
+      "support": "支持",
+      "actions": "操作"
     },
     "ai": {
       "none": "待分析",
@@ -262,7 +264,102 @@
       "contentStored": "已保存聊天文本",
       "simulatedNote": "本场为模拟数据，用于验证记录流程。",
       "interruptedNote": "本场记录被中断（软件异常关闭），统计按已收到的数据保留。",
-      "back": "返回直播历史"
+      "back": "返回直播历史",
+      "deletedBody": "该场次已被删除，不再出现在直播历史、搜索结果或观众参与记录中。",
+      "archivedTitle": "该场次已归档",
+      "archivedBody": "已归档场次默认不在历史列表显示，但仍可搜索、查看详情与导出 AI 分析包。可在「···」菜单中取消归档。",
+      "stoppedTitle": "你已停止记录",
+      "stoppedBody": "本地采集在此结束；平台直播可能仍在继续，这不代表平台直播已结束。",
+      "viewerTitle": "本场观众",
+      "viewerUid": "稳定 ID",
+      "viewerMessages": "本场发言",
+      "viewerPayments": "本场付费事件",
+      "viewerFirstSeen": "本场首次出现",
+      "viewerLastSeen": "本场最后出现",
+      "viewerOpenProfile": "打开观众档案",
+      "viewerHint": "仅显示具有该稳定平台身份的消息；匿名消息无法归属到具体观众。",
+      "viewerMissing": "该观众在本场没有参与记录。",
+      "viewerNoText": "本场消息原文已不再保存（精简模式或保留策略），计数与身份仍然保留。",
+      "viewerNoMessages": "该观众在本场没有发言。"
+    },
+    "archived": "已归档",
+    "search": {
+      "placeholder": "按主播、标题或观众搜索",
+      "label": "搜索直播历史",
+      "scopeLabel": "搜索范围",
+      "scope": {
+        "all": "全部字段",
+        "broadcaster": "主播",
+        "title": "标题",
+        "viewer": "观众"
+      },
+      "reason": {
+        "title": "标题匹配",
+        "broadcaster": "主播名称匹配",
+        "viewer": "观众参与匹配"
+      },
+      "summary": "显示 {shown} / {total} 场",
+      "hiddenArchived": "另有 {n} 场已归档未显示",
+      "viewArchived": "查看归档",
+      "identityHint": "没有稳定平台 ID 的匿名消息无法按观众搜索。同名昵称会作为不同身份分别列出，绝不合并。",
+      "viewerMessages": "{n} 条消息",
+      "moreViewers": "另有 {n} 位观众",
+      "loadMore": "加载更多",
+      "noResults": "没有匹配的场次",
+      "noResultsBody": "换个关键词，或放宽平台、状态、日期与归档筛选条件。"
+    },
+    "filters": {
+      "platform": "平台",
+      "status": "状态",
+      "ended": "已停止或结束",
+      "from": "开始日期",
+      "to": "结束日期",
+      "includeArchived": "包含已归档",
+      "reset": "重置筛选"
+    },
+    "manage": {
+      "broadcaster": "主播",
+      "title": "直播标题",
+      "platform": "平台",
+      "date": "日期",
+      "messages": "消息数",
+      "viewers": "观众数"
+    },
+    "actions": {
+      "menu": "场次操作",
+      "menuFor": "{name} 的操作",
+      "stop": "停止记录",
+      "archive": "归档",
+      "unarchive": "取消归档",
+      "delete": "永久删除"
+    },
+    "stop": {
+      "title": "停止这场记录？",
+      "subtitle": "只会停止当前场次，其他直播继续记录。",
+      "noteTitle": "平台直播可能仍在进行",
+      "note": "停止只结束本地采集，已采集的消息、观众身份、统计与经济支持记录全部保留；不会向 Bilibili 或 YouTube 表示直播已经结束。",
+      "confirm": "停止记录",
+      "stopping": "正在停止…",
+      "done": "已停止记录并保存"
+    },
+    "archive": {
+      "done": "场次已归档"
+    },
+    "unarchive": {
+      "done": "场次已恢复到直播历史"
+    },
+    "delete": {
+      "title": "永久删除这场直播？",
+      "subtitle": "此操作不可撤销，没有回收站。",
+      "deletesTitle": "将被删除",
+      "deletesBody": "仅此场次的消息、事件、经济支持、场次统计、观众参与关系、AI 分析任务与分析包文件。",
+      "keepsTitle": "将保留",
+      "keepsBody": "同时参与其他场次的观众、他们在其他主播下的档案、其他所有场次、设置与登录信息。只存在于本场次的观众会被清理。",
+      "ackTitle": "我了解此操作不可撤销",
+      "ackBody": "该记录与仅属于它的数据将从这台电脑移除。",
+      "confirm": "永久删除",
+      "deleting": "正在删除…",
+      "done": "场次已永久删除"
     }
   },
   "viewers": {
@@ -613,7 +710,12 @@
     "pickerTimeout": "文件夹选择器等待超时。",
     "pickerFailed": "无法打开文件夹选择器，请直接输入完整路径。",
     "folderNotFound": "该文件夹不存在。",
-    "folderOpenFailed": "无法打开文件夹。"
+    "folderOpenFailed": "无法打开文件夹。",
+    "sessionArchiveLive": "请先停止记录，再归档该场次。",
+    "sessionStillRecording": "该场次仍在记录中。请先停止记录，确认采集任务完全退出后再删除。",
+    "deleteConfirmRequired": "删除需要明确确认。",
+    "sessionDeleteIncomplete": "部分场次数据未能删除，操作已回滚。",
+    "viewerNotInSession": "该观众在本场没有参与记录。"
   },
   "toast": {
     "saved": "已保存",

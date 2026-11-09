@@ -1,5 +1,56 @@
 # 版本变化（CHANGELOG）
 
+## 0.7.0 — 2026-11-09（直播历史场次管理、统一搜索、永久删除）
+
+### 新增
+
+- **场次管理（列表 + 详情共用）**
+  - 停止记录：只停指定场次，保留消息/观众身份/统计/经济支持；`status=ended`、`end_reason=user`；
+    UI 区分“已停止记录”与“已结束”，明确平台直播可能仍在进行；
+  - 归档/取消归档：schema v7 `sessions.archived_at`，独立于 `status`；live 禁止归档；
+    默认列表隐藏，支持“包含已归档/查看归档”；归档场次仍可搜索、查看、导出 AI 包；重启保持；
+  - 永久删除：`DELETE /api/sessions/:id`（必须 `{confirm:true}`），事务删除消息/事件/支持/统计/
+    观众参与/AI 包记录，重建观众与主播维度聚合，清理孤立派生行，删除导出文件；
+    正在记录或 adapter 未退出时拒绝；失败整体回滚；无残留校验；
+  - `end_reason`：user / adapter 原因 / failed / shutdown / startup_recovery。
+
+- **直播历史搜索**
+  - `GET /api/history/search`：主播（名称 + 稳定 ID）、标题（中日英/混合）、观众（稳定 ID + 昵称 + 历史昵称）；
+  - 同名不同 ID、跨平台同名分别返回，绝不合并；匿名消息不生成观众结果并明确提示；
+  - 结果说明主播/标题/观众匹配原因；观众匹配显示本场消息数，可下钻最近 50 条发言；
+  - 平台 / 状态 / 日期范围 / 包含归档筛选可组合；默认倒序；20 条/页“加载更多”；
+  - `%`/`_` 按字面匹配；不读取聊天正文。
+
+- **UI**
+  - 历史列表工具栏、行内 `···` 菜单；详情标题区同一菜单；
+  - 共享 `dialog.js` 与 `actions-menu.js`；键盘/触屏/窄屏、焦点返回、视口夹紧；
+  - 三语新增完整文案；v0.7.0 截图与 UI 验证脚本。
+
+### 变更
+
+- 新增 `src/server/session-admin.mjs`、`src/analytics/sessions/history-search.mjs`、
+  `src/web/js/{dialog,actions-menu,session-actions}.js`；`history.js` 重写。
+- `/api/sessions` 支持 `includeArchived` / `archivedOnly`，默认隐藏归档；AI 页面显式包含归档。
+- 两个停止端点共用 `stopSessionRecording`。
+- schema **7**：新增 `archived_at`、`end_reason` 与 5 个历史/搜索索引；旧库原地升级，不重写历史行。
+
+### 测试 / 构建
+
+- 自动化：**318 passed / 0 failed / 约 25.0 秒**。
+- 浏览器 UI：`verify-history-ui.mjs` **27/27**。
+- EXE：90.4 MB / 106 资源，SHA-256 `9602c5607782ee72645f32019fbba7b28ca6cb6722bfd70c1bdeebed57877e1f`；
+  `verify-exe.mjs` **10/10**；`--version` 0.7.0。
+- 打包 EXE UI：`verify-exe-history.mjs` **19/19**（真实 v6→v7 升级、搜索、归档、重启保持、停止、删除、
+  共享观众聚合、专属观众清理）。
+- 本轮没有新增真实平台网络采集；v0.6.0 真实并发结果仍为历史样本。
+
+### 已知限制
+
+- 删除不可撤销、无回收站；未做批量归档/删除。
+- 当前没有 AI 结果/画像表；未来 M6 必须把 AI 结果加入同一删除事务。
+- 真实 UAC、真实文件夹选择、干净 Windows 环境、M5 备份仍未验证。
+- 性能基线 1200 场 / 12000 事件，未做百万级或 10+ 场长时间压力。
+
 ## 0.6.0 — 2026-11-09（多直播间并发记录、标签页、Top 100）
 
 ### 新增

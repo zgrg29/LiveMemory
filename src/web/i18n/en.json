@@ -26,7 +26,8 @@
     "live": "Live",
     "ended": "Ended",
     "interrupted": "Interrupted",
-    "simulated": "Simulated"
+    "simulated": "Simulated",
+    "stopped": "Recording stopped"
   },
   "common": {
     "loading": "Loading…",
@@ -238,7 +239,8 @@
       "duration": "Duration",
       "messages": "Messages",
       "viewers": "Viewers",
-      "support": "Support"
+      "support": "Support",
+      "actions": "Actions"
     },
     "ai": {
       "none": "AI pending",
@@ -262,7 +264,102 @@
       "contentStored": "Chat text stored",
       "simulatedNote": "This session contains simulated data used to verify the recording pipeline.",
       "interruptedNote": "This session was interrupted (the app closed unexpectedly). Its statistics are kept as recorded.",
-      "back": "Back to history"
+      "back": "Back to history",
+      "deletedBody": "This session was deleted. It no longer exists in history, search or viewer participation records.",
+      "archivedTitle": "This session is archived",
+      "archivedBody": "Archived sessions are hidden from the default history list but remain searchable, openable and exportable. Unarchive it from the ··· menu.",
+      "stoppedTitle": "Recording stopped by you",
+      "stoppedBody": "Local capture ended here. The platform broadcast may have continued; this is not a platform 'stream ended' event.",
+      "viewerTitle": "Viewer in this session",
+      "viewerUid": "Stable ID",
+      "viewerMessages": "Messages here",
+      "viewerPayments": "Paid events here",
+      "viewerFirstSeen": "First seen here",
+      "viewerLastSeen": "Last seen here",
+      "viewerOpenProfile": "Open viewer profile",
+      "viewerHint": "Only messages with this stable platform identity are shown. Anonymous messages cannot be attributed to a viewer.",
+      "viewerMissing": "This viewer has no recorded participation in this session.",
+      "viewerNoText": "The message text for this session is no longer stored (compact mode or retention). Counts and identity remain.",
+      "viewerNoMessages": "No chat messages from this viewer in this session."
+    },
+    "archived": "Archived",
+    "search": {
+      "placeholder": "Search by broadcaster, title or viewer",
+      "label": "Search live history",
+      "scopeLabel": "Search in",
+      "scope": {
+        "all": "All fields",
+        "broadcaster": "Broadcaster",
+        "title": "Title",
+        "viewer": "Viewer"
+      },
+      "reason": {
+        "title": "Title match",
+        "broadcaster": "Broadcaster match",
+        "viewer": "Viewer participation"
+      },
+      "summary": "Showing {shown} of {total} sessions",
+      "hiddenArchived": "Archived sessions hidden: {n}",
+      "viewArchived": "View archived",
+      "identityHint": "Anonymous messages without a stable platform ID cannot be found by viewer. Identities with the same nickname are listed separately and never merged.",
+      "viewerMessages": "{n} messages",
+      "moreViewers": "+{n} more viewers",
+      "loadMore": "Load more",
+      "noResults": "No matching sessions",
+      "noResultsBody": "Try a different term or relax the platform, status, date and archive filters."
+    },
+    "filters": {
+      "platform": "Platform",
+      "status": "Status",
+      "ended": "Ended / stopped",
+      "from": "From",
+      "to": "To",
+      "includeArchived": "Include archived",
+      "reset": "Reset filters"
+    },
+    "manage": {
+      "broadcaster": "Broadcaster",
+      "title": "Stream title",
+      "platform": "Platform",
+      "date": "Date",
+      "messages": "Messages",
+      "viewers": "Viewers"
+    },
+    "actions": {
+      "menu": "Session actions",
+      "menuFor": "Actions for {name}",
+      "stop": "Stop recording",
+      "archive": "Archive",
+      "unarchive": "Unarchive",
+      "delete": "Delete permanently"
+    },
+    "stop": {
+      "title": "Stop this recording?",
+      "subtitle": "Only this session stops; other recordings keep running.",
+      "noteTitle": "The broadcast may still be live",
+      "note": "Stopping ends local capture and keeps every collected message, viewer identity, statistic and support record. It does not tell Bilibili or YouTube that the broadcast has ended.",
+      "confirm": "Stop recording",
+      "stopping": "Stopping…",
+      "done": "Recording stopped and saved"
+    },
+    "archive": {
+      "done": "Session archived"
+    },
+    "unarchive": {
+      "done": "Session restored to history"
+    },
+    "delete": {
+      "title": "Permanently delete this session?",
+      "subtitle": "This cannot be undone. There is no recycle bin.",
+      "deletesTitle": "What will be deleted",
+      "deletesBody": "Messages, events, economic support, session statistics, viewer participation, AI analysis packages and their exported files for this session only.",
+      "keepsTitle": "What will be kept",
+      "keepsBody": "Viewers who also appear in other sessions, their profiles for other broadcasters, every other session, settings and login data. Viewers whose only record was this session are removed.",
+      "ackTitle": "I understand this cannot be undone",
+      "ackBody": "This record and the data that belongs only to it will be removed from this computer.",
+      "confirm": "Delete permanently",
+      "deleting": "Deleting…",
+      "done": "Session permanently deleted"
     }
   },
   "viewers": {
@@ -613,7 +710,12 @@
     "pickerTimeout": "The folder picker timed out.",
     "pickerFailed": "Could not open the folder picker. Enter the full path instead.",
     "folderNotFound": "That folder does not exist.",
-    "folderOpenFailed": "Could not open the folder."
+    "folderOpenFailed": "Could not open the folder.",
+    "sessionArchiveLive": "Stop recording before archiving this session.",
+    "sessionStillRecording": "This session is still being recorded. Stop it and wait until capture has fully exited before deleting.",
+    "deleteConfirmRequired": "Deletion requires an explicit confirmation.",
+    "sessionDeleteIncomplete": "Some session data could not be deleted, so the operation was rolled back.",
+    "viewerNotInSession": "That viewer has no recorded participation in this session."
   },
   "toast": {
     "saved": "Saved",

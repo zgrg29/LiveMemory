@@ -13,6 +13,7 @@ LiveMemory.exe (Node SEA)
          ├─ src/server/settings-store.mjs  config/settings.json
          ├─ src/server/relocation.mjs    数据目录迁移/回滚
          ├─ src/server/maintenance.mjs   清空数据/出厂快照
+         ├─ src/server/session-admin.mjs 单场停止/归档/永久删除（列表与详情共用）
          ├─ src/server/native-dialog.mjs 原生目录选择/打开文件夹
          ├─ src/server/logger.mjs        脱敏 JSONL 日志
          ├─ src/storage/                node:sqlite + 迁移 + 仓储（含 broadcasters）
@@ -145,11 +146,48 @@ stopSession(sessionId)
 - 软件启动时 `recoverInterrupted()` 把所有残留 live 行标记 interrupted，不自动恢复或新建场次。
 - 单进程 `node:sqlite` 同步写入；多个 adapter 的回调在事件循环中串行进入事务，WAL + `busy_timeout` 保证一致性。
 
+## 3.4 场次生命周期管理（v0.7.0）
+
+```text
+停止：POST /api/sessions/:id/stop
+      POST /api/live/recordings/:id/stop
+  └─ session-admin.stopSessionRecording()
+      ├─ 目标行必须 status='live'，否则 409 SESSION_NOT_ACTIVE
+      ├─ SessionManager.stopSession(id)（只动该场 adapter）
+      └─ sessions.status='ended', end_reason='user', ended_at
+
+归档：POST /api/sessions/:id/archive {archived}
+  └─ session-admin.archiveSession()
+      ├─ live 或仍有 adapter → 409 SESSION_ARCHIVE_LIVE
+      ├─ archived_at = COALESCE(archived_at, now)（独立于 status）
+      └─ 取消归档：archived_at = NULL
+
+删除：DELETE /api/sessions/:id {confirm:true}
+  └─ session-admin.deleteSessionRecord()
+      ├─ 守卫：confirm === true；status!=='live' 且无内存 recording
+      ├─ 读取受影响 viewer ids + 该场 ai_packages 文件清单
+      ├─ BEGIN IMMEDIATE
+      │   ├─ DELETE ai_packages / session_currency_totals / viewer_sessions / events
+      │   ├─ DELETE sessions（FK 级联兜底）
+      │   ├─ 每个受影响 viewer：rebuildViewerAggregates()
+      │   │      仍保留 → rebuildViewerBroadcasterAggregates()
+      │   ├─ 清理无场次且无关系的 broadcasters
+      │   └─ assertNoResidue(session_id) → 任一残留则抛错回滚
+      ├─ COMMIT
+      └─ 删除 exports/ 内该场分析包文件（safeExportPath 防穿越）
+```
+
+- 停止**不**代表平台直播结束：`status` 只描述本地采集；UI 用 `end_reason` 区分「已停止记录 / 已结束」。
+- 归档不改变采集状态，不删除任何数据。
+- 删除后观众/主播衍生数据按剩余证据重建，避免“删了场次但长期统计仍有旧数据”。
+- 搜索与删除都只走这一处业务模块，列表页与详情页不会出现两套行为。
+
 ## 4. 读模型
 
 - `analytics/sessions/hotness.mjs`：按场次时长选择 10s–1h 的桶；输出消息数、独立观众、按币种支付；直播中不绘制未完成的桶。
 - `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众（默认前 5，可传 `topLimit`）+ 存储统计。
 - `analytics/sessions/leaderboard.mjs`：单场 Top 100 读模型；`rank` 按有效弹幕数 → `platform_uid` → `viewer_id` 稳定排序；搜索只在 Top 100 内过滤且保留原始名次。
+- `analytics/sessions/history-search.mjs`：历史搜索读模型；`scope=all|broadcaster|title|viewer`，组合平台/状态/日期/归档筛选；只查场次与身份关系表，不读聊天正文；`LIKE` 通配符转义；返回匹配原因与实际参与身份。
 - `analytics/viewers/profile.mjs`：观众档案（身份、累计、昵称历史、参与场次）。
 - `analytics/payments/totals.mjs`：按币种合并 actual/display，绝不混加。
 
@@ -173,7 +211,11 @@ stopSession(sessionId)
 | GET | `/api/sessions/current` | 最近开始的一场记录摘要（兼容；标签页改用 recordings） |
 | GET | `/api/sessions/:id` | 单场摘要 + 时间线（`topLimit` 可选，最多 100） |
 | GET | `/api/sessions/:id/top-viewers` | 单场 Top 100（`limit`、`query`） |
-| POST | `/api/sessions/:id/stop` | 结束指定场次 |
+| POST | `/api/sessions/:id/stop` | 停止指定场次记录（与 live recordings 端点共用实现） |
+| POST | `/api/sessions/:id/archive` | 归档/取消归档（`{archived}`；live 返回 409） |
+| DELETE | `/api/sessions/:id` | 永久删除单场（必须 `{confirm:true}`；记录中拒绝） |
+| GET | `/api/sessions/:id/viewers/:viewerId` | 单观众单场参与统计 + 最近发言 |
+| GET | `/api/history/search` | 历史统一搜索 + 筛选 + 分页 |
 | GET | `/api/live/recordings` | 所有运行中记录任务及独立状态/统计 |
 | POST | `/api/live/recordings/:sessionId/stop` | 只停止指定记录任务 |
 | POST | `/api/simulate/start` | 开始模拟场次（`title`、`speed`） |
@@ -248,6 +290,10 @@ stopSession(sessionId)
 - Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
 - `js/pages/live.js`：多场标签页；每个 session 独立缓存 summary/feed/leaderboard；`viewToken` 防止串场；`/api/live/recordings` 恢复运行任务。
+- `js/pages/history.js`：服务端搜索/筛选/增量加载；列表与详情共用 `session-actions.js`；`?viewer=` 下钻。
+- `js/session-actions.js`：停止/归档/取消归档/永久删除的动作定义与确认框（列表与详情唯一实现）。
+- `js/actions-menu.js`：可访问的 `···` 菜单（fixed 定位、视口夹紧、键盘/Esc/外部点击/焦点返回）。
+- `js/dialog.js`：共享原生 `<dialog>` modal（settings 与 history 共用）。
 - `js/ui.js`：DOM 构造（只用 `textContent`）、格式化、toast、空状态。
 - `js/chart.js`：Canvas 时间线图，DPR 适配、主题重绘、hover 提示。
 - `js/i18n.js`：按需加载 JSON 字典，`t(key, params)`。

@@ -193,7 +193,7 @@ export class SessionManager {
     try {
       await this.stopSession(sessionId, {
         status: 'ended',
-        reason: info?.reason ?? 'adapter_ended',
+        reason: info?.reason ?? 'adapter_end',
         adapterAlreadyEnded: true
       });
     } catch (error) {
@@ -293,7 +293,7 @@ export class SessionManager {
       } catch {
         /* ignore */
       }
-      endSession(this.db, session.id, {status: 'ended', endedAt: this.now()});
+      endSession(this.db, session.id, {status: 'ended', endedAt: this.now(), reason: 'failed'});
       this.logger?.warn({
         event: 'session.start.failed',
         platform,
@@ -400,7 +400,11 @@ export class SessionManager {
       if (recording) this.#emitStatus();
       return {stopped: false, reason: 'not_live', session: row};
     }
-    const session = endSession(this.db, id, {status, endedAt: this.now()});
+    const session = endSession(this.db, id, {
+      status,
+      endedAt: this.now(),
+      reason: reason ?? (status === 'interrupted' ? 'shutdown' : null)
+    });
     if (recording) {
       try {
         recording.onEnded?.({

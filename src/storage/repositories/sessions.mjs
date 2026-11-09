@@ -68,27 +68,35 @@ export function getSession(db, sessionId) {
   return row ?? null;
 }
 
-export function listSessions(db, {limit = 50, offset = 0, platform = null, broadcasterId = null, unassigned = false} = {}) {
+export function listSessions(db, {
+  limit = 50,
+  offset = 0,
+  platform = null,
+  broadcasterId = null,
+  unassigned = false,
+  includeArchived = true,
+  archivedOnly = false
+} = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const safeOffset = Math.max(Number(offset) || 0, 0);
+  const clauses = [];
+  const params = [];
   if (unassigned) {
-    return db.prepare(`${SESSION_SELECT} WHERE s.broadcaster_id IS NULL ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
-      .all(safeLimit, safeOffset);
-  }
-  if (platform && broadcasterId) {
-    return db.prepare(`${SESSION_SELECT} WHERE s.platform = ? AND s.broadcaster_id = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
-      .all(String(platform), String(broadcasterId), safeLimit, safeOffset);
-  }
-  if (broadcasterId) {
-    return db.prepare(`${SESSION_SELECT} WHERE s.broadcaster_id = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
-      .all(String(broadcasterId), safeLimit, safeOffset);
+    clauses.push('s.broadcaster_id IS NULL');
   }
   if (platform) {
-    return db.prepare(`${SESSION_SELECT} WHERE s.platform = ? ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
-      .all(String(platform), safeLimit, safeOffset);
+    clauses.push('s.platform = ?');
+    params.push(String(platform));
   }
-  return db.prepare(`${SESSION_SELECT} ORDER BY s.started_at DESC LIMIT ? OFFSET ?`)
-    .all(safeLimit, safeOffset);
+  if (broadcasterId) {
+    clauses.push('s.broadcaster_id = ?');
+    params.push(String(broadcasterId));
+  }
+  if (archivedOnly) clauses.push('s.archived_at IS NOT NULL');
+  else if (!includeArchived) clauses.push('s.archived_at IS NULL');
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+  params.push(safeLimit, safeOffset);
+  return db.prepare(`${SESSION_SELECT} ${where} ORDER BY s.started_at DESC LIMIT ? OFFSET ?`).all(...params);
 }
 
 export function findLiveSession(db) {
@@ -126,18 +134,44 @@ export function recoverInterruptedSessions(db, {now = Date.now()} = {}) {
     UPDATE sessions
        SET status = 'interrupted',
            ended_at = COALESCE(last_event_at, started_at),
+           end_reason = 'startup_recovery',
            updated_at = ?
      WHERE status = 'live'
   `).run(now);
   return rows.map((row) => row.id);
 }
 
-export function endSession(db, sessionId, {status = SESSION_STATUS.ENDED, endedAt = Date.now()} = {}) {
+/**
+ * Close a session. `reason` records why local capture ended and is shown in the
+ * UI so a user-initiated stop is never presented as "the broadcast ended".
+ */
+export function endSession(db, sessionId, {status = SESSION_STATUS.ENDED, endedAt = Date.now(), reason = null} = {}) {
   const row = getSession(db, sessionId);
   if (!row) return null;
-  db.prepare('UPDATE sessions SET status = ?, ended_at = ?, updated_at = ? WHERE id = ?')
-    .run(status, endedAt, endedAt, String(sessionId));
+  db.prepare('UPDATE sessions SET status = ?, ended_at = ?, end_reason = ?, updated_at = ? WHERE id = ?')
+    .run(status, endedAt, reason === null || reason === undefined ? null : String(reason), endedAt, String(sessionId));
   return getSession(db, sessionId);
+}
+
+/**
+ * Archive or unarchive one session. Archiving never deletes anything and never
+ * changes the capture status; a live session must be stopped first.
+ * @returns {object|null} the updated row, or null when the session is unknown
+ */
+export function setSessionArchived(db, sessionId, archived, {now = Date.now()} = {}) {
+  const id = String(sessionId);
+  if (archived) {
+    // Re-archiving keeps the original archive time, so the timestamp is stable.
+    db.prepare(`
+      UPDATE sessions
+         SET archived_at = COALESCE(archived_at, ?), updated_at = ?
+       WHERE id = ? AND status <> 'live'
+    `).run(now, now, id);
+  } else {
+    db.prepare('UPDATE sessions SET archived_at = NULL, updated_at = ? WHERE id = ?')
+      .run(now, id);
+  }
+  return getSession(db, id);
 }
 
 export function incrementSessionCounters(db, sessionId, {

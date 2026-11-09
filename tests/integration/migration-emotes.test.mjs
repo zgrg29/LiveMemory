@@ -58,9 +58,10 @@ test('schema v1 databases upgrade to the current schema without losing old messa
   const result = migrate(db, {now: T + 1000});
   // v2 added emote metadata, v3 the platform broadcast start time, v4 author
   // badges and the raw displayed amount, v5 broadcaster identity and the
-  // broadcaster × viewer context, v6 the session leaderboard index.
-  assert.deepEqual(result.applied, [2, 3, 4, 5, 6]);
-  assert.equal(currentSchemaVersion(db), 6);
+  // broadcaster × viewer context, v6 the session leaderboard index, v7 archive
+  // state, end reason and the history/search indexes.
+  assert.deepEqual(result.applied, [2, 3, 4, 5, 6, 7]);
+  assert.equal(currentSchemaVersion(db), 7);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
   assert.ok(columnsAfter.includes('badges'));
@@ -69,6 +70,12 @@ test('schema v1 databases upgrade to the current schema without losing old messa
   assert.ok(sessionColumnsAfter.includes('platform_started_at'));
   assert.ok(sessionColumnsAfter.includes('broadcaster_id'));
   assert.ok(sessionColumnsAfter.includes('broadcaster_identity'));
+  assert.ok(sessionColumnsAfter.includes('archived_at'));
+  assert.ok(sessionColumnsAfter.includes('end_reason'));
+  // Old rows are not archived and have no invented end reason.
+  const archivedDefaults = db.prepare('SELECT archived_at, end_reason FROM sessions WHERE id = ?').get(sessionId);
+  assert.equal(archivedDefaults.archived_at, null);
+  assert.equal(archivedDefaults.end_reason, null);
   // This old row has no room id, so it must stay unresolved rather than being
   // guessed into a broadcaster.
   const oldSession = db.prepare('SELECT broadcaster_id, broadcaster_identity FROM sessions WHERE id = ?').get(sessionId);

@@ -41,7 +41,8 @@ export const aiPage = {
 
   async render(container, ctx, params, query) {
     const t = ctx.t;
-    const sessionsPayload = await api.get('/api/sessions?limit=100');
+    // Archived sessions stay analysable: they remain selectable here.
+    const sessionsPayload = await api.get('/api/sessions?limit=100&includeArchived=1');
     const sessions = sessionsPayload.sessions ?? [];
     const requested = query?.get('session');
     let selectedId = requested && sessions.some((session) => session.id === requested)

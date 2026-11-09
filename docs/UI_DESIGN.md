@@ -177,6 +177,46 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 - 网页界面继续保留简体中文 / 日本語 / English 与跟随系统。
 - `--lang zh-CN|ja|en` 仍然覆盖控制台语言，网页语言不受影响。
 
+### 7.7 直播历史管理与搜索（v0.7.0）
+
+**列表顶部工具栏**
+
+- 第一行：统一搜索框（placeholder「按主播、标题或观众搜索」）+ 搜索范围（全部字段 / 主播 / 标题 / 观众）。
+- 第二行：平台、状态、开始日期、结束日期、包含已归档、重置筛选；控件紧凑，620px 以下自动换行，不出现横向滚动。
+- 结果区上方：`显示 X / Y 场`；有隐藏归档时显示「另有 N 场已归档未显示 · 查看归档」；观众搜索时显示
+  「没有稳定平台 ID 的匿名消息无法按观众搜索；同名昵称分别列出，绝不合并」。
+- 空状态区分「还没有记录」与「没有匹配的场次」；后者提供重置筛选。
+
+**列表行**
+
+- 保持标题、状态 chip、归档 chip、模拟标记、主播/主播身份、开始时间、AI 状态；右侧为 `···` 菜单按钮。
+- 搜索时标题下方显示匹配原因 chip（标题匹配 / 主播名称匹配 / 观众参与匹配）。
+- 观众匹配行显示「昵称 · 平台 · 稳定 UID · 本场 N 条消息」；点击进入该场详情并启用观众下钻；最多 3 行，其余折叠为 `+N`。
+- 整行可点击进入详情；行内按钮（`···`、观众行）不触发行跳转。
+
+**场次操作菜单（列表与详情共用）**
+
+- 记录中：只有「停止记录」；已停止/结束/中断：归档或取消归档 + 永久删除。
+- 菜单 fixed 定位，靠近视口边缘时上翻/夹紧；方向键、Home/End、Esc、外部点击、滚动/缩放关闭；关闭后焦点回到触发按钮。
+- 停止确认：显示主播、标题、平台、日期、消息/观众；说明只停止本地采集、数据保留、平台直播可能仍在进行。
+- 删除确认（危险色）：同上事实 + 将被删除/将保留的范围 + 必须勾选「我了解此操作不可撤销」；未勾选时删除按钮禁用。
+- 归档/取消归档不弹确认，直接执行并 toast，可用「取消归档」立即恢复。
+
+**详情页**
+
+- 标题区右上角：`Open AI analysis` + `···` 菜单（与列表同一实现）。
+- 归档场次显示提示卡：默认列表隐藏，但仍可搜索、查看、导出；可从菜单取消归档。
+- `end_reason=user` 显示「你已停止记录」提示，明确不是平台直播结束。
+- `?viewer=<id>` 时显示「本场观众」卡：稳定 ID、本场发言/付费事件、首末出现、最近 50 条发言、打开观众档案；
+  无参与记录时显示明确提示，不虚构关系。
+- 停止/归档后原地刷新；删除成功后返回历史列表；已删除场次不再显示旧数据。
+
+**响应式与可访问性**
+
+- 900px 以下列表隐藏时长/消息/观众列，保留标题、状态、支持与 `···`；菜单在 390px 内不溢出。
+- 所有操作按钮有 aria-label；菜单为 `role=menu` / `role=menuitem`；对话框使用原生 `<dialog>`（焦点圈闭、Esc）。
+- 全部文本经 `textContent` 渲染，不使用 `innerHTML`。
+
 ## 8. 主题行为
 
 - 首次启动默认跟随系统；`theme-boot.js` 在 CSS 之前设置 `data-theme`，避免闪烁。
@@ -214,6 +254,19 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 - `docs/screenshots/ai-light-zh-CN.png`（1440×1200，明亮中文 AI 分析中心与任务说明）
 - `docs/screenshots/ai-dark-ja.png`（1440×1200，黑暗日语 AI 分析中心）
 - `docs/screenshots/ai-mobile-light-zh-CN.png`（390×1100，移动端 AI 分析中心）
+**v0.7.0 新截图（直播历史搜索 / 场次管理，模拟数据）：**
+
+- `docs/screenshots/history-list-v070-light-en.png`（1440×1100，搜索/筛选工具栏与行内 `···`）
+- `docs/screenshots/history-search-viewer-v070-light-en.png`（观众昵称搜索，同名跨平台身份分别显示）
+- `docs/screenshots/history-detail-viewer-v070-light-en.png`（详情页观众下钻与本场发言）
+- `docs/screenshots/history-delete-confirm-v070-light-en.png`（永久删除确认：事实、范围、不可撤销勾选）
+- `docs/screenshots/history-detail-archived-v070-light-en.png`（归档场次详情与提示）
+- `docs/screenshots/history-list-v070-dark-zh.png`（黑暗主题 + 简体中文）
+- `docs/screenshots/history-list-v070-mobile-en.png`（390×900，无横向溢出）
+
+> 以上截图来自 `scripts/demo-history.mjs` 的模拟数据，用于验证 UI 布局与交互，不代表真实直播数据。
+> 验证脚本：`scripts/verify-history-ui.mjs`（27 项）与 `scripts/verify-exe-history.mjs`（打包 EXE，19 项）。
+
 **v0.6.0 新截图（多直播标签 + Top 100，模拟数据）：**
 
 - `docs/screenshots/live-multi-tabs-v060-light-zh-CN.png`（1440×1120，3 个运行标签、Top 100、明亮中文）

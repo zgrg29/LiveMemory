@@ -26,7 +26,8 @@
     "live": "配信中",
     "ended": "終了",
     "interrupted": "中断",
-    "simulated": "シミュレーション"
+    "simulated": "シミュレーション",
+    "stopped": "記録停止"
   },
   "common": {
     "loading": "読み込み中…",
@@ -238,7 +239,8 @@
       "duration": "長さ",
       "messages": "メッセージ",
       "viewers": "視聴者",
-      "support": "支援"
+      "support": "支援",
+      "actions": "操作"
     },
     "ai": {
       "none": "分析待ち",
@@ -262,7 +264,102 @@
       "contentStored": "保存中のチャット本文",
       "simulatedNote": "この配信は記録フロー検証用のシミュレーションデータです。",
       "interruptedNote": "この配信は中断されました（アプリが異常終了）。統計は受信済みのデータとして残しています。",
-      "back": "配信履歴に戻る"
+      "back": "配信履歴に戻る",
+      "deletedBody": "この配信は削除されました。履歴・検索・視聴者の参加記録には表示されません。",
+      "archivedTitle": "この配信はアーカイブされています",
+      "archivedBody": "アーカイブ済みの配信は既定の履歴一覧には表示されませんが、検索・詳細表示・AI 分析パッケージの書き出しは可能です。「···」メニューから解除できます。",
+      "stoppedTitle": "記録を停止しました",
+      "stoppedBody": "ローカル記録はここで終了しました。プラットフォームの配信は継続している可能性があり、配信終了を意味しません。",
+      "viewerTitle": "この配信の視聴者",
+      "viewerUid": "安定 ID",
+      "viewerMessages": "この配信での発言",
+      "viewerPayments": "この配信での支払い",
+      "viewerFirstSeen": "この配信での初回",
+      "viewerLastSeen": "この配信での最終",
+      "viewerOpenProfile": "視聴者プロフィールを開く",
+      "viewerHint": "この安定したプラットフォーム ID のメッセージのみを表示します。匿名メッセージは視聴者に紐付けられません。",
+      "viewerMissing": "この視聴者はこの配信に参加していません。",
+      "viewerNoText": "この配信のメッセージ本文は保存されていません（コンパクトモードまたは保存期間）。件数と ID は保持されています。",
+      "viewerNoMessages": "この視聴者によるこの配信での発言はありません。"
+    },
+    "archived": "アーカイブ済み",
+    "search": {
+      "placeholder": "配信者・タイトル・視聴者で検索",
+      "label": "ライブ履歴を検索",
+      "scopeLabel": "検索範囲",
+      "scope": {
+        "all": "すべて",
+        "broadcaster": "配信者",
+        "title": "タイトル",
+        "viewer": "視聴者"
+      },
+      "reason": {
+        "title": "タイトル一致",
+        "broadcaster": "配信者名一致",
+        "viewer": "視聴者の参加"
+      },
+      "summary": "{total} 件中 {shown} 件を表示",
+      "hiddenArchived": "アーカイブ済みの {n} 件は非表示です",
+      "viewArchived": "アーカイブを表示",
+      "identityHint": "安定したプラットフォーム ID のない匿名メッセージは視聴者で検索できません。同名のニックネームは別の ID として個別に表示され、統合されることはありません。",
+      "viewerMessages": "{n} 件のメッセージ",
+      "moreViewers": "他 {n} 名の視聴者",
+      "loadMore": "さらに読み込む",
+      "noResults": "一致する配信はありません",
+      "noResultsBody": "別のキーワードを試すか、プラットフォーム・状態・日付・アーカイブの条件を広げてください。"
+    },
+    "filters": {
+      "platform": "プラットフォーム",
+      "status": "状態",
+      "ended": "終了・停止",
+      "from": "開始日",
+      "to": "終了日",
+      "includeArchived": "アーカイブを含む",
+      "reset": "フィルターをリセット"
+    },
+    "manage": {
+      "broadcaster": "配信者",
+      "title": "配信タイトル",
+      "platform": "プラットフォーム",
+      "date": "日付",
+      "messages": "メッセージ",
+      "viewers": "視聴者"
+    },
+    "actions": {
+      "menu": "配信の操作",
+      "menuFor": "{name} の操作",
+      "stop": "記録を停止",
+      "archive": "アーカイブ",
+      "unarchive": "アーカイブを解除",
+      "delete": "完全に削除"
+    },
+    "stop": {
+      "title": "この配信の記録を停止しますか？",
+      "subtitle": "停止するのはこの配信のみです。他の記録は続行します。",
+      "noteTitle": "プラットフォームの配信は継続中の可能性があります",
+      "note": "停止はローカル記録のみを終了し、収集済みのメッセージ・視聴者 ID・統計・支援記録はすべて保持します。Bilibili や YouTube に配信終了を通知するものではありません。",
+      "confirm": "記録を停止",
+      "stopping": "停止中…",
+      "done": "記録を停止して保存しました"
+    },
+    "archive": {
+      "done": "配信をアーカイブしました"
+    },
+    "unarchive": {
+      "done": "配信を履歴に戻しました"
+    },
+    "delete": {
+      "title": "この配信を完全に削除しますか？",
+      "subtitle": "元に戻せません。ゴミ箱はありません。",
+      "deletesTitle": "削除されるもの",
+      "deletesBody": "この配信のみのメッセージ、イベント、経済的支援、配信統計、視聴者の参加情報、AI 分析パッケージとその書き出しファイル。",
+      "keepsTitle": "保持されるもの",
+      "keepsBody": "他の配信にも参加している視聴者、他の配信者におけるプロフィール、他のすべての配信、設定、ログイン情報。この配信にしか存在しない視聴者は削除されます。",
+      "ackTitle": "元に戻せないことを理解しました",
+      "ackBody": "この記録とこの配信専用のデータがこのコンピューターから削除されます。",
+      "confirm": "完全に削除",
+      "deleting": "削除中…",
+      "done": "配信を完全に削除しました"
     }
   },
   "viewers": {
@@ -613,7 +710,12 @@
     "pickerTimeout": "フォルダー選択の待機がタイムアウトしました。",
     "pickerFailed": "フォルダー選択を開けませんでした。完全なパスを入力してください。",
     "folderNotFound": "そのフォルダーは存在しません。",
-    "folderOpenFailed": "フォルダーを開けませんでした。"
+    "folderOpenFailed": "フォルダーを開けませんでした。",
+    "sessionArchiveLive": "アーカイブする前に記録を停止してください。",
+    "sessionStillRecording": "この配信はまだ記録中です。記録を停止し、収集が完全に終了してから削除してください。",
+    "deleteConfirmRequired": "削除には明示的な確認が必要です。",
+    "sessionDeleteIncomplete": "一部の配信データを削除できなかったため、操作をロールバックしました。",
+    "viewerNotInSession": "その視聴者はこの配信に参加していません。"
   },
   "toast": {
     "saved": "保存しました",

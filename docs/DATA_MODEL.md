@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**6**
+Schema 版本：**7**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -35,7 +35,9 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | broadcaster_name | TEXT | 主播名（展示） |
 | broadcaster_id | TEXT | 外键 → `broadcasters`，可空；旧场次可能无法确定（schema v5） |
 | broadcaster_identity | TEXT | `verified` / `room_fallback` / `simulated` / `unresolved`（schema v5） |
-| status | TEXT | `live` / `ended` / `interrupted` |
+| status | TEXT | `live` / `ended` / `interrupted`；只描述本地采集 |
+| end_reason | TEXT | schema v7：`user` / adapter 原因 / `failed` / `shutdown` / `startup_recovery`；可空 |
+| archived_at | INTEGER | schema v7：归档时间；NULL = 未归档。独立管理属性，不覆盖 status |
 | storage_mode | TEXT | `compact` / `full`（场次级覆盖） |
 | source_quality | TEXT | `verified` / `estimated` / `unknown` / `mock` |
 | simulated | INTEGER | 1 = 模拟数据 |
@@ -48,7 +50,14 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | ai_status | TEXT | `none` / `exported` / `imported` |
 | created_at / updated_at | INTEGER | 毫秒 |
 
-索引：`started_at DESC`、`status`。
+索引：`started_at DESC`、`status`、`broadcaster_id, started_at DESC`（v5）；
+schema v7 新增 `idx_sessions_history (archived_at, started_at DESC)` 与
+`idx_sessions_platform_started (platform, started_at DESC)` 供历史列表筛选/排序。
+
+**状态语义（v0.7.0）**：`status=ended` 仅表示“本地没有正在运行的采集”。
+`end_reason=user` 表示用户在应用内停止记录，**不代表 Bilibili/YouTube 直播结束**；
+UI 对这种情况显示“已停止记录”，其他 ended 显示“已结束”。归档（`archived_at`）与状态正交：
+归档不改变 status，也不删除任何数据。
 
 **多场并发（v0.6.0）**：`sessions` 允许同时存在多条 `status='live'`，每行对应一场独立广播。`platform + platform_room_id` 的重复启动由 `SessionManager` 在进程内同步检查（先内存、再数据库）拒绝，不依赖数据库唯一索引；单实例锁保证不会有两个进程同时写入。启动时所有残留 `live` 行会标记为 `interrupted`，不会自动恢复。
 
@@ -124,6 +133,20 @@ CREATE INDEX idx_viewer_sessions_speakers
 ```
 
 该索引只服务单场 Top 100 排行榜；不改变数据含义，也不把长期累计混入场次排名。排行榜排序为 `message_count DESC, platform_uid ASC, viewer_id ASC`，因此同分时名次稳定且可复现。搜索在已取出的 Top 100 内过滤，保留原始名次；第 101 名不会补位进前 100。
+
+`schema v7` 新增历史搜索索引：
+
+```sql
+CREATE INDEX idx_sessions_history ON sessions (archived_at, started_at DESC);
+CREATE INDEX idx_sessions_platform_started ON sessions (platform, started_at DESC);
+CREATE INDEX idx_viewers_nickname ON viewers (nickname);
+CREATE INDEX idx_viewer_nicknames_nickname ON viewer_nicknames (nickname);
+CREATE INDEX idx_viewer_sessions_viewer_seen ON viewer_sessions (viewer_id, last_seen_at DESC);
+```
+
+搜索**不读取 `events.content`**：主播/标题只查 `sessions` 与 `broadcasters`，观众先解析身份再通过
+`viewer_sessions` 定位场次；每场事件数只做索引 `COUNT(*)`。标题/昵称使用 `LIKE` 子串匹配（中日英无需分词），
+并转义 `%`/`_` 通配符。同名不同平台或不同稳定 ID 的观众会分别返回，绝不合并。
 
 ### viewer_currency_totals
 
@@ -221,7 +244,36 @@ CREATE INDEX idx_viewer_sessions_speakers
 
 **局限**：稳定 Channel ID 与按人聚合的金额/计数仍保留；这不等同于删除全部个人数据。严格删除/去标识化模式未实现。
 
-删除场次：`DELETE FROM sessions` → 级联删除事件、`viewer_sessions`、币种合计、AI 包记录；观众本身保留（可能参与其他场次）。
+### 6.2 永久删除单场（v0.7.0）
+
+入口：`DELETE /api/sessions/:id`（必须 `{confirm:true}`）→ `session-admin.deleteSessionRecord()`。
+
+守卫：`status='live'` 或 `SessionManager` 仍有该场 adapter 时返回 `409 SESSION_STILL_RECORDING`；
+无显式确认返回 `400 DELETE_CONFIRM_REQUIRED`。
+
+在一个 `BEGIN IMMEDIATE` 事务内：
+
+1. 记录受影响观众（`viewer_sessions` 与 `events.viewer_id` 的并集）与该场 `ai_packages` 文件清单；
+2. 显式删除 `ai_packages`、`session_currency_totals`、`viewer_sessions`、`events`，再删除 `sessions`
+   （外键级联仍开启，用于兜底）；
+3. 对每个受影响观众 `rebuildViewerAggregates()`：
+   - 仍有其他场次：`viewers.message_count/payment_event_count/first_seen_at/last_seen_at` 按剩余
+     `viewer_sessions` 求和/取极值；`viewer_currency_totals` 按剩余 `events` 重新聚合；
+   - 已无任何场次与事件：删除 `viewers`（级联昵称、关系、币种）；若 `focused=1`（用户标记重要），
+     视为独立保留数据，保留观众但计数归零、币种合计清空；
+   - 仍有 raw events 但无 `viewer_sessions`（历史/手工修复数据）：保留观众并从事件重建；
+4. `rebuildViewerBroadcasterAggregates()` 重建 `viewer_broadcasters` 与
+   `viewer_broadcaster_currency_totals`，只保留仍有场次的 broadcaster；其他主播的长期档案不受影响；
+5. 删除没有任何场次、也没有任何 viewer 关系的孤立 `broadcasters` 行（纯派生数据）；
+6. `assertNoResidue(session_id)` 校验 `events`、`viewer_sessions`、`session_currency_totals`、
+   `ai_packages`、`sessions` 均无残留；失败抛错并回滚整个事务。
+
+提交后删除该场次在 `exports/` 下的分析包文件。`safeExportPath()` 拒绝越出 `exports/` 的路径；
+其他场次、设置、凭据、日志与无关文件不会被删除。
+
+> **AI 长期记忆**：schema v7 没有 AI 结果/画像断言表（M6 未实现）。当前唯一的 AI 持久化是
+> `ai_packages` 索引与 ZIP 文件，二者随场次删除。未来若 M6 增加 AI 结果/画像证据表，必须加入同一
+> 删除事务并重新计算/清除引用被删场次的断言，不能保留失去来源的内容。
 
 ## 7. 迁移策略
 
@@ -238,6 +290,12 @@ CREATE INDEX idx_viewer_sessions_speakers
   - 回填：Bilibili 有 room id → `bilibili:room:<id>`（`room_fallback`）；mock → `mock:simulation`；YouTube 历史只有视频 ID → `broadcaster_id=NULL` / `unresolved`，不猜测；
   - 从 `viewer_sessions` 回填 `viewer_broadcasters`，从 `events` 回填主播维度币种合计；
   - 旧场次、观众、事件、`viewer_id`、金额与计数全部保留。
+- **v6 → v7**：
+  - `ALTER TABLE sessions ADD COLUMN archived_at INTEGER`（旧行 NULL = 未归档）；
+  - `ALTER TABLE sessions ADD COLUMN end_reason TEXT`（旧行 NULL，不推断结束原因）；
+  - 新增 `idx_sessions_history`、`idx_sessions_platform_started`、`idx_viewers_nickname`、
+    `idx_viewer_nicknames_nickname`、`idx_viewer_sessions_viewer_seen`；
+  - 不重写表、不改历史行；v1→v7 与 v6→v7 均有测试。打包 EXE 已用真实 schema 6 数据库实测升级。
 - 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v5 见 `migration-emotes.test.mjs`；v4→v5 见 `broadcaster-identity.test.mjs`）。
 
 ## 8. 备份、清空与数据位置

@@ -29,11 +29,21 @@ export function supportSecondaryText(support, locale, t) {
   return `${t('common.displayValue')}: ${display.map((entry) => formatMoney(entry.displayMinor, entry.currency, locale)).join(' + ')}`;
 }
 
+/**
+ * Capture status. `ended` with `endReason = user` means the user stopped local
+ * recording, not that the platform broadcast ended; the label says so.
+ */
 export function statusChip(session, t) {
   if (!session) return null;
   if (session.status === 'live') return chip(t('status.live'), 'live', {dot: true});
   if (session.status === 'interrupted') return chip(t('status.interrupted'), 'warn');
+  if (session.endReason === 'user') return chip(t('status.stopped'), 'neutral');
   return chip(t('status.ended'), 'neutral');
+}
+
+/** Archive is a management flag, shown next to (never instead of) the status. */
+export function archivedChip(session, t) {
+  return session?.archived ? chip(t('history.archived'), 'neutral') : null;
 }
 
 /** How reliably a broadcaster identity is known. Never invents a channel. */

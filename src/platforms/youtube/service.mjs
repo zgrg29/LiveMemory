@@ -218,7 +218,7 @@ export class YouTubeService {
   }
 
   async disconnect({sessionId = null} = {}) {
-    const result = await this.sessionManager.stopPlatform('youtube', {sessionId});
+    const result = await this.sessionManager.stopPlatform('youtube', {sessionId, status: 'ended', reason: 'user'});
     if (result.reason === 'session_id_required') {
       throw sessionIdRequiredError({count: result.count, platform: 'youtube'});
     }

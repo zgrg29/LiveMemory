@@ -130,6 +130,24 @@ export function listSessionMessagesAsc(db, {sessionId, limit = 20000} = {}) {
   `).all(String(sessionId), safeLimit).map(mapEventRow);
 }
 
+/**
+ * A single viewer's messages inside one session (history drill-down).
+ * Uses the (viewer_id, occurred_at) index so the session is never fully scanned
+ * into the browser.
+ */
+export function listViewerSessionMessages(db, {sessionId, viewerId, limit = 50} = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const rows = db.prepare(`
+    SELECT * FROM events
+     WHERE session_id = ?
+       AND viewer_id = ?
+       AND event_type IN ('chat', 'super_chat')
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT ?
+  `).all(String(sessionId), String(viewerId), safeLimit);
+  return rows.reverse().map(mapEventRow);
+}
+
 export function eventSummaryCounts(db, sessionId) {
   return db.prepare(`
     SELECT

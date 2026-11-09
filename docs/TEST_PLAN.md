@@ -7,8 +7,9 @@
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` |
-| 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 8/10/12 节） |
+| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` |
+| 打包 EXE | 真实 v6→v7 升级、搜索、归档、停止、删除、重启保持 | `scripts/verify-exe-history.mjs` |
+| 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 8/10/12 节）；v0.7.0 未新增 |
 | 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
 
 ## 2. 运行方式
@@ -68,13 +69,14 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `broadcaster.test.mjs` | YouTube channelId vs 视频 ID、Bilibili anchor uid/room fallback/unresolved、mock、质量排序、控制字符清洗 |
 | `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
 | `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
+| `history-ui.test.mjs` | 列表与详情共用 `session-actions`、搜索端点/筛选参数/不读 events 正文、删除确认字段与勾选、DELETE 客户端、无 innerHTML、共享 modal、响应式/菜单键盘 CSS、路由与事务守卫、三语键 |
 
 ### 3.2 集成
 
 | 文件 | 覆盖 |
 | --- | --- |
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
-| `migration-emotes.test.mjs` | v1 旧库升级到 v6；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表/索引存在 |
+| `migration-emotes.test.mjs` | v1 旧库升级到 v7；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表/索引/列存在；`archived_at/end_reason` 默认 NULL |
 | `youtube-anonymous-session.test.mjs` | 本地假公开网页：唯一 web 模式、无登录/Key、watch/chat 检查、SC `HK$`、gift 无 Channel ID、badge、会员/Sticker、重复与 ticker 去重、自动结束、30 天上限、AI 包 |
 | `session-multi.test.mjs` | 多场独立 adapter/会话/事件、重复房间拒绝、停止/失败隔离、交错写入去重、启动恢复、Top 100 稳定排序/搜索/同名不合并 |
 | `live-api-multi.test.mjs` | 双 YouTube HTTP 并发、事件归属、重复 409、Top 100、共享观众跨主播 scope、停止一场另一场继续、重启恢复 |
@@ -82,25 +84,28 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
 | `broadcaster-identity.test.mjs` | 同一 YouTube 账号在两个主播、同一主播多场、重名不合并、改名不拆分、跨平台同名不合并、主播维度发言/付费/币种、新/回访、v4→v5 迁移、AI 包 context 隔离、HTTP 范围接口 |
 | `storage-management.test.mjs` | 位置记录原子写/镜像/相对路径拒绝、目标安全校验/UNC/冲突/空间、迁移复制校验与旧目录保留、复制中断回滚、**新数据空间空库+设置/凭据保留**、清空保留设置与凭据、出厂重置、应急快照一致性 |
+| `history-management.test.mjs` | 三场并发停止一场其余继续、重复停止 409、同房间重启新场次、归档持久化/默认隐藏/取消归档/live 拒绝、永久删除专属数据与共享观众聚合重建、孤立 broadcaster 清理、focused 保留、导出文件删除、确认/live/adapter 守卫、数据库故障事务回滚 |
+| `history-search.test.mjs` | 主播名称/稳定 ID、中日英混合标题、观众稳定 ID/昵称/历史昵称、同名不同身份不合并、跨平台/跨主播、筛选组合、隐藏归档计数、分页、通配符字面、匿名不可检索、1200 场性能 |
+| `history-api.test.mjs` | HTTP 搜索/筛选、归档/取消、列表与详情两个停止端点、删除确认与 400/409、观众单场发言、删除后 404 与无关场次保留 |
 
-## 4. 本轮结果（2026-11-09，v0.6.0）
+## 4. 本轮结果（2026-11-09，v0.7.0）
 
 ```text
-tests 296
-pass  296
+tests 318
+pass  318
 fail  0
-duration ≈ 24.5s
+duration ≈ 25.0s
 ```
 
-无跳过、无 todo。新增多场并发、Top 100、UI 结构守卫、启动器默认英文；更新 schema 6 迁移测试。
+无跳过、无 todo。新增历史管理、搜索、HTTP、UI 结构守卫；更新 schema 7 迁移与版本断言。
 
 新增覆盖重点：
 
-- **多场并发**：独立 adapter/connection/session、同房间重复拒绝、停止/失败隔离、交错写入去重、启动恢复、Top 100 稳定排序与搜索。
-- **HTTP 并发**：两个假 YouTube 直播端到端、共享观众跨主播上下文、停止一场另一场继续、重启恢复。
-- **UI**：标签切换、Top 100 滚动/搜索、档案跳转带 broadcaster、重入、390px。
-- **数据兼容**：schema 6 仅新增索引；历史场次/观众/主播关系不重写。
-- **启动器**：控制台默认英文；`--lang` 覆盖；网页三语不受影响。
+- **场次管理**：三场并发中停止一场其余继续；归档持久化与默认隐藏；永久删除专属行、共享观众聚合重建、孤立主播清理、导出文件删除；故障注入事务回滚。
+- **搜索**：主播、标题、观众（稳定 ID/昵称/历史昵称）；同名跨平台身份分离；中日英混合；筛选组合、分页、通配符字面、匿名不可检索、大规模性能。
+- **UI**：列表/详情共用操作菜单、搜索与筛选、归档、停止、删除确认、观众下钻、键盘、390px、黑暗主题与中文。
+- **数据兼容**：schema 7 仅新增列与索引；打包 EXE 用真实 v6 数据库升级并保留历史。
+- **打包 EXE**：搜索、归档、停止、删除、重启保持与删除不复活。
 
 ## 5. 手工 / 脚本验证记录
 
@@ -129,12 +134,15 @@ duration ≈ 24.5s
 | 迁移完整性 | SQLite 直接校验 | ✅ 旧/新 schema=6、integrity=ok、3/12/4/8/5/2 一致 |
 | 清空完整性 | SQLite 直接校验 | ✅ 全部业务表 0、integrity=ok；备份 3/12/4、integrity=ok |
 | 备份快照 | `VACUUM INTO` + 直接校验 | ✅ 快照在数据目录之外、integrity=ok、内容保留 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.3 MB，101 资源，SHA-256 `cbf17f0c…`；Manifest `requireAdministrator` |
+| 历史搜索/管理 UI | `demo-history.mjs` + `verify-history-ui.mjs` | ✅ **27/27**：标题/主播/观众搜索、同名跨平台、筛选、归档/取消、停止、删除确认、详情、键盘、390px、黑暗中文 |
+| EXE 历史管理与升级 | `verify-exe-history.mjs`（打包 EXE asInvoker 副本） | ✅ **19/19**：真实 v6→v7、搜索、归档、重启保持、停止、删除、共享观众聚合、专属观众清理 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.4 MB，106 资源，SHA-256 `9602c560…`；Manifest `requireAdministrator` |
 | EXE Manifest | `scripts/pe-manifest.mjs` / `verify-exe.mjs` | ✅ level=`requireAdministrator`，773 bytes |
 | EXE 非提升启动 | `spawnSync` 最终 EXE | ✅ Windows 返回 `EACCES`（未进入程序） |
 | EXE 功能矩阵 | `scripts/verify-exe.mjs` | ✅ **10/10**（manifest + 9 场景；非提升会话使用 asInvoker 副本并明确打印） |
 | EXE 管理员提示 | asInvoker 副本 `--lang zh/ja/en` | ✅ 三语消息、退出 1 |
-| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=6、version=0.6.0 |
+| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=7、version=0.7.0 |
+| EXE 旧库升级 | v6 数据库启动打包 EXE | ✅ schema 7、4 场历史完整、归档重启保持、删除不复活 |
 | YouTube 公开网页本地端到端 | 假网页 + `startServer` | ✅ 唯一 web 路径、5 条事件、SC HKD、gift 无身份、badge、自动结束 |
 | YouTube 真实房间 A（历史 v0.3.0） | `FKLZiufsCk0` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
 | YouTube 真实房间 B（历史 v0.3.0） | `gXawf8GZDI8` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
@@ -312,4 +320,78 @@ duration ≈ 24.5s
 - 真实 Bilibili 本轮仅收到普通弹幕，未观测礼物/SC/大航海。
 - 未做 10+ 场、数小时压力与内存增长测试。
 - 运行中标签不能关闭/隐藏；必须先停止。此行为有意，避免静默停止或误导。
-| 不删除用户无关文件 / 外部备份 | ✅ 根目录 `personal-note.txt` 与备份保留 |
+
+## 13. 直播历史管理与搜索专项验证（v0.7.0）
+
+### 13.1 自动化结果
+
+- 全量：**318 passed / 0 failed / 约 25.0 秒**。
+- `history-management.test.mjs`：
+  - 三场同时记录，停止 A 后 A 为 `ended/end_reason=user`，事件保留；B 继续接收新事件；C 未受影响；重复停止 409；
+  - 同房间重新开始创建新 session id，旧场次保持 ended；
+  - 归档写入 `archived_at`、默认列表隐藏、`archivedOnly` 可见；关闭重开文件数据库后仍归档；live 与仍有 adapter 时拒绝；取消归档恢复；
+  - 删除 A 后：A 专属观众删除、共享观众仍保留且计数=剩余场次、`viewer_broadcasters` 仅剩有效主播、其他场次完整；删除 D 后其唯一 broadcaster 被清理；`focused` 观众仅计数归零；
+  - 该场 `ai_packages` 行与导出 ZIP 删除，其他场次 ZIP 保留；
+  - 缺少 `confirm`、live、内存仍有 adapter 三种守卫；
+  - SQLite 触发器模拟删除失败 → 事务回滚，场次/事件/观众/币种完全不变；移除故障后删除成功；
+  - 归档场次可永久删除。
+- `history-search.test.mjs`：
+  - 主播显示名/稳定 ID、标题的中文/日文/英文/混合匹配；
+  - 观众昵称同时匹配 `bilibili:9002` 与 `youtube:UC_VIEWER` 两个身份，消息数正确；历史昵称仍解析到同一稳定身份并返回其全部场次；
+  - 稳定 ID 搜索只命中该身份；匿名消息不产生观众结果；
+  - 平台/状态/日期/归档组合；隐藏归档计数；`%`/`_` 字面匹配；分页 4+4+2 稳定；1200 场/12000 事件：观众搜索约 200ms、标题 < 400ms（断言 800/400ms）。
+- `history-api.test.mjs`：HTTP 搜索/筛选、归档/取消、`/api/sessions/:id/stop` 与 `/api/live/recordings/:id/stop` 共用行为、重复停止 409、删除 400/409/200、观众下钻、删除后 404 且其他场次保留。
+- `history-ui.test.mjs`：列表/详情共用实现、搜索不读 `/api/events`、删除确认字段、DELETE 客户端、无 innerHTML 赋值、settings 复用共享 modal、响应式/菜单 CSS、键盘、路由/事务守卫、三语键。
+
+### 13.2 浏览器 UI 验证
+
+`scripts/verify-history-ui.mjs`：**27/27 通过**（模拟夹具，真实 Chromium）。
+
+| 检查 | 结果 |
+| --- | --- |
+| 列表 6 行、归档默认隐藏 | ✅ |
+| 标题搜索（中英混合）与匹配原因 | ✅ |
+| 观众昵称搜索返回两个平台身份、UID 不同 | ✅ |
+| 点击观众行进入详情 `?viewer=`，显示本场发言 | ✅ |
+| 主播名称搜索与原因 | ✅ |
+| 观众 + 平台筛选组合 | ✅ |
+| 包含归档显示归档 chip；取消归档恢复 | ✅ |
+| 归档行只显示 Unarchive/Delete | ✅ |
+| live 行只显示 Stop | ✅ |
+| 停止确认说明平台直播可能继续 | ✅ |
+| 停止后状态即时变为 Recording stopped | ✅ |
+| 删除按钮初始禁用，勾选后可用；确认框含主播/标题/日期 | ✅ |
+| 删除后列表与搜索无结果 | ✅ |
+| 详情页菜单归档、提示卡 | ✅ |
+| 详情删除后返回列表且无结果 | ✅ |
+| Enter 打开菜单、ArrowDown 聚焦、Esc 关闭并返回焦点 | ✅ |
+| 390px 无横向溢出、菜单在视口内 | ✅ |
+| 黑暗 + 中文（直播历史）正常 | ✅ |
+
+截图：`docs/screenshots/history-*.png`（7 张，v0.7.0）。
+
+### 13.3 打包 EXE 验证
+
+`scripts/verify-exe-history.mjs`：**19/19 通过**（`dist/LiveMemory.exe` 的 asInvoker 临时副本；真实 v6 数据库）。
+
+| 检查 | 结果 |
+| --- | --- |
+| 真实 schema 6 数据库启动 EXE → schema 7，4 场历史保留 | ✅ |
+| 打包 EXE 历史页渲染 | ✅ |
+| 观众搜索（2 场） | ✅ |
+| 归档后默认隐藏；包含归档可见 | ✅ |
+| EXE 内启动模拟直播 → 历史显示 Live → 停止 → Recording stopped | ✅ |
+| 停止后 `/api/live/recordings` 为 0 | ✅ |
+| 删除确认含主播/标题，初始禁用 | ✅ |
+| 删除后 session 404，专属观众 404 | ✅ |
+| 删除共享观众的其中一场 → 观众仍保留，sessionCount=1，消息 2、付费 1 | ✅ |
+| 关闭并重启 EXE：schema 7、无运行任务 | ✅ |
+| 归档状态重启保持 | ✅ |
+| 删除数据重启后不复活 | ✅ |
+| 重启后观众搜索仍可用 | ✅ |
+
+### 13.4 真实场景边界
+
+- 本轮**没有**进行新的真实 Bilibili/YouTube 网络采集；上述“真实”仅指真实 SQLite、真实 HTTP、真实打包 EXE 与真实浏览器。
+- 未验证：真实 UAC 同意、真实文件夹选择器、真实平台长期运行、M6 AI 导入后的删除联动、百万级数据量。
+- 删除测试全部使用 `tests/.tmp` 下的独立数据库，未触碰用户真实记录。

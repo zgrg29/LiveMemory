@@ -321,3 +321,36 @@
 - 三语 CLI 字典保留，`--lang zh-CN|ja` 可切回。
 
 **后果**：控制台输出稳定可读；用户若希望 CLI 中文，需显式 `--lang zh-CN`。文档与截图需说明这一点。
+
+## ADR-027 归档是独立管理属性，结束原因独立于采集状态
+
+**状态**：已采纳（v0.7.0，用户请求）
+
+**背景**：用户需要把旧场次收进归档、随时恢复，同时不能把“我在应用里停止记录”误认为“平台直播结束了”。如果复用 `status`，归档会覆盖采集状态，停止与平台结束也无法区分。
+
+**决定**：
+
+- schema v7 增加 `sessions.archived_at`（NULL = 未归档）与 `sessions.end_reason`（user / adapter 原因 / failed / shutdown / startup_recovery）。
+- `status` 只表示本地采集是否有运行中的 adapter；归档不修改 `status`，停止不推断平台状态。
+- `POST /api/sessions/:id/archive` 只允许非 live 且无内存 recording 的场次；重复归档保留原时间戳。
+- 默认历史列表过滤 `archived_at IS NULL`；`includeArchived=1` / `archivedOnly=1` 显式显示。
+- UI 对 `ended + end_reason=user` 显示“已停止记录”，并明确提示平台直播可能仍在继续。
+
+**后果**：归档与采集状态互不覆盖；重启后归档保持；停止记录不再被误描述为平台直播结束。旧数据库升级时两列为 NULL，不猜测历史原因。
+
+## ADR-028 永久删除：事务内删专属行 + 重建衍生聚合
+
+**状态**：已采纳（v0.7.0，用户请求）
+
+**背景**：只删 `sessions` 行会留下孤儿事件/参与关系（若外键被关闭）、过期的观众累计、主播维度和币种合计，以及 AI 包文件。用户明确要求“彻底删除单场，但不得影响其他场次、其他主播档案或无关文件”。
+
+**决定**：
+
+- 单一入口 `session-admin.deleteSessionRecord()`，列表与详情共用；服务端强制 `confirm:true`，拒绝 live 或仍有 adapter 的场次。
+- 在 `BEGIN IMMEDIATE` 中显式删除该场次的 `events`、`viewer_sessions`、`session_currency_totals`、`ai_packages`、`sessions`；外键级联保留作为兜底。
+- 受影响观众按剩余证据重建：全局计数/首末/币种合计、`viewer_broadcasters`、`viewer_broadcaster_currency_totals`；只存在于该场次的观众删除；`focused=1` 视为用户独立保留数据，保留但计数归零。
+- 无场次且无 viewer 关系的 `broadcasters` 行删除；仍有其他场次的主播及其观众档案完全保留。
+- 事务内校验所有关联表无残留，失败回滚；提交后才删除 `exports/` 内该场分析包文件，路径必须位于导出根目录。
+- 不实现回收站；删除不可撤销。
+
+**后果**：删除后搜索、历史、观众参与列表与 AI 包列表都不会残留该场次；其他场次与主播画像不受影响。数据库删除是原子的，但文件删除是提交后的尽力操作（失败会记录在响应 `fileErrors`，不会让数据库与文件同时处于半删除状态）。未来 M6 的 AI 结果表必须加入同一事务。

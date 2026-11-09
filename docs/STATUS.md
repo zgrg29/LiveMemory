@@ -1,130 +1,151 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-09（多直播间并发记录、直播标签页、Top 100 排行榜，版本 0.6.0，schema 6）
+最后更新：2026-11-09（直播历史场次管理、统一搜索与筛选、永久删除，版本 0.7.0，schema 7）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0 / P1 / P2 / P3 / P4 完成；M3 真实接入继续验证；M4 / M7 部分推进；M5 / M6 未完成**
-- 版本：`0.6.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**6**（新增 `idx_viewer_sessions_speakers`；旧库原地升级，历史场次/观众/画像兼容）
+- 里程碑：**M0 / M1 / M2 核心 / P0 / P1 / P2 / P3 / P4 / P5 / P6 完成；M3 真实接入继续验证；M4 / M7 部分推进；M5 / M6 未完成**
+- 版本：`0.7.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**7**（新增 `sessions.archived_at`、`sessions.end_reason` 与历史/搜索索引；旧库原地升级）
 - 分支：`main`，本地提交，未 Push
 - 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
 
-## 2. 本轮完成（2026-11-09）
+## 2. 本轮完成（2026-11-09，v0.7.0）
 
-### 2.1 多直播间同时记录
+### 2.1 统一场次管理
 
-- `SessionManager` 从“单场 + 单 adapter”改为 `recordings: Map<sessionId, recording>`：
-  - 每场拥有独立 adapter、连接状态、detail、直播场次 ID、数据库 session、事件闭包与结束回调；
-  - `startPlatform` / `startSimulation` 在写入前同时检查内存与数据库，同一 `platform + room` 重复启动返回 `409 SESSION_DUPLICATE_ROOM`；
-  - `stopSession(sessionId)` 只停止指定场次；某场 adapter 结束、启动失败或连接失败只结束该场；
-  - 启动时 `recoverInterrupted()` 仍把所有残留 `live` 标记为 `interrupted`，不会自动创建新场次；
-  - 关闭进程时逐场停止并兜底清理 orphan live 行。
-- 事件隔离：每个 adapter 的 `onEvent` 闭包强制写入自己的 `session.id`；统一经过 `EventIngest`，保留 `(session_id, dedupe_key)` 去重、观众/主播聚合与金额累计规则。
-- 平台服务解耦：
-  - `BilibiliService` / `YouTubeService` 不再持有唯一 adapter 或唯一房间；
-  - `connect` 只负责校验与创建 adapter，生命周期交给 `SessionManager`；
-  - `disconnect` 接受 `sessionId`；同一平台存在多场且未指定 ID 时返回 `SESSION_ID_REQUIRED`，不会误停；
-  - YouTube 自动结束仍会写 `lastEnd` 并执行 30 天保留清理。
-- 新 API：
-  - `GET /api/live/recordings`：所有运行中任务的独立状态、消息数、独立观众、支持、元数据；
-  - `POST /api/live/recordings/:sessionId/stop`：按场次停止；
-  - `GET /api/sessions/:id/top-viewers?limit=100&query=`：单场排行榜；
-  - `/api/sessions/current` 保留为“最近开始的一场”，仅用于兼容；标签页不再依赖它。
-- SSE `status` 现在包含 `recordings` 数组与 `activeCount`；事件帧仍带 `sessionId`，前端按会话归属。
-- SQLite 仍为单进程同步串行写入，`busy_timeout=5000`，事件与聚合同事务；并发 adapter 不会产生跨场写入。
+新增 `src/server/session-admin.mjs`，直播历史列表与单场详情共用同一套服务端逻辑；前端共用
+`src/web/js/session-actions.js`，避免两个页面行为不一致。
 
-### 2.2 直播记录页面标签页
+- **停止记录**（`stopSessionRecording`）：
+  - 只接受目标 `sessionId`，调用 `SessionManager.stopSession` 停止该场 adapter；
+  - 已停止/已结束/已中断返回 `409 SESSION_NOT_ACTIVE`，不静默成功；
+  - 已采集消息、观众身份、统计、经济支持原样保留；场次 `status=ended`、`end_reason=user`、写入 `ended_at`；
+  - UI 文案区分「已停止记录」与「已结束」；确认框明确「平台直播可能仍在进行」；
+  - 同一房间再次开始记录会创建全新场次（`createSession`），不会写入旧场次。
+- **归档**（`POST /api/sessions/:id/archive`）：
+  - schema v7 `sessions.archived_at` 是独立管理属性，不覆盖 `status`；
+  - 仅 `ended` / `interrupted` 可归档；`live` 或仍注册 adapter 时返回 `409 SESSION_ARCHIVE_LIVE`；
+  - 重复归档保留原时间戳；取消归档清空 `archived_at`；
+  - 默认历史列表隐藏归档场次；「包含已归档」与「查看归档」入口可显示；归档场次仍可搜索、查看详情、导出 AI 分析包；
+  - 归档状态持久化，重启 EXE 后保持（EXE 实测见 §5）。
+- **永久删除**（`DELETE /api/sessions/:id`，body 必须 `{confirm:true}`）：
+  - 正在记录（`status=live` 或内存仍有 adapter）返回 `409 SESSION_STILL_RECORDING`；
+  - 单个 `BEGIN IMMEDIATE` 事务内显式删除：`events`、`viewer_sessions`、`session_currency_totals`、`ai_packages` 行、`sessions` 行；外键级联仍开启；
+  - 事务内重建受影响观众的衍生数据：全局 `viewers` 计数与首末时间、`viewer_currency_totals`、`viewer_broadcasters`、`viewer_broadcaster_currency_totals`；
+  - 只存在于被删除场次的观众会被清理；`focused=1`（用户标记重要）的观众保留但计数归零；仍参与其他场次的观众及其其他主播档案不受影响；
+  - 无任何场次/关系引用的派生 `broadcasters` 行被清理；仍有其他场次的广播者保留；
+  - 删除事务内校验所有关联表无残留，失败抛出 `SESSION_DELETE_INCOMPLETE` 并回滚；
+  - 提交后删除该场次导出目录内的分析包文件（路径限制在 `exports/` 内，拒绝路径穿越）；
+  - 本地无回收站，确认框展示主播、标题、日期、消息数、观众数，并要求勾选「不可撤销」后才启用删除按钮；
+  - 删除后历史、搜索、观众参与记录、AI 分析包列表均不残留（自动化 + EXE UI 实测）。
+- 场次结束原因新增 `end_reason`：`user` / adapter 原因 / `failed` / `shutdown` / `startup_recovery`；`status=ended` 不再被一律解释为「平台直播结束」。
 
-- 顶部固定「＋ 新建记录」，右侧为可横向滚动的直播标签；新建按钮独立于滚动区，窄屏始终可见。
-- 每个标签显示主播名/直播间名、状态点与短状态：连接中 / 记录中 / 重连中 / 已停止 / 连接失败。
-- 切换标签只切换当前视图；服务端采集与前端页面完全解耦，切换页面、刷新浏览器、关闭页面都不会停止其他任务。
-- 每个场次使用递增 `viewToken` 丢弃过期异步响应，旧标签的 summary/feed/leaderboard 响应不会覆盖新标签。
-- 停止记录只影响当前场次；hero 中明确提示“只停止当前这一场”。
-- 运行中的标签不提供关闭按钮，避免用户误以为关闭标签会保留后台记录；结束/失败的标签显示 `×`，关闭仅移除已停止的标签且数据已在直播历史中。
-- 页面重新进入时从 `/api/live/recordings` 恢复所有运行中任务；软件重启后不会恢复为“记录中”。
-- 移动端 390px、平板与桌面均无横向溢出；标签区独立滚动。
+### 2.2 直播历史搜索
 
-### 2.3 最活跃观众 Top 100
+新增只读读模型 `src/analytics/sessions/history-search.mjs` 与 `GET /api/history/search`。
 
-- `topSessionViewers` 上限由 20 提到 **100**；
-- 固定排序：本场有效弹幕数（chat + super_chat）降序 → `platform_uid` → `viewer_id`；昵称不参与身份与次级排序；
-- 新 `buildSessionLeaderboard` 返回 `rank`、`viewerId`、昵称、平台 UID、本场消息数、付费事件数；当前场次只有 N 位有效观众时只返回 N 位；
-- 新 schema v6 索引 `idx_viewer_sessions_speakers (session_id, message_count DESC)`；
-- 前端默认显示约 10 行，容器固定最大高度并可滚动查看最多 100 名；支持当前场次搜索（匹配昵称或稳定 UID）、显示“显示 X / Y 名”；
-- 点击观众跳转 `/viewers/<id>?broadcaster=<当前主播>`，保留主播上下文；
-- 排行榜每约 4 秒刷新，事件触发时 2.5 秒节流，并在内容签名未变化时跳过 DOM 重建；
-- 排行榜只属于当前场次，不读取长期累计或跨主播统计。
+- 统一搜索框 + 范围选择：全部字段 / 主播 / 标题 / 观众。
+- **主播**：`sessions.broadcaster_name`、`broadcasters.display_name`、稳定 ID（`broadcaster_id` / `platform_uid`）模糊匹配；优先稳定 ID，昵称只作显示。
+- **标题**：`room_title` 子串匹配，SQLite `LIKE` 支持中文、日文、英文与混合文本，不依赖分词。
+- **观众**：
+  - 稳定 ID 精确匹配（`platform:uid` 或裸 `uid`）；昵称与历史昵称子串匹配；
+  - 通过 `viewer_sessions` 找场次，返回该身份在每场的发言数、付费事件数、首末见时间；
+  - 同名不同 ID / 跨平台同名分别作为不同身份列出，绝不合并；
+  - 无稳定身份的匿名消息不会生成观众结果；界面明确提示；
+  - 匹配结果说明原因（主播名称匹配 / 标题匹配 / 观众参与匹配），点击场次进入详情，点击观众行进入 `历史详情?viewer=` 查看该观众本场发言（最多 50 条）。
+- 通配符 `%` / `_` 按字面匹配（`LIKE ... ESCAPE '\'`），不会变成「匹配全部」。
+- 搜索只扫描 `sessions`、`viewers`、`viewer_nicknames`、`viewer_sessions`、`broadcasters`，不读取聊天正文；每场仅用索引 `COUNT` 事件数。
+- 筛选：平台（全部 / Bilibili / YouTube）、状态（全部 / 记录中 / 已停止或结束 / 已中断）、日期范围（本地日期起止）、是否包含归档；所有条件可组合。
+- 默认按 `started_at DESC` 排序；分页 `limit=20` + `offset`，前端「加载更多」，不一次性加载全部场次。
+- 搜索与筛选使用 `idx_sessions_history`、`idx_sessions_platform_started`、`idx_viewers_nickname`、`idx_viewer_nicknames_nickname`、`idx_viewer_sessions_viewer_seen` 等索引。
+- 1200 场 / 12000 事件内存库测试：观众搜索约 200ms 内（断言 < 800ms），标题搜索 < 400ms。
 
-### 2.4 启动器控制台默认英文
+### 2.3 历史 UI
 
-- 双击 EXE 时启动器控制台默认输出英文，不再跟随网页界面保存的语言；
-- `--lang zh-CN|ja|en` 仍可显式切换控制台语言；
-- 网页界面继续保留系统语言检测和三语切换，二者互不覆盖；
-- 多场记录时状态行显示“Recording N live streams”。
+- 列表顶部：统一搜索框 + 搜索范围 + 平台/状态/日期/包含归档筛选 + 重置；结果计数、隐藏归档提示、匿名身份提示。
+- 每行右侧「···」操作菜单：根据状态只显示可执行动作（记录中只有停止；否则归档/取消归档 + 永久删除）。
+- 保留标题、主播、日期、时长、消息数、观众数、支持、AI 状态与归档标记；新增匹配原因 chip 与观众匹配行。
+- 详情页标题区右上角「···」菜单；停止/归档后原地刷新；删除成功后自动返回历史列表。
+- 共用 `dialog.js`（原生 `<dialog>`）与 `actions-menu.js`（键盘、触屏、视口翻转/夹紧、Esc、焦点返回）。
+- 三语（zh-CN / ja / en）文案齐全；明暗主题、390px 窄屏无横向溢出；操作菜单在窄屏视口内。
+- v0.6.0 的多直播间标签页、Top 100、并发采集保持不变。
 
-### 2.5 文档/工具/版本
+### 2.4 文档/工具/版本
 
-- 新增 `scripts/demo-multi-recording.mjs`（仅供开发/截图，3 场模拟记录，不进入产品路径）；
-- 新增 `scripts/verify-live-ui.mjs`（DevTools 协议验证标签切换、Top 100 搜索/滚动、档案跳转、页面重入、窄屏）；
-- 新增 `scripts/verify-live-multi.mjs`（真实网络并发验证；支持 `--base` 附加到已运行的 EXE 服务）；
-- 版本号升至 `0.6.0`；schema 升至 `6`。
+- 新增 `scripts/demo-history.mjs`（开发/截图用的历史夹具，全部标记为模拟数据）。
+- 新增 `scripts/verify-history-ui.mjs`（DevTools 协议 UI 验证，27 项）。
+- 新增 `scripts/verify-exe-history.mjs`（构建后的 EXE + 真实 v6→v7 升级 + UI 操作，19 项）。
+- 版本升至 `0.7.0`；schema 升至 `7`。
 
 ## 3. 自动化测试（本轮实测）
 
-- 全量：**296 passed / 0 failed / 约 24.5 秒**（`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
-- 新增/更新：
-  - `tests/integration/session-multi.test.mjs`：两场独立 adapter/会话/事件、重复房间拒绝、停止 A 后 B 继续、A 失败不影响 B、交错写入 100×2 事件去重与计数、启动恢复标记 interrupted、Top 100 稳定排序/搜索/昵称不合并、summary `topLimit`。
-  - `tests/integration/live-api-multi.test.mjs`：本地假公开网页的两个 YouTube 直播，HTTP 级验证双场连接、事件归属、关闭浏览器 SSE 后两场仍运行、重复 409、Top 100、共享观众跨主播上下文、停止 A 后 B 继续接收、停止 B、重启后无运行任务且残留行 interrupted。
-  - `tests/unit/live-multi-ui.test.mjs`：前端使用多场 API、`viewToken`、标签/排行榜容器、无 innerHTML、无旧单场轮询。
-  - `tests/unit/launcher.test.mjs`：控制台默认英文、显式 `--lang` 覆盖、多场状态行。
-  - `migration-emotes.test.mjs` / `broadcaster-identity.test.mjs`：schema 6。
-- 新增 UI 验证：`scripts/verify-live-ui.mjs` **10/10 通过**（3 个模拟标签、100 行滚动、搜索、档案跳转、页面重入、390px 新建按钮可见且无横向溢出）。最后一次完整运行后，排行榜增加了“刷新时保持滚动位置”的改进；该改进由 `live-multi-ui.test.mjs` 静态守卫覆盖，最终复跑时本机无头浏览器未能再次启动，未重新做浏览器实测。
+- 全量：**318 passed / 0 failed / 约 25.0 秒**（`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 本轮新增：
+  - `tests/integration/history-management.test.mjs`：
+    - 三场同时记录，停止其中一场，另外两场继续接收事件；停止后重新开始同房间创建新场次；
+    - 列表/详情共用停止服务；重复停止返回 409；
+    - 归档持久化（关闭重开数据库）、默认隐藏、`archivedOnly`、live 禁止归档、adapter 仍注册时禁止归档；
+    - 永久删除专属数据、共享观众保留与聚合重建、其他主播档案完整、孤立 broadcaster 清理、focused 观众保留、导出文件删除、路径安全；
+    - 确认缺失 / live 删除 / 仍注册 adapter 的删除守卫；
+    - SQLite 触发器模拟数据库异常 → 整个事务回滚，数据完全不变；移除故障后删除成功；
+    - 归档场次可直接永久删除。
+  - `tests/integration/history-search.test.mjs`：
+    - 主播显示名/稳定 ID、中文/日文/英文/混合标题、观众昵称/历史昵称/稳定 ID；
+    - 同名不同身份、跨平台同名、同一观众跨主播；
+    - 平台/状态/日期/归档筛选组合、隐藏归档计数、分页、通配符字面匹配；
+    - 1200 场 / 12000 事件性能；
+    - 匿名消息不生成观众结果。
+  - `tests/integration/history-api.test.mjs`：HTTP 级搜索、归档、列表/详情两个停止端点、删除确认、观众本场发言、404 清理。
+  - `tests/unit/history-ui.test.mjs`：两页面共用管理实现、搜索端点与不加载聊天、删除确认字段、DELETE 客户端、无 `innerHTML`、共享 modal、响应式 CSS、菜单键盘、路由/事务守卫、三语键。
+  - 更新 `migration-emotes.test.mjs`、`broadcaster-identity.test.mjs`、`api.test.mjs` 到 schema 7 / v0.7.0。
 
-## 4. 真实直播并发验证（2026-11-09）
+## 4. 平台/真实直播验证
 
-以下是真实网络结果，不是模拟数据；数据目录使用 `tests/.tmp` 并在结束后删除。只记录聚合，不保存/展示聊天正文或昵称。
+- 本轮**没有**新增真实 Bilibili / YouTube 网络采集验证；v0.6.0 的真实双场/三场并发结果仍有效（见 §5 与 HANDOFF 历史）。
+- 本轮新增的是本地 SQLite、HTTP、打包 EXE 与真实浏览器 UI 验证；不得把这些描述为真实平台验收。
+- 真实平台验证阻塞项与 v0.6.0 相同：UAC 交互、真实文件夹选择、同一真实观众跨主播观测、Bilibili 礼物/SC/大航海样本、YouTube 公开网页长期稳定性。
 
-| 场景 | 结果 |
-| --- | --- |
-| 两个 YouTube 直播（Lofi Girl + Al Jazeera English 当日直播） | 2/2 connected；事件 80 / 63；跨场 `wrongSession=0`；重复启动 409；停止 A 后 B 仍 connected（该时段 B 聊天安静，20 秒内无新消息） |
-| 一个 YouTube + 一个 Bilibili（room 6） | 2/2 connected；事件 76 / 11；`wrongSession=0`；停止 A 后 B 收到新事件（+1），仍 connected |
-| 三个同时（2 YouTube + Bilibili room 6） | 3/3 connected；事件 85 / 66 / 6；`wrongSession=0`；重复启动 409；停止 A 后剩余 2 场仍 connected，B 收到新事件（+1） |
-| 构建后的 EXE（asInvoker 副本，附加同一组三个真实直播） | 3/3 connected；事件 73 / 67 / 5；`wrongSession=0`；重复启动 409；停止 A 后剩余 2 场仍 connected；B 在 20 秒内无新消息但保持连接 |
-
-说明：
-- 真实直播的聊天活跃度不同；B 未收到新消息时只能确认连接状态仍为 connected，不能伪称“持续收到消息”。
-- 本环境未运行真实 UAC 同意后的最终 EXE；功能场景使用同一二进制的临时 asInvoker 副本，manifest 对最终 EXE 单独验证。
-
-## 5. EXE / 构建
+## 5. EXE / 构建 / UI 验证
 
 - 构建：`node scripts/build-windows.mjs`（Node v24.21.0）
-- 当前构建：**90.3 MB，101 资源**，SHA-256 `cbf17f0c83d9af40003085c0f0acba8b3f9e12e4663bfe50f5bfc61965ec1598`
+- 当前构建：**90.4 MB，106 资源**，SHA-256 `9602c5607782ee72645f32019fbba7b28ca6cb6722bfd70c1bdeebed57877e1f`
 - Manifest：`requireAdministrator`（实际 PE 补丁）
-- `scripts/verify-exe.mjs`：**10/10 通过**；`--version` 输出 `LiveMemory 0.6.0`；非提权会话使用临时 asInvoker 副本并明确打印该事实。
-- 额外验证：使用 EXE asInvoker 副本附加 3 个真实直播 API 验证通过（见 §4）。
+- `scripts/verify-exe.mjs`：**10/10 通过**；`--version` 输出 `LiveMemory 0.7.0`；非提权会话使用临时 asInvoker 副本并明确打印该事实。
+- `scripts/verify-exe-history.mjs`：**19/19 通过**（真实打包 EXE，asInvoker 临时副本）：
+  - 准备真实 schema v6 数据库 → EXE 启动后升级到 schema 7，历史保留；
+  - 打包 EXE 内执行观众搜索、归档、包含归档显示、启动模拟直播并从历史列表停止、删除确认、永久删除；
+  - 删除后专属观众清理、共享观众聚合重建；
+  - 关闭并重启 EXE：schema 保持 7、归档状态保持、删除数据不复活、搜索仍可用。
+- `scripts/verify-history-ui.mjs`：**27/27 通过**（真实浏览器 + 模拟夹具）：
+  - 标题/主播/观众昵称搜索与匹配原因、同名跨平台身份、平台筛选组合；
+  - 隐藏归档与查看归档、取消归档、live 仅显示停止、确认框文案、停止后状态即时更新；
+  - 删除确认字段与禁用状态、确认后消失；
+  - 详情页归档/删除、删除后返回列表；
+  - 键盘打开菜单 / 方向键 / Esc 焦点返回、390px 无横向溢出、菜单在视口内；
+  - 黑暗主题 + 中文界面；
+  - 截图保存于 `docs/screenshots/history-*-v070-*.png`。
 
 ## 6. 未完成 / 未验证
 
-- **真实 UAC 交互**：当前会话非管理员，未点击 UAC 同意；最终 EXE 仅验证未提升启动被 Windows 拒绝与 manifest 内容。
-- **真实文件夹选择器人工点击**：无交互桌面；逻辑测试保留。
-- **真实 UAC 后的数据目录/迁移/SQLite 写入**：未在当前会话完成。
-- **同一真实观众跨两个主播的实测**：自动化 DB/HTTP 测试覆盖“全局身份 + 主播独立上下文”，真实直播未恰好观测到同一 Channel ID 出现在两场；不得声称已完成真实观测。
-- **真实 Bilibili 经济事件**：本轮真实 room 6 仅收到普通弹幕，未观测礼物/SC/大航海；既有结论仍以历史样本为限。
-- **运行中标签的关闭/隐藏**：本版本明确不支持；必须先停止记录，再关闭已停止标签。这是为避免“关闭标签却仍在偷偷记录”的歧义。
-- **并发上限**：没有人为限制；实际能力取决于网络、CPU、SQLite 与平台限流。未做 10+ 场长时间压力测试。
-- **YouTube 公开网页路径**：不是官方稳定 API，可能失效；未做 ToS/合规结论。
-- **干净 Windows 虚拟机、代码签名、升级/回滚**：未完成。
+- **真实 UAC 交互**：当前会话非管理员，最终 EXE 只验证 manifest 与 asInvoker 副本；未点击 UAC 同意。
+- **真实文件夹选择器人工点击**：无交互桌面，逻辑测试保留。
+- **真实平台**：本轮未做新的真实直播采集；v0.6.0 结果仍以历史样本为限。
+- **AI 长期记忆删除**：当前 schema 只有场次级 `ai_packages` 索引，没有 AI 结果/画像断言表（M6 未实现）；删除会清除包记录与文件。未来 M6 引入 AI 结果表时必须同样级联/重建（已写入 DATA_MODEL 与 DECISIONS）。
+- **回收站/撤销**：有意不实现。
+- **批量归档/删除**：未实现，本轮只做单场。
+- **超大数据量**：1200 场 / 12000 事件为性能基线；未做百万级事件或 10+ 场长时间压力测试。
+- **干净 Windows 虚拟机、代码签名、升级回滚**：未完成。
 
 ## 7. 相关文档
 
-`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/UI_DESIGN.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、`docs/DECISIONS.md`、`docs/PLATFORM_INTEGRATIONS.md`、`docs/WINDOWS_RUNTIME.md`、`README.md`、`AGENTS.md` 与 `log/2026-11-09-multi-live-tabs-top100.md` 已同步本轮变化。
+`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/UI_DESIGN.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、`docs/DECISIONS.md`（ADR-027/028）、`docs/PRIVACY_SECURITY.md`、`docs/WINDOWS_RUNTIME.md`、`README.md`、`AGENTS.md` 与 `log/2026-11-09-history-management-search.md` 已同步本轮变化。
 
 ## 8. 下一步
 
 1. 在真实管理员桌面完成 UAC、文件夹选择、迁移与重启验证。
-2. 继续用真实直播检验 Top 100 排名、长时间多场稳定性与 Bilibili 经济事件。
-3. 增加可选的并发保护/资源提示（不是人为限制），以及运行中标签的显式“隐藏但继续记录”交互（若产品需要）。
-4. 继续 M6 AI 结果导入；不要恢复官方 YouTube 双轨实现。
+2. 继续真实直播验证，并累积 Bilibili 经济事件与同一真实观众跨主播样本。
+3. M6 AI 结果导入时，同时为“删除场次”补齐 AI 结果/画像证据的级联或重算。
+4. 视需要增加批量归档/清理与更大的性能基线；不要恢复官方 YouTube 双轨实现。

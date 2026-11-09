@@ -350,6 +350,53 @@ export function viewerBroadcasterSessions(db, viewerId, broadcasterId, {limit = 
   );
 }
 
+/**
+ * Rebuild one viewer's broadcaster-scoped context from the sessions that still
+ * exist. Called after a session is permanently deleted: relationships that only
+ * existed in that session disappear, while every other broadcaster keeps its
+ * long-term profile untouched.
+ *
+ * @returns {{broadcasterCount:number}}
+ */
+export function rebuildViewerBroadcasterAggregates(db, viewerId, {now = Date.now()} = {}) {
+  const id = String(viewerId);
+  // Composite child rows must go first; the FK points at viewer_broadcasters.
+  db.prepare('DELETE FROM viewer_broadcaster_currency_totals WHERE viewer_id = ?').run(id);
+  db.prepare('DELETE FROM viewer_broadcasters WHERE viewer_id = ?').run(id);
+  db.prepare(`
+    INSERT INTO viewer_broadcasters (
+      viewer_id, broadcaster_id, message_count, payment_event_count,
+      first_seen_at, last_seen_at, created_at, updated_at
+    )
+    SELECT vs.viewer_id, s.broadcaster_id,
+           SUM(vs.message_count), SUM(vs.payment_event_count),
+           MIN(vs.first_seen_at), MAX(vs.last_seen_at), ?, ?
+      FROM viewer_sessions vs
+      JOIN sessions s ON s.id = vs.session_id
+     WHERE vs.viewer_id = ?
+       AND s.broadcaster_id IS NOT NULL
+     GROUP BY s.broadcaster_id
+  `).run(now, now, id);
+  db.prepare(`
+    INSERT INTO viewer_broadcaster_currency_totals (
+      viewer_id, broadcaster_id, currency, value_kind, total_minor, event_count
+    )
+    SELECT e.viewer_id, s.broadcaster_id, e.currency, e.value_kind,
+           SUM(e.amount_minor), COUNT(*)
+      FROM events e
+      JOIN sessions s ON s.id = e.session_id
+     WHERE e.viewer_id = ?
+       AND s.broadcaster_id IS NOT NULL
+       AND e.is_paid = 1
+       AND e.amount_minor > 0
+       AND e.value_kind IN ('actual', 'display')
+       AND e.currency IS NOT NULL
+     GROUP BY s.broadcaster_id, e.currency, e.value_kind
+  `).run(id);
+  const row = db.prepare('SELECT COUNT(*) AS count FROM viewer_broadcasters WHERE viewer_id = ?').get(id);
+  return {broadcasterCount: Number(row?.count ?? 0)};
+}
+
 /** Totals grouped by currency/value_kind for every viewer of a broadcaster. */
 export function broadcasterSupportTotals(db, broadcasterId) {
   return db.prepare(`
