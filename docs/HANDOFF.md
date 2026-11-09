@@ -127,5 +127,5 @@ node scripts/verify-exe.mjs
 
 ## 8. 本轮 Commit
 
-- 本轮：`（提交后填写）` feat: add header language switch, data relocation and broadcaster memory
+- 本轮：`66e47b6` feat: add header language switch, data relocation and broadcaster memory
 - 上一轮：`c8d72c5` docs: anonymize public chat data in YouTube screenshots

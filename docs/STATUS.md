@@ -216,6 +216,6 @@ docs/screenshots/viewers-empty-after-clear-zh-CN.png
 
 ## 11. 最近 Commit
 
-- 本轮：`（提交后填写）` feat: add header language switch, data relocation and broadcaster memory
+- 本轮：`66e47b6` feat: add header language switch, data relocation and broadcaster memory
 - 上一轮：`c8d72c5` docs: anonymize public chat data in YouTube screenshots
 - 上一轮：`d314984` feat: record public YouTube Live chat without a developer key
