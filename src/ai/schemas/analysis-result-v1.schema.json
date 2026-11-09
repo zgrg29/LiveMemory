@@ -7,6 +7,10 @@
   "required": ["protocol", "task_id", "session_id", "locale", "session_topics", "viewer_profiles"],
   "properties": {
     "protocol": {"const": "livememory-analysis-result-v1"},
+    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
+    "job_id": {"type": "string", "minLength": 1, "maxLength": 100},
+    "batch_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "broadcaster_id": {"type": ["string", "null"], "maxLength": 200},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 200},
     "session_id": {"type": "string", "minLength": 1, "maxLength": 100},
     "locale": {"enum": ["zh-CN", "ja", "en"]},
@@ -31,7 +35,24 @@
               "key_points": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
               "confidence": {"type": "number", "minimum": 0, "maximum": 1},
               "evidence": {"enum": ["observed", "inferred"]},
-              "message_refs": {"type": "array", "maxItems": 200, "items": {"type": "integer", "minimum": 1}}
+              "message_refs": {
+                "type": "array",
+                "maxItems": 200,
+                "items": {
+                  "oneOf": [
+                    {"type": "integer", "minimum": 1},
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["batch", "seq"],
+                      "properties": {
+                        "batch": {"type": "integer", "minimum": 1},
+                        "seq": {"type": "integer", "minimum": 1}
+                      }
+                    }
+                  ]
+                }
+              }
             }
           }
         },
@@ -46,7 +67,9 @@
               "at": {"type": "string", "format": "date-time"},
               "tone": {"enum": ["positive", "neutral", "negative", "mixed"]},
               "note": {"type": "string", "maxLength": 500},
-              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "sample_size": {"type": "integer", "minimum": 0, "maximum": 100000},
+              "evidence_note": {"type": "string", "maxLength": 300}
             }
           }
         },
@@ -59,9 +82,31 @@
             "required": ["summary", "started_at", "note", "confidence"],
             "properties": {
               "summary": {"type": "string", "maxLength": 500},
+              "title": {"type": "string", "maxLength": 120},
               "started_at": {"type": "string", "format": "date-time"},
+              "ended_at": {"type": "string", "format": "date-time"},
               "note": {"type": "string", "maxLength": 500},
-              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+              "viewpoints": {"type": "array", "maxItems": 6, "items": {"type": "string", "maxLength": 300}},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "evidence": {"enum": ["observed", "inferred"]},
+              "message_refs": {
+                "type": "array",
+                "maxItems": 200,
+                "items": {
+                  "oneOf": [
+                    {"type": "integer", "minimum": 1},
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["batch", "seq"],
+                      "properties": {
+                        "batch": {"type": "integer", "minimum": 1},
+                        "seq": {"type": "integer", "minimum": 1}
+                      }
+                    }
+                  ]
+                }
+              }
             }
           }
         },
@@ -75,8 +120,29 @@
             "properties": {
               "started_at": {"type": "string", "format": "date-time"},
               "ended_at": {"type": "string", "format": "date-time"},
+              "title": {"type": "string", "maxLength": 120},
               "reason": {"type": "string", "maxLength": 500},
-              "clip_suggestion": {"type": "string", "maxLength": 500}
+              "clip_suggestion": {"type": "string", "maxLength": 500},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "evidence": {"enum": ["observed", "inferred"]},
+              "message_refs": {
+                "type": "array",
+                "maxItems": 200,
+                "items": {
+                  "oneOf": [
+                    {"type": "integer", "minimum": 1},
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["batch", "seq"],
+                      "properties": {
+                        "batch": {"type": "integer", "minimum": 1},
+                        "seq": {"type": "integer", "minimum": 1}
+                      }
+                    }
+                  ]
+                }
+              }
             }
           }
         }

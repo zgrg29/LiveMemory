@@ -537,6 +537,14 @@ async function renderDetail(container, ctx, sessionId, query) {
   const {session, stats, support, top, storage} = payload;
   const viewerId = query?.get('viewer') ?? null;
   let chart = null;
+  // The AI report is a separate, optional read model. A missing report must not
+  // break the deterministic session detail page.
+  let analysisReport = null;
+  try {
+    analysisReport = await api.get(`/api/ai/sessions/${encodeURIComponent(session.id)}/report`);
+  } catch {
+    analysisReport = null;
+  }
 
   const back = el('button', {
     className: 'detail-back',
@@ -627,22 +635,7 @@ async function renderDetail(container, ctx, sessionId, query) {
       el('div', {className: 'card-hint', text: t('live.top.hint')})),
     el('div', {className: 'card-body'}, speakersList));
 
-  const aiCard = el('section', {className: 'card'},
-    el('div', {className: 'card-head'},
-      el('div', {className: 'card-title', text: t('history.detail.aiTitle')}),
-      aiChip(session.aiStatus, t)),
-    el('div', {className: 'card-body'},
-      el('div', {className: 'callout'},
-        el('div', {},
-          el('div', {className: 'callout-title', text: t('history.detail.aiPendingTitle')}),
-          el('div', {text: t('history.detail.aiPendingBody')}))),
-      el('div', {className: 'inline', style: {marginTop: '12px'}},
-        el('button', {
-          className: 'button button--secondary',
-          type: 'button',
-          text: t('history.detail.aiCta'),
-          onClick: () => ctx.navigate(`/ai?session=${encodeURIComponent(session.id)}`)
-        }))));
+  const aiCard = buildAiCard(ctx, session, analysisReport);
 
   const storageCard = el('section', {className: 'card'},
     el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('history.detail.storageTitle')})),
@@ -710,6 +703,94 @@ async function renderDetail(container, ctx, sessionId, query) {
     chart?.destroy();
     chart = null;
   };
+}
+
+/**
+ * Compact AI summary inside the deterministic session detail.
+ *
+ * When a validated AI result exists, the card shows the AI summary and a link to
+ * the full report. It never presents batch results as a complete analysis and
+ * never mixes AI numbers into the local statistics above.
+ */
+function buildAiCard(ctx, session, report) {
+  const t = ctx.t;
+  const openAi = () => ctx.navigate(`/ai?session=${encodeURIComponent(session.id)}`);
+  const openReport = () => ctx.navigate(`/ai?session=${encodeURIComponent(session.id)}&report=1`);
+  const head = el('div', {className: 'card-head'},
+    el('div', {className: 'card-title', text: t('history.detail.aiTitle')}),
+    aiChip(report?.complete ? 'imported' : (report?.mode === 'partial' ? 'partial' : session.aiStatus), t));
+
+  let body;
+  if (report?.report) {
+    const summary = report.report.summary || t('ai.report.summaryEmpty');
+    const excerpt = summary.length > 420 ? `${summary.slice(0, 420)}…` : summary;
+    body = el('div', {},
+      el('div', {className: 'ai-report-preview'},
+        el('div', {className: 'inline'},
+          chip(t('ai.report.aiBadge'), 'accent'),
+          chip(t('ai.report.topicsTitle'), 'neutral'),
+          el('span', {className: 'small tertiary', text: t('ai.report.viewerProfilesCount', {
+            count: report.viewerProfiles?.count ?? 0,
+            low: report.viewerProfiles?.lowConfidence ?? 0
+          })})),
+        el('p', {className: 'ai-report-summary', text: excerpt}),
+        el('div', {className: 'small tertiary', text: t('ai.report.importedAt', {
+          date: report.result?.importedAt ? formatDateTime(report.result.importedAt, ctx.locale) : '—'
+        })})),
+      el('div', {className: 'inline', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary button--small',
+          type: 'button',
+          text: t('history.detail.aiViewReport'),
+          onClick: openReport
+        }),
+        el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: t('history.detail.aiCta'),
+          onClick: openAi
+        })));
+  } else if (report?.mode === 'partial') {
+    body = el('div', {},
+      el('div', {className: 'callout callout--warn'},
+        el('div', {},
+          el('div', {className: 'callout-title', text: t('ai.report.incompleteTitle')}),
+          el('div', {text: t('ai.report.incompleteBody')}))),
+      el('div', {className: 'inline', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: t('ai.report.openAi'),
+          onClick: openReport
+        })));
+  } else if (report?.jobs?.length > 0) {
+    body = el('div', {},
+      el('div', {className: 'callout callout--neutral'},
+        el('div', {},
+          el('div', {className: 'callout-title', text: t('ai.import.title')}),
+          el('div', {text: t('history.detail.aiPendingBody')}))),
+      el('div', {className: 'inline', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: t('ai.report.openAi'),
+          onClick: openAi
+        })));
+  } else {
+    body = el('div', {},
+      el('div', {className: 'callout'},
+        el('div', {},
+          el('div', {className: 'callout-title', text: t('history.detail.aiPendingTitle')}),
+          el('div', {text: t('history.detail.aiPendingBody')}))),
+      el('div', {className: 'inline', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('history.detail.aiCta'),
+          onClick: openAi
+        })));
+  }
+  return el('section', {className: 'card'}, head, el('div', {className: 'card-body'}, body));
 }
 
 /**

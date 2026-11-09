@@ -96,6 +96,8 @@ function assertNoResidue(db, sessionId) {
     ['viewer_sessions', 'session_id'],
     ['session_currency_totals', 'session_id'],
     ['ai_packages', 'session_id'],
+    ['ai_jobs', 'session_id'],
+    ['ai_results', 'session_id'],
     ['sessions', 'id']
   ];
   for (const [table, column] of checks) {
@@ -161,7 +163,11 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
   const result = withTransaction(db, () => {
     // Explicit child deletes come first so the operation is correct even if a
     // foreign key were ever disabled, and so a mid-way failure rolls everything
-    // back inside the same transaction.
+    // back inside the same transaction. AI results, jobs, batches, message maps
+    // and evidence all disappear with their source broadcast; an imported
+    // analysis can never outlive the chat it cites.
+    db.prepare('DELETE FROM ai_results WHERE session_id = ?').run(id);
+    db.prepare('DELETE FROM ai_jobs WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_packages WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM session_currency_totals WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM viewer_sessions WHERE session_id = ?').run(id);

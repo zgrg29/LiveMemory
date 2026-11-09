@@ -1,0 +1,51 @@
+/**
+ * Versioned AI file contract constants.
+ *
+ * The package protocol stays `livememory-analysis-v1` and the result protocol
+ * stays `livememory-analysis-result-v1`; M6 only *adds* optional fields and a
+ * batch wrapper, so packages and results produced by earlier versions remain
+ * readable. The prompt version is recorded per job and per package so a user can
+ * tell which instructions produced a given result.
+ */
+export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
+export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
+
+/** Revision of the result schema. 1.0.0 results (no schema_version) still validate. */
+export const RESULT_SCHEMA_VERSION = '1.1.0';
+export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0']);
+
+export const PROMPT_VERSION = 'lm-prompt-m6.1';
+
+export const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
+
+export function promptVersionFor(locale) {
+  return `${PROMPT_VERSION}-${SUPPORTED_LOCALES.includes(locale) ? locale : 'en'}`;
+}
+
+/** Default and bounds for one analyzable batch. Configurable per job. */
+export const DEFAULT_BATCH_MESSAGES = 1000;
+export const MIN_BATCH_MESSAGES = 100;
+export const MAX_BATCH_MESSAGES = 5000;
+
+/** Hard limits that protect memory and the SQLite store from hostile input. */
+export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
+export const MAX_ANALYSIS_MESSAGES = 50000;
+export const MAX_REPORT_EVIDENCE = 400;
+
+export const TASK_KIND = Object.freeze({
+  SESSION_ANALYSIS: 'session_analysis',
+  SESSION_AGGREGATE: 'session_analysis_aggregate',
+  LEGACY_TOPICS: 'session_topics',
+  LEGACY_VIEWERS: 'viewer_profile_update'
+});
+
+/** Task id used inside a package manifest (and therefore inside the answer). */
+export function batchTaskId(sessionId, batchIndex, batchTotal) {
+  return batchTotal === 1
+    ? `${sessionId}-analysis`
+    : `${sessionId}-analysis-b${String(batchIndex).padStart(2, '0')}`;
+}
+
+export function aggregateTaskId(sessionId) {
+  return `${sessionId}-analysis-final`;
+}

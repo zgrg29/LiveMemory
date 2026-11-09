@@ -99,6 +99,84 @@ export function serializePackage(row) {
     fileName: row.file_name,
     checksum: row.checksum,
     messageCount: Number(row.message_count ?? 0),
+    jobId: row.job_id ?? null,
+    batchIndex: row.batch_index === null || row.batch_index === undefined ? null : Number(row.batch_index),
+    stage: row.stage ?? 'single',
+    promptVersion: row.prompt_version ?? null,
     createdAt: row.created_at
+  };
+}
+
+export function serializeJob(row, status = null) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    sessionId: row.sessionId ?? row.session_id,
+    broadcasterId: row.broadcasterId ?? row.broadcaster_id ?? null,
+    kind: row.kind,
+    locale: row.locale,
+    promptVersion: row.promptVersion ?? row.prompt_version,
+    protocolVersion: row.protocolVersion ?? row.protocol_version,
+    batchTotal: Number(row.batchTotal ?? row.batch_total ?? 1),
+    maxMessages: Number(row.maxMessages ?? row.max_messages ?? 0),
+    totalMessages: Number(row.totalMessages ?? row.total_messages ?? 0),
+    legacy: Boolean(row.legacy),
+    aggregatePackageId: row.aggregatePackageId ?? row.aggregate_package_id ?? null,
+    createdAt: Number(row.createdAt ?? row.created_at ?? 0),
+    updatedAt: Number(row.updatedAt ?? row.updated_at ?? 0),
+    status: status
+      ? {
+        state: status.status,
+        labelKey: status.labelKey,
+        complete: status.complete,
+        batchesImported: status.batchesImported,
+        missingBatches: status.missingBatches,
+        aggregateRequired: status.aggregateRequired,
+        aggregateImported: status.aggregateImported,
+        aggregatePackageReady: status.aggregatePackageReady,
+        versions: status.versions,
+        resultCount: status.resultCount,
+        latestError: status.latestError
+      }
+      : null
+  };
+}
+
+export function serializeBatch(row, packageRow = null) {
+  if (!row) return null;
+  return {
+    batchIndex: Number(row.batchIndex ?? row.batch_index),
+    batchId: row.batchId ?? row.batch_id,
+    taskId: row.taskId ?? row.task_id,
+    fromSeq: Number(row.fromSeq ?? row.from_seq),
+    toSeq: Number(row.toSeq ?? row.to_seq),
+    fromAt: row.fromAt ?? row.from_at ?? null,
+    toAt: row.toAt ?? row.to_at ?? null,
+    messageCount: Number(row.messageCount ?? row.message_count),
+    checksum: row.checksum,
+    packageId: row.packageId ?? row.package_id ?? null,
+    package: packageRow ? serializePackage(packageRow) : null
+  };
+}
+
+export function serializeResult(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    jobId: row.jobId ?? row.job_id,
+    sessionId: row.sessionId ?? row.session_id,
+    scopeKey: row.scopeKey ?? row.scope_key,
+    batchIndex: row.batchIndex ?? row.batch_index ?? null,
+    taskId: row.taskId ?? row.task_id,
+    taskKind: row.taskKind ?? row.task_kind,
+    protocolVersion: row.protocolVersion ?? row.protocol_version,
+    schemaVersion: row.schemaVersion ?? row.schema_version,
+    locale: row.locale,
+    checksum: row.checksum,
+    resultVersion: Number(row.resultVersion ?? row.result_version),
+    source: row.source,
+    evidenceTotal: Number(row.evidenceTotal ?? row.evidence_total ?? 0),
+    evidenceMissing: Number(row.evidenceMissing ?? row.evidence_missing ?? 0),
+    importedAt: Number(row.importedAt ?? row.imported_at)
   };
 }

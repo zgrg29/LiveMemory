@@ -24,10 +24,62 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/youtube/      公开网页聊天（唯一路径；可多直播）
          ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
          ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
-         ├─ src/analytics/              只读读模型（时间线/汇总/画像）
-         └─ src/ai/export/              分析包生成（含表情字典）
+         ├─ src/analytics/              只读读模型（时间线/汇总/画像/历史搜索/AI 报告）
+         ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）
+         ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
+         ├─ src/ai/tasks/               任务状态计算（从数据库事实）
+         └─ src/ai/prompts/             三语提示词与提示词版本
    └─ src/web/                          浏览器控制台（原生 ES Modules）
 ```
+
+## 1.1 AI 文件往返数据流（v0.8.0）
+
+```text
+createAnalysisJob()
+  ├─ countSessionMessages() → 按 batchSize 计算批次
+  ├─ 每批：listSessionMessagesAsc(offset/limit) → messages.jsonl（seq 从 1）
+  │        + 本批 viewer_context + 整场统计 + 三语 instructions + result.schema.json
+  ├─ 写 ZIP + ai_packages
+  └─ BEGIN IMMEDIATE
+       ├─ ai_jobs（job_id、prompt_version、batch_total、total_messages）
+       ├─ ai_job_batches（稳定 batch_id、整场 seq 范围、时间范围、消息校验和）
+       ├─ ai_job_messages（seq → event_id）
+       └─ ai_job_viewers（本批 viewer_context 的稳定身份）
+     COMMIT
+
+用户把 ZIP 交给任意 AI → AI 返回 JSON
+
+validateAnalysisImport()
+  ├─ 8 MB / 结构 / JSON Schema / 协议版本
+  ├─ job / batch / task / session / broadcaster 快照
+  ├─ 时间窗口与批次覆盖
+  ├─ message_refs → ai_job_messages → events（可用性）
+  ├─ viewer_profiles → ai_job_viewers（绝不按昵称）
+  └─ 规范化 → SHA-256 → duplicate / confirm_version / import
+
+importAnalysisResult()
+  └─ BEGIN IMMEDIATE
+       ├─ ai_results（scope=batch:N|final、result_version、result_json）
+       ├─ ai_result_evidence（section/item/batch/seq/event_id/available）
+       ├─ 清空 last_error；recompute sessions.ai_status
+       └─ COMMIT
+
+用户生成汇总包（buildAggregatePackage）
+  └─ session_context + viewer_context + batch_results.json + aggregate instructions
+
+buildSessionAnalysisReport()
+  ├─ 选择 complete job；有 final 用 final，单批用 batch，否则按批次 partial
+  ├─ evidence → events：原文、昵称、时间；已清理/删除 → unavailable
+  └─ 报告只含 AI 内容；本地统计仍在场次详情
+```
+
+关键保证：
+
+- AI 结果永远不写 `events`、`sessions` 计数、金额或观众聚合；它只写独立的 `ai_*` 表。
+- 结果只能引用导出时真实存在的 `seq`；`ai_job_messages` 是唯一映射，报告也用它解析证据。
+- 批次任务缺少批次、缺少汇总或校验失败时，状态不是 `complete`；部分结果不会被拼成整场报告。
+- 相同内容重复导入不新增行；不同内容必须显式创建新版本，旧版本保留。
+- 删除场次级联删除任务/批次/映射/结果/证据与包文件；清空数据包含全部 AI 表。
 
 ## 2. 启动时序
 
@@ -193,11 +245,15 @@ stopSession(sessionId)
 
 ### 4.1 AI 分析包（文本优先）
 
-- `messages.jsonl` 保留 `content` 原文；Unicode Emoji 不转换。
+- `messages.jsonl` 保留 `content` 原文；Unicode Emoji 不转换；M6 起另带 `event_id` 与平台 `message_id` 便于追溯。
 - 平台表情进入 `session_context.emote_dictionary`，消息通过 `emote_refs` 引用；同一表情只存一份元数据。
 - 仅当原文不足以理解表情时，才增加 `content_ai`；未知表情标记 `[未知平台表情：emote_id=…]`，不猜情绪。
 - 不打包表情图片；包大小主要由文本和聚合决定。
-- `instructions.md` 由 `src/ai/prompts/instructions.mjs` 按 `locale` 生成，包含话题、观众画像、经济支持、Emoji/表情、数据可靠性与不可信数据规则。
+- `instructions.md` 由 `src/ai/prompts/instructions.mjs` 按 `locale` 生成，包含话题、观众画像、经济支持、
+  Emoji/表情、数据可靠性、不可信数据、批次/汇总与来源字段规则；版本 `lm-prompt-m6.1-<locale>` 记录在
+  `manifest.prompt_version` 与 `ai_jobs.prompt_version`。
+- M6 的批次/汇总包结构与校验见 `AI_CONTRACT.md`；导出、导入、报告分别由
+  `ai/export/job.mjs`、`ai/import/*`、`analytics/ai/report.mjs` 负责。
 
 ## 5. HTTP API（v0.1.0）
 
@@ -249,10 +305,19 @@ stopSession(sessionId)
 | GET | `/api/broadcasters` | 主播列表、当前主播、未确认历史 |
 | GET | `/api/broadcasters/:id` | 主播汇总、新/回访、支持 |
 | GET | `/api/broadcasters/:id/viewers` | 主播范围观众与排序 |
-| GET | `/api/ai/instructions` | 指定语言的提示词 |
-| POST | `/api/ai/packages` | 生成分析包 |
-| GET | `/api/ai/packages` | 已导出包列表 |
+| GET | `/api/ai/instructions` | 指定语言的通用提示词，或按 `jobId`/`batchIndex`/`stage` 返回任务提示词 |
+| POST | `/api/ai/packages` | 生成旧版整场分析包（兼容） |
+| GET | `/api/ai/packages` | 已导出包列表（可按 `sessionId`/`jobId`） |
 | GET | `/api/ai/packages/:id/download` | 下载 ZIP |
+| POST | `/api/ai/jobs` | 创建分析任务并导出全部批次包 |
+| GET | `/api/ai/jobs` | 任务列表 + 实时状态 + 包 |
+| GET | `/api/ai/jobs/:id` | 任务 + 批次 + 包 + 结果版本 |
+| POST | `/api/ai/jobs/:id/aggregate` | 全部分批导入后生成第二阶段汇总包 |
+| POST | `/api/ai/import/preview` | 只读预检查（场次/任务/批次/覆盖/重复/错误） |
+| POST | `/api/ai/import` | 确认导入（事务；`createVersion` 显式新版本） |
+| GET | `/api/ai/sessions/:id/report` | 直播分析报告读模型 |
+| GET | `/api/ai/results/:id` | 单个结果元数据 + 原始 JSON |
+| GET | `/api/ai/results/:id/download` | 下载结果 JSON 供审计 |
 
 ## 5.1 数据目录迁移（运行中切换）
 
@@ -290,7 +355,10 @@ stopSession(sessionId)
 - Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
 - `js/pages/live.js`：多场标签页；每个 session 独立缓存 summary/feed/leaderboard；`viewToken` 防止串场；`/api/live/recordings` 恢复运行任务。
-- `js/pages/history.js`：服务端搜索/筛选/增量加载；列表与详情共用 `session-actions.js`；`?viewer=` 下钻。
+- `js/pages/history.js`：服务端搜索/筛选/增量加载；列表与详情共用 `session-actions.js`；`?viewer=` 下钻；
+  详情页读取 AI 报告摘要并提供完整报告入口。
+- `js/pages/ai.js`：AI 分析中心（任务/批次包/提示词/文件与粘贴导入/预检查/版本/汇总/重新分析）。
+- `js/pages/ai-report.js`：分析报告（摘要、话题、情绪、争论、片段、画像、来源、证据展开）。
 - `js/session-actions.js`：停止/归档/取消归档/永久删除的动作定义与确认框（列表与详情唯一实现）。
 - `js/actions-menu.js`：可访问的 `···` 菜单（fixed 定位、视口夹紧、键盘/Esc/外部点击/焦点返回）。
 - `js/dialog.js`：共享原生 `<dialog>` modal（settings 与 history 共用）。
@@ -315,4 +383,5 @@ node.exe (官方运行时，含 node:sqlite)
 
 - 平台适配器：实现 `PlatformAdapter.start({onEvent,onStateChange})`，产出 canonical event，即可复用全部统计、UI 与 AI 导出。
 - 备份：复用 `shared/zip.mjs`，加入 `manifest.json` → `checksums.json` → `database/` → `settings/`。
-- AI 导入：`src/ai/import/` 读取 ZIP/JSON → 校验 `result.schema.json` → 事务写入分析表与画像版本。
+- AI 导入：M6 已实现 `src/ai/import/`（JSON 校验 → 事务写入 `ai_results`/`ai_result_evidence`）与报告；
+  下一阶段为 AI 观众画像的版本化、保留/去标识化与单版本删除（M7）。

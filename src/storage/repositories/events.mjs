@@ -119,15 +119,29 @@ export function listTimelineRows(db, sessionId) {
  * the caller so the model can reference messages by a small integer instead of
  * an internal row id.
  */
-export function listSessionMessagesAsc(db, {sessionId, limit = 20000} = {}) {
+export function listSessionMessagesAsc(db, {sessionId, limit = 20000, offset = 0} = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 20000, 1), 50000);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
   return db.prepare(`
     SELECT * FROM events
      WHERE session_id = ?
        AND event_type IN ('chat', 'super_chat')
      ORDER BY occurred_at ASC, id ASC
-     LIMIT ?
-  `).all(String(sessionId), safeLimit).map(mapEventRow);
+     LIMIT ? OFFSET ?
+  `).all(String(sessionId), safeLimit, safeOffset).map(mapEventRow);
+}
+
+/** One event by row id, used to resolve AI evidence references. */
+export function getEventById(db, eventId) {
+  return mapEventRow(db.prepare('SELECT * FROM events WHERE id = ?').get(Number(eventId)));
+}
+
+/** Chat/Super Chat row count; the batching divisor. */
+export function countSessionMessages(db, sessionId) {
+  return Number(db.prepare(`
+    SELECT COUNT(*) AS count FROM events
+     WHERE session_id = ? AND event_type IN ('chat', 'super_chat')
+  `).get(String(sessionId))?.count ?? 0);
 }
 
 /**

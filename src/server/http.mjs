@@ -80,19 +80,32 @@ export function sendText(res, status, text, contentType = 'text/plain; charset=u
   res.end(body);
 }
 
-export async function readJsonBody(req) {
+export async function readJsonBody(req, {limit = MAX_BODY_BYTES} = {}) {
   const contentType = String(req.headers['content-type'] ?? '');
   if (!contentType.toLowerCase().includes('application/json')) {
     throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.jsonRequired', httpStatus: 415});
   }
+  const maxBytes = Number(limit) > 0 ? Number(limit) : MAX_BODY_BYTES;
   const chunks = [];
   let size = 0;
+  let tooLarge = false;
+  // Drain the remainder of an oversized request instead of destroying the
+  // socket mid-upload: the client must still receive a readable 413 JSON error.
+  // Reading stops after a generous hard cap so a hostile client cannot make the
+  // server consume an unbounded stream.
+  const drainLimit = maxBytes + 32 * 1024 * 1024;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) {
-      throw new AppError(ERROR_CODES.PAYLOAD_TOO_LARGE, {messageKey: 'errors.payloadTooLarge', httpStatus: 413});
-    }
-    chunks.push(chunk);
+    if (size > maxBytes) tooLarge = true;
+    if (!tooLarge) chunks.push(chunk);
+    if (size > drainLimit) break;
+  }
+  if (tooLarge) {
+    throw new AppError(ERROR_CODES.PAYLOAD_TOO_LARGE, {
+      messageKey: 'errors.payloadTooLarge',
+      details: {limit: maxBytes},
+      httpStatus: 413
+    });
   }
   if (size === 0) return {};
   try {

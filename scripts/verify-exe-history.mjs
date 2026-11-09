@@ -342,7 +342,7 @@ let instance = await launchExe();
 try {
   await useEnglishUi();
   const status = await (await fetch(`${base}/api/status`)).json();
-  record('packaged EXE upgrades the v6 database to schema 7', status.database.schemaVersion === 7, {
+  record('packaged EXE upgrades the v6 database to schema 8', status.database.schemaVersion === 8, {
     schema: status.database.schemaVersion,
     version: status.server.version
   });
@@ -478,8 +478,11 @@ try {
   instance = await launchExe();
   await useEnglishUi();
   const restartedStatus = await (await fetch(`${base}/api/status`)).json();
-  record('restarting the EXE keeps schema 7 and no running capture', restartedStatus.database.schemaVersion === 7
-    && (restartedStatus.platform.activeCount ?? 0) === 0);
+  record('restarting the EXE keeps schema 8 and no running capture', restartedStatus.database.schemaVersion === 8
+    && (restartedStatus.platform.activeCount ?? 0) === 0, {
+    schema: restartedStatus.database.schemaVersion,
+    activeCount: restartedStatus.platform.activeCount
+  });
   const archivedSearch = await (await fetch(`${base}/api/history/search?q=EXE%20Archive%20Target&includeArchived=1`)).json();
   record('archive state survives an EXE restart', archivedSearch.total === 1 && archivedSearch.sessions[0].archived === true, {
     total: archivedSearch.total,

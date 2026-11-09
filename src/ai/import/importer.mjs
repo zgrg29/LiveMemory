@@ -1,0 +1,193 @@
+import {createId} from '../../shared/ids.mjs';
+import {AppError} from '../../shared/errors.mjs';
+import {withTransaction} from '../../storage/database/connection.mjs';
+import {
+  clearJobFailure,
+  getJob,
+  insertJob,
+  insertJobBatch,
+  insertJobMessages,
+  insertJobViewers,
+  recordJobFailure
+} from '../../storage/repositories/ai-jobs.mjs';
+import {
+  findResultByChecksum,
+  getResult,
+  insertEvidence,
+  insertResult,
+  latestResultForScope
+} from '../../storage/repositories/ai-results.mjs';
+import {setSessionAiStatus} from '../../storage/repositories/sessions.mjs';
+import {listJobs} from '../../storage/repositories/ai-jobs.mjs';
+import {promptVersionFor} from '../constants.mjs';
+import {computeJobStatus, recomputeSessionAiStatus} from '../tasks/status.mjs';
+import {checksumOf, validateAnalysisImport} from './validate.mjs';
+
+/**
+ * Persist one validated AI result.
+ *
+ * Rules:
+ * - validation runs again here; a preview can never authorise a write;
+ * - a legacy (pre-M6) answer gets a real job/batch/message map so evidence and
+ *   duplicate detection work exactly like a new batch;
+ * - identical content is returned as a duplicate and writes nothing;
+ * - a different version needs `createVersion: true`, and always appends a new
+ *   version while keeping every earlier result;
+ * - everything is one SQLite transaction: a failure leaves no partial result.
+ */
+export function importAnalysisResult({
+  db,
+  text,
+  source = 'paste',
+  createVersion = false,
+  now = Date.now()
+}) {
+  const validation = validateAnalysisImport({db, text, source, now});
+  if (!validation.ok) {
+    if (validation.job?.id) {
+      recordJobFailure(db, validation.job.id, {
+        code: validation.errors[0]?.code ?? 'IMPORT_INVALID',
+        errors: validation.errors,
+        now
+      });
+    }
+    throw new AppError('AI_IMPORT_INVALID', {
+      messageKey: 'errors.aiImportInvalid',
+      details: {
+        errors: validation.errors,
+        warnings: validation.warnings,
+        target: validation.target
+      },
+      httpStatus: 422
+    });
+  }
+  if (validation.action === 'duplicate') {
+    const duplicate = getResult(db, validation.target.duplicate.id, {includeJson: true});
+    return {
+      duplicate: true,
+      result: duplicate,
+      preview: validation,
+      job: validation.job ? getJob(db, validation.job.id) : null,
+      status: validation.job ? computeJobStatus(db, validation.job) : null
+    };
+  }
+  if (validation.action === 'confirm_version' && createVersion !== true) {
+    throw new AppError('AI_VERSION_REQUIRED', {
+      messageKey: 'errors.aiVersionRequired',
+      details: {
+        existingVersion: validation.target.duplicate?.resultVersion ?? null,
+        target: validation.target
+      },
+      httpStatus: 409
+    });
+  }
+
+  let job = validation.job;
+  const outcome = withTransaction(db, () => {
+    if (!job) {
+      const created = createLegacyJob(db, validation, {now});
+      job = created.job;
+    }
+    // Re-check inside the transaction: two imports of the same answer must not
+    // race into two versions.
+    const existing = findResultByChecksum(db, job.id, validation.scopeKey, validation.checksum);
+    if (existing) {
+      return {duplicate: true, result: getResult(db, existing.id, {includeJson: true})};
+    }
+    const latest = latestResultForScope(db, job.id, validation.scopeKey);
+    if (latest && createVersion !== true) {
+      throw new AppError('AI_VERSION_REQUIRED', {
+        messageKey: 'errors.aiVersionRequired',
+        details: {existingVersion: latest.resultVersion, target: validation.target},
+        httpStatus: 409
+      });
+    }
+    const resultVersion = (latest?.resultVersion ?? 0) + 1;
+    const resultId = createId('air');
+    const missingEvidence = validation.evidenceRows.filter((row) => !row.available).length;
+    insertResult(db, {
+      id: resultId,
+      jobId: job.id,
+      sessionId: job.sessionId,
+      scopeKey: validation.scopeKey,
+      batchIndex: validation.batchIndex,
+      taskId: validation.target.taskId,
+      taskKind: validation.taskKind,
+      protocolVersion: validation.sanitized.protocol,
+      schemaVersion: validation.sanitized.schema_version,
+      locale: validation.sanitized.locale,
+      checksum: validation.checksum,
+      resultVersion,
+      source,
+      resultJson: JSON.stringify(validation.sanitized),
+      evidenceTotal: validation.evidenceRows.length,
+      evidenceMissing: missingEvidence,
+      importedAt: now
+    });
+    insertEvidence(db, resultId, validation.evidenceRows);
+    clearJobFailure(db, job.id, {now});
+    recomputeSessionAiStatus(db, job.sessionId, {setSessionAiStatus, listJobs, now});
+    return {duplicate: false, result: getResult(db, resultId, {includeJson: true})};
+  });
+
+  return {
+    duplicate: outcome.duplicate,
+    result: outcome.result,
+    preview: validation,
+    job: getJob(db, job.id),
+    status: computeJobStatus(db, getJob(db, job.id))
+  };
+}
+
+/**
+ * Materialise a pre-M6 result: create the job, its single batch, the seq → event
+ * mapping and the viewer set, all derived from the live database. The mapping is
+ * what lets the report prove whether a cited message still exists.
+ */
+function createLegacyJob(db, validation, {now}) {
+  const info = validation.legacyCreate;
+  if (!info?.batch) {
+    throw new AppError('AI_IMPORT_INVALID', {
+      messageKey: 'errors.aiImportInvalid',
+      details: {errors: validation.errors},
+      httpStatus: 422
+    });
+  }
+  const batch = info.batch;
+  const job = insertJob(db, {
+    id: createId('aij'),
+    sessionId: info.sessionId,
+    broadcasterId: validation.target.session?.broadcasterId ?? null,
+    locale: validation.sanitized.locale,
+    promptVersion: promptVersionFor(validation.sanitized.locale),
+    protocolVersion: validation.sanitized.protocol,
+    batchTotal: 1,
+    maxMessages: batch.messageCount,
+    totalMessages: batch.messageCount,
+    legacy: true,
+    createdAt: now
+  });
+  const batchId = `${job.id}-b01`;
+  insertJobBatch(db, {
+    jobId: job.id,
+    batchIndex: 1,
+    batchId,
+    taskId: batch.taskId,
+    fromSeq: batch.fromSeq,
+    toSeq: batch.toSeq,
+    fromAt: batch.fromAt,
+    toAt: batch.toAt,
+    messageCount: batch.messageCount,
+    checksum: checksumOf(batch.eventIds),
+    packageId: null,
+    createdAt: now
+  });
+  insertJobMessages(db, job.id, 1, (batch.eventIds ?? []).map((eventId, index) => ({
+    seq: index + 1,
+    eventId
+  })));
+  insertJobViewers(db, job.id, 1, batch.viewers ?? []);
+  return {job: getJob(db, job.id), batchId};
+}
+
+export const __internal = {createLegacyJob};

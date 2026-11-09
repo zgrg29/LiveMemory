@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**7**
+Schema 版本：**8**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -180,7 +180,73 @@ CREATE INDEX idx_viewer_sessions_viewer_seen ON viewer_sessions (viewer_id, last
 
 ### ai_packages
 
-导出记录：`id`、`session_id`、`kind`、`protocol_version`、`locale`、`file_name`、`relative_path`、`checksum`、`message_count`、`created_at`。为 M6 的导入去重与任务追踪预留。
+导出记录：`id`、`session_id`、`kind`、`protocol_version`、`locale`、`file_name`、`relative_path`、`checksum`、`message_count`、`created_at`。schema v8 增加 `job_id`、`batch_index`、`stage`（`single` / `batch` / `aggregate`）、`prompt_version`，用于把文件与任务、批次、提示词版本关联；旧行为 `NULL` + `single`。
+
+### AI 任务与结果（schema v8）
+
+M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原始事件表仍然只由 `EventIngest` 写入；AI 数据只进入下列独立表。
+
+#### ai_jobs
+
+| 列 | 说明 |
+| --- | --- |
+| id | `aij_<ULID>` |
+| session_id | 外键 → sessions，级联删除 |
+| broadcaster_id | 创建任务时的主播快照（可空） |
+| kind | `session_analysis`（新任务） |
+| locale | 任务提示词语言 |
+| prompt_version | 例如 `lm-prompt-m6.1-zh-CN` |
+| protocol_version | 分析包协议 `livememory-analysis-v1` |
+| batch_total / max_messages / total_messages | 批次总数、每批上限、消息总数（导出时快照） |
+| legacy | 1 = 由 M6 之前的整场结果自动创建 |
+| aggregate_package_id / aggregate_task_id | 第二阶段汇总包与任务 id |
+| last_error_at / last_error_code / last_error_json | 最近一次导入失败（只存字段路径/错误码，不存 AI 正文） |
+| created_at / updated_at | 毫秒 |
+
+#### ai_job_batches
+
+`(job_id, batch_index)` 主键；`batch_id`（稳定 `<jobId>-bNN`）、`task_id`、`from_seq`/`to_seq`（整场序号）、
+`from_at`/`to_at`（毫秒）、`message_count`、`checksum`（`messages.jsonl` 的 SHA-256）、`package_id`、`created_at`。
+
+#### ai_job_messages
+
+`(job_id, batch_index, seq)` 主键 + `event_id`。这是**证据可追溯性的唯一权威映射**：导入时只能引用这里存在的 seq；
+报告也通过它解析真实事件行。场次删除时随批次级联删除。
+
+#### ai_job_viewers
+
+`(job_id, batch_index, viewer_id)` 主键。记录该批次 `viewer_context.json` 中实际包含的稳定身份。
+导入的 `viewer_profiles` 必须命中其中一个；汇总任务使用该任务所有批次身份的并集。**昵称不参与解析。**
+
+#### ai_results
+
+| 列 | 说明 |
+| --- | --- |
+| id | `air_<ULID>` |
+| job_id / session_id | 外键，级联删除 |
+| scope_key | `batch:<n>` 或 `final` |
+| batch_index | 批次号；汇总结果为 NULL |
+| task_id / task_kind | 结果声明的任务与类型 |
+| protocol_version / schema_version | `livememory-analysis-result-v1` / `1.0.0` 或 `1.1.0` |
+| locale | AI 回答声明的语言（用于不一致警告，不改变校验规则） |
+| checksum | 规范化 JSON 的 SHA-256，用于重复导入 |
+| result_version | 同一 `(job_id, scope_key)` 内递增，旧版本保留 |
+| source | `file` / `paste` |
+| result_json | 经过白名单重建/控制字符清理的完整结果 |
+| evidence_total / evidence_missing | 引用总数 / 事件行已不存在的数量 |
+| imported_at | 毫秒 |
+
+`UNIQUE(job_id, scope_key, checksum)` 防止相同内容写入两次；不同内容通过 `createVersion` 显式追加版本。
+
+#### ai_result_evidence
+
+`(result_id, section, item_index, batch_index, seq)` 主键 + `event_id`（可空）+ `available`。
+`section` = `topics` / `disputes` / `highlights`。它只保存引用与可用性，不复制聊天正文；
+报告读取时再查 `events`，因此原文被保留策略清理或行被删除时能如实显示“不可用”。
+
+**状态**：任务状态不单独存列，由 `computeJobStatus()` 根据任务、批次、最新结果实时计算：
+`awaiting_import` / `partial` / `awaiting_aggregate` / `complete` / `invalid`。`sessions.ai_status` 只作为列表页的缓存，
+同样由 `recomputeSessionAiStatus()` 重新计算。
 
 ## 3. 身份规则
 
@@ -254,8 +320,8 @@ CREATE INDEX idx_viewer_sessions_viewer_seen ON viewer_sessions (viewer_id, last
 在一个 `BEGIN IMMEDIATE` 事务内：
 
 1. 记录受影响观众（`viewer_sessions` 与 `events.viewer_id` 的并集）与该场 `ai_packages` 文件清单；
-2. 显式删除 `ai_packages`、`session_currency_totals`、`viewer_sessions`、`events`，再删除 `sessions`
-   （外键级联仍开启，用于兜底）；
+2. 显式删除 `ai_results`、`ai_jobs`（级联批次/消息映射/观众集合/证据）、`ai_packages`、
+   `session_currency_totals`、`viewer_sessions`、`events`，再删除 `sessions`（外键级联仍开启，用于兜底）；
 3. 对每个受影响观众 `rebuildViewerAggregates()`：
    - 仍有其他场次：`viewers.message_count/payment_event_count/first_seen_at/last_seen_at` 按剩余
      `viewer_sessions` 求和/取极值；`viewer_currency_totals` 按剩余 `events` 重新聚合；
@@ -266,14 +332,15 @@ CREATE INDEX idx_viewer_sessions_viewer_seen ON viewer_sessions (viewer_id, last
    `viewer_broadcaster_currency_totals`，只保留仍有场次的 broadcaster；其他主播的长期档案不受影响；
 5. 删除没有任何场次、也没有任何 viewer 关系的孤立 `broadcasters` 行（纯派生数据）；
 6. `assertNoResidue(session_id)` 校验 `events`、`viewer_sessions`、`session_currency_totals`、
-   `ai_packages`、`sessions` 均无残留；失败抛错并回滚整个事务。
+   `ai_packages`、`ai_jobs`、`ai_results`、`sessions` 均无残留；失败抛错并回滚整个事务。
 
-提交后删除该场次在 `exports/` 下的分析包文件。`safeExportPath()` 拒绝越出 `exports/` 的路径；
+提交后删除该场次在 `exports/` 下的分析包文件（批次包与汇总包）。`safeExportPath()` 拒绝越出 `exports/` 的路径；
 其他场次、设置、凭据、日志与无关文件不会被删除。
 
-> **AI 长期记忆**：schema v7 没有 AI 结果/画像断言表（M6 未实现）。当前唯一的 AI 持久化是
-> `ai_packages` 索引与 ZIP 文件，二者随场次删除。未来若 M6 增加 AI 结果/画像证据表，必须加入同一
-> 删除事务并重新计算/清除引用被删场次的断言，不能保留失去来源的内容。
+> **AI 结果随场次删除**：分析任务、批次、seq→event 映射、结果、证据与包记录都在同一事务内清除；
+> 场次删除后不能再导入旧包或查看旧报告。AI 结果中的 `viewer_profiles` 也随结果一起删除，不会留下失去
+> 来源的观众画像。**已知限制**：YouTube 30 天原文清理目前只清空事件正文/表情/徽章/过期昵称，不会自动删除
+> 已导入 AI 结果中的画像或摘要；这些本地衍生存到用户删除场次或清空数据为止，不得声称完全符合平台政策。
 
 ## 7. 迁移策略
 
@@ -296,14 +363,23 @@ CREATE INDEX idx_viewer_sessions_viewer_seen ON viewer_sessions (viewer_id, last
   - 新增 `idx_sessions_history`、`idx_sessions_platform_started`、`idx_viewers_nickname`、
     `idx_viewer_nicknames_nickname`、`idx_viewer_sessions_viewer_seen`；
   - 不重写表、不改历史行；v1→v7 与 v6→v7 均有测试。打包 EXE 已用真实 schema 6 数据库实测升级。
-- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v5 见 `migration-emotes.test.mjs`；v4→v5 见 `broadcaster-identity.test.mjs`）。
+- **v7 → v8**：
+  - 新建 `ai_jobs`、`ai_job_batches`、`ai_job_messages`、`ai_job_viewers`、`ai_results`、
+    `ai_result_evidence` 及索引；
+  - `ai_packages` 增加 `job_id`、`batch_index`、`stage`（默认 `single`）、`prompt_version`；
+  - 旧包行保持 `job_id=NULL`、`batch_index=NULL`、`stage='single'`，旧分析包仍可导入（legacy 任务）；
+  - 不重写旧表、不删除历史；`tests/integration/ai-migration.test.mjs` 覆盖 v7→v8 与级联删除；
+    打包 EXE 用真实 schema 7 数据库实测升级到 8。
+- 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v5 见 `migration-emotes.test.mjs`；v4→v5 见 `broadcaster-identity.test.mjs`；v7→v8 见 `ai-migration.test.mjs`）。
 
 ## 8. 备份、清空与数据位置
 
 - 删除/恢复出厂前可创建数据库应急快照：`VACUUM INTO %LOCALAPPDATA%\LiveMemory-Backups\livememory-database-<timestamp>.db`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖）。它只含数据库，不含分析包/凭据/设置，**不是** M5 的 `.livememory` 可移植备份。
-- 清空 `data`：删除业务表、`exports/`、`cache/`；保留设置、凭据、位置记录、`backups/`、日志、根目录无关文件。
+- 清空 `data`：删除业务表与全部 AI 表（`ai_result_evidence`、`ai_results`、`ai_job_messages`、
+  `ai_job_viewers`、`ai_job_batches`、`ai_jobs`、`ai_packages`）、`exports/`、`cache/`；保留设置、凭据、
+  位置记录、`backups/`、日志、根目录无关文件。
 - 恢复出厂 `factory`：额外删除偏好、凭据、日志、缓存并重置设置；仍保留位置记录、`backups/`、根目录无关文件。
-- 删除后 `VACUUM` + WAL checkpoint，然后重建运行时；`schema_migrations` 与 schema v5 保留，数据库为空而非删除文件。
+- 删除后 `VACUUM` + WAL checkpoint，然后重建运行时；`schema_migrations` 与 schema 版本保留，数据库为空而非删除文件。
 - M5 可移植备份仍需使用一致快照、`schema_version`、应用版本与文件校验和；凭据默认不进入备份。
 
 ## 9. 数据位置记录

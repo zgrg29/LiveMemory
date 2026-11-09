@@ -15,22 +15,28 @@ import {buildInstructions} from '../prompts/instructions.mjs';
 import {groupCurrencyTotals} from '../../analytics/payments/totals.mjs';
 import {APP_NAME, APP_VERSION} from '../../shared/app-info.mjs';
 import {buildAiReadableContent, emoteKey} from '../../shared/emoticons.mjs';
+import {
+  ANALYSIS_PROTOCOL,
+  RESULT_PROTOCOL,
+  RESULT_SCHEMA_VERSION,
+  promptVersionFor
+} from '../constants.mjs';
 
 /**
- * Analysis package export (protocol `livememory-analysis-v1`).
+ * Legacy whole-session analysis package export (protocol
+ * `livememory-analysis-v1`).
  *
- * One .zip the user uploads to an AI service of their choice. It contains the
- * session aggregates, the chat log as JSONL, viewer context, the localized
- * prompt, and the result schema. No credentials, no cookies, no platform
- * tokens are ever included.
+ * M6 keeps this path for compatibility: users may still produce a single
+ * whole-session package. New jobs use `src/ai/export/job.mjs`, which splits the
+ * same content into batches and records the seq → event mapping for strict
+ * import validation.
  *
  * Emoji strategy: raw message text is kept verbatim. Platform emote metadata is
  * de-duplicated into `session_context.emote_dictionary`; each message references
  * an emote by key. A `content_ai` line is added only when the raw text does not
  * already make the emote readable, so repeated emotes do not inflate the file.
  */
-export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
-export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
+export {ANALYSIS_PROTOCOL, RESULT_PROTOCOL};
 export const MAX_MESSAGES_PER_PACKAGE = 20000;
 
 const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.schema.json', import.meta.url));
@@ -98,6 +104,8 @@ export async function buildAnalysisPackage({
       name: message.display_name,
       content: message.content
     };
+    if (message.id !== null && message.id !== undefined) line.event_id = Number(message.id);
+    if (message.external_id) line.message_id = message.external_id;
     const refs = Array.isArray(message.emotes)
       ? message.emotes.map((emote) => emoteKey(message.platform, emote)).filter(Boolean)
       : [];
@@ -227,9 +235,11 @@ export async function buildAnalysisPackage({
   const manifest = {
     protocol: ANALYSIS_PROTOCOL,
     result_protocol: RESULT_PROTOCOL,
+    schema_version: RESULT_SCHEMA_VERSION,
     created_at: isoFromEpochMs(now),
     app: {name: APP_NAME, version: APP_VERSION},
     locale,
+    prompt_version: promptVersionFor(locale),
     session_id: session.id,
     platform: session.platform,
     broadcaster_id: broadcasterId,

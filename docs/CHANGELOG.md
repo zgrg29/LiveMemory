@@ -1,5 +1,82 @@
 # 版本变化（CHANGELOG）
 
+## 0.8.0 — 2026-11-09（M6：AI 分析结果导入、分批汇总与直播分析报告）
+
+### 新增
+
+- **完整 AI 文件往返**
+  - `POST /api/ai/jobs`：创建分析任务，按消息边界拆批导出 `livememory-analysis-v1` 包；
+    任务记录场次、主播、提示词语言/版本、批次大小与消息总数；
+  - 包 manifest 新增 `job_id`、`stage`、`batch`（批次 id/序号/总数/seq 范围/时间覆盖/校验和）、
+    `coverage`、`prompt_version`、`schema_version`；`messages.jsonl` 新增 `event_id` 与平台 `message_id`；
+  - `POST /api/ai/import/preview`：显示场次、任务、批次/汇总、包标识、Schema 版本、覆盖范围、
+    重复/新版本、缺失批次、错误与警告；只读，不写结果；
+  - `POST /api/ai/import`：文件或粘贴 JSON，服务端重新校验，单 SQLite 事务写入结果与证据；
+    失败回滚，不留下部分结果；
+  - JSON 文件上限 8 MB；支持剥离一层 Markdown 代码围栏；超大请求先丢弃再返回 413。
+
+- **严格校验**
+  - 无依赖 JSON Schema 2020-12 子集验证（type/const/enum/required/unknown field/items/min-max/
+    length/number/date-time/oneOf），加上结构深度/节点/字符串/危险键防护；
+  - 业务校验：协议、Schema 版本、场次、任务、批次、主播快照、观众稳定身份、时间窗口、消息引用、
+    汇总前置条件；错误含字段路径、稳定错误码、原因与修复建议（三语）。
+
+- **版本与状态**
+  - 相同结果（规范化 JSON SHA-256）重复导入不写第二行；不同结果必须显式 `createVersion`，
+    追加新版本并保留旧版本；报告使用最新版本；
+  - 任务状态 `awaiting_import` / `partial` / `awaiting_aggregate` / `complete` / `invalid`
+    全部由数据库计算，重启保持；`sessions.ai_status` 同步；
+  - “重新分析”创建新任务，旧任务与结果版本保留。
+
+- **分批与汇总**
+  - 稳定批次 id、seq→event 映射、批次观众集合；消息不丢失、不重复、不截断；
+  - 乱序导入、重复批次、缺失批次、错误批次检测；
+  - 全部分批结果导入后可生成第二阶段汇总包（无原始消息，含 `batch_results.json`）；
+    导入最终 JSON 后任务才 `complete`；
+  - 部分结果按批次分别展示，不拼接成假整场报告；汇总结果中的证据必须写 `{batch, seq}`。
+
+- **直播分析报告**
+  - `GET /api/ai/sessions/:id/report` + `ai-report.js`：摘要、话题时间线、情绪、争论、候看片段、
+    观众画像、来源（结果版本/提示词版本/Schema/批次覆盖/文件或粘贴）、证据；
+  - 证据解析到真实事件行；原文被保留策略清理或行删除时明确显示“不可用/已删除”，不伪造；
+  - 明确说明 LiveMemory 没有视频/音频，片段建议只是基于聊天与事件的候选时间范围；
+  - 历史详情页新增 AI 报告摘要卡与完整报告入口；部分结果标记不完整；仅导出显示等待导入。
+
+- **三语提示词版本**
+  - `lm-prompt-m6.1-zh-CN/ja/en`；任务与包记录实际版本；三语语义结构一致；
+  - 批次规则（只分析本批、时间覆盖、seq 引用、部分结果）与汇总规则（合并、冲突、`{batch, seq}`）
+    全部本地化；切换界面语言不改变已创建任务/批次/校验规则。
+
+- **数据模型 / 删除 / 清空**
+  - schema 8：`ai_jobs`、`ai_job_batches`、`ai_job_messages`、`ai_job_viewers`、`ai_results`、
+    `ai_result_evidence`；`ai_packages` 新增 `job_id`/`batch_index`/`stage`/`prompt_version`；
+  - 删除场次于同一事务删除全部 AI 任务/批次/映射/结果/证据/包记录并删除批次/汇总文件；
+  - 清空数据与备份计数包含全部 AI 表；旧整场包与 1.0.0 结果仍兼容。
+
+- **工具 / 文档**
+  - 新增 `scripts/demo-ai.mjs`、`scripts/verify-ai-ui.mjs`、`scripts/verify-exe-ai.mjs`；
+  - 新增 `tests/helpers/ai-fixtures.mjs`、`ai-import`、`ai-batching`、`ai-api`、`ai-migration`、
+    `ai-prompts`、`ai-ui` 测试；
+  - STATUS / HANDOFF / ROADMAP / ARCHITECTURE / AI_CONTRACT / DATA_MODEL / PRIVACY_SECURITY /
+    TEST_PLAN / UI_DESIGN / README / DECISIONS 与开发日志同步。
+
+### 变更
+
+- 版本 **0.8.0**；schema **8**；`/api/status` 与 `/api/bootstrap` 的 `ai.import` 改为 `true`，
+  增加结果 Schema 版本。
+- 旧版 `POST /api/ai/packages` 仍保留整场导出；新 UI 使用任务/批次接口。
+- `aiChip` 支持 `partial` / `complete` / `invalid`。
+- 全量测试 353；浏览器 UI 17/17；打包 EXE AI 14/14；EXE 历史回归 19/19；EXE 矩阵 10/10。
+
+### 已知限制
+
+- **没有调用真实 AI 服务**：测试结果是使用真实包元数据构造的 Schema 合法合成结果；
+  真实 AI 输出差异仍是下一轮首要验证项。
+- 本轮无新的真实 Bilibili/YouTube 采集；UAC、真实文件夹选择、干净 Windows、M5 备份仍未验证。
+- YouTube 30 天清理不会自动删除已导入 AI 结果中的观众画像/摘要；不得声称完全符合平台政策。
+- 无单结果版本删除；无后台自动重试/断点续传；不导入 ZIP；不处理视频/切片。
+- 单任务 50,000 条上限；未做 10 万条/20+ 批次压力测试。
+
 ## 0.7.0 — 2026-11-09（直播历史场次管理、统一搜索、永久删除）
 
 ### 新增

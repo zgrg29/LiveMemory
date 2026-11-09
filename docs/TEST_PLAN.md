@@ -7,9 +7,9 @@
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` |
-| 打包 EXE | 真实 v6→v7 升级、搜索、归档、停止、删除、重启保持 | `scripts/verify-exe-history.mjs` |
-| 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 8/10/12 节）；v0.7.0 未新增 |
+| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 导入/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
+| 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；M6 AI 导出/分批/导入/汇总/报告 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
+| 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
 | 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
 
 ## 2. 运行方式
@@ -70,13 +70,19 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
 | `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
 | `history-ui.test.mjs` | 列表与详情共用 `session-actions`、搜索端点/筛选参数/不读 events 正文、删除确认字段与勾选、DELETE 客户端、无 innerHTML、共享 modal、响应式/菜单键盘 CSS、路由与事务守卫、三语键 |
+| `ai-prompts.test.mjs` | 三语提示词的批次/汇总/来源字段语义一致、提示词版本记录、Schema 1.0/1.1 兼容、未知字段拒绝、真实包元数据构造结果通过语义校验 |
+| `ai-ui.test.mjs` | AI 页面无 innerHTML/eval、完整端点、历史详情报告入口、三语 M6 键、AI 与本地统计分离、切片提示不声称视频分析 |
 
 ### 3.2 集成
 
 | 文件 | 覆盖 |
 | --- | --- |
 | `storage.test.mjs` | 迁移幂等、事件聚合、重复投递不翻倍、跨场次观众、昵称历史、跨平台隔离、匿名事件、崩溃恢复、内容清理、非 live 拒绝写入、表情元数据持久化、清理同时移除表情 |
-| `migration-emotes.test.mjs` | v1 旧库升级到 v7；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表/索引/列存在；`archived_at/end_reason` 默认 NULL |
+| `migration-emotes.test.mjs` | v1 旧库升级到 v8；旧消息保留且 `emotes=NULL`；旧场次无主播信息保持 unresolved；新表/索引/列存在；`archived_at/end_reason` 默认 NULL |
+| `ai-import.test.mjs` | 单批导出/导入/报告证据；非法 JSON/缺字段/错误类型/未知字段/Schema 版本；场次/任务/批次/job/主播/观众错误；未知消息与越界时间；重复导入；同任务新版本；故障注入回滚；归档导入；删除后失效；原文清理证据；跨主播隔离；旧版包兼容；HTML/控制字符；8 MB 上限；大结果性能 |
+| `ai-batching.test.mjs` | 2500 条 5 批无丢失/重复、seq 映射唯一、乱序/重复/缺失批次、提前汇总拒绝、汇总包无消息、最终报告不拼接、12 批 6000 条、重新分析新 job/新 batch id |
+| `ai-api.test.mjs` | HTTP 任务/批次/下载/提示词/预览不写/导入/重复/版本 409/汇总/最终报告/结果下载/请求上限/删除后结构化失败 |
+| `ai-migration.test.mjs` | 真实 v7→v8 升级保留旧包来源与列默认值、新表存在、删除会话级联 AI 任务/结果/证据 |
 | `youtube-anonymous-session.test.mjs` | 本地假公开网页：唯一 web 模式、无登录/Key、watch/chat 检查、SC `HK$`、gift 无 Channel ID、badge、会员/Sticker、重复与 ticker 去重、自动结束、30 天上限、AI 包 |
 | `session-multi.test.mjs` | 多场独立 adapter/会话/事件、重复房间拒绝、停止/失败隔离、交错写入去重、启动恢复、Top 100 稳定排序/搜索/同名不合并 |
 | `live-api-multi.test.mjs` | 双 YouTube HTTP 并发、事件归属、重复 409、Top 100、共享观众跨主播 scope、停止一场另一场继续、重启恢复 |
@@ -88,7 +94,34 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `history-search.test.mjs` | 主播名称/稳定 ID、中日英混合标题、观众稳定 ID/昵称/历史昵称、同名不同身份不合并、跨平台/跨主播、筛选组合、隐藏归档计数、分页、通配符字面、匿名不可检索、1200 场性能 |
 | `history-api.test.mjs` | HTTP 搜索/筛选、归档/取消、列表与详情两个停止端点、删除确认与 400/409、观众单场发言、删除后 404 与无关场次保留 |
 
-## 4. 本轮结果（2026-11-09，v0.7.0）
+## 4. 本轮结果（2026-11-09，v0.8.0，M6）
+
+```text
+tests 354
+pass  354
+fail  0
+duration ≈ 48.3s
+```
+
+无跳过、无 todo。新增 M6 导入/分批/汇总/报告/提示词/UI 结构测试；更新 schema 8 与 v0.8.0 断言。
+
+新增覆盖重点：
+
+- **完整往返**：单批导出 → 构造 Schema 合法结果 → 预检查 → 导入 → 报告；证据解析到真实事件行。
+- **非法输入**：非法 JSON、缺字段、错误类型、未知字段、错误 Schema 版本、错误场次/任务/批次/job/主播/观众、
+  不存在的消息引用、越界时间、重复导入、同任务新版本、数据库故障回滚。
+- **分批**：2500 条 5 批无丢失/重复；乱序、重复、缺失；提前汇总拒绝；汇总包不含原始消息；最终报告不拼接；
+  12 批/6000 条映射；重新分析生成新任务与新批次 id。
+- **安全**：AI 文本只按白名单保存、控制字符清理、`<script>`/`<img onerror>` 只显示为文本；页面无 innerHTML/eval。
+- **保留/删除**：原文清理后证据标记不可用；归档可导入；删除场次级联 AI 任务/结果/证据与包文件；
+  `maintenance` 清空包含全部 AI 表。
+- **提示词**：三语语义结构一致，版本记录到任务与包，Schema 1.0/1.1 兼容。
+- **打包 EXE**：真实 v7→v8 升级、UI 创建 3 批、粘贴导入、汇总包、最终报告、重启保持。
+
+**真实 AI 状态**：本轮未调用真实 AI 服务；导入结果是使用真实包元数据构造的合成结果。
+不得把上述结果描述为“真实 AI 文件往返已验证”。
+
+## 5. 本轮结果（2026-11-09，v0.7.0，历史）
 
 ```text
 tests 318
@@ -107,7 +140,7 @@ duration ≈ 25.0s
 - **数据兼容**：schema 7 仅新增列与索引；打包 EXE 用真实 v6 数据库升级并保留历史。
 - **打包 EXE**：搜索、归档、停止、删除、重启保持与删除不复活。
 
-## 5. 手工 / 脚本验证记录
+## 6. 手工 / 脚本验证记录
 
 | 项目 | 方法 | 结果 |
 | --- | --- | --- |
@@ -135,19 +168,20 @@ duration ≈ 25.0s
 | 清空完整性 | SQLite 直接校验 | ✅ 全部业务表 0、integrity=ok；备份 3/12/4、integrity=ok |
 | 备份快照 | `VACUUM INTO` + 直接校验 | ✅ 快照在数据目录之外、integrity=ok、内容保留 |
 | 历史搜索/管理 UI | `demo-history.mjs` + `verify-history-ui.mjs` | ✅ **27/27**：标题/主播/观众搜索、同名跨平台、筛选、归档/取消、停止、删除确认、详情、键盘、390px、黑暗中文 |
-| EXE 历史管理与升级 | `verify-exe-history.mjs`（打包 EXE asInvoker 副本） | ✅ **19/19**：真实 v6→v7、搜索、归档、重启保持、停止、删除、共享观众聚合、专属观众清理 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.4 MB，106 资源，SHA-256 `9602c560…`；Manifest `requireAdministrator` |
+| EXE 历史管理与升级 | `verify-exe-history.mjs`（打包 EXE asInvoker 副本） | ✅ **19/19**：真实 v6→v8、搜索、归档、重启保持、停止、删除、共享观众聚合、专属观众清理 |
+| EXE AI 往返 | `verify-exe-ai.mjs`（打包 EXE asInvoker 副本） | ✅ **14/14**：真实 v7→v8、3 批创建/粘贴导入/汇总/报告/重启保持 |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.6 MB，117 资源，SHA-256 `24227987…`；Manifest `requireAdministrator` |
 | EXE Manifest | `scripts/pe-manifest.mjs` / `verify-exe.mjs` | ✅ level=`requireAdministrator`，773 bytes |
 | EXE 非提升启动 | `spawnSync` 最终 EXE | ✅ Windows 返回 `EACCES`（未进入程序） |
 | EXE 功能矩阵 | `scripts/verify-exe.mjs` | ✅ **10/10**（manifest + 9 场景；非提升会话使用 asInvoker 副本并明确打印） |
 | EXE 管理员提示 | asInvoker 副本 `--lang zh/ja/en` | ✅ 三语消息、退出 1 |
-| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=7、version=0.7.0 |
-| EXE 旧库升级 | v6 数据库启动打包 EXE | ✅ schema 7、4 场历史完整、归档重启保持、删除不复活 |
+| EXE 新代码验证 | 全新数据目录启动 | ✅ schema=8、version=0.8.0 |
+| EXE 旧库升级 | v6/v7 数据库启动打包 EXE | ✅ schema 8、历史完整、归档重启保持、删除不复活、AI 任务/报告重启保持 |
 | YouTube 公开网页本地端到端 | 假网页 + `startServer` | ✅ 唯一 web 路径、5 条事件、SC HKD、gift 无身份、badge、自动结束 |
 | YouTube 真实房间 A（历史 v0.3.0） | `FKLZiufsCk0` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
 | YouTube 真实房间 B（历史 v0.3.0） | `gXawf8GZDI8` 35 秒 | ⚠️ 旧样本，不能作为当前版本验收（当前见 §12.3） |
 
-## 6. 尚未验证（必须如实保留）
+## 7. 尚未验证（必须如实保留）
 
 1. 真实 Ctrl+C 优雅退出（自动化无法发送控制台信号）。
 2. 干净 Windows 10/11 虚拟机（非管理员、无 Node）。
@@ -169,7 +203,7 @@ duration ≈ 25.0s
 18. **数据清空文件删除**：数据库事务与 `VACUUM` 已测；文件删除为尽力而为，未做断电中断验收。
 19. **旧 YouTube 场次归属**：保持 `unresolved`，没有手动指派 UI。
 
-## 7. M3 起需补充的测试
+## 8. M3 起需补充的测试
 
 - 平台消息解析：用录制的真实消息样本（脱敏）做夹具，验证字段映射与金额单位。
 - 断线重连：模拟 close/心跳超时，验证指数退避与去重。
@@ -179,7 +213,7 @@ duration ≈ 25.0s
 - 迁移/删除的物理中断演练（拔盘、断电、磁盘写满）。
 - 旧场次主播归属与单场/观众删除 UI。
 
-## 8. 真实直播间验收（2026-11-08，匿名连接）
+## 9. 真实直播间验收（2026-11-08，匿名连接）
 
 | 房间号 | 时长 | 观测 | 结论 |
 | --- | --- | --- | --- |
@@ -192,7 +226,7 @@ duration ≈ 25.0s
 
 未观测到 `SEND_GIFT` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` / `USER_TOAST_MSG` / `SEND_GIFT_V2`，因此这些事件的真实字段与金额单位仍标记为未验证。平台表情只在 `5050` 采样，不能代表所有房间/所有表情类型。
 
-## 9. YouTube 公开网页本地端到端（v0.5.0，**假网页，非真实平台**）
+## 10. YouTube 公开网页本地端到端（v0.5.0，**假网页，非真实平台**）
 
 > 数据来自 `tests/integration/youtube-anonymous-session.test.mjs` 的本地假 watch/live_chat 服务器。它证明「HTTP → 解析 → mapper → 去重 → SQLite → 读模型 → 历史/AI 包」链路可运行，**不是真实 YouTube 采样**。官方 Data API 假测试已随实现删除。
 
@@ -211,7 +245,7 @@ duration ≈ 25.0s
 
 真实环境仍需补测：真实消息条数、身份完整率、真实 Super Chat/会员样本、真实 429/断网/页面改版。
 
-## 10. YouTube 公开网页真实采样（历史，2026-11-08 / v0.3.0）
+## 11. YouTube 公开网页真实采样（历史，2026-11-08 / v0.3.0）
 
 > 来源：`scripts/verify-youtube-anonymous.mjs`，真实公开直播，无 Cookie / 无 OAuth / 无用户 API Key。只打印聚合，不打印正文或昵称。
 
@@ -228,7 +262,7 @@ duration ≈ 25.0s
 - 官方 API 并排对照已随 v0.5.0 实现删除，不再作为后续目标。
 - 兼容性：该接口不是官方 API，可能违反 YouTube ToS；详见 `YOUTUBE_ANONYMOUS_RESEARCH.md`。
 
-## 11. 多主播与数据管理专项验证（v0.4.0）
+## 12. 多主播与数据管理专项验证（v0.4.0）
 
 | 场景 | 结果 |
 | --- | --- |
@@ -259,7 +293,7 @@ duration ≈ 25.0s
 | 清理后数据库可初始化 | ✅ 重建运行时、schema=6、空库可服务 |
 | 旧数据不会从缓存重新出现 | ✅ 观众页为空；服务端重建运行时 |
 
-## 12. 多直播并发与 Top 100 专项验证（v0.6.0）
+## 13. 多直播并发与 Top 100 专项验证（v0.6.0）
 
 ### 12.1 自动化结果
 
@@ -321,7 +355,7 @@ duration ≈ 25.0s
 - 未做 10+ 场、数小时压力与内存增长测试。
 - 运行中标签不能关闭/隐藏；必须先停止。此行为有意，避免静默停止或误导。
 
-## 13. 直播历史管理与搜索专项验证（v0.7.0）
+## 14. 直播历史管理与搜索专项验证（v0.7.0）
 
 ### 13.1 自动化结果
 
@@ -395,3 +429,22 @@ duration ≈ 25.0s
 - 本轮**没有**进行新的真实 Bilibili/YouTube 网络采集；上述“真实”仅指真实 SQLite、真实 HTTP、真实打包 EXE 与真实浏览器。
 - 未验证：真实 UAC 同意、真实文件夹选择器、真实平台长期运行、M6 AI 导入后的删除联动、百万级数据量。
 - 删除测试全部使用 `tests/.tmp` 下的独立数据库，未触碰用户真实记录。
+
+## 15. AI 文件往返专项验证（v0.8.0）
+
+| 项目 | 方法 | 结果 |
+| --- | --- | --- |
+| 完整报告 | `demo-ai.mjs` + `verify-ai-ui.mjs` | ✅ 摘要 / 5 话题卡 / 4 情绪点 / 3 片段 / 来源 / 证据展开 |
+| 部分导入 | 同上 | ✅ 标记 Incomplete、缺失批次、按批卡片，不显示合并报告 |
+| 等待导入 | 同上 | ✅ 文件/粘贴入口、空报告状态、批次提示词 |
+| 粘贴导入 | 同上 | ✅ 预检查显示场次/任务/批次/Schema/覆盖 → 确认 → 报告 |
+| 文件上传 + 重复 | 同上 | ✅ DataTransfer 上传真实 JSON 文件，识别 Already imported |
+| 新版本 | 同上 | ✅ 版本提示 → Import as new version → 报告显示 version 2，旧版本保留 |
+| 非法 JSON | 同上 | ✅ 字段 `(root)` + 原因 + 修复建议，不出现导入按钮 |
+| 历史详情 | 同上 | ✅ AI 摘要卡 + View full report → 同场报告 |
+| 黑暗/中文/390px | 同上 | ✅ 无横向溢出，截图 `ai-report-dark-zh-390-v080.png` |
+| 打包 EXE | `verify-exe-ai.mjs` | ✅ 14/14：v7→v8、3 批、粘贴导入、汇总、报告、重启保持 |
+| EXE 回归 | `verify-exe-history.mjs` | ✅ 19/19：v6→v8、历史搜索/归档/停止/删除 |
+| 真实 AI | — | ⬜ **未调用**；只验证 Schema 合法合成结果 |
+
+> 上述 AI 结果均由真实导出的包元数据构造，不是任何真实 AI 服务的输出。

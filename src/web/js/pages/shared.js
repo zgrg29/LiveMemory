@@ -62,8 +62,10 @@ export function broadcasterIdentityChip(identity, t) {
 }
 
 export function aiChip(aiStatus, t) {
-  if (aiStatus === 'imported') return chip(t('history.ai.imported'), 'accent');
+  if (aiStatus === 'imported' || aiStatus === 'complete') return chip(t('history.ai.imported'), 'accent');
+  if (aiStatus === 'partial') return chip(t('history.ai.partial'), 'warn');
   if (aiStatus === 'exported') return chip(t('history.ai.exported'), 'warn');
+  if (aiStatus === 'invalid') return chip(t('history.ai.invalid'), 'warn');
   return chip(t('history.ai.none'), 'neutral');
 }
 

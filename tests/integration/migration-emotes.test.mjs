@@ -60,8 +60,8 @@ test('schema v1 databases upgrade to the current schema without losing old messa
   // badges and the raw displayed amount, v5 broadcaster identity and the
   // broadcaster × viewer context, v6 the session leaderboard index, v7 archive
   // state, end reason and the history/search indexes.
-  assert.deepEqual(result.applied, [2, 3, 4, 5, 6, 7]);
-  assert.equal(currentSchemaVersion(db), 7);
+  assert.deepEqual(result.applied, [2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(currentSchemaVersion(db), 8);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
   assert.ok(columnsAfter.includes('badges'));

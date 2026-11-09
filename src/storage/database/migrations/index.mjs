@@ -368,6 +368,134 @@ export const MIGRATIONS = Object.freeze([
           ON viewer_sessions (viewer_id, last_seen_at DESC);
       `);
     }
+  },
+  {
+    version: 8,
+    name: 'ai-analysis-jobs-results-and-evidence',
+    up(db) {
+      // M6: a manual AI round trip is tracked as a job (one session, one
+      // prompt version, one or more batches). A result is always stored with
+      // the exact package/batch it answers and is never merged into the raw
+      // event tables. Evidence references are recorded separately so the UI can
+      // say truthfully when the source message no longer exists.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_jobs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          broadcaster_id TEXT,
+          kind TEXT NOT NULL DEFAULT 'session_analysis',
+          locale TEXT NOT NULL,
+          prompt_version TEXT NOT NULL,
+          protocol_version TEXT NOT NULL,
+          batch_total INTEGER NOT NULL DEFAULT 1,
+          max_messages INTEGER NOT NULL DEFAULT 1000,
+          total_messages INTEGER NOT NULL DEFAULT 0,
+          legacy INTEGER NOT NULL DEFAULT 0,
+          aggregate_package_id TEXT,
+          aggregate_task_id TEXT,
+          last_error_at INTEGER,
+          last_error_code TEXT,
+          last_error_json TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_jobs_session
+          ON ai_jobs (session_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_job_batches (
+          job_id TEXT NOT NULL REFERENCES ai_jobs (id) ON DELETE CASCADE,
+          batch_index INTEGER NOT NULL,
+          batch_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          from_seq INTEGER NOT NULL,
+          to_seq INTEGER NOT NULL,
+          from_at INTEGER,
+          to_at INTEGER,
+          message_count INTEGER NOT NULL,
+          checksum TEXT NOT NULL,
+          package_id TEXT,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (job_id, batch_index),
+          UNIQUE (job_id, batch_id)
+        );
+
+        -- seq -> real event id. This is the authoritative traceability map for
+        -- every message a package contained; an AI result can only cite these.
+        CREATE TABLE IF NOT EXISTS ai_job_messages (
+          job_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          seq INTEGER NOT NULL,
+          event_id INTEGER NOT NULL,
+          PRIMARY KEY (job_id, batch_index, seq),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES ai_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_job_messages_event
+          ON ai_job_messages (job_id, event_id);
+
+        -- Stable viewer identities included in one batch's viewer_context.json.
+        -- Imported viewer profiles must resolve to one of these, never to a
+        -- nickname and never to another broadcaster's identity.
+        CREATE TABLE IF NOT EXISTS ai_job_viewers (
+          job_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          viewer_id TEXT NOT NULL,
+          PRIMARY KEY (job_id, batch_index, viewer_id),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES ai_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS ai_results (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL REFERENCES ai_jobs (id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          scope_key TEXT NOT NULL,
+          batch_index INTEGER,
+          task_id TEXT NOT NULL,
+          task_kind TEXT NOT NULL,
+          protocol_version TEXT NOT NULL,
+          schema_version TEXT NOT NULL,
+          locale TEXT NOT NULL,
+          checksum TEXT NOT NULL,
+          result_version INTEGER NOT NULL,
+          source TEXT NOT NULL,
+          result_json TEXT NOT NULL,
+          evidence_total INTEGER NOT NULL DEFAULT 0,
+          evidence_missing INTEGER NOT NULL DEFAULT 0,
+          imported_at INTEGER NOT NULL,
+          UNIQUE (job_id, scope_key, checksum)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_results_job
+          ON ai_results (job_id, scope_key, result_version DESC);
+        CREATE INDEX IF NOT EXISTS idx_ai_results_session
+          ON ai_results (session_id, imported_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_result_evidence (
+          result_id TEXT NOT NULL REFERENCES ai_results (id) ON DELETE CASCADE,
+          section TEXT NOT NULL,
+          item_index INTEGER NOT NULL,
+          seq INTEGER NOT NULL,
+          batch_index INTEGER NOT NULL,
+          event_id INTEGER,
+          available INTEGER NOT NULL DEFAULT 1,
+          PRIMARY KEY (result_id, section, item_index, batch_index, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_result_evidence_event
+          ON ai_result_evidence (event_id);
+      `);
+
+      // Package rows gain provenance. Existing rows keep NULL / defaults and
+      // remain valid (they are pre-M6 single exports).
+      db.exec('ALTER TABLE ai_packages ADD COLUMN job_id TEXT');
+      db.exec('ALTER TABLE ai_packages ADD COLUMN batch_index INTEGER');
+      db.exec("ALTER TABLE ai_packages ADD COLUMN stage TEXT NOT NULL DEFAULT 'single'");
+      db.exec('ALTER TABLE ai_packages ADD COLUMN prompt_version TEXT');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_ai_packages_job ON ai_packages (job_id, batch_index)');
+    }
   }
 ]);
 

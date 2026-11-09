@@ -261,6 +261,36 @@ export function listSessionViewers(db, sessionId, {limit = 2000} = {}) {
   `).all(String(sessionId), safeLimit);
 }
 
+/**
+ * Viewer rows for an explicit id list inside one session.
+ *
+ * The analysis export uses this to guarantee every viewer that appears in a
+ * batch's messages has a viewer_context entry, even when the session has more
+ * viewers than the 2000-row display/export cap.
+ */
+export function getSessionViewersByIds(db, sessionId, viewerIds) {
+  const ids = [...new Set((viewerIds ?? []).filter(Boolean).map(String))];
+  if (ids.length === 0) return [];
+  const rows = [];
+  for (let offset = 0; offset < ids.length; offset += 400) {
+    const chunk = ids.slice(offset, offset + 400);
+    const placeholders = chunk.map(() => '?').join(', ');
+    rows.push(...db.prepare(`
+      SELECT v.id AS viewer_id, v.platform, v.platform_uid, v.nickname,
+             v.first_seen_at, v.last_seen_at, v.message_count, v.payment_event_count,
+             (SELECT COUNT(*) FROM viewer_sessions all_vs WHERE all_vs.viewer_id = v.id) AS session_count,
+             vs.message_count AS session_message_count,
+             vs.payment_event_count AS session_payment_event_count,
+             vs.first_seen_at AS session_first_seen_at,
+             vs.last_seen_at AS session_last_seen_at
+        FROM viewers v
+        LEFT JOIN viewer_sessions vs ON vs.viewer_id = v.id AND vs.session_id = ?
+       WHERE v.id IN (${placeholders})
+    `).all(String(sessionId), ...chunk));
+  }
+  return rows;
+}
+
 /** Totals for many sessions at once (avoids one query per history row). */
 export function sessionSupportBySessionIds(db, sessionIds) {
   const ids = [...new Set((sessionIds ?? []).map(String))];

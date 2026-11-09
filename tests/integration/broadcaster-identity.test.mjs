@@ -307,8 +307,8 @@ test('legacy history is attributed conservatively during the v5 migration', () =
   `).run(T0, T0);
 
   const result = migrate(db, {now: T0 + 3 * HOUR});
-  assert.deepEqual(result.applied, [5, 6, 7]);
-  assert.equal(currentSchemaVersion(db), 7);
+  assert.deepEqual(result.applied, [5, 6, 7, 8]);
+  assert.equal(currentSchemaVersion(db), 8);
   const bili = db.prepare('SELECT broadcaster_id, broadcaster_identity FROM sessions WHERE id = ?').get('ses_bili_room');
   assert.equal(bili.broadcaster_id, 'bilibili:room:5050');
   assert.equal(bili.broadcaster_identity, 'room_fallback');
