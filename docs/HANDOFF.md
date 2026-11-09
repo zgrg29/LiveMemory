@@ -124,5 +124,6 @@ node scripts/verify-exe.mjs
 
 ## 8. 本轮 Commit
 
-- 本轮：`3efb791` feat: fix folder picker and unify YouTube on public web chat
+- 新数据空间修复：`761a54d` fix: create an empty database for a new data space
+- 本轮功能：`3efb791` feat: fix folder picker and unify YouTube on public web chat
 - 上一轮：`452905c` docs: record the v0.4.0 feature commit
