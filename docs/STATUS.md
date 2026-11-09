@@ -60,9 +60,18 @@
 - 数据目录安全：即使管理员，仍保留路径校验、迁移 staging/校验回滚、删除范围限制；新增跨用户 profile 扫描：打包启动且当前默认目录无数据库时，若在本地用户配置中发现**恰好一个** LiveMemory 数据库，则使用它；发现多个则拒绝猜测并要求 `--data-dir`；不静默创建空库。
 - 说明：同一 Windows 管理员账号的 UAC 同意通常保持 `%LOCALAPPDATA%` 不变；若 UAC 改用另一个管理员账号，Windows 会切换用户配置文件，profile 扫描是防止新建空库的兜底，但无法完全等同于原账号环境。
 
+### 2.4 后续修复：“在新目录创建新的数据空间”失败
+
+- 用户反馈：选择“在新目录创建新的数据空间”报“迁移校验失败，已回滚到原目录”；迁移现有数据正常。
+- 根因：`copyIntoStage()` 无论 `mode` 都把源 `database/livememory.db` 复制进 staging；`createFreshDatabase()` 在这个已含旧数据的库上执行 `migrate()`，随后新空间校验发现表非空，触发回滚。迁移分支本来就需要复制数据库，所以不受影响。
+- 修复：`copyIntoStage(..., {includeDatabase: mode === 'migrate'})`；新空间只复制 `config`/`secrets`，数据库由 `createFreshDatabase()` 真正新建。
+- 文案：新空间失败不再显示“迁移”，改用 `errors.newSpaceVerifyFailed` / `errors.newSpaceFailed`。
+- 回归测试：`storage-management.test.mjs` 新增“new data space creates an empty database and keeps settings/credentials”，验证 200、0 场次/事件/观众、设置/凭据保留、原目录不动。
+- 未验证：真实 EXE UI 点击“创建新数据空间”；当前以真实 HTTP API 集成测试覆盖同一路径。
+
 ## 3. 测试
 
-- 全量：**276 passed / 0 failed / 约 20.6 秒**（官方 YouTube 测试随实现删除；新增选择器、manifest、管理员、profile scan、简化约束测试）。
+- 全量：**277 passed / 0 failed / 约 21.8 秒**（官方 YouTube 测试随实现删除；新增选择器、manifest、管理员、profile scan、简化约束、新数据空间测试）。
 - 新增测试文件：
   - `tests/unit/native-dialog.test.mjs`：编码/成功/取消/错误/EPERM。
   - `tests/unit/pe-manifest.test.mjs`：node.exe manifest 读写。
@@ -86,7 +95,7 @@
 ## 5. EXE / 构建
 
 - Manifest：`requireAdministrator`（`scripts/pe-manifest.mjs` 实际补丁）
-- 当前构建：**90.2 MB，99 资源**，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`
+- 当前构建：**90.2 MB，99 资源**，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`
 - 历史构建哈希仅用于追溯，不得与当前混淆。
 
 ## 6. 真实 YouTube 采样状态

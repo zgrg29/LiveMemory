@@ -195,7 +195,7 @@ Node SEA（Single Executable Application）+ postject 注入。
 已验证（本机，2026-11-09）：
 
 - 构建成功，PE 子系统 = 3（Console）。
-- 本轮构建：**90.2 MB，99 个资源文件，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`**。
+- 本轮构建：**90.2 MB，99 个资源文件，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`**。
 - **PE Manifest 实测**：`scripts/pe-manifest.mjs` 读取 `RT_MANIFEST`，level=`requireAdministrator`，Manifest 773 bytes。
 - 非提升进程启动最终 EXE：`spawnSync` 返回 `EACCES`，说明 Windows 在程序代码执行前拒绝启动（Manifest 生效）。
 - `scripts/verify-exe.mjs`：**manifest 检查 + 9 个功能场景 = 10/10 通过**；由于当前会话不是管理员，功能场景使用同一二进制的临时 `asInvoker` 副本，并明确打印该事实。若在管理员会话运行，则直接使用最终 EXE。

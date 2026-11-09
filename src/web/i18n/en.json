@@ -562,6 +562,8 @@
     "relocationTargetInUse": "The target folder already contains LiveMemory data. Choose an empty folder or move that data away first.",
     "relocationWarnings": "The target location has risks that need confirmation.",
     "relocationVerifyFailed": "Migration verification failed and the original folder was restored.",
+    "newSpaceVerifyFailed": "Could not create the new data space. Rolled back to the original folder.",
+    "newSpaceFailed": "Could not create the new data space. Rolled back to the original folder.",
     "relocationFailed": "Migration failed and the original folder was restored.",
     "relocationLockFailed": "Could not create the single-instance lock in the target folder. Another LiveMemory instance may be using it.",
     "recordingActive": "A broadcast is being recorded. Stop recording first.",

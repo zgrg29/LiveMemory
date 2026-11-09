@@ -78,15 +78,15 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `api.test.mjs` | health/bootstrap、CSP、设置校验与持久化、模拟记录、事件列表、重复开始 409、停止、历史与详情、分析包下载与校验和、观众列表/档案/关注、SSE、Host/Origin/路径穿越/404、runtime 文件、重启后设置保持 |
 | `ai-package.test.mjs` | 包结构、任务与计数、seq 顺序、校验和、三语说明不混英文、导出记录、未知场次返回 null、表情字典去重/引用、`content_ai` 按需出现、未知表情标记、重复表情包大小控制 |
 | `broadcaster-identity.test.mjs` | 同一 YouTube 账号在两个主播、同一主播多场、重名不合并、改名不拆分、跨平台同名不合并、主播维度发言/付费/币种、新/回访、v4→v5 迁移、AI 包 context 隔离、HTTP 范围接口 |
-| `storage-management.test.mjs` | 位置记录原子写/镜像/相对路径拒绝、目标安全校验/UNC/冲突/空间、迁移复制校验与旧目录保留、复制中断回滚、清空保留设置与凭据、出厂重置、应急快照一致性 |
+| `storage-management.test.mjs` | 位置记录原子写/镜像/相对路径拒绝、目标安全校验/UNC/冲突/空间、迁移复制校验与旧目录保留、复制中断回滚、**新数据空间空库+设置/凭据保留**、清空保留设置与凭据、出厂重置、应急快照一致性 |
 
 ## 4. 本轮结果（2026-11-09，v0.5.0）
 
 ```text
-tests 276
-pass  276
+tests 277
+pass  277
 fail  0
-duration ≈ 20.6s
+duration ≈ 21.8s
 ```
 
 无跳过、无 todo。官方 YouTube Data API/OAuth/API Key 测试已随实现删除；新增选择器、管理员、manifest、profile scan、简化约束与匿名 web 端到端测试。
@@ -121,7 +121,7 @@ duration ≈ 20.6s
 | 迁移完整性 | SQLite 直接校验 | ✅ 旧/新 schema=5、integrity=ok、3/12/4/8/5/2 一致 |
 | 清空完整性 | SQLite 直接校验 | ✅ 全部业务表 0、integrity=ok；备份 3/12/4、integrity=ok |
 | 备份快照 | `VACUUM INTO` + 直接校验 | ✅ 快照在数据目录之外、integrity=ok、内容保留 |
-| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.2 MB，99 资源，SHA-256 `ed54a9ba…`；Manifest `requireAdministrator` |
+| EXE 构建 | `node scripts/build-windows.mjs` | ✅ 90.2 MB，99 资源，SHA-256 `3ac16ddc…`；Manifest `requireAdministrator` |
 | EXE Manifest | `scripts/pe-manifest.mjs` / `verify-exe.mjs` | ✅ level=`requireAdministrator`，773 bytes |
 | EXE 非提升启动 | `spawnSync` 最终 EXE | ✅ Windows 返回 `EACCES`（未进入程序） |
 | EXE 功能矩阵 | `scripts/verify-exe.mjs` | ✅ **10/10**（manifest + 9 场景；非提升会话使用 asInvoker 副本并明确打印） |

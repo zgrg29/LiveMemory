@@ -562,6 +562,8 @@
     "relocationTargetInUse": "目标文件夹中已存在 LiveMemory 数据。请选择空文件夹，或先备份并移走其中的数据。",
     "relocationWarnings": "目标位置有需要注意的风险，请确认后再继续。",
     "relocationVerifyFailed": "迁移校验失败，已回滚到原目录。",
+    "newSpaceVerifyFailed": "创建新数据空间失败，已回滚到原目录。",
+    "newSpaceFailed": "创建新数据空间失败，已回滚到原目录。",
     "relocationFailed": "迁移失败，已回滚到原目录。",
     "relocationLockFailed": "无法在目标目录创建单实例锁，可能已有另一个 LiveMemory 实例在使用它。",
     "recordingActive": "正在记录直播。请先停止记录。",

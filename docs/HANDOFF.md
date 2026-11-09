@@ -11,6 +11,15 @@
 | 管理员权限 EXE | RT_MANIFEST 已实际写入 `requireAdministrator`；非提升启动被 Windows 拒绝（EACCES）。UAC 批准后的真实启动未在当前会话验证。 |
 | 数据兼容 | schema 仍为 5；未改表/迁移；旧历史、观众、主播关系不会被重新归属。 |
 
+## 1.1 后续修复：新数据空间误报校验失败
+
+- 用户实测：选择“在新目录创建新的数据空间”报“迁移校验失败，已回滚到原目录”；迁移现有数据正常。
+- 根因：`src/server/relocation.mjs` 的 `copyIntoStage()` 无论 `mode` 都复制旧 `database/livememory.db`；`createFreshDatabase()` 实际打开旧库，`new_space_not_empty` 校验失败。
+- 修复：`copyIntoStage(..., {includeDatabase: mode === 'migrate'})`；新空间只复制 `config`/`secrets`，空库由 migrations 创建。
+- 新空间失败文案改为 `errors.newSpaceVerifyFailed` / `errors.newSpaceFailed`。
+- 回归测试：`tests/integration/storage-management.test.mjs` 新增新空间用例，验证 200、counts 0、设置/凭据保留、原目录不动。
+- 自动化 277 通过；EXE 已重建（新哈希见 §5）。
+
 ## 2. 文件夹选择器
 
 ### 根因
@@ -84,10 +93,10 @@ tests/integration/youtube-session.test.mjs
 
 ## 5. 测试 / EXE
 
-- 全量：**276 passed / 0 failed / 约 20.6 秒**。
+- 全量：**277 passed / 0 failed / 约 21.8 秒**。
 - 删除官方 YouTube 测试后新增 5 个测试文件（选择器、PE manifest、admin、profile scan、简化约束）。
 - 本地假网页 YouTube 端到端：通过。
-- EXE：90.2 MB / 99 资源，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`；`verify-exe.mjs` 10/10（manifest + 9 功能场景；非提权会话使用 asInvoker 副本）。
+- EXE：90.2 MB / 99 资源，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`；`verify-exe.mjs` 10/10（manifest + 9 功能场景；非提权会话使用 asInvoker 副本）。
 - `--version` 见构建 / 最终报告。
 
 ## 6. 未验证 / 边界

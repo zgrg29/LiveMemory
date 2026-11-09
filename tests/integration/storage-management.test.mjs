@@ -190,6 +190,50 @@ test('relocation copies, verifies and switches without touching the old folder',
   assert.ok(existsSync(oldDataDir));
 });
 
+test('new data space creates an empty database and keeps settings/credentials', async (t) => {
+  const temp = createTempDir();
+  const data = join(temp.dir, 'data');
+  const target = join(temp.dir, 'new-space-target');
+  const env = {
+    ...process.env,
+    LIVE_MEMORY_LOCATION_DIR: join(temp.dir, 'location'),
+    LIVE_MEMORY_BACKUP_DIR: join(temp.dir, 'external-backups')
+  };
+  const server = await startServer({dataDir: data, port: 0, systemLocale: 'en', env});
+  const base = server.url;
+  t.after(async () => {
+    await server.close();
+    temp.cleanup();
+  });
+
+  assert.equal((await json(base, '/simulate/start', {method: 'POST', body: {title: 'New space', speed: 'busy'}})).status, 201);
+  await sleep(1200);
+  assert.equal((await json(base, '/simulate/stop', {method: 'POST', body: {}})).status, 200);
+  writeFileSync(join(data, 'secrets', 'dummy-secret.txt'), 'local secret', 'utf8');
+  assert.equal((await json(base, '/settings', {method: 'PATCH', body: {locale: 'ja'}})).status, 200);
+  const before = await json(base, '/storage/location');
+  assert.equal(before.body.counts.events > 0, true);
+
+  const created = await json(base, '/storage/location', {
+    method: 'POST',
+    body: {targetDir: target, mode: 'new', acceptWarnings: true}
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  assert.equal(created.body.relocation.mode, 'new');
+  assert.equal(created.body.storage.dataDir, target);
+  assert.equal(created.body.storage.counts.sessions, 0);
+  assert.equal(created.body.storage.counts.events, 0);
+  assert.equal(created.body.storage.counts.viewers, 0);
+  assert.ok(existsSync(join(target, 'database', 'livememory.db')));
+  // Settings and local secrets are carried over; history is not.
+  assert.ok(existsSync(join(target, 'config', 'settings.json')));
+  assert.equal((await json(base, '/settings')).body.settings.locale, 'ja');
+  assert.ok(existsSync(join(target, 'secrets', 'dummy-secret.txt')));
+  assert.equal(existsSync(join(data, 'database', 'livememory.db')), true);
+  assert.ok(before.body.counts.events > 0);
+  assert.equal((await json(base, '/health')).status, 200);
+});
+
 test('a copy interruption after the source stops rolls back to the original folder', async (t) => {
   const temp = createTempDir();
   const data = join(temp.dir, 'data');

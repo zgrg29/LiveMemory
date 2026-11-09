@@ -297,7 +297,7 @@ export function validateTarget({
   };
 }
 
-function copyIntoStage(sourcePaths, stageRoot, names) {
+function copyIntoStage(sourcePaths, stageRoot, names, {includeDatabase = true} = {}) {
   mkdirSync(stageRoot, {recursive: true});
   for (const name of names) {
     const source = join(sourcePaths.root, name);
@@ -305,11 +305,13 @@ function copyIntoStage(sourcePaths, stageRoot, names) {
     const destination = join(stageRoot, name);
     cpSync(source, destination, {recursive: true, force: true, errorOnExist: false});
   }
-  // Database files are copied explicitly: after the WAL checkpoint the sidecars
-  // may or may not exist, and copying a directory would also copy unrelated
-  // files a user may have put there.
   const stageDatabase = join(stageRoot, 'database');
   mkdirSync(stageDatabase, {recursive: true});
+  if (!includeDatabase) return;
+  // Database files are copied explicitly: after the WAL checkpoint the sidecars
+  // may or may not exist, and copying a directory would also copy unrelated
+  // files a user may have put there. The "new data space" mode must NOT copy the
+  // old database, otherwise it is no longer empty and verification rolls back.
   for (const suffix of ['', '-wal', '-shm']) {
     const source = `${sourcePaths.databaseFile}${suffix}`;
     if (!existsSync(source)) continue;
@@ -466,7 +468,7 @@ export async function relocateDataDir({
     await runtime.stop();
     stopped = true;
 
-    copyIntoStage(source.paths, stageRoot, copiedDirs);
+    copyIntoStage(source.paths, stageRoot, copiedDirs, {includeDatabase: mode === 'migrate'});
     const stagedDatabase = mode === 'migrate'
       ? join(stageRoot, 'database', 'livememory.db')
       : createFreshDatabase(stageRoot);
@@ -584,6 +586,11 @@ export async function relocateDataDir({
       } catch (restoreError) {
         error.restoreError = restoreError;
       }
+    }
+    if (error instanceof AppError && mode === 'new') {
+      // The UI should not call a failed new-space operation a "migration".
+      if (error.messageKey === 'errors.relocationVerifyFailed') error.messageKey = 'errors.newSpaceVerifyFailed';
+      else if (error.messageKey === 'errors.relocationFailed') error.messageKey = 'errors.newSpaceFailed';
     }
     if (error instanceof AppError) throw error;
     throw new AppError('RELOCATION_FAILED', {

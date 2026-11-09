@@ -562,6 +562,8 @@
     "relocationTargetInUse": "対象フォルダーに LiveMemory のデータが既にあります。空のフォルダーを選ぶか、データを退避してください。",
     "relocationWarnings": "対象の場所に注意すべきリスクがあります。確認してから続行してください。",
     "relocationVerifyFailed": "移行の検証に失敗し、元のフォルダーに戻しました。",
+    "newSpaceVerifyFailed": "新しいデータスペースの作成に失敗しました。元のフォルダーに戻しました。",
+    "newSpaceFailed": "新しいデータスペースの作成に失敗しました。元のフォルダーに戻しました。",
     "relocationFailed": "移行に失敗し、元のフォルダーに戻しました。",
     "relocationLockFailed": "対象フォルダーに単一インスタンスのロックを作成できません。別の LiveMemory が使用している可能性があります。",
     "recordingActive": "配信を記録中です。先に記録を停止してください。",

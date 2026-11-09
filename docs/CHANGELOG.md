@@ -4,6 +4,12 @@
 
 ### 修复
 
+- **“在新目录创建新的数据空间”误报校验失败**
+  - 根因：staging 无条件复制旧 `livememory.db`，新空间实际打开的是旧库；表非空校验触发回滚。
+  - 修复：仅 `migrate` 复制数据库；`new` 由 `createFreshDatabase()` 新建空库。
+  - 新空间失败文案改为“创建新数据空间失败”，不再误称“迁移”。
+  - 新增集成回归测试：新空间 0 场次/事件/观众，设置与凭据保留，原目录不动。
+
 - **Windows「浏览」文件夹选择器**
   - 根因：旧实现通过 `execFile` 捕获 PowerShell stdout，在受限/打包环境中 `spawn EPERM`，脚本未执行。
   - 改为 `spawn(..., {stdio:'ignore'})` + 临时 UTF-8 结果文件 + `-EncodedCommand`；不依赖 stdout 管道。
@@ -28,8 +34,8 @@
 
 ### 测试 / 构建
 
-- 自动化测试 **276 通过 / 0 失败**；删除 5 个官方 YouTube 测试文件，新增选择器、manifest、管理员、profile scan、简化约束测试。
-- EXE：90.2 MB / 99 资源，Manifest `requireAdministrator`，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`。
+- 自动化测试 **277 通过 / 0 失败**；删除 5 个官方 YouTube 测试文件，新增选择器、manifest、管理员、profile scan、简化约束、新数据空间测试。
+- EXE：90.2 MB / 99 资源，Manifest `requireAdministrator`，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`。
 - `verify-exe.mjs`：manifest + 9 功能场景 = 10/10；非提升会话使用临时 asInvoker 副本并明确标注。
 - 真实 UAC 点击、真实文件夹选择、v0.5.0 真实 YouTube 采样未完成，见 STATUS/TEST_PLAN。
 

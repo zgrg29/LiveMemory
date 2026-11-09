@@ -29,6 +29,15 @@
 - `tests/unit/native-dialog.test.mjs`：脚本结构、Base64、成功（中文/空格）、取消、ERROR、EPERM。
 - 未验证：真实桌面点击/取消/选择；当前环境无交互桌面。
 
+## 1.1 后续修复：新数据空间误报校验失败
+
+- 用户实测“在新目录创建新的数据空间”报“迁移校验失败”；迁移现有数据正常。
+- 根因：`copyIntoStage()` 无条件复制旧数据库；`createFreshDatabase()` 在旧库上执行 `migrate()`，随后 `new_space_not_empty` 校验失败并回滚。
+- 修复：`includeDatabase: mode === 'migrate'`；新空间只复制 config/secrets，数据库真正新建。
+- 新空间错误文案单独使用 `newSpaceVerifyFailed` / `newSpaceFailed`。
+- 新增 `storage-management.test.mjs` 回归用例，断言 200、空库、设置/凭据保留、原目录不动。
+- 全量测试 277 通过；EXE 已重建。
+
 ## 2. YouTube 单一公开网页
 
 ### 删除
@@ -90,12 +99,12 @@ tests/integration/youtube-session.test.mjs
 - `scripts/verify-exe.mjs`：manifest + 9 场景 = 10/10；当前非提权，功能场景使用 asInvoker 副本并明确标注。
 - asInvoker 副本 `--lang zh-CN/ja/en`：三语管理员消息正确，退出 1。
 - `--version`：0.5.0。
-- 最终 EXE：90.2 MB / 99 资源，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`。
+- 最终 EXE：90.2 MB / 99 资源，SHA-256 `3ac16ddc4b46e569bfe11b3146e72b874a120c8ade26c3a7b709f2ed40ecf099`。
 - 未验证：真实 UAC 点击、管理员权限下的文件夹/迁移/SQLite 完整流程；当前进程 Low Mandatory Level。
 
 ## 4. 测试 / 数据兼容
 
-- 全量：**276 passed / 0 failed / 约 20.6 秒**。
+- 全量：**277 passed / 0 failed / 约 21.8 秒**。
 - 删除官方 YouTube 测试后新增 5 个测试文件：native-dialog、pe-manifest、admin、profile-scan、youtube-simplified。
 - schema 仍为 5；没有迁移脚本/表结构变化；历史场次、观众、主播关系、AI 包格式未被重写。
 - 用户真实数据目录本轮未读写；所有验证使用 `tests/.tmp/`。
