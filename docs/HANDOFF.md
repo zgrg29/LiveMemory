@@ -115,5 +115,5 @@ node scripts/verify-exe.mjs
 
 ## 8. 本轮 Commit
 
-- 本轮：`（提交后填写）`
+- 本轮：`3efb791` feat: fix folder picker and unify YouTube on public web chat
 - 上一轮：`452905c` docs: record the v0.4.0 feature commit
