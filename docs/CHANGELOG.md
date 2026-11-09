@@ -1,5 +1,38 @@
 # 版本变化（CHANGELOG）
 
+## 0.5.0 — 2026-11-09（文件夹选择器、YouTube 单一公开网页、管理员 EXE）
+
+### 修复
+
+- **Windows「浏览」文件夹选择器**
+  - 根因：旧实现通过 `execFile` 捕获 PowerShell stdout，在受限/打包环境中 `spawn EPERM`，脚本未执行。
+  - 改为 `spawn(..., {stdio:'ignore'})` + 临时 UTF-8 结果文件 + `-EncodedCommand`；不依赖 stdout 管道。
+  - 原生 `FolderBrowserDialog`（STA + owner form），取消不报错、不改变输入；脚本错误/超时显示可诊断错误。
+  - 中文/空格路径、手动输入、迁移确认流程保持不变。
+
+### 变更 / 删除
+
+- **YouTube 只保留公开网页聊天**
+  - 删除官方 Data API 客户端、OAuth 登录/回调/令牌存储、API Key 配置、官方适配器、`capture-mode` 与对应测试。
+  - 删除 `/api/youtube/login/start|status|logout`；`/api/youtube/video|connect` 不再接受 `mode`。
+  - 删除 `settings.youtubeCaptureMode`；旧 settings 中的键加载时忽略。
+  - 直播页与设置页删除官方/实验模式切换、Google 登录、API Key/OAuth、配额、实验 badge；只保留链接输入、检查、开始、连接状态、保留说明。
+  - 保留匿名 web 适配器的聊天/SC/Sticker/会员/gift/badge/稳定 Channel ID/去重/重连/自动结束/30 天保留。
+  - 设置/隐私说明保留简短、真实的“非官方稳定 API、可能失效、无官方授权”提示。
+
+- **管理员权限 EXE**
+  - 构建时把 node.exe 的 RT_MANIFEST 从 `asInvoker` 改为 **`requireAdministrator`**。
+  - 非提升进程启动最终 EXE 被 Windows 拒绝（EACCES）；UAC 批准后的真实启动未在无交互会话验证。
+  - 启动器增加防御性管理员检查与三语提示；非权限错误仍单独显示。
+  - 打包启动且当前默认目录无数据库时扫描本地用户配置，恰好一个使用、多个拒绝猜测；防止跨账号 UAC 静默建空库。
+
+### 测试 / 构建
+
+- 自动化测试 **276 通过 / 0 失败**；删除 5 个官方 YouTube 测试文件，新增选择器、manifest、管理员、profile scan、简化约束测试。
+- EXE：90.2 MB / 99 资源，Manifest `requireAdministrator`，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`。
+- `verify-exe.mjs`：manifest + 9 功能场景 = 10/10；非提升会话使用临时 asInvoker 副本并明确标注。
+- 真实 UAC 点击、真实文件夹选择、v0.5.0 真实 YouTube 采样未完成，见 STATUS/TEST_PLAN。
+
 ## 0.4.0 — 2026-11-08（Header 语言、数据目录迁移、清空/出厂、多主播档案）
 
 ### 新增

@@ -93,21 +93,21 @@
 - AI 分析包不包含登录信息与 Cookie（导出只读取数据库事件与统计）。
 - 观众身份来自平台 UID；平台不提供 UID（UID=0）时不猜测、不按昵称合并，也不会因此把观众写进别人的档案。
 
-## 13. YouTube 凭据（2026-11-08 起）
+## 13. YouTube 接入（v0.5.0 起）
 
-- **两种官方凭据模式**：
-  - 公开直播模式（`api-key`）：应用级 API Key 放在查询参数里，只能读公开数据；不涉及任何用户账号；
-  - OAuth 模式：主播本人授权，access/refresh token 存在本地。
-- **凭据不进入仓库、不进入默认构建**。可用环境变量或 `<数据目录>\config\` 下的私有文件提供；`src/platforms/youtube/oauth-config.mjs` 的常量默认为空。
-- **令牌存储**：`<数据目录>\secrets\youtube-oauth.json`，AES-256-GCM 加密，密钥同目录 `.youtube-oauth-key`，尽力用 `icacls` 限制为当前 Windows 用户。与 Bilibili 一样，这是「用户目录 + 加密」级别，不是 DPAPI。
-- **令牌可见面**：`/api/youtube/status` 只返回 `signedIn`、频道名、过期时间、`hasRefreshToken`；任何 API、日志、AI 包、备份都不含令牌。
+- YouTube 只使用公开直播页面的网页聊天机制：
+  - 不发送 Cookie、OAuth token 或用户 API Key；不需要 Google 登录。
+  - 不再是官方 Data API/OAuth/API Key 双轨实现；相关代码、配置读取、登录路由与 UI 已删除。
+- 旧版本可能在 `<数据目录>\secrets\` 留下 `youtube-oauth.json` / `.youtube-oauth-key`；v0.5.0 **不读取也不再使用**这些文件，也不会自动删除用户凭据。用户可用“恢复出厂设置”或自行删除；迁移不会把它们带进新的数据空间之外的任何位置（仍是受管 `secrets/`）。
+- `/api/youtube/status` 不再返回登录/令牌/配额字段；不提供伪造登录。
+- 日志脱敏规则仍覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值，作为纵深防御。
 - **撤销与删除**：退出登录会先调用 Google revoke 端点（尽力而为），再删除本地加密文件；跨电脑迁移需要重新登录（密钥不导出，这是刻意设计）。
 - **日志**：脱敏规则覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值；YouTube `code`/`state` 不写日志。
 - **回调安全**：回环接收器只绑定 `127.0.0.1`、只接受一次性随机端口与固定路径、校验 `state`、5 分钟超时、回调页无外部资源。
 
 ## 14. YouTube 数据保留与外部 AI
 
-- YouTube 公开直播聊天属于平台数据。Developer Policies 对 API Data 要求保存不超过 **30 个日历日**；主播 OAuth 不能为其他观众的数据授权无限期保存。匿名网页接口不是官方 API，但本轮采用同样的 30 天上限作为保守默认，而不是认为「非 API 就可以无限保存」。
+- YouTube 公开直播聊天属于平台数据。即使不再使用官方 API、也不需要 OAuth，仍采用 **30 个日历日** 的保守上限，而不是认为「非 API 就可以无限保存」。
 - 实现：`youtubeRawRetentionDays` 只允许 **1–30 天**（默认 30）。超过窗口后清理：
   - 聊天原文 `events.content`；
   - 表情元数据 `events.emotes`；
@@ -117,26 +117,24 @@
 - 保留：事件行、消息计数、稳定 Channel ID、场次/观众币种合计。**这仍不等同于删除全部个人数据**；严格删除/去标识化模式尚未实现，文档不得声称已经完全合规。
 - 触发：启动、YouTube 场次结束、`POST /api/youtube/retention/apply`。
 - Bilibili 数据不受 Google/YouTube 政策约束，未被该清理自动处理。
-- 匿名网页聊天（实验性）：
+- 公开网页聊天（唯一路径）：
   - 不发送 Cookie、OAuth token 或用户 API Key；
   - 仍会拿到公开的观众昵称、Channel ID 与聊天内容，因此同样受上述保留策略约束；
-  - 该接口不是官方 API，可能违反 YouTube ToS；默认关闭，必须显式启用并显示风险。
+  - 该接口不是官方稳定 API，可能违反 YouTube ToS；不作为“官方/合规”宣传，设置页与隐私说明中如实告知可能失效。
 - AI 分析包由用户手动导出并交给自选 AI 服务，软件不自动上传；包内不含凭据。导出前建议先执行保留清理。
 - 不为了「长期画像」而绕过平台政策，也不改用抓取作为默认发布方案。
 
-## 15. 匿名网页接口的边界（2026-11-08）
-
-> 以下 §16–§18 为 v0.4.0 新增。
+## 15. 公开网页接口的边界（v0.5.0）
 
 - 只读：不发送消息、不点赞、不关注、不修改任何平台状态。
 - 不携带任何用户登录态；不读取、不保存 Cookie。
 - 不绕过登录、验证码、年龄墙、地区限制；被拒绝时显示真实原因。
 - 不把网页接口的 key 当作用户凭据；它来自公开页面，只用于该次只读请求。
-- 不把匿名接口描述为官方 API；UI 与文档明确标注实验性和条款风险。
-- 该路径不是默认；没有官方凭据时，用户必须主动点击「启用免登录实验模式」。
-- 研究、真实采样与许可证记录见 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`。
+- 不把该接口描述为官方 API，也不声称获得 YouTube 授权或保证永久可用；设置页/隐私说明中保留简短、准确的失效风险提示，不在每次连接时堆叠技术模式警告。
+- 该路径是 v0.5.0 唯一的 YouTube 连接方式；不再要求用户先切换模式。
+- 真实采样、许可证与历史研究见 `docs/YOUTUBE_ANONYMOUS_RESEARCH.md`；旧官方 API 对照内容仅作历史记录。
 
-## 16. 数据位置、迁移与本地目录选择（v0.4.0）
+## 16. 数据位置、迁移与本地目录选择（v0.5.0）
 
 - 位置记录只含 `version/dataDir/updatedAt`，保存在 `%LOCALAPPDATA%\LiveMemory\data-location.json`，镜像到 `%APPDATA%\LiveMemory\data-location.json`；不含数据库内容、Cookie、Token 或 API Key。
 - 位置记录目标必须已存在并含 `database/livememory.db`；否则启动失败，不创建空库、不覆盖旧数据。恢复方式：重新连接磁盘、`--data-dir` 或 `--forget-data-location`。
@@ -144,7 +142,8 @@
 - OneDrive/Dropbox/Google Drive、临时目录、长路径只警告并要求显式确认；**映射网络盘（盘符形式）未自动识别**，用户必须自行确认是本地磁盘。
 - 迁移前停止适配器、checkpoint、关闭 SQLite；复制到目标卷 staging，校验 SQLite `integrity_check`、表计数、schema 版本与配置/凭据/导出文件 SHA-256；成功后移入目标并切换运行时。
 - **原目录永远不由应用自动删除**；失败回滚到原目录。旧目录可能仍含敏感聊天与凭据，用户确认新目录可用后需自行安全删除。
-- 目录选择器：本地 PowerShell 固定脚本调用 WinForms FolderBrowserDialog；不执行用户输入的命令，不使用 `cmd /c`。打开文件夹只接受 `data/exports/backups/logs` 四个受管键，不拼接任意路径。
+- 目录选择器：本地服务用 `spawn(..., {stdio:'ignore'})` 启动固定 PowerShell 脚本，调用 WinForms FolderBrowserDialog；选择结果经临时文件返回，不经过 stdout 管道，不执行用户输入的命令，不使用 `cmd /c`。打开文件夹只接受 `data/exports/backups/logs` 四个受管键，不拼接任意路径。
+- 管理员权限：发布 EXE 的 Manifest 为 `requireAdministrator`，但数据目录校验、迁移 staging/回滚、删除范围不因提权放宽。同账号 UAC 通常不改变 `%LOCALAPPDATA%`；跨管理员账号时应用扫描本地用户配置，恰好一个库则使用，多个则拒绝猜测。
 - 迁移期间 API 进入维护模式，除 relocation/clear/health/status 外返回 503，避免并发写库。
 
 ## 17. 清空数据与恢复出厂（v0.4.0）

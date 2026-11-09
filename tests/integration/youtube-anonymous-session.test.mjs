@@ -6,7 +6,7 @@ import {startServer} from '../../src/server/index.mjs';
 import {readZipEntry, readZipIndex} from '../../src/shared/zip.mjs';
 
 /**
- * End-to-end test for the experimental anonymous YouTube web client.
+ * End-to-end test for the public-web YouTube client (the only YouTube path).
  *
  * The fake server reproduces the real page/JSON shapes captured from live
  * broadcasts, including a Super Chat with a formatted HK$ amount, an anonymous
@@ -262,7 +262,7 @@ function request(url, {method = 'GET', body = null} = {}) {
   });
 }
 
-test('experimental anonymous YouTube chat end-to-end', async (t) => {
+test('public-web YouTube chat end-to-end (the only YouTube path)', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
   const server = await startServer({
@@ -278,53 +278,52 @@ test('experimental anonymous YouTube chat end-to-end', async (t) => {
   });
   const base = server.url;
 
-  await t.test('the default mode is the official API and no credential is invented', async () => {
+  await t.test('the public web chat is the only YouTube path and needs no credentials', async () => {
     const status = await (await fetch(`${base}api/youtube/status`)).json();
-    assert.equal(status.captureMode, 'official');
-    assert.equal(status.officialConfigured, false);
-    assert.equal(status.anonymous.available, true);
-    assert.equal(status.anonymous.experimental, true);
-    assert.equal(status.capabilities.anonymousReadSupported, true);
-  });
-
-  await t.test('the operator explicitly switches to experimental anonymous mode', async () => {
-    const response = await request(`${base}api/settings`, {
+    assert.equal(status.mode, 'web');
+    assert.equal(status.available, true);
+    assert.equal(status.capabilities.requiresApiKey, false);
+    assert.equal(status.capabilities.requiresLogin, false);
+    assert.equal(status.capabilities.requiresCookie, false);
+    assert.equal(status.captureMode, undefined);
+    assert.equal(status.officialConfigured, undefined);
+    assert.equal(status.oauthConfigured, undefined);
+    assert.equal(status.quota, undefined);
+    const login = await fetch(`${base}api/youtube/login/status`);
+    assert.equal(login.status, 404);
+    const patch = await request(`${base}api/settings`, {
       method: 'PATCH',
       body: {youtubeCaptureMode: 'anonymous'}
     });
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.settings.youtubeCaptureMode, 'anonymous');
-    const status = await (await fetch(`${base}api/youtube/status`)).json();
-    assert.equal(status.captureMode, 'anonymous');
+    assert.equal(patch.status, 400);
   });
 
   await t.test('a live link is checked against the public watch and chat pages', async () => {
     const response = await request(`${base}api/youtube/video`, {
       method: 'POST',
-      body: {url: `https://www.youtube.com/live/${VIDEO_ID}`, mode: 'anonymous'}
+      body: {url: `https://www.youtube.com/live/${VIDEO_ID}`}
     });
     assert.equal(response.status, 200);
     const {video} = await response.json();
     assert.equal(video.videoId, VIDEO_ID);
     assert.equal(video.recordable, true);
-    assert.equal(video.mode, 'anonymous');
-    assert.equal(video.experimental, true);
     assert.equal(video.chatAvailable, true);
     assert.equal(video.concurrentViewers, 1234);
+    assert.equal(video.mode, undefined);
+    assert.equal(video.experimental, undefined);
   });
 
   let sessionId = null;
   await t.test('recording ingests chat, badges, Super Chat, stickers, membership and gifts', async () => {
     const response = await request(`${base}api/youtube/connect`, {
       method: 'POST',
-      body: {url: `https://youtu.be/${VIDEO_ID}`, mode: 'anonymous'}
+      body: {url: `https://youtu.be/${VIDEO_ID}`}
     });
     assert.equal(response.status, 201);
     const payload = await response.json();
     sessionId = payload.session.id;
     assert.equal(payload.session.platform, 'youtube');
-    assert.equal(payload.connection.detail.mode, 'anonymous');
+    assert.equal(payload.connection.detail.mode, 'web');
 
     const events = await waitFor(async () => {
       const body = await (await fetch(`${base}api/events?sessionId=${sessionId}&limit=50`)).json();

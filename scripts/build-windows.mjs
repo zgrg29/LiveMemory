@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
+import {manifestLevel, setManifestLevel} from './pe-manifest.mjs';
 
 /**
  * Build LiveMemory.exe with Node's Single Executable Application support.
@@ -88,6 +89,14 @@ execFileSync(process.execPath, ['--experimental-sea-config', 'build/sea-config.j
 const exe = 'dist/LiveMemory.exe';
 const binary = await readFile(process.execPath);
 
+// The product decision is that the packaged EXE requests administrator rights
+// through its own RT_MANIFEST. Node's official node.exe ships an asInvoker
+// manifest; patch that resource before postject injects the SEA blob.
+setManifestLevel(binary, 'requireAdministrator');
+if (manifestLevel(binary) !== 'requireAdministrator') {
+  throw new Error('failed to apply requireAdministrator manifest');
+}
+
 // PE layout: DOS header -> PE header -> optional header.
 const peOffset = binary.readUInt32LE(0x3c);
 const optionalHeader = peOffset + 24;
@@ -120,3 +129,4 @@ console.log(`Built ${exe}`);
 console.log(`  size:   ${(size / 1024 / 1024).toFixed(1)} MB`);
 console.log(`  sha256: ${sha256}`);
 console.log(`  assets: ${files.length} files, hash ${manifest.hash}`);
+console.log(`  manifest: ${manifestLevel(await readFile(exe))}`);

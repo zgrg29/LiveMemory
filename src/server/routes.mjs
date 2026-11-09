@@ -256,10 +256,10 @@ export function buildRoutes() {
                 id: 'youtube',
                 label: 'YouTube Live',
                 state: 'available',
-                authMode: deps.youtube?.status().authMode ?? 'none',
-                captureMode: deps.youtube?.status().captureMode ?? 'official',
-                anonymousExperimental: true,
-                officialConfigured: Boolean(deps.youtube?.status().officialConfigured)
+                mode: 'web',
+                requiresApiKey: false,
+                requiresLogin: false,
+                requiresCookie: false
               }
             ],
             ai: {export: true, import: false},
@@ -563,8 +563,12 @@ export function buildRoutes() {
     {
       method: 'POST',
       path: '/api/storage/location/pick',
-      handler: async ({res}) => {
-        const selected = await pickFolder({});
+      handler: async ({res, deps}) => {
+        const selected = await pickFolder({
+          workDir: deps.paths.cache,
+          initialDir: deps.paths.root,
+          logger: deps.logger
+        });
         sendJson(res, 200, {path: selected});
       }
     },
@@ -848,46 +852,11 @@ export function buildRoutes() {
     },
     {
       method: 'POST',
-      path: '/api/youtube/login/start',
-      handler: async ({req, res, deps}) => {
-        const body = await readOptionalJson(req);
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        try {
-          const result = await deps.youtube.startLogin({locale});
-          sendJson(res, 201, result);
-        } catch (error) {
-          throw youtubeError(error);
-        }
-      }
-    },
-    {
-      method: 'GET',
-      path: '/api/youtube/login/status',
-      handler: ({res, deps}) => {
-        sendJson(res, 200, deps.youtube.status().login);
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/youtube/login/logout',
-      handler: async ({req, res, deps}) => {
-        await readOptionalJson(req);
-        const result = await deps.youtube.logout();
-        sendJson(res, 200, result);
-      }
-    },
-    {
-      method: 'POST',
       path: '/api/youtube/video',
       handler: async ({req, res, deps}) => {
         const body = await readOptionalJson(req);
         try {
-          const video = await deps.youtube.checkVideo(body.url ?? body.videoId ?? body.input, {
-            mode: body.mode ?? null
-          });
+          const video = await deps.youtube.checkVideo(body.url ?? body.videoId ?? body.input);
           sendJson(res, 200, {video});
         } catch (error) {
           throw youtubeError(error);
@@ -900,9 +869,7 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         const body = await readOptionalJson(req);
         try {
-          const result = await deps.youtube.connect(body.url ?? body.videoId ?? body.input, {
-            mode: body.mode ?? null
-          });
+          const result = await deps.youtube.connect(body.url ?? body.videoId ?? body.input);
           sendJson(res, 201, {
             session: serializeSessionRow(result.session),
             video: result.video,

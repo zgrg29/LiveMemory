@@ -109,28 +109,23 @@
 
 直播记录页的「直播来源」卡片是唯一让用户选择平台的地方，固定三个标签：**模拟直播 / Bilibili 直播 / YouTube 直播**。标签切换不得清空当前正在进行的记录。
 
-YouTube 标签的可见状态（全部三语）：
+YouTube 标签只有一个入口，与 Bilibili 一样直接：
 
-| 状态 | 显示 | 用户可做什么 |
-| --- | --- | --- |
-| 官方未配置（默认） | 「尚未配置」胶囊 + 真实原因 + 说明官方需要开发者一次性配置 | 阅读说明；可显式点击「启用免登录实验模式」；不显示伪造的登录按钮 |
-| 官方 API Key 模式 | 「公开直播模式：使用应用级 API Key 读取公开聊天，无需登录」 | 直接粘贴直播链接 |
-| 官方 OAuth 未登录 | 「未登录」+「登录 Google / YouTube」+ 授权说明 | 点击登录，浏览器打开 Google 官方页 |
-| 官方已登录 / 已失效 | 「已登录：频道名」或「授权已失效」+ 重新登录 / 退出 | 输入链接或重新授权 |
-| 匿名实验模式 | 「实验性 · 免登录」+ warning callout + 无需 API Key / 无需 Google 登录 | 粘贴链接 → 检查 → 开始；可切回官方 |
-
-- 匿名模式**不是默认**；必须由用户点击按钮或高级设置切换。界面必须同时显示：非官方接口、可能与 YouTube 服务条款冲突、可能随时失效、不保证可用。
-- 匿名模式没有官方配额显示；显示消息数、连接状态与「可能漏消息」诊断。
+- 一句说明 + 「直播链接或视频 ID」输入框 + 「检查直播」按钮。
 - 检查结果用胶囊表达：正在直播（`live`）、尚未开始、已结束、非直播、聊天关闭；不可记录时说明原因，不显示开始按钮。
-- 官方面板底部显示 API 配额（已用/上限）与数据保留说明（天数 + 「立即清理过期原文」）。
-- 直播进行中，页面头部追加 YouTube 连接状态（已连接 / 网络中断重连 / 连接失败）、模式胶囊与「当前观看 N」（官方有数据时），10 秒轮询一次，不承担高频请求。
+- 可记录时显示标题/频道/当前观看/开始时间与「开始记录直播」。
+- 连接后显示连接状态、当前观看、已收消息数与「可能漏消息」；10 秒轮询一次。
+- 不显示：官方 API / 实验模式切换、Google 登录、API Key、OAuth、配额、实验 badge、模式技术说明。
+- 不要求用户先理解接入机制；数据保留说明（天数 + 立即清理）保留在面板底部。
+- 设置页的 YouTube 卡只读说明：无需登录/Key/Cookie；非 YouTube 官方稳定 API、可能失效；30 天保留。
 - 动态流显示平台确认的 badge 文本；没有 badge 不占位。
 
 ### 7.4 数据存储位置与危险操作
 
 - “数据存储位置”卡显示：当前真实目录（等宽字体）、来源（默认/自定义位置/命令行临时指定）、位置记录文件、可写状态、可用空间、LiveMemory 占用、数据库占用、场次/观众/事件；按钮：修改存储位置、打开数据文件夹、刷新。
 - “修改存储位置”对话框：
-  - 目标路径输入 + 浏览（Windows 原生 FolderBrowserDialog）；
+  - 目标路径输入 + 浏览（Windows 原生 FolderBrowserDialog，由本地服务启动；浏览器不伪造目录选择器）；
+  - 浏览返回完整绝对路径；取消不报错、不改变输入；无交互桌面时仍可手动输入；
   - 两种模式：迁移现有数据（推荐）/ 在新目录创建新的数据空间，均有清楚说明；
   - 云同步/临时目录/长路径 warning + 需要勾选确认；UNC 直接拒绝；
   - 成功后显示原目录（未删除）、新目录、迁移前后事件数、位置记录；旧目录不会自动删除。
@@ -182,7 +177,17 @@ YouTube 标签的可见状态（全部三语）：
 - `docs/screenshots/ai-light-zh-CN.png`（1440×1200，明亮中文 AI 分析中心与任务说明）
 - `docs/screenshots/ai-dark-ja.png`（1440×1200，黑暗日语 AI 分析中心）
 - `docs/screenshots/ai-mobile-light-zh-CN.png`（390×1100，移动端 AI 分析中心）
-- `docs/screenshots/live-youtube-light-zh-CN.png`（1440×1120，YouTube 官方模式面板）
+**v0.5.0 新截图（当前界面）：**
+
+- `docs/screenshots/live-youtube-v050-light-zh-CN.png`（1440×1120，唯一公开网页入口）
+- `docs/screenshots/live-youtube-v050-dark-zh-CN.png`（黑暗主题）
+- `docs/screenshots/live-youtube-v050-mobile-zh-CN.png`（390×1000，窄屏）
+- `docs/screenshots/settings-youtube-v050-zh-CN.png`（设置页只读说明）
+- `docs/screenshots/settings-data-location-v050-zh-CN.png`（修改数据位置 + 浏览按钮）
+
+> 以下 YouTube 官方/实验模式截图属于 v0.3.0–v0.4.0 历史记录；v0.5.0 已改为唯一公开网页入口，需以本轮新截图为准。
+
+- `docs/screenshots/live-youtube-light-zh-CN.png`（历史：YouTube 官方模式面板）
 - `docs/screenshots/live-youtube-dark-zh-CN.png`（黑暗主题）
 - `docs/screenshots/live-youtube-mobile-light-zh-CN.png`（390×1000，窄屏无横向溢出）
 - `docs/screenshots/live-youtube-recording-zh-CN.png`（官方模式录制中）

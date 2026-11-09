@@ -1,5 +1,4 @@
 import {writeFileSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
 import {openDatabase, closeDatabase} from '../storage/database/connection.mjs';
 import {migrate} from '../storage/database/migrations/index.mjs';
 import {createPaths, ensureDirectories, assertWritable} from './paths.mjs';
@@ -8,7 +7,6 @@ import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
-import {OAUTH_CONFIG_FILE_NAME, API_KEY_FILE_NAME} from '../platforms/youtube/oauth-config.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
@@ -54,7 +52,6 @@ export async function startServer({
   now = () => Date.now(),
   webRoot = null,
   systemLocale = null,
-  youtubeApiBase = null,
   youtubeWebBase = null,
   beginLockMove = null,
   env = process.env
@@ -92,15 +89,11 @@ export async function startServer({
       now
     });
     const youtube = new YouTubeService({
-      secretsDir: paths.secrets,
       sessionManager,
       db,
       settings: settingsStore,
       logger,
       now,
-      configFile: join(paths.config, OAUTH_CONFIG_FILE_NAME),
-      apiKeyConfigFile: join(paths.config, API_KEY_FILE_NAME),
-      apiBase: youtubeApiBase,
       webBase: youtubeWebBase
     });
     runRetention(db, {

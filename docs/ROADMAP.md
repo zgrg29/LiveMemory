@@ -87,6 +87,18 @@
 
 **交付**：用户能随时找到语言切换、控制数据位置、安全清空自己的数据，并按主播分别理解观众。
 
+## P4 文件夹选择器、YouTube 单一入口与管理员 EXE ✅（v0.5.0）
+
+- ✅ 修复「浏览」：`stdio:'ignore'` + 临时结果文件 + `-EncodedCommand`，不再 `spawn EPERM`
+- ✅ 取消不报错、手动输入保留、错误可诊断；中文/空格路径
+- ✅ 删除官方 YouTube Data API/OAuth/API Key/模式切换与对应测试
+- ✅ 唯一公开网页路径：链接 → 检查 → 开始；保留聊天/SC/会员/gift/badge/稳定身份/30 天保留
+- ✅ 三语清理，设置页只读说明，不在正常连接 UI 堆叠实验警告
+- ✅ EXE RT_MANIFEST `requireAdministrator`；非提升启动被 Windows 拒绝；三语管理员提示
+- ⬜ 真实 UAC 点击、真实文件夹选择、v0.5.0 真实 YouTube 采样（见 STATUS）
+
+**交付**：用户双击 EXE 由 Windows 请求管理员权限，YouTube 像 Bilibili 一样只需粘贴链接。
+
 ## M3 真实平台接入 🟡
 
 - 🟡 Bilibili 扫码登录：生成/轮询/校验与加密存储完成；二维码由应用内 canvas 显示
@@ -95,23 +107,21 @@
 - ✅ 身份字段完整性验证：弹幕 142/142 带 UID；UID=0 + 昵称打码场景已记录
 - ✅ Bilibili 平台表情：`info[0][13].emoticon_unique` + `info[1]` 文字标签；不下载图片
 - ✅ 普通文字 / Unicode Emoji / 平台表情统一进入 canonical event、SQLite、UI 与 AI 包
-- ✅ YouTube 官方 API：传输层、错误映射、配额、分页、重连、结束检测、Super Chat / Super Sticker / 会员、保留策略、控制台与服务端路由全部实现
-- ✅ YouTube 官方双凭据：公开数据 API Key（匿名、零登录）与 Google OAuth 桌面流
-- ✅ YouTube 链接定位与状态判定：直播 / 未开始 / 已结束 / 普通视频 / 聊天关闭 / 配额不足 / 网络错误
+- ✅ YouTube 链接定位与状态判定：直播 / 未开始 / 已结束 / 普通视频 / 聊天关闭 / 网络错误
+- ✅ YouTube 唯一公开网页路径：watch/live_chat + continuation + 真实聊天/SC/gift/badge
+- ✅ YouTube 官方 Data API/OAuth/API Key/token-store/capture-mode 已在 v0.5.0 删除
 - ✅ 稳定身份 `youtube:<channelId>`；仅昵称不建档案、不合并
 - ✅ 多币种分别累计；会员等级/数量不换算金额；赠送会员接收者不计为付款者
-- ✅ 30 天原始聊天保留策略（启动、场次结束、手动触发）；本轮将上限从 3650 天收紧为 30 天，并扩大到 badge、金额显示文本与过期昵称
-- ✅ YouTube 免登录实验路径：watch/live_chat + continuation + 真实聊天/SC/gift/badge；双房间真实采样
-- ✅ 匿名路径显式 opt-in、非官方 warning、continuation 失效重开、429/网络退避、自动结束、可能漏消息诊断
-- ⬜ **匿名路径的 YouTube ToS 合规评估**（当前很可能冲突，不得默认发布）
-- ⬜ YouTube 官方真实凭据下的直播采样与真实 OAuth 授权验收
-- ⬜ 匿名 vs 官方并排对照（消息数、身份率、付费事件、延迟、稳定性）
-- ⬜ Super Sticker / 会员 / 赠送会员的真实匿名样本
+- ✅ 30 天原始聊天保留策略（启动、场次结束、手动触发）
+- ✅ continuation 失效重开、429/网络退避、自动结束、可能漏消息诊断
+- ❌ 旧样本属于 v0.3.0；v0.5.0 简化后**尚未重新做真实直播采样**
+- ⬜ 公开网页路径的 YouTube ToS/合规评估（可能冲突，不得描述为官方/合规）
+- ⬜ Super Sticker / 会员 / 赠送会员的真实样本
 - ⬜ `SEND_GIFT_V2`、Bilibili 礼物/SC/大航海真实复核、真实断线长时间验证
 
-**交付**：能够记录真实直播间事件；官方路径是推荐路径，匿名路径是明确标注的实验路径。
+**交付**：能够记录真实直播间事件；YouTube 只有一个入口——公开网页聊天，界面不要求 API Key/OAuth。
 
-**风险**：平台协议与授权要求可能变化；匿名网页客户端不是官方 API，可能违反 YouTube ToS，随时失效。必须保留官方 API 并做合规评估。
+**风险**：网页接口不是官方稳定 API，平台页面/策略变化可能导致失效；不得恢复官方双轨或描述为已授权。
 
 ## M4 直播统计与存储管理 🟡
 
@@ -176,4 +186,4 @@ M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 ⬜ → M6 🟡 → M7 ⬜
 所有 → M8 ⬜
 ```
 
-M3 的外部风险仍在：Bilibili 经济事件样本与 YouTube 真实凭据验收。M5/M6 的数据格式应尽早冻结，避免后期迁移成本。
+M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路径的 v0.5.0 真实采样与合规评估。M5/M6 的数据格式应尽早冻结，避免后期迁移成本。

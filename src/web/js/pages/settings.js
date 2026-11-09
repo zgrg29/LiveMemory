@@ -133,40 +133,18 @@ export const settingsPage = {
 
     /* ------------------------------------------------------------- YouTube */
 
-    const youtubeChoices = [
-      ['official', t('settings.youtube.official'), t('settings.youtube.officialDesc')],
-      ['anonymous', t('settings.youtube.anonymous'), t('settings.youtube.anonymousDesc')]
-    ];
     const youtubeCard = el('section', {className: 'card card--wide'},
-      el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('settings.youtube.title')})),
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('settings.youtube.title')})),
       el('div', {className: 'card-body'},
         el('div', {className: 'setting-desc', text: t('settings.youtube.desc')}),
-        el('div', {className: 'choice-list', style: {marginTop: '12px'}},
-          youtubeChoices.map(([value, title, desc]) => {
-            const input = el('input', {
-              type: 'radio',
-              name: 'youtube-capture-mode',
-              value,
-              attrs: {checked: ctx.state.settings.youtubeCaptureMode === value}
-            });
-            input.addEventListener('change', async () => {
-              if (!input.checked) return;
-              try {
-                const payload = await api.patch('/api/settings', {youtubeCaptureMode: value});
-                ctx.state.settings = payload.settings;
-                ctx.toast(t('settings.saved'));
-              } catch (error) {
-                ctx.toast(ctx.describeError(error), {tone: 'error'});
-              }
-            });
-            return el('label', {className: 'choice'},
-              input,
-              el('div', {className: 'choice-text'},
-                el('div', {className: 'choice-title', text: title}),
-                el('div', {className: 'choice-desc', text: desc})));
-          })),
-        el('div', {className: 'callout callout--warn', style: {marginTop: '14px'}}, t('settings.youtube.warning')),
-        el('div', {className: 'small tertiary', style: {marginTop: '8px'}}, t('settings.youtube.note'))));
+        el('div', {className: 'def-list', style: {marginTop: '12px'}},
+          defRow(t('settings.youtube.requires'), t('settings.youtube.notRequired')),
+          defRow(t('settings.youtube.dataPolicy'), t('settings.youtube.retention'))),
+        el('div', {className: 'callout callout--neutral', style: {marginTop: '14px'}},
+          el('div', {},
+            el('div', {className: 'callout-title', text: t('settings.youtube.privacyTitle')}),
+            el('div', {text: t('settings.youtube.privacyBody')})))));
 
     /* ------------------------------------------------------- data location */
 

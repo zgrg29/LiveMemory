@@ -16,7 +16,7 @@
 | 是否能取得稳定 Channel ID？ | **聊天与 Super Chat 可以**（真实样本 86/86、87/87）；**新版 gift 消息没有 Channel ID**（13/13 缺失），LiveMemory 不伪造。 |
 | 是否能取得 Super Chat？ | **是**。真实样本：`HK$2,000.00`，解析为 `HKD 200000` 最小单位。 |
 | 是否能取得 Super Sticker / 会员？ | **映射已实现，但未在真实直播中观测到**，因此标记为尚未真实验证。 |
-| 是否符合 YouTube 条款？ | **不能确认，且很可能冲突**。YouTube ToS 禁止用自动化方式访问 Service、禁止收集可识别个人身份的信息，除非获得书面许可。因此本路径默认关闭、明确标注实验性，官方 Data API 仍是推荐方式。 |
+| 是否符合 YouTube 条款？ | **不能确认，且很可能冲突**。YouTube ToS 禁止用自动化方式访问 Service、禁止收集可识别个人身份的信息，除非获得书面许可。v0.5.0 把它作为唯一 YouTube 路径，但仍不声称官方授权/合规；设置与隐私说明中如实提示可能失效。 |
 
 ---
 
@@ -275,9 +275,9 @@ YouTube API Services Terms of Service 还要求 API Client 只通过文档描述
 因此：
 
 - 该方式**不是官方 API**，很可能违反 YouTube ToS；
-- LiveMemory **不把它设为默认**，需要用户显式点击“启用免登录实验模式”；
-- 界面明确显示“非官方接口”“可能与服务条款冲突”“可能随时失效”；
-- 官方 Data API 路径保持推荐；没有官方凭据时，应用不会伪造成功。
+- v0.5.0 起它是**唯一** YouTube 连接路径，不再要求用户切换模式；设置/隐私说明保留简短、真实的失效与授权风险提示；
+- 正常连接界面不堆叠技术模式警告，也不显示伪造的官方登录/成功；
+- 官方 Data API 双轨已删除，不再作为推荐路径。
 
 ### 5.2 保存期限
 
@@ -293,7 +293,7 @@ YouTube API Services Terms of Service 还要求 API Client 只通过文档描述
   - 稳定 Channel ID（`youtube:<channelId>`）
   - 场次/观众币种合计
 - **这仍不是“删除所有个人数据”**：稳定 Channel ID 与按人聚合的金额/计数仍保留。若监管或平台要求彻底删除，需要增加“删除指定观众/场次”的严格模式；本轮不声称已完成完全合规。
-- 匿名网页接口不是官方 Data API，不能因为“不是 API”就认为可以无限期保存观众数据；本轮采用与官方路径相同的 30 天上限作为保守默认。
+- 公开网页接口不是官方 Data API，不能因为“不是 API”就认为可以无限期保存观众数据；即使 v0.5.0 不再使用 OAuth，也采用 30 天上限作为保守默认。
 
 ---
 
@@ -306,7 +306,7 @@ YouTube API Services Terms of Service 还要求 API Client 只通过文档描述
   - `client.mjs`：页面与 continuation HTTP 传输、错误分层
   - `adapter.mjs`：轮询、超时、退避、continuation 刷新、结束检测
 - 复用现有 `mapper.mjs`、Canonical Event、EventIngest、SessionManager、SQLite、UI、AI 包。
-- 匿名模式为**显式 opt-in**；官方 API 为默认和推荐。
+- v0.5.0 起该公开网页路径是**唯一** YouTube 入口；不再有官方 API 并行实现。
 
 ### 不采用
 

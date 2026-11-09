@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {YouTubeAnonymousLiveChatAdapter} from '../../src/platforms/youtube/anonymous/adapter.mjs';
-import {YouTubeApiError, YOUTUBE_ERRORS} from '../../src/platforms/youtube/api.mjs';
+import {YouTubeApiError, YOUTUBE_ERRORS} from '../../src/platforms/youtube/errors.mjs';
 
 const LIVE = {
   videoId: 'anonLIVE001',
@@ -92,7 +92,7 @@ test('a stale continuation re-opens the public chat page without ending the sess
   assert.equal(ended.length, 0, 'a stale continuation is not a stream end');
   const snapshot = adapter.snapshot();
   assert.equal(snapshot.state, 'connected');
-  assert.equal(snapshot.detail.mode, 'anonymous');
+  assert.equal(snapshot.detail.mode, 'web');
   assert.equal(snapshot.detail.identityComplete, 2);
   await adapter.stop();
 });

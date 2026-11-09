@@ -20,8 +20,8 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/shared/       适配器契约、EventIngest、SessionManager
          ├─ src/platforms/mock/         模拟直播源
          ├─ src/platforms/bilibili/     真实直播适配器（WebSocket）
-         ├─ src/platforms/youtube/      官方 Data API / OAuth
-         ├─ src/platforms/youtube/anonymous/  实验性公开网页聊天（非官方，默认关闭）
+         ├─ src/platforms/youtube/      公开网页聊天（唯一路径；无官方 API/OAuth）
+         ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
          ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像）
          └─ src/ai/export/              分析包生成（含表情字典）
@@ -83,35 +83,28 @@ SessionManager.startPlatform({platform, platformRoomId, broadcasterUid, broadcas
 - 读模型：`buildViewerProfile(db, viewerId, {broadcasterId|unassigned})` 返回 `scope` + 全局 `lifetime`；榜单查询限定 `broadcaster_id`。
 - AI 包只导出当前主播的 `broadcaster_context`；`lifetime` 标注为全局；其他主播只给 `other_broadcaster_count`。
 
-## 3.1 YouTube 凭据与数据流
+## 3.1 YouTube 公开网页数据流（唯一路径，v0.5.0）
 
 ```text
-模式选择（settings.youtubeCaptureMode，默认 official）
-  ├─ official：oauth-config.mjs → API Key 或 OAuth
-  │   ├─ api-key 模式：YouTubeApi 把 key 放在查询参数，无 Authorization 头
-  │   └─ oauth 模式：YouTubeOAuthManager 提供 Bearer token（提前 60s 刷新）
-  └─ anonymous（显式 opt-in，实验性）：YouTubeAnonymousClient
-      ├─ GET /watch?v=ID       → ytInitialPlayerResponse / ytInitialData
-      ├─ GET /live_chat?v=ID   → ytcfg + liveChatRenderer 首批 actions + continuation
-      └─ POST /youtubei/v1/live_chat/get_live_chat
-           body {context, continuation} → actions + 新 continuation + timeoutMs
-
-连接流程
-  parseYouTubeInput(link) → 模式对应的 checkVideo()
-    ├─ 非直播/未开始/已结束/聊天关闭 → 明确错误码（三语）
-    └─ 可记录 → SessionManager.startPlatform({platformStartedAt})
-                 → YouTube 适配器.start()
-                     → actions → mapper.mjs → canonical draft
-                     → EventIngest（去重/观众/金额/计数）
-                     → SSE → 控制台
+parseYouTubeInput(link) → YouTubeService.checkVideo()
+  ├─ GET /watch?v=ID       → ytInitialPlayerResponse / ytInitialData
+  ├─ GET /live_chat?v=ID   → ytcfg + liveChatRenderer 首批 actions + continuation
+  ├─ 非直播/未开始/已结束/聊天关闭 → 明确错误码（三语）
+  └─ 可记录 → SessionManager.startPlatform({platformStartedAt, broadcasterUid})
+               → YouTubeAnonymousLiveChatAdapter.start()
+                   ├─ POST /youtubei/v1/live_chat/get_live_chat
+                   │    body {context, continuation} → actions + 新 continuation + timeoutMs
+                   └─ actions → mapper.mjs → canonical draft
+                        → EventIngest（去重/观众/金额/计数）
+                        → SSE → 控制台
 ```
 
-- **官方路径（默认/推荐）**：`videos.list` 定位，`liveChatMessages.list` 轮询；OAuth 回环回调 + PKCE + 加密令牌。
-- **匿名实验路径**：不发送 Cookie、OAuth token 或用户 API Key；读取公开网页聊天客户端。它不是官方 API，可能违反 YouTube ToS，必须显式启用，错误或失效时不得伪装成功。
-- 两条路径都只负责传输；任何平台事件都必须经过 `EventIngest`。
-- 匿名 continuation：每页更新；400/`failedPrecondition` 重开 live_chat；429/网络指数退避；连续 8 次失败停止并保存。
-- 匿名身份：`authorExternalChannelId` → `youtube:<channelId>`；新版 gift 无该字段时 `viewer_uid=null`，不按昵称合并。
-- 匿名金额：只解析可确认的格式化金额；`amount_display` 保留原文，无法确认时 `amount_minor=null`。
+- 不发送 Cookie、OAuth token 或用户 API Key；只使用公开页面自身的客户端上下文。
+- 只有这一条 YouTube 路径；官方 Data API/OAuth/API Key 实现已删除。
+- 该接口不是官方稳定 API，可能违反 YouTube ToS；不绕过访问控制，失败不伪装成功。
+- continuation：每页更新；400/`failedPrecondition` 重开 live_chat；429/网络指数退避；连续 8 次失败停止并保存。
+- 身份：`authorExternalChannelId` → `youtube:<channelId>`；新版 gift 无该字段时 `viewer_uid=null`，不按昵称合并。
+- 金额：只解析可确认的格式化金额；`amount_display` 保留原文，无法确认时 `amount_minor=null`。
 
 ## 3.2 保留策略
 
@@ -156,12 +149,9 @@ SessionManager.startPlatform({platform, platformRoomId, broadcasterUid, broadcas
 | POST | `/api/bilibili/room` | 校验直播间 |
 | POST | `/api/bilibili/connect` | 开始记录 Bilibili 直播 |
 | POST | `/api/bilibili/disconnect` | 停止记录 |
-| GET | `/api/youtube/status` | YouTube 模式、登录、连接、配额、保留策略 |
-| POST | `/api/youtube/login/start` | 启动 Google 授权（返回授权 URL） |
-| GET | `/api/youtube/login/status` | 登录状态（供页面轮询） |
-| POST | `/api/youtube/login/logout` | 撤销授权并删除本地令牌 |
+| GET | `/api/youtube/status` | 唯一 web 模式、连接、保留策略（无登录/配额字段） |
 | POST | `/api/youtube/video` | 解析直播链接并返回可记录性 |
-| POST | `/api/youtube/connect` | 开始记录 YouTube 直播 |
+| POST | `/api/youtube/connect` | 开始记录 YouTube 直播（无 mode 参数） |
 | POST | `/api/youtube/disconnect` | 停止记录 |
 | POST | `/api/youtube/retention/apply` | 立即执行 YouTube 原文保留清理 |
 | GET | `/api/events` | 场次事件（倒序、分页） |

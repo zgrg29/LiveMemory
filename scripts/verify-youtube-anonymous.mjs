@@ -4,12 +4,12 @@ import {fileURLToPath} from 'node:url';
 import {startServer} from '../src/server/index.mjs';
 
 /**
- * Real-network E2E check for the experimental anonymous YouTube web chat.
+ * Real-network E2E check for the YouTube public-web live chat.
  *
  *   node scripts/verify-youtube-anonymous.mjs <live-url> [seconds]
  *
- * It starts the real local server, switches YouTube capture to `anonymous`,
- * checks the link, records for the requested duration, then reads the session
+ * It starts the real local server, checks the link, records for the requested
+ * duration, then reads the session
  * back through the HTTP read models. It prints aggregates only (no chat bodies,
  * names or channel ids) and uses a private tests/.tmp data folder.
  *
@@ -40,24 +40,20 @@ async function main() {
     requestedSeconds: seconds,
     startedAt: new Date().toISOString(),
     dataDir,
-    mode: 'anonymous'
+    mode: 'web'
   };
   let session = null;
   try {
-    await jsonRequest(`${base}api/settings`, {
-      method: 'PATCH',
-      body: {youtubeCaptureMode: 'anonymous'}
-    });
     const statusBefore = await (await fetch(`${base}api/youtube/status`)).json();
     result.status = {
-      captureMode: statusBefore.captureMode,
-      officialConfigured: statusBefore.officialConfigured,
-      anonymousExperimental: statusBefore.anonymous?.experimental === true
+      mode: statusBefore.mode,
+      requiresApiKey: statusBefore.capabilities?.requiresApiKey === true,
+      requiresLogin: statusBefore.capabilities?.requiresLogin === true
     };
 
     const checkResponse = await jsonRequest(`${base}api/youtube/video`, {
       method: 'POST',
-      body: {url, mode: 'anonymous'}
+      body: {url}
     });
     const checkPayload = await checkResponse.json();
     if (checkResponse.status !== 200) throw new Error(`check failed: ${checkResponse.status} ${JSON.stringify(checkPayload)}`);
@@ -78,7 +74,7 @@ async function main() {
 
     const connectResponse = await jsonRequest(`${base}api/youtube/connect`, {
       method: 'POST',
-      body: {url, mode: 'anonymous'}
+      body: {url}
     });
     const connectPayload = await connectResponse.json();
     if (connectResponse.status !== 201) throw new Error(`connect failed: ${connectResponse.status} ${JSON.stringify(connectPayload)}`);

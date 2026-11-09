@@ -15,26 +15,31 @@ import {createServer} from 'node:net';
 import {join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
+import {manifestLevel, setManifestLevel} from './pe-manifest.mjs';
 
 /**
- * Real executable verification matrix (no administrator rights required).
+ * Real executable verification matrix.
  *
  * Usage: node scripts/verify-exe.mjs [path\to\LiveMemory.exe]
  *
- * Every scenario launches the packaged EXE as the current user, with a private
- * data folder under tests/.tmp, and asserts on observable behaviour: the health
- * endpoint, the SQLite file, session/viewer counts, exit codes, stdout/stderr
- * and the startup log. It does not fake a browser: it reports what the process
- * said about opening one.
+ * The packaged EXE requests administrator rights. When this script itself runs
+ * without elevation, Windows refuses to launch it (error 740/EACCES); the
+ * functional scenarios therefore use a temporary copy whose manifest is patched
+ * back to asInvoker, and this fact is printed explicitly. The manifest check
+ * always runs against the real dist EXE. When the script runs elevated, the
+ * real EXE is used for every scenario.
  */
 
-const exe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
+const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
+let exe = distExe;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = resolve('tests', '.tmp', `verify-${stamp}`);
 mkdirSync(root, {recursive: true});
 
 const results = [];
 let childCounter = 0;
+const elevated = process.platform === 'win32'
+  && spawnSync('net.exe', ['session'], {stdio: 'ignore'}).status === 0;
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -44,6 +49,22 @@ function record(name, passed, details = []) {
   results.push({name, passed, details});
   log(`${passed ? 'PASS' : 'FAIL'}  ${name}`);
   for (const line of details) log(`      ${line}`);
+}
+
+const distManifest = manifestLevel(readFileSync(distExe));
+record('EXE manifest requests administrator privileges', distManifest === 'requireAdministrator', [
+  `manifest level: ${distManifest}`,
+  `current process elevated: ${elevated}`
+]);
+if (!elevated) {
+  const copy = join(root, 'LiveMemory.asInvoker.exe');
+  copyFileSync(distExe, copy);
+  const bytes = readFileSync(copy);
+  setManifestLevel(bytes, 'asInvoker');
+  writeFileSync(copy, bytes);
+  exe = copy;
+  log('NOTE  current session is not elevated; functional scenarios use a temporary');
+  log('      asInvoker copy of the same binary. Real UAC approval must be tested manually.');
 }
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -88,7 +109,11 @@ function launch({args, env = {}, cwd = process.cwd(), exePath = exe}) {
   const errFd = openSync(stderrFile, 'w');
   const child = spawn(exePath, args, {
     cwd,
-    env: {...process.env, ...env},
+    env: {
+      ...process.env,
+      ...(elevated ? {} : {LIVE_MEMORY_SKIP_ADMIN_CHECK: '1'}),
+      ...env
+    },
     stdio: ['ignore', outFd, errFd],
     windowsHide: true
   });

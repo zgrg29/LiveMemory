@@ -10,8 +10,7 @@ import {parseAmountToMinor} from '../../../shared/money.mjs';
  * still go through EventIngest.
  *
  * The web client is an undocumented, unauthenticated interface. It is isolated
- * here so a protocol change cannot leak into the database, UI or official API
- * path.
+ * here so a protocol change cannot leak into the database, UI or service layer.
  */
 
 export const YOUTUBE_WEB_BASE = 'https://www.youtube.com';
@@ -123,8 +122,8 @@ function isoOrNull(value) {
 }
 
 /**
- * Convert the watch page into the same small descriptor shape the official
- * `normalizeVideo()` produces. No official API call is involved.
+ * Convert the watch page into the small video descriptor used by the service.
+ * No official API call is involved.
  */
 export function parseWatchPage(html) {
   if (typeof html !== 'string' || html.length === 0) {

@@ -8,6 +8,8 @@ import {APP_NAME, APP_VERSION} from '../shared/app-info.mjs';
 import {SettingsStore} from '../server/settings-store.mjs';
 import {createLogger} from '../server/logger.mjs';
 import {resolveDataDir, probeWritable} from './data-dir.mjs';
+import {findExistingUserDataDirs} from './profile-scan.mjs';
+import {isAdministrator} from './admin.mjs';
 import {readDataLocation, clearDataLocation} from '../shared/data-location.mjs';
 import {acquireInstanceLock, readRuntimeInfo} from './lock.mjs';
 import {probeInstance} from './instance.mjs';
@@ -394,6 +396,32 @@ export async function runLauncher({
           }
         }
       }
+      // With a requireAdministrator manifest, UAC can run the process under a
+      // different administrator account. Before creating a new empty database,
+      // look for exactly one existing LiveMemory data folder in local profiles.
+      // Several candidates are ambiguous and must not be guessed.
+      const currentDefault = env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'LiveMemory') : null;
+      const currentDefaultHasData = Boolean(currentDefault && existsSync(join(currentDefault, 'database', 'livememory.db')));
+      if (!dataDirInfo && !options.dataDir && !env.LIVE_MEMORY_DATA_DIR && env.LIVE_MEMORY_APP_ROOT && !currentDefaultHasData) {
+        const existing = findExistingUserDataDirs({env});
+        startupLog.record('data-dir.profile-scan', {count: existing.length, dirs: existing});
+        if (existing.length === 1) {
+          dataDirInfo = {
+            dir: existing[0],
+            explicit: true,
+            source: 'profile',
+            fallback: false,
+            attempts: [{dir: existing[0], ok: true}]
+          };
+        } else if (existing.length > 1) {
+          throw startupError({
+            code: 'DATA_DIR_AMBIGUOUS',
+            step: 'data-dir',
+            userMessage: t(locale, 'dataDirAmbiguous', {count: existing.length}),
+            extra: existing.map((dir) => `  ${dir}`)
+          });
+        }
+      }
       if (!dataDirInfo) {
         dataDirInfo = resolveDataDir({env, requested: options.dataDir});
         dataDirInfo.source = 'default';
@@ -434,9 +462,11 @@ export async function runLauncher({
     const relocated = startupLog.relocate(paths.root);
     startupLog.record('startup-log', {ok: relocated, dir: startupLog.dir()});
 
+    let settingsLoaded = false;
     try {
       const settingsStore = new SettingsStore({file: paths.settingsFile});
       settingsStore.load();
+      settingsLoaded = true;
       if (!options.lang) locale = resolveLocale(settingsStore.get().locale, systemLocale);
     } catch (error) {
       // Preferences are optional: never block startup because of them.
@@ -446,6 +476,34 @@ export async function runLauncher({
 
     logger = createSafeLogger({dir: paths.logs, startupLog});
     logger.info({event: 'launcher.start', version: APP_VERSION, dataDir: paths.root, locale, system: systemLocale});
+
+    // The manifest normally guarantees elevation before this point. This check
+    // covers manifest bypass/filtered-token environments and gives a localized
+    // explanation instead of a permission stack trace.
+    // LIVE_MEMORY_SKIP_ADMIN_CHECK is only for the automated asInvoker EXE
+    // regression copy; the shipped EXE still carries requireAdministrator in its
+    // manifest, so Windows enforces elevation before this code runs.
+    if (process.platform === 'win32' && env.LIVE_MEMORY_APP_ROOT && env.LIVE_MEMORY_SKIP_ADMIN_CHECK !== '1') {
+      const admin = await isAdministrator();
+      startupLog.record('admin-check', {ok: admin !== false, admin});
+      if (admin === false) {
+        ui.blank();
+        ui.error(t(locale, 'adminRequired'));
+        if (!settingsLoaded) {
+          for (const fallbackLocale of ['zh-CN', 'ja', 'en']) {
+            if (fallbackLocale !== locale) ui.note(t(fallbackLocale, 'adminRequired'));
+          }
+        }
+        const logFile = startupLog.file();
+        if (logFile) ui.field(t(locale, 'logFile'), logFile);
+        ui.blank();
+        if (options.errorDialog && !isInteractive({stdin})) {
+          await showErrorDialog({title: APP_NAME, text: t(locale, 'adminRequired'), env});
+        }
+        await pauseForUser({stdin, stdout, enabled: options.waitOnError, prompt: t(locale, 'pressKey')});
+        return 1;
+      }
+    }
 
     ui.banner({name: APP_NAME, version: APP_VERSION, productLine: t(locale, 'productLine')});
     ui.info(t(locale, 'checkingEnvironment'));

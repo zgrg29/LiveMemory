@@ -1,4 +1,4 @@
-import {YouTubeApiError, YOUTUBE_ERRORS} from '../api.mjs';
+import {YouTubeApiError, YOUTUBE_ERRORS} from '../errors.mjs';
 import {
   DEFAULT_USER_AGENT,
   DEFAULT_POLL_TIMEOUT_MS,
@@ -12,11 +12,9 @@ import {
  * Anonymous transport for YouTube's public web live-chat client.
  *
  * No account, cookie, OAuth token or user API key is sent. Requests carry only
- * the public page's own client context. This is an *unofficial* interface: it is
- * undocumented, can change without notice, and its use may conflict with
- * YouTube's Terms of Service. The application therefore keeps it opt-in and
- * clearly labelled as experimental; the official Data API path remains the
- * recommended one.
+ * the public page's own client context. This is not an official, stable API: it
+ * is undocumented and can change without notice, so the UI explains that once
+ * in the privacy/integration section and reports failures accurately.
  */
 
 const RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504]);

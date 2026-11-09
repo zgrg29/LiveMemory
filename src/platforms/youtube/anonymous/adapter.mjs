@@ -1,6 +1,6 @@
 import {PlatformAdapter, CONNECTION_STATE} from '../../shared/adapter.mjs';
 import {mapYouTubeAnonymousChatItem} from '../mapper.mjs';
-import {YouTubeApiError, YOUTUBE_ERRORS} from '../api.mjs';
+import {YouTubeApiError, YOUTUBE_ERRORS} from '../errors.mjs';
 import {chatItemOfAction, DEFAULT_POLL_TIMEOUT_MS} from './parser.mjs';
 
 /**
@@ -96,8 +96,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     this.failures = 0;
     this.consecutiveFailures = 0;
     this.setState(CONNECTION_STATE.CONNECTING, {
-      mode: 'anonymous',
-      experimental: true,
+      mode: 'web',
       videoId: this.videoId
     });
 
@@ -130,7 +129,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
         const fatal = this.#fatalReason(error);
         if (fatal) {
           this.lastError = error;
-          this.setState(CONNECTION_STATE.FAILED, {mode: 'anonymous', experimental: true, reason: fatal});
+          this.setState(CONNECTION_STATE.FAILED, {mode: 'web', reason: fatal});
           throw error;
         }
         if (attempt < this.options.maxStartAttempts) {
@@ -140,8 +139,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     }
     this.lastError = lastError;
     this.setState(CONNECTION_STATE.FAILED, {
-      mode: 'anonymous',
-      experimental: true,
+      mode: 'web',
       reason: lastError?.code ?? 'unknown'
     });
     throw lastError;
@@ -152,7 +150,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     this.generation += 1;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = null;
-    this.setState(CONNECTION_STATE.STOPPED, {mode: 'anonymous', experimental: true, videoId: this.videoId});
+    this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', videoId: this.videoId});
   }
 
   snapshot() {
@@ -164,8 +162,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
 
   #detail(extra = {}) {
     return {
-      mode: 'anonymous',
-      experimental: true,
+      mode: 'web',
       videoId: this.videoId,
       title: this.video?.title ?? null,
       viewers: this.hotness,
@@ -305,7 +302,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     this.lastError = error;
     const fatal = this.#fatalReason(error);
     if (fatal) {
-      this.setState(CONNECTION_STATE.STOPPED, {mode: 'anonymous', experimental: true, reason: fatal});
+      this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', reason: fatal});
       this.#finish(fatal);
       return;
     }
@@ -326,8 +323,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
 
     if (this.consecutiveFailures >= this.options.maxConsecutiveFailures) {
       this.setState(CONNECTION_STATE.FAILED, {
-        mode: 'anonymous',
-        experimental: true,
+        mode: 'web',
         reason: code,
         failures: this.consecutiveFailures
       });
@@ -341,8 +337,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
       ? Math.max(retryAfter || 0, 30000)
       : Math.min(this.options.maxBackoffMs, this.options.backoffBaseMs * 2 ** Math.min(this.consecutiveFailures - 1, 6));
     this.setState(CONNECTION_STATE.RECONNECTING, {
-      mode: 'anonymous',
-      experimental: true,
+      mode: 'web',
       failures: this.consecutiveFailures,
       retryInMs: backoff,
       code
@@ -365,7 +360,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
       this.logger?.warn({event: 'youtube.anonymous.chat.refresh.failed', code: error?.code ?? 'unknown'});
       const fatal = this.#fatalReason(error);
       if (fatal) {
-        this.setState(CONNECTION_STATE.STOPPED, {mode: 'anonymous', experimental: true, reason: fatal});
+        this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', reason: fatal});
         this.#finish(fatal);
       }
       return false;

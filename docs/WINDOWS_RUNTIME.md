@@ -4,8 +4,9 @@
 
 - 单一可执行文件 `LiveMemory.exe`（当前构建约 90.2 MB）。
 - 用户无需安装 Python、Node.js、npm、数据库或任何开发依赖。
-- 双击运行，显示命令行窗口并打开默认浏览器控制台。
-- 安装目录可以只读；所有用户数据写入 `%LOCALAPPDATA%\LiveMemory\`。
+- 双击运行，Windows 通过内嵌 **`requireAdministrator`** Manifest 弹出 UAC；同意后显示命令行窗口并打开默认浏览器控制台。
+- 安装目录可以只读；用户数据仍写入 `%LOCALAPPDATA%\LiveMemory\`（或显式指定的可写目录）。
+- 开发模式 `node src/launcher/launcher.mjs` 不要求管理员；只有打包 EXE 请求提升。
 
 ## 2. 启动流程（实现位置：`src/launcher/launcher.mjs`）
 
@@ -13,9 +14,9 @@
 2. **立即创建启动日志**（此时数据库、配置、数据目录都还不存在）：写入 `%LOCALAPPDATA%\LiveMemory\logs`，失败则逐级回退 `%TEMP%\LiveMemory-logs`、用户目录；解析出数据目录后再迁入 `<数据目录>\logs`。
 3. `chcp 65001` 将控制台代码页设为 UTF-8（仅 TTY）。
 4. 检查 Node ≥ 22.5 与 `node:sqlite` 可用性。
-5. 解析可写数据目录（真实写探测，见 §5）：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` → 位置记录 → 默认目录。位置记录目标必须已存在且含 `database/livememory.db`；否则报错，不创建空库。创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
+5. 解析可写数据目录（真实写探测，见 §5）：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` → 位置记录 → 默认目录。位置记录目标必须已存在且含 `database/livememory.db`；否则报错，不创建空库。打包启动且当前默认目录无数据库时，扫描本地用户配置；恰好一个现有 LiveMemory 数据库则使用，多个则报 `DATA_DIR_AMBIGUOUS`，不猜测。创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
 6. 读取 `config/settings.json` → 决定命令行语言（保存偏好优先；`--lang` 临时覆盖）。配置损坏或不可读不阻塞启动。
-7. 单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
+7. 打包 EXE 防御性管理员检查（`net session`，`stdio: 'ignore'`）；失败时用保存语言（或三语）提示“需要管理员权限”并退出 1。随后获取单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
 8. 启动服务：绑定 `127.0.0.1`，端口 47800 → +1…+9 → 系统分配。
 9. 服务就绪后写 `runtime/runtime.json`（pid/port/url/version），打印状态，打开默认浏览器。
 10. 等待信号；收到 SIGINT/SIGTERM 后：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。
@@ -94,7 +95,8 @@
 
 ## 5. 权限
 
-- 正常运行不需要管理员权限；普通用户令牌即可完成数据库、日志、锁与网络监听。
+- 打包 EXE 通过 Manifest 请求管理员权限；开发模式仍可用普通权限运行。
+- **同一管理员账号**的 UAC 同意通常保持 `%LOCALAPPDATA%` 不变。若 UAC 使用另一个管理员账号，Windows 会切换用户配置文件；应用会扫描本地用户配置中的现有数据库，恰好一个时使用，多个时拒绝猜测。跨账号提升的完整数据目录等价性仍属未验证边界。
 - 不写注册表、不写 `Program Files`、不写 EXE 所在目录。
 - **可写性探测是真实写探测**：`src/shared/write-probe.mjs` 依次执行「创建目录 → 创建文件 → 写入 → 读回 → 删除」，失败时返回具体步骤和 Windows 错误码（`EPERM`/`EACCES`/`ENOSPC`…）。Windows 上 `fs.accessSync(dir, W_OK)` 只检查存在，不能作为权限判断，已移除。
 - 目录解析顺序：
@@ -169,12 +171,13 @@ Node SEA（Single Executable Application）+ postject 注入。
 
 1. 校验 Windows x64。
 2. 下载 postject 固定版本 tarball，校验 SHA-256 后解压（构建期依赖，不进入产品）。
-3. 遍历 `src/`，生成 `manifest.json`（文件列表 + 内容哈希 + 版本）。
-4. 生成 `sea-config.json`（assets + bootstrap），运行 `node --experimental-sea-config` 生成 blob。
-5. 复制当前 `node.exe`，将 PE Subsystem 改为 `IMAGE_SUBSYSTEM_WINDOWS_CUI`（3，可见控制台）。
-6. 清除 Authenticode 证书表与签名（postject 要求）。
-7. 注入 `NODE_SEA_BLOB`。
-8. 复制 `LICENSE`、`README.md` 到 `dist/`。
+3. 读取官方 node.exe 的 PE `RT_MANIFEST`，把 `requestedExecutionLevel` 从 `asInvoker` 改为 `requireAdministrator`，更新资源 data-entry size；新 Manifest 必须能放入 `.rsrc` 的现有 padding（当前 773 字节；容量不足时构建直接失败，不写坏二进制）。构建后再次读取并断言。
+4. 遍历 `src/`，生成 `manifest.json`（文件列表 + 内容哈希 + 版本）。
+5. 生成 `sea-config.json`（assets + bootstrap），运行 `node --experimental-sea-config` 生成 blob。
+6. 复制当前 `node.exe`，将 PE Subsystem 改为 `IMAGE_SUBSYSTEM_WINDOWS_CUI`（3，可见控制台）。
+7. 清除 Authenticode 证书表与签名（postject 要求）。
+8. 注入 `NODE_SEA_BLOB`。
+9. 复制 `LICENSE`、`README.md` 到 `dist/`。
 
 ### 8.3 运行期解压（`scripts/sea-bootstrap.cjs`）
 
@@ -187,42 +190,39 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 资源哈希变化会生成新目录；旧目录可在升级时清理（M8）。
 
 
-## 9. 已验证 / 未验证
+## 9. 已验证 / 未验证（v0.5.0）
 
-已验证（本机，2026-11-08，普通权限 = 非管理员令牌，最终源码构建）：
+已验证（本机，2026-11-09）：
 
-- 构建成功，PE 子系统 = 3（Console）
-- 本轮构建（v0.4.0）：**90.3 MB，103 个资源文件，SHA-256 `4aae59fe6f8d0a6cdc13811d27cc732e1e17cd6a6dac5d5fa4da450efbb1387f`**
-- 全新数据目录启动确认 SQLite schema=5、`broadcasters` / `viewer_broadcasters` / `broadcaster_id` 存在
-- `/api/youtube/status` 在未配置构建中返回 `configured=false`、`officialConfigured=false`、`captureMode=official`、`policy.days=30`，界面显示官方未配置与实验模式入口，不提供伪造登录
-- `LiveMemory.exe --version` → `LiveMemory 0.4.0`
-- `scripts/verify-exe.mjs` 自动矩阵：**9/9 通过**（全新目录启动、HTTP API、SQLite 写入、重启保留、强制结束后恢复、端口占用顺延、第二实例、不可写目录报错、复制到 `Downloads` 运行、解压复用、`--version` / `--help --lang ja` / `--diagnose`）
-- 默认数据目录不可写时自动回退到 `%TEMP%\LiveMemory` 并启动成功（本机沙箱拒绝 `%LOCALAPPDATA%`/`%APPDATA%`，正好覆盖该分支）
-- 不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`
-- 第二实例：真实在运行时提示并退出 0；进程被强制结束后重启会接管陈旧锁
-- 解压目录带标记，第二次启动不再重写
-- `/api/health`、`/api/bootstrap`、`index.html`、`js/app.js` 均 200
-- 控制台输出中文/日文正常（UTF-8）
-- **EXE 内匿名 YouTube 实测**：切换实验模式 → 真实直播 `FKLZiufsCk0` → 72 条事件、72/72 Channel ID、0 连接错误；最终 10 秒样本未出现付费事件（同一房间的 35 秒源码采样捕获到 `HK$2,000.00` Super Chat）；停止后场次 `ended`
-
-**YouTube 凭据与 EXE 的关系**：EXE 内嵌的是 `src/**` 源码，默认不包含任何 Google 凭据。官方路径需要发布者一次性注入 API Key / OAuth 客户端；匿名网页路径不需要凭据，但它是未公开接口，可能违反 YouTube ToS，默认关闭，必须显式启用。两条路径都不能被描述为“平台已授权”。
+- 构建成功，PE 子系统 = 3（Console）。
+- 本轮构建：**90.2 MB，99 个资源文件，SHA-256 `ed54a9ba48dd44eeadc91df0c2a507cca4d8285d23f3db468bf1be8120a0d649`**。
+- **PE Manifest 实测**：`scripts/pe-manifest.mjs` 读取 `RT_MANIFEST`，level=`requireAdministrator`，Manifest 773 bytes。
+- 非提升进程启动最终 EXE：`spawnSync` 返回 `EACCES`，说明 Windows 在程序代码执行前拒绝启动（Manifest 生效）。
+- `scripts/verify-exe.mjs`：**manifest 检查 + 9 个功能场景 = 10/10 通过**；由于当前会话不是管理员，功能场景使用同一二进制的临时 `asInvoker` 副本，并明确打印该事实。若在管理员会话运行，则直接使用最终 EXE。
+- 管理员检查消息：asInvoker EXE 副本在未设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 时，`--lang zh-CN/ja/en` 分别打印对应“需要管理员权限”消息并以 1 退出（真实 EXE 启动器代码路径）。
+- `LiveMemory.exe --version`（asInvoker 副本）→ `LiveMemory 0.5.0`。
+- 全新数据目录启动确认 SQLite schema=5、`broadcasters` / `viewer_broadcasters` / `broadcaster_id` 存在。
+- `/api/youtube/status` 只含 `mode=web`、`capabilities.requiresApiKey/Login/Cookie=false` 与 30 天保留策略；`/api/youtube/login/status` 返回 404；PATCH `youtubeCaptureMode` 返回 400。
+- 默认数据目录不可写时回退 `%TEMP%\LiveMemory` 并启动；不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`。
+- 第二实例、强杀恢复、端口顺延、解压复用、跨目录运行均通过。
 
 未验证：
 
-- **真实交互式桌面双击**（本执行环境无法创建桌面会话；已确认进程为非管理员令牌，但「双击后窗口保持可见/浏览器自动弹出」仍需用户本机确认）
-- **管理员模式对照**（本环境无法触发 UAC 提权）
-- 干净 Windows 10/11 虚拟机（无 Node、无开发环境）
-- 只读安装目录（`Program Files`）下的实际安装形态
-- 杀毒软件误报与代码签名
-- 真实 Ctrl+C 关闭与 Windows 关机流程
-- 双屏/高 DPI 下的控制台字体
+- **真实 UAC 交互**：当前进程为 Low Mandatory Level，无法点击“是”。最终 EXE 只验证了 Manifest 内容与非提升启动被拒绝；管理员批准后的完整启动、文件夹选择、迁移、SQLite 写入需要在真实桌面复核。
+- **真实文件夹选择器点击/取消/选择**：无交互桌面；已用 PowerShell 启动探测（修复后为 `PICKER_TIMEOUT`，不再 EPERM）与假进程单元测试覆盖逻辑，但没有人工操作。
+- **v0.5.0 真实 YouTube 直播采样**：未重新执行；旧样本属于 v0.3.0，不能冒充新验收。
+- 干净 Windows 10/11 虚拟机（无 Node、无开发环境）。
+- 只读安装目录（`Program Files`）下的实际安装形态。
+- 杀毒软件误报、代码签名。
+- 真实 Ctrl+C 关闭与 Windows 关机流程；双屏/高 DPI 控制台字体。
 
-**边界**：如果 Windows 在进入程序前就阻止运行（映像损坏、SmartScreen、组策略），进程无法输出任何内容；这属于操作系统层，程序无法捕获。除此之外的启动失败都会留下日志与可见提示。
-
+**边界**：UAC 拒绝发生在程序启动前，Windows 终止执行；EXE 内部无法捕获并显示自定义提示。非权限错误（端口、数据库、磁盘断开）仍按各自错误路径显示，不会统一伪装成权限错误。
 
 ## 10. 发布与升级（M8）
 
 - 版本号写入 `package.json` 与 `src/shared/app-info.mjs`，二者必须一致（可加测试）。
 - 发布包：EXE + README + LICENSE + SHA256SUMS。
 - 升级：替换 EXE；数据目录不变；schema 迁移自动执行；旧 `app\<hash>` 目录可清理。
+- 发布 EXE 必须在新构建中重新验证 `requireAdministrator` Manifest 与非提升启动被拒绝；不能只沿用旧 EXE 的结论。
+- 管理员权限不改变“数据目录优先、位置记录、迁移 staging/回滚、清空范围”规则；同账号 UAC 不改变 `%LOCALAPPDATA%`。
 - 回滚：保留上一版本 EXE 与升级前数据库备份（M5 备份机制）。
