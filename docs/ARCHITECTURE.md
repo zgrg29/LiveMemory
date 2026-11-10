@@ -82,6 +82,36 @@ buildSessionAnalysisReport()
 - 相同内容重复导入不新增行；不同内容必须显式创建新版本，旧版本保留。
 - 删除场次级联删除任务/批次/映射/结果/证据与包文件；清空数据包含全部 AI 表。
 
+## 1.2 统一分析与长期记忆数据流（v0.11.0）
+
+```text
+createAnalysisJob()
+  ├─ listSessionMessagesAsc() → 按消息顺序切片（时间线批次）
+  ├─ listSessionViewers() → 全部可识别观众（无 Top N / 无最低发言）
+  ├─ 观众分配：每位观众只进入一个记忆批次；该批包含其最近 120 条摘录
+  ├─ 每批：messages.jsonl + viewer_context.json + memory_context.json + viewer_excerpts.jsonl
+  └─ ai_job_memory_viewers / ai_job_memory_messages（覆盖 + 证据映射）
+
+importAnalysisResult()
+  └─ 单事务：
+     ├─ 保存 ai_results + ai_result_evidence
+     ├─ 确保每位会话观众的客观记忆头（version 0 或原版本）
+     ├─ 应用 viewer_memory_updates（add/confirm/update/supersede/conflict/outdated/uncertain）
+     ├─ 写 memory_facts / memory_fact_evidence / memory_versions
+     └─ 更新 ai_job_memory_viewers.status（semantic/no_semantics/objective_only/deleted）
+
+computeJobStatus()
+  └─ 全部分配观众 covered 后，任务才可能 complete
+```
+
+关键不变量：
+
+- 语义记忆只能来自 `viewer_memory_updates`，证据必须命中本批 `ai_job_memory_messages` 且属于同一观众。
+- 客观统计只来自现有真实表，重复导入/重复消息不会重复计数。
+- 无新语义 ≠ 未处理：`no_semantics` 仍覆盖，`pending` 才是未处理。
+- 删除记忆后的旧包不能恢复；同一结果重复导入不写。
+- 独立的 M7 记忆任务不再是用户流程；旧任务表保留只读历史。
+
 ## 2. 启动时序
 
 1. 解析参数（`--no-open`、`--port`、`--data-dir`、`--lang`）。
@@ -286,7 +316,7 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 - 仅当原文不足以理解表情时，才增加 `content_ai`；未知表情标记 `[未知平台表情：emote_id=…]`，不猜情绪。
 - 不打包表情图片；包大小主要由文本和聚合决定。
 - `instructions.md` 由 `src/ai/prompts/instructions.mjs` 按 `locale` 生成，包含话题、观众画像、经济支持、
-  Emoji/表情、数据可靠性、不可信数据、批次/汇总与来源字段规则；版本 `lm-prompt-m6.1-<locale>` 记录在
+  Emoji/表情、数据可靠性、不可信数据、批次/汇总与来源字段规则；版本 `lm-prompt-m6.2-<locale>` 记录在
   `manifest.prompt_version` 与 `ai_jobs.prompt_version`。
 - M6 的批次/汇总包结构与校验见 `AI_CONTRACT.md`；导出、导入、报告分别由
   `ai/export/job.mjs`、`ai/import/*`、`analytics/ai/report.mjs` 负责。

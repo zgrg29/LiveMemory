@@ -188,7 +188,8 @@ function readBatch(pkg) {
   return {
     manifest: JSON.parse(readZipEntry(buffer, 'manifest.json').toString('utf8')),
     messages: readZipEntry(buffer, 'messages.jsonl').toString('utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)),
-    viewers: JSON.parse(readZipEntry(buffer, 'viewer_context.json').toString('utf8'))
+    viewers: JSON.parse(readZipEntry(buffer, 'viewer_context.json').toString('utf8')),
+    memory: JSON.parse(readZipEntry(buffer, 'memory_context.json').toString('utf8'))
   };
 }
 
@@ -196,11 +197,11 @@ function timeRange(messages) {
   return [messages[0].at, messages[messages.length - 1].at];
 }
 
-function batchAnswer({manifest, messages, viewers}, {summary, titles, tone = 'positive'}) {
+function batchAnswer({manifest, messages, viewers, memory}, {summary, titles, tone = 'positive'}) {
   const [from, to] = timeRange(messages);
   return {
     protocol: 'livememory-analysis-result-v1',
-    schema_version: '1.1.0',
+    schema_version: '1.2.0',
     job_id: manifest.job_id,
     batch_id: manifest.batch.batch_id,
     broadcaster_id: manifest.broadcaster_id,
@@ -259,6 +260,14 @@ function batchAnswer({manifest, messages, viewers}, {summary, titles, tone = 'po
       dislikes: [],
       summary: index === 0 ? '喜欢参与玩法讨论，语气轻松。' : '会回应其他观众，参与互动。',
       confidence: 0.52 - index * 0.1
+    })),
+    // Every viewer assigned to this batch must be covered. The demo has no
+    // semantic update for most of them, but their objective history is still
+    // applied on import.
+    viewer_memory_updates: (memory?.viewers ?? []).map((viewer) => ({
+      viewer_id: viewer.viewer_id,
+      no_new_information: true,
+      operations: []
     }))
   };
 }
@@ -298,7 +307,7 @@ const first = aggregateBatches[0].result.session_topics.topics[0];
 const last = aggregateBatches[aggregateBatches.length - 1].result.session_topics.topics[0];
 const finalAnswer = {
   protocol: 'livememory-analysis-result-v1',
-  schema_version: '1.1.0',
+  schema_version: '1.2.0',
   job_id: aggregateManifest.job_id,
   broadcaster_id: aggregateManifest.broadcaster_id,
   task_id: aggregateManifest.tasks[0].task_id,

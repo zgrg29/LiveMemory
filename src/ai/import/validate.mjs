@@ -31,6 +31,7 @@ import {
   MAX_REPORT_EVIDENCE
 } from '../constants.mjs';
 import {validateAgainstSchema} from './schema-validator.mjs';
+import {validateEmbeddedMemoryUpdates} from '../../memory/embedded.mjs';
 
 const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.schema.json', import.meta.url));
 let cachedSchema = null;
@@ -243,6 +244,25 @@ export function sanitizeResult(parsed, {schemaVersion}) {
       })),
       summary: cleanText(profile.summary ?? ''),
       confidence: Number(profile.confidence)
+    })),
+    viewer_memory_updates: (parsed.viewer_memory_updates ?? []).map((entry) => ({
+      viewer_id: cleanText(entry.viewer_id),
+      ...(typeof entry.summary === 'string' ? {summary: cleanText(entry.summary)} : {}),
+      ...(entry.summary_certainty !== undefined ? {summary_certainty: entry.summary_certainty} : {}),
+      no_new_information: entry.no_new_information === true,
+      operations: (entry.operations ?? []).map((operation) => ({
+        op: operation.op,
+        ...(operation.kind ? {kind: operation.kind} : {}),
+        ...(operation.topic !== undefined ? {topic: cleanText(operation.topic)} : {}),
+        ...(operation.statement !== undefined ? {statement: cleanText(operation.statement)} : {}),
+        ...(operation.certainty ? {certainty: operation.certainty} : {}),
+        ...(operation.confidence !== undefined ? {confidence: Number(operation.confidence)} : {}),
+        ...(operation.target_fact_id ? {target_fact_id: cleanText(operation.target_fact_id)} : {}),
+        ...(operation.reason ? {reason: cleanText(operation.reason)} : {}),
+        ...(operation.valid_from ? {valid_from: operation.valid_from} : {}),
+        ...(operation.valid_until ? {valid_until: operation.valid_until} : {}),
+        ...(Array.isArray(operation.evidence) ? {evidence: normalizeRefs(operation.evidence)} : {})
+      }))
     }))
   };
 }
@@ -336,6 +356,7 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
     batchIndex: null,
     job: null,
     legacyCreate: null,
+    memory: null,
     source
   };
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -746,6 +767,36 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
     });
   }
 
+  // 7. Long-term memory updates travel in the same answer. Every viewer
+  // assigned to this batch must be covered exactly once; objective history is
+  // applied by the importer even when there is no new semantic information.
+  const memory = (mode === 'batch' && batch)
+    ? validateEmbeddedMemoryUpdates({
+      db,
+      job,
+      batch,
+      session,
+      payload,
+      schemaVersion,
+      mode,
+      now
+    })
+    : (mode === 'aggregate'
+      ? validateEmbeddedMemoryUpdates({db, job, batch: null, session, payload, schemaVersion, mode, now})
+      : null);
+  if (memory) {
+    for (const item of memory.errors) issues.push(item);
+    for (const item of memory.warnings) warnings.push(item);
+    target.memory = {
+      ok: memory.ok,
+      legacy: memory.legacy,
+      coverage: memory.coverage,
+      totals: memory.totals,
+      viewerCount: memory.viewers.length,
+      plan: memory.plan
+    };
+  }
+
   const hasContent = (topics.topics?.length ?? 0) > 0
     || (topics.disputes?.length ?? 0) > 0
     || (topics.highlights?.length ?? 0) > 0
@@ -778,6 +829,9 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
       batchIndex,
       taskKind: target.taskKind,
       job,
+      session,
+      batch,
+      memory,
       legacyCreate: legacyNeedsCreate
         ? {sessionId: session.id, batch, messageCount: batch?.messageCount ?? 0}
         : null,
@@ -817,6 +871,9 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
     batchIndex,
     taskKind: target.taskKind,
     job,
+    session,
+    batch,
+    memory,
     legacyCreate: legacyNeedsCreate
       ? {sessionId: session.id, batch, messageCount: batch?.messageCount ?? 0}
       : null,

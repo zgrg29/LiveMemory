@@ -140,6 +140,9 @@ export function serializeJob(row, status = null) {
         aggregateRequired: status.aggregateRequired,
         aggregateImported: status.aggregateImported,
         aggregatePackageReady: status.aggregatePackageReady,
+        memoryViewersTotal: status.memoryViewersTotal ?? 0,
+        memoryCoverage: status.memoryCoverage ?? null,
+        memoryReady: status.memoryReady ?? true,
         versions: status.versions,
         resultCount: status.resultCount,
         latestError: status.latestError

@@ -342,7 +342,7 @@ let instance = await launchExe();
 try {
   await useEnglishUi();
   const status = await (await fetch(`${base}/api/status`)).json();
-  record('packaged EXE upgrades the v6 database to schema 11', status.database.schemaVersion === 11, {
+  record('packaged EXE upgrades the v6 database to schema 12', status.database.schemaVersion === 12, {
     schema: status.database.schemaVersion,
     version: status.server.version
   });
@@ -478,7 +478,7 @@ try {
   instance = await launchExe();
   await useEnglishUi();
   const restartedStatus = await (await fetch(`${base}/api/status`)).json();
-  record('restarting the EXE keeps schema 11 and no running capture', restartedStatus.database.schemaVersion === 11
+  record('restarting the EXE keeps schema 12 and no running capture', restartedStatus.database.schemaVersion === 12
     && (restartedStatus.platform.activeCount ?? 0) === 0, {
     schema: restartedStatus.database.schemaVersion,
     activeCount: restartedStatus.platform.activeCount

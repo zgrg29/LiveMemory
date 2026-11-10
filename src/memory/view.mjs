@@ -15,6 +15,7 @@ import {getViewer} from '../storage/repositories/viewers.mjs';
 import {getBroadcaster} from '../storage/repositories/broadcasters.mjs';
 import {loadMemoryFacts} from './model.mjs';
 import {selectAnalysisSource} from './local.mjs';
+import {objectiveHistory} from './objective.mjs';
 import {MEMORY_VERSIONS_KEPT} from './constants.mjs';
 
 /**
@@ -340,6 +341,7 @@ export function buildViewerMemoryView(db, {broadcasterId, viewerId, now = Date.n
     facts: publicFacts,
     groups: groupForView(publicFacts),
     evidence: evidenceSummary(publicFacts),
+    objective: objectiveHistory(db, {broadcasterId, viewerId, limit: 10}),
     versions: versions.map((version) => ({
       id: version.id,
       version: version.version,

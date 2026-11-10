@@ -21,6 +21,7 @@ function mapJob(row) {
     batchTotal: Number(row.batch_total ?? 1),
     maxMessages: Number(row.max_messages ?? 0),
     totalMessages: Number(row.total_messages ?? 0),
+    memoryViewersTotal: Number(row.memory_viewers_total ?? 0),
     legacy: row.legacy === 1,
     aggregatePackageId: row.aggregate_package_id ?? null,
     aggregateTaskId: row.aggregate_task_id ?? null,
@@ -61,6 +62,7 @@ export function insertJob(db, {
   batchTotal = 1,
   maxMessages = 1000,
   totalMessages = 0,
+  memoryViewersTotal = 0,
   legacy = false,
   aggregateTaskId = null,
   createdAt = Date.now()
@@ -68,9 +70,9 @@ export function insertJob(db, {
   db.prepare(`
     INSERT INTO ai_jobs (
       id, session_id, broadcaster_id, kind, locale, prompt_version, protocol_version,
-      batch_total, max_messages, total_messages, legacy, aggregate_task_id,
+      batch_total, max_messages, total_messages, memory_viewers_total, legacy, aggregate_task_id,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     String(id),
     String(sessionId),
@@ -82,6 +84,7 @@ export function insertJob(db, {
     Number(batchTotal),
     Number(maxMessages),
     Number(totalMessages),
+    Number(memoryViewersTotal),
     legacy ? 1 : 0,
     aggregateTaskId === null || aggregateTaskId === undefined ? null : String(aggregateTaskId),
     Number(createdAt),
@@ -270,4 +273,137 @@ export function setPackageJob(db, packageId, {
   );
 }
 
-export const __internal = {mapJob, mapBatch};
+/* --------------------------------------------------- unified memory coverage */
+
+function mapMemoryViewer(row) {
+  if (!row) return null;
+  return {
+    jobId: row.job_id,
+    viewerId: row.viewer_id,
+    batchIndex: Number(row.batch_index),
+    baseMemoryId: row.base_memory_id ?? null,
+    baseVersion: Number(row.base_version ?? 0),
+    messageCount: Number(row.message_count ?? 0),
+    status: row.status,
+    resultId: row.result_id ?? null,
+    processedAt: row.processed_at ?? null
+  };
+}
+
+export function insertJobMemoryViewers(db, jobId, entries) {
+  const statement = db.prepare(`
+    INSERT INTO ai_job_memory_viewers (
+      job_id, viewer_id, batch_index, base_memory_id, base_version, message_count, status
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending')
+  `);
+  for (const entry of entries) {
+    statement.run(
+      String(jobId),
+      String(entry.viewerId),
+      Number(entry.batchIndex),
+      entry.baseMemoryId === null || entry.baseMemoryId === undefined ? null : String(entry.baseMemoryId),
+      Number(entry.baseVersion ?? 0),
+      Number(entry.messageCount ?? 0)
+    );
+  }
+}
+
+export function insertJobMemoryMessages(db, jobId, batchIndex, entries) {
+  const statement = db.prepare(`
+    INSERT INTO ai_job_memory_messages (job_id, batch_index, seq, viewer_id, event_id)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const entry of entries) {
+    statement.run(
+      String(jobId),
+      Number(batchIndex),
+      Number(entry.seq),
+      String(entry.viewerId),
+      Number(entry.eventId)
+    );
+  }
+}
+
+export function getJobMemoryViewer(db, jobId, viewerId) {
+  return mapMemoryViewer(db.prepare(`
+    SELECT * FROM ai_job_memory_viewers WHERE job_id = ? AND viewer_id = ?
+  `).get(String(jobId), String(viewerId)));
+}
+
+export function listJobMemoryViewers(db, jobId, {batchIndex = null} = {}) {
+  const rows = batchIndex === null
+    ? db.prepare(`
+        SELECT * FROM ai_job_memory_viewers WHERE job_id = ? ORDER BY batch_index ASC, viewer_id ASC
+      `).all(String(jobId))
+    : db.prepare(`
+        SELECT * FROM ai_job_memory_viewers
+         WHERE job_id = ? AND batch_index = ? ORDER BY viewer_id ASC
+      `).all(String(jobId), Number(batchIndex));
+  return rows.map(mapMemoryViewer);
+}
+
+export function getJobMemoryMessage(db, jobId, batchIndex, seq) {
+  const row = db.prepare(`
+    SELECT viewer_id, event_id FROM ai_job_memory_messages
+     WHERE job_id = ? AND batch_index = ? AND seq = ?
+  `).get(String(jobId), Number(batchIndex), Number(seq));
+  return row ? {viewerId: row.viewer_id, eventId: Number(row.event_id)} : null;
+}
+
+export function countJobMemoryMessages(db, jobId, batchIndex) {
+  return Number(db.prepare(`
+    SELECT COUNT(*) AS count FROM ai_job_memory_messages WHERE job_id = ? AND batch_index = ?
+  `).get(String(jobId), Number(batchIndex))?.count ?? 0);
+}
+
+export function setJobMemoryViewerStatus(db, jobId, viewerId, {
+  status,
+  resultId = null,
+  processedAt = Date.now()
+}) {
+  db.prepare(`
+    UPDATE ai_job_memory_viewers
+       SET status = ?, result_id = ?, processed_at = ?
+     WHERE job_id = ? AND viewer_id = ?
+  `).run(
+    String(status),
+    resultId === null || resultId === undefined ? null : String(resultId),
+    Number(processedAt),
+    String(jobId),
+    String(viewerId)
+  );
+}
+
+/**
+ * Coverage of one job, computed from real rows. `pending` means the batch that
+ * owns the viewer has not been imported yet; it is not "skipped".
+ */
+export function jobMemoryCoverage(db, jobId) {
+  const rows = db.prepare(`
+    SELECT status, COUNT(*) AS count
+      FROM ai_job_memory_viewers
+     WHERE job_id = ?
+     GROUP BY status
+  `).all(String(jobId));
+  const counts = {
+    total: 0,
+    pending: 0,
+    semantic: 0,
+    no_semantics: 0,
+    objective_only: 0,
+    missing_update: 0,
+    deleted: 0
+  };
+  for (const row of rows) {
+    const key = String(row.status ?? 'pending');
+    counts[key] = Number(row.count ?? 0);
+    counts.total += Number(row.count ?? 0);
+  }
+  return {
+    ...counts,
+    covered: counts.total - counts.pending - counts.missing_update,
+    complete: counts.total > 0 && counts.pending === 0 && counts.missing_update === 0
+  };
+}
+
+export const __internal = {mapJob, mapBatch, mapMemoryViewer};

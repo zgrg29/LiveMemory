@@ -11,10 +11,19 @@ export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
 export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 
 /** Revision of the result schema. 1.0.0 results (no schema_version) still validate. */
-export const RESULT_SCHEMA_VERSION = '1.1.0';
-export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0']);
+export const RESULT_SCHEMA_VERSION = '1.2.0';
+export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0']);
 
-export const PROMPT_VERSION = 'lm-prompt-m6.1';
+export const PROMPT_VERSION = 'lm-prompt-m6.2';
+
+/**
+ * Unified analysis + memory batching. A viewer is assigned to exactly one
+ * analysis batch; that batch contains all of the viewer's session messages as
+ * excerpts, so a long-term memory answer is never split across two batches.
+ */
+export const MEMORY_VIEWERS_PER_BATCH = 200;
+export const MAX_MEMORY_EXCERPT_MESSAGES = 3000;
+export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
 
 export const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
 
@@ -30,6 +39,7 @@ export const MAX_BATCH_MESSAGES = 5000;
 /** Hard limits that protect memory and the SQLite store from hostile input. */
 export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 export const MAX_ANALYSIS_MESSAGES = 50000;
+export const MAX_ANALYSIS_VIEWERS = 20000;
 export const MAX_REPORT_EVIDENCE = 400;
 
 export const TASK_KIND = Object.freeze({

@@ -1,5 +1,53 @@
 # 版本变化（CHANGELOG）
 
+## 0.11.0 — 2026-11-10（长期记忆与 AI 分析中心一体化）
+
+### 新增
+
+- **一次 AI 分析、一次导入同时完成本场报告与长期记忆**：分析包新增
+  `memory_context.json` 与 `viewer_excerpts.jsonl`；结果 Schema **1.2.0** 新增
+  `viewer_memory_updates`。导入在同一 SQLite 事务中保存分析结果、确保客观互动历史、
+  增量合并语义记忆并更新覆盖状态。
+- **全部可识别观众覆盖**：取消最低发言次数、最低活跃度、Top N 与“证据不足就省略”的长期记忆门槛。
+  每场只有一句话、只有礼物/SC、没有新语义信息的观众都会进入处理范围；无新语义时明确标记为
+  `no_semantics`，而不是跳过。
+- **观众只分配一个批次**：每个观众的本场全部可用发言（最近 120 条）随其唯一记忆批次导出；
+  观众数与消息数共同决定批次数量，批次上限 200 人 / 3000 条摘录，溢出会分配到其他批次，不静默丢弃。
+- **已有画像进入上下文**：`memory_context.json` 提供每位观众现有摘要、事实、版本；AI 可 add /
+  confirm / update / supersede / conflict / outdated / uncertain，证据 seq 必须属于同一观众。
+- **客观历史与语义记忆分离**：首次/最近出现、场次、发言数、支持由真实记录确定性更新，
+  AI 不能输出或修改；删除的记忆不会被旧包恢复。
+- **覆盖预览与状态**：`ai_jobs.memory_viewers_total`、`ai_job_memory_viewers`、
+  `ai_job_memory_messages`（schema 12）；导入预览显示已覆盖/新语义/无新语义/仅客观/缺失；
+  任务状态增加 `memoryCoverage` / `memoryReady`。
+- **移除独立长期记忆工作流**：删除 `#/memory` 页面与导航，旧书签进入 AI 分析中心；
+  观众详情长期记忆标签保留，并新增客观互动历史卡（首次/最近、场次、发言、支持、最近场次）。
+- **三语**：`ai.import.memory*`、`ai.jobs.memoryCoverage`、`memory.objective.*`、
+  `memory.noSemantic*` 与新的记忆错误原因/修复建议。
+
+### 修复
+
+- 修复长期记忆只更新少数观众的问题：旧实现只合并 AI 返回的 `viewer_profiles`，
+  而旧提示词明确要求“证据不足的观众请省略”；现在每位可识别观众都有独立记忆条目与覆盖状态，
+  语义为空也仍更新客观历史。
+- 修复 `viewer_profiles` 的 Top N/证据门槛导致的低活跃观众遗漏；长期记忆不再依赖该数组。
+- 修复同一观众消息被拆到多个批次时画像无法汇总：观众只属于一个记忆批次，全部摘录随行。
+- 修复旧结果缺少 `viewer_memory_updates` 时任务永远无法完成：旧 1.0/1.1 结果按
+  `objective_only` 覆盖并允许任务完成。
+
+### 测试
+
+- 新增 `tests/integration/unified-analysis-memory.test.mjs`：五场每场一句话、普通问候、
+  单条有效信息、300 位低活跃观众、跨批次/乱序/重复导入、缺少观众更新被拒绝。
+- 全量 `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+  结果见 `docs/STATUS.md`。
+
+### 未完成
+
+- 真实 AI 返回统一 `viewer_memory_updates` 的样本；数千观众真实大场性能；
+- 真实浏览器 UI 验收与截图（本机策略仍阻止）；
+- 打包 EXE 运行验收。
+
 ## 0.10.0 — 2026-11-10（自动直播监听与持久化 Tab）
 
 ### 新增

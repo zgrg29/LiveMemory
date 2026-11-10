@@ -59,6 +59,7 @@ function kindLabel(kind, t) {
 function sourceLabel(fact, t) {
   if (fact.sourceKind === 'ai_memory_update') return t('memory.sourceAi');
   if (fact.sourceKind === 'session_result') return t('memory.sourceSessionResult');
+  if (fact.sourceKind === 'session_analysis_result') return t('memory.sourceAnalysisResult');
   if (fact.sourceKind === 'rollback') return t('memory.sourceRollback');
   return t('memory.sourceManual');
 }
@@ -312,19 +313,78 @@ function memoryHeader(view, ctx, {viewerId, broadcasterId, reload}) {
     el('div', {className: 'inline'}, deleteButton));
 }
 
+function objectiveCard(view, ctx) {
+  const t = ctx.t;
+  const objective = view.objective;
+  if (!objective) return null;
+  const viewer = objective.viewer ?? {};
+  const broadcaster = objective.broadcasterContext ?? null;
+  const sessions = objective.recentSessions ?? [];
+  const rows = [
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('memory.objective.firstSeen')}),
+      el('span', {className: 'def-value', text: formatDateTime(broadcaster?.firstSeenAt ?? viewer.firstSeenAt, ctx.locale)})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('memory.objective.lastSeen')}),
+      el('span', {className: 'def-value', text: formatDateTime(broadcaster?.lastSeenAt ?? viewer.lastSeenAt, ctx.locale)})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('memory.objective.sessions')}),
+      el('span', {className: 'def-value', text: formatInteger(
+        broadcaster?.sessionCount ?? viewer.sessionCount ?? 0,
+        ctx.locale
+      )})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('memory.objective.messages')}),
+      el('span', {className: 'def-value', text: formatInteger(
+        broadcaster?.messageCount ?? viewer.messageCount ?? 0,
+        ctx.locale
+      )})),
+    el('div', {className: 'def-row'},
+      el('span', {className: 'def-key', text: t('memory.objective.payments')}),
+      el('span', {className: 'def-value', text: formatInteger(
+        broadcaster?.paymentEventCount ?? viewer.paymentEventCount ?? 0,
+        ctx.locale
+      )}))
+  ];
+  return el('section', {className: 'card'},
+    el('div', {className: 'card-head'},
+      el('div', {className: 'card-title', text: t('memory.objective.title')}),
+      el('div', {className: 'card-hint', text: t('memory.objective.hint')})),
+    el('div', {className: 'card-body'},
+      el('div', {className: 'def-list'}, rows),
+      el('div', {className: 'memory-objective-sessions'},
+        el('div', {className: 'small tertiary', text: t('memory.objective.recent')}),
+        sessions.length > 0
+          ? sessions.map((session) => el('button', {
+            className: 'memory-objective-session',
+            type: 'button',
+            onClick: () => ctx.navigate(`/history/${encodeURIComponent(session.sessionId)}`)
+          },
+          el('span', {className: 'row-title-text', text: session.roomTitle || t('memory.objective.untitled')}),
+          el('span', {className: 'small tertiary', text: `${formatDateTime(session.lastSeenAt ?? session.startedAt, ctx.locale)} · ${formatInteger(session.messageCount, ctx.locale)}`})))
+          : el('div', {className: 'small tertiary', text: t('memory.objective.noSessions')}))));
+}
+
 /** Render the "long-term memory" tab into `host`. */
 export function renderMemoryTab({ctx, host, view, viewerId, broadcasterId, reload}) {
   const t = ctx.t;
   host.replaceChildren();
   const memory = view.memory;
   if (!memory || memory.status === 'deleted') {
+    if (view.objective) host.append(objectiveCard(view, ctx));
     host.append(el('section', {className: 'card'},
       el('div', {className: 'card-body'},
-        emptyState({title: t('memory.noMemory'), body: t('memory.noMemoryBody'), glyph: '◇'}))));
+        emptyState({
+          title: memory?.status === 'deleted' ? t('memory.deleted') : t('memory.noMemory'),
+          body: memory?.status === 'deleted' ? t('memory.noMemoryBody') : t('memory.noSemanticBody'),
+          glyph: '◇'
+        }))));
     return;
   }
   const groups = groupFacts(view);
   host.append(memoryHeader(view, ctx, {viewerId, broadcasterId, reload}));
+  const objective = objectiveCard(view, ctx);
+  if (objective) host.append(objective);
   const sections = [
     groupSection(t('memory.groupAttention'), groups.attention, ctx, {viewerId, broadcasterId, reload}),
     groupSection(t('memory.groupConflicts'), groups.conflicts, ctx, {viewerId, broadcasterId, reload}),
@@ -335,8 +395,10 @@ export function renderMemoryTab({ctx, host, view, viewerId, broadcasterId, reloa
   ].filter(Boolean);
   if (sections.length === 0) {
     host.append(el('section', {className: 'card'},
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('memory.noSemanticTitle')})),
       el('div', {className: 'card-body'},
-        emptyState({title: t('memory.noMemory'), body: t('memory.noMemoryBody'), glyph: '◇'}))));
+        el('p', {className: 'small tertiary', text: t('memory.noSemanticBody')}))));
     return;
   }
   host.append(el('div', {className: 'memory-groups'}, sections));
@@ -451,7 +513,7 @@ export function renderVersionsTab({ctx, host, view, viewerId, broadcasterId, rel
 export function renderMemorySummaryCard({ctx, view, onOpen}) {
   const t = ctx.t;
   const memory = view.memory;
-  if (!memory || memory.status === 'deleted' || (view.facts ?? []).length === 0) {
+  if (!memory || memory.status === 'deleted') {
     return el('section', {className: 'card'},
       el('div', {className: 'card-head'},
         el('div', {className: 'card-title', text: t('memory.pageTitle')})),
@@ -473,7 +535,12 @@ export function renderMemorySummaryCard({ctx, view, onOpen}) {
     el('div', {className: 'card-body'},
       memory.summary
         ? el('div', {className: 'small', text: memory.summary})
-        : el('div', {className: 'small tertiary', text: t('memory.nothingHere')}),
+        : el('div', {className: 'small tertiary', text: t((view.facts ?? []).length === 0
+          ? 'memory.noSemanticBody'
+          : 'memory.nothingHere')}),
+      (view.facts ?? []).length === 0
+        ? el('div', {className: 'small tertiary', style: {marginTop: '8px'}, text: t('memory.noSemanticTitle')})
+        : null,
       el('div', {className: 'inline', style: {marginTop: '12px'}},
         chip(`${t('memory.groupConfirmed')} ${formatInteger((groups.confirmed ?? []).length, ctx.locale)}`, 'accent'),
         chip(`${t('memory.groupInferred')} ${formatInteger((groups.inferred ?? []).length, ctx.locale)}`, 'neutral'),

@@ -26,7 +26,6 @@ function valueAt(object, key) {
 
 const LOCALES = ['zh-CN', 'ja', 'en'];
 const PAGE_FILES = [
-  'src/web/js/pages/memory.js',
   'src/web/js/pages/viewer-memory.js',
   'src/web/js/pages/viewers.js'
 ];
@@ -75,13 +74,15 @@ test('the memory page and panels never inject HTML', () => {
   }
 });
 
-test('the memory page is registered in the shell with a navigation entry', () => {
+test('the standalone memory workspace is removed and old links land on AI analysis', () => {
   const app = read('src/web/js/app.js');
-  assert.match(app, /memoryPage/);
-  assert.match(app, /path: '\/memory'|pattern: \/\^\\\/memory\$\//);
+  assert.doesNotMatch(app, /memoryPage/);
+  assert.match(app, /pattern: \/\^\\\/memory\$\//);
+  assert.match(app, /page: aiPage/);
   const html = read('src/web/index.html');
-  assert.match(html, /data-nav="memory"/);
-  assert.match(html, /href="#\/memory"/);
+  assert.doesNotMatch(html, /data-nav="memory"/);
+  assert.doesNotMatch(html, /href="#\/memory"/);
+  assert.match(html, /data-nav="ai"/);
 });
 
 test('the memory page has an icon style in the navigation', () => {

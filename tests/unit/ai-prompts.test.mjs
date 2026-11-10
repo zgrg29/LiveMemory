@@ -52,11 +52,12 @@ test('all three prompt languages carry the same batch, aggregate and provenance 
     assert.match(batch, /aij_test-b01/);
     assert.match(batch, /ses_test-analysis-b01/);
     assert.match(batch, /schema_version/);
-    assert.match(batch, /1\.1\.0/);
+    assert.match(batch, /1\.2\.0/);
     assert.match(batch, /message_refs/);
     assert.match(batch, /observed/);
     assert.match(batch, /inferred/);
     assert.match(batch, /viewer_profiles/);
+    assert.match(batch, /viewer_memory_updates/);
     assert.match(batch, /confidence/);
     assert.match(batch, /500/);
     // Language-specific headings must not be mixed.
@@ -77,17 +78,17 @@ test('all three prompt languages carry the same batch, aggregate and provenance 
     assert.match(aggregate, /ses_test-analysis-final/);
     assert.match(aggregate, /\{.?batch.?/i);
     assert.match(aggregate, /seq/);
-    assert.match(aggregate, /1\.1\.0/);
+    assert.match(aggregate, /1\.2\.0/);
   }
 });
 
 test('prompt versions are explicit, stable per locale and recorded on jobs', async () => {
-  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.1');
+  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.2');
   for (const locale of LOCALES) {
-    assert.equal(promptVersionFor(locale), `lm-prompt-m6.1-${locale}`);
+    assert.equal(promptVersionFor(locale), `lm-prompt-m6.2-${locale}`);
     assert.equal(instructionVersion(locale), promptVersionFor(locale));
   }
-  assert.equal(promptVersionFor('fr'), 'lm-prompt-m6.1-en');
+  assert.equal(promptVersionFor('fr'), 'lm-prompt-m6.2-en');
 
   const temp = createTempDir();
   const db = openMemoryDb();
@@ -95,9 +96,9 @@ test('prompt versions are explicit, stable per locale and recorded on jobs', asy
   const session = seedSession(db, {messageCount: 3});
   const exportsDir = join(temp.dir, 'exports');
   const job = await createAnalysisJob({db, sessionId: session.id, locale: 'ja', exportsDir, batchSize: 1000, now: T0 + 10_000});
-  assert.equal(job.job.promptVersion, 'lm-prompt-m6.1-ja');
+  assert.equal(job.job.promptVersion, 'lm-prompt-m6.2-ja');
   const packageData = readBatchPackage(exportsDir, job.packages[0]);
-  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.1-ja');
+  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.2-ja');
   assert.equal(packageData.manifest.schema_version, RESULT_SCHEMA_VERSION);
   closeDatabase(db);
   temp.cleanup();

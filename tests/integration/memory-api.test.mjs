@@ -44,7 +44,7 @@ test('HTTP long-term memory workflow', async (t) => {
     assert.equal(status.payload.memory.enabled, true);
     assert.equal(status.payload.memory.protocol, 'livememory-memory-update-v1');
     assert.equal(status.payload.memory.schemaVersion, '1.0.0');
-    assert.equal(status.payload.database.schemaVersion, 11);
+    assert.equal(status.payload.database.schemaVersion, 12);
 
     const overview = await jsonRequest(`${base}api/memory/overview?broadcasterId=${encodeURIComponent(broadcasterId)}`);
     assert.equal(overview.status, 200);

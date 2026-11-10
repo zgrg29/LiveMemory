@@ -6,8 +6,11 @@ import {
   getJob,
   insertJob,
   insertJobBatch,
+  insertJobMemoryViewers,
   insertJobMessages,
   insertJobViewers,
+  setJobMemoryViewerStatus,
+  listJobMemoryViewers,
   recordJobFailure
 } from '../../storage/repositories/ai-jobs.mjs';
 import {
@@ -22,6 +25,10 @@ import {listJobs} from '../../storage/repositories/ai-jobs.mjs';
 import {promptVersionFor} from '../constants.mjs';
 import {computeJobStatus, recomputeSessionAiStatus} from '../tasks/status.mjs';
 import {checksumOf, validateAnalysisImport} from './validate.mjs';
+import {ensureObjectiveMemory} from '../../memory/objective.mjs';
+import {applyMemoryOperations} from '../../memory/store.mjs';
+import {applyEmbeddedMemoryUpdates} from '../../memory/embedded.mjs';
+import {listSessionViewers} from '../../storage/repositories/viewers.mjs';
 
 /**
  * Persist one validated AI result.
@@ -125,6 +132,13 @@ export function importAnalysisResult({
       importedAt: now
     });
     insertEvidence(db, resultId, validation.evidenceRows);
+    applyMemorySideEffects({
+      db,
+      job,
+      validation,
+      resultId,
+      now
+    });
     clearJobFailure(db, job.id, {now});
     recomputeSessionAiStatus(db, job.sessionId, {setSessionAiStatus, listJobs, now});
     return {duplicate: false, result: getResult(db, resultId, {includeJson: true})};
@@ -137,6 +151,73 @@ export function importAnalysisResult({
     job: getJob(db, job.id),
     status: computeJobStatus(db, getJob(db, job.id))
   };
+}
+
+/**
+ * Apply the long-term-memory half of an analysis import.
+ *
+ * Objective interaction history is deterministic and is ensured for every
+ * session viewer, even when a legacy result carries no semantic memory update.
+ * Semantic operations are only applied for viewers assigned to this batch.
+ * The caller already owns the transaction: any throw rolls back both the report
+ * and every memory change.
+ */
+function applyMemorySideEffects({db, job, validation, resultId, now}) {
+  const session = validation.session;
+  const broadcasterId = job.broadcasterId ?? session?.broadcaster_id ?? null;
+  if (!session || !broadcasterId) return;
+  if (validation.memory) {
+    const outcomes = applyEmbeddedMemoryUpdates({
+      db,
+      job,
+      session,
+      validation: validation.memory,
+      resultId,
+      now,
+      ensureObjective: ({viewerId, sessionId, jobId}) => ensureObjectiveMemory({
+        db,
+        broadcasterId,
+        viewerId,
+        sessionId,
+        jobId,
+        now
+      }),
+      applyOperations: ({viewerId, operations, summary, summaryCertainty, source, sourceKey}) => applyMemoryOperations({
+        db,
+        broadcasterId,
+        viewerId,
+        operations,
+        summary,
+        summaryCertainty,
+        source,
+        sourceKey,
+        now,
+        transaction: false
+      })
+    });
+    for (const outcome of outcomes) {
+      setJobMemoryViewerStatus(db, job.id, outcome.viewerId, {
+        status: outcome.status,
+        resultId,
+        processedAt: now
+      });
+    }
+  }
+
+  // Objective history exists independently of AI. It covers gift-only viewers
+  // and viewers whose messages were in another batch; it never touches the
+  // semantic version.
+  for (const viewer of listSessionViewers(db, session.id, {limit: 20000})) {
+    if (!viewer.viewer_id) continue;
+    ensureObjectiveMemory({
+      db,
+      broadcasterId,
+      viewerId: viewer.viewer_id,
+      sessionId: session.id,
+      jobId: job.id,
+      now
+    });
+  }
 }
 
 /**

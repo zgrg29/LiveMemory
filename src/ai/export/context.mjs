@@ -1,5 +1,6 @@
 import {broadcasterSupportByViewerIds, broadcasterViewerContexts} from '../../storage/repositories/broadcasters.mjs';
 import {viewerCurrencyTotals} from '../../storage/repositories/viewers.mjs';
+import {getMemory, listFacts} from '../../storage/repositories/viewer-memory.mjs';
 import {groupCurrencyTotals} from '../../analytics/payments/totals.mjs';
 import {buildAiReadableContent, emoteKey} from '../../shared/emoticons.mjs';
 import {isoFromEpochMs} from '../../shared/time.mjs';
@@ -84,6 +85,36 @@ export function buildMessageLines({messages, session, locale}) {
 }
 
 /**
+ * Existing long-term memory for one viewer, in the same shape the memory UI
+ * reads. No raw messages are included; the viewer's current broadcast excerpts
+ * are the only new evidence source.
+ */
+export function buildMemoryPayload(db, {broadcasterId, viewerId}) {
+  const memory = broadcasterId ? getMemory(db, {broadcasterId, viewerId}) : null;
+  const facts = memory && memory.status === 'active' ? listFacts(db, memory.id, {limit: 200}) : [];
+  return {
+    status: memory?.status ?? 'none',
+    version: memory?.version ?? 0,
+    summary: memory?.summary ?? null,
+    summary_certainty: memory?.summaryCertainty ?? null,
+    first_memory_at: memory?.firstMemoryAt ? isoFromEpochMs(memory.firstMemoryAt) : null,
+    last_update_at: memory?.lastUpdateAt ? isoFromEpochMs(memory.lastUpdateAt) : null,
+    facts: facts.map((fact) => ({
+      id: fact.id,
+      kind: fact.kind,
+      topic: fact.topic,
+      statement: fact.statement,
+      certainty: fact.certainty,
+      status: fact.status,
+      confidence: fact.confidence,
+      user_verified: Boolean(fact.userVerified),
+      first_seen_at: fact.firstSeenAt ? isoFromEpochMs(fact.firstSeenAt) : null,
+      last_confirmed_at: fact.lastConfirmedAt ? isoFromEpochMs(fact.lastConfirmedAt) : null
+    }))
+  };
+}
+
+/**
  * Viewer context for the given viewer rows. Only the current broadcaster's
  * relationship is exported; the global lifetime is explicitly labelled.
  */
@@ -129,7 +160,10 @@ export function buildViewerContextList({db, viewers, broadcasterId}) {
         payment_event_count: Number(viewer.session_payment_event_count ?? 0),
         first_seen_at: isoFromEpochMs(viewer.session_first_seen_at),
         last_seen_at: isoFromEpochMs(viewer.session_last_seen_at)
-      }
+      },
+      // Existing long-term memory for this broadcaster only. `none` means this
+      // viewer has never been processed, not that the viewer is unimportant.
+      memory: buildMemoryPayload(db, {broadcasterId, viewerId: viewer.viewer_id})
     };
   });
 }

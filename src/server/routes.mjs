@@ -1083,6 +1083,13 @@ export function buildRoutes() {
               httpStatus: 413
             });
           }
+          if (error?.code === 'ANALYSIS_TOO_MANY_VIEWERS') {
+            throw new AppError('AI_ANALYSIS_TOO_MANY_VIEWERS', {
+              messageKey: 'errors.aiAnalysisTooManyViewers',
+              details: {totalViewers: error.totalViewers, limit: error.limit},
+              httpStatus: 413
+            });
+          }
           if (error?.code === 'ANALYSIS_SESSION_CHANGED') {
             throw new AppError('AI_SESSION_CHANGED', {
               messageKey: 'errors.aiSessionChanged',
@@ -1232,6 +1239,15 @@ export function buildRoutes() {
             }
             : null,
           viewerProfiles: preview.sanitized?.viewer_profiles?.length ?? 0,
+          memory: preview.memory
+            ? {
+              coverage: preview.memory.coverage,
+              totals: preview.memory.totals,
+              viewerCount: preview.memory.viewers.length,
+              legacy: preview.memory.legacy,
+              plan: preview.memory.plan
+            }
+            : null,
           schemaVersion: RESULT_SCHEMA_VERSION
         });
       }

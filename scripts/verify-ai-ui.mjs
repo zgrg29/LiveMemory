@@ -254,7 +254,7 @@ record('a completed task opens the AI report with summary, topics, sentiment and
     lastError: view.lastError
   });
 record('the report clearly separates AI output and shows prompt/schema provenance',
-  view.provenance.includes('lm-prompt-m6.1-zh-CN')
+  view.provenance.includes('lm-prompt-m6.2-zh-CN')
     && view.provenance.includes('1.1.0'), {provenance: view.provenance.slice(0, 160)});
 record('the completed task shows a complete status and an aggregate prompt option',
   view.statusChips.includes('Complete') && view.promptOptions.some((option) => option.includes('Aggregate')), {

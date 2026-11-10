@@ -1417,3 +1417,39 @@
     font-size: 13px;
   }
 }
+
+/* ------------------------------------- objective interaction history */
+
+.memory-objective-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-4);
+}
+
+.memory-objective-session {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.memory-objective-session:hover {
+  background: var(--surface-hover);
+}
+
+@media (max-width: 700px) {
+  .memory-objective-session {
+    flex-direction: column;
+    gap: 3px;
+  }
+}

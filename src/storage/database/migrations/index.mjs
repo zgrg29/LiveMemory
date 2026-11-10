@@ -791,6 +791,64 @@ export const MIGRATIONS = Object.freeze([
           ON sessions (monitor_target_id, started_at DESC);
       `);
     }
+  },
+  {
+    version: 12,
+    name: 'unified-analysis-memory-coverage',
+    up(db) {
+      // One AI analysis task now updates the session report and long-term
+      // viewer memory together. These tables record, per job, exactly which
+      // viewer was assigned to which analysis batch, which stable status that
+      // viewer reached, and the seq -> event mapping for the viewer excerpts.
+      //
+      // They deliberately reference `ai_jobs`/`ai_job_batches`, not a second
+      // memory job: a removal of the analysis job also removes its coverage.
+      db.exec(`
+        ALTER TABLE ai_jobs ADD COLUMN memory_viewers_total INTEGER NOT NULL DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS ai_job_memory_viewers (
+          job_id TEXT NOT NULL,
+          viewer_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          base_memory_id TEXT,
+          base_version INTEGER NOT NULL DEFAULT 0,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          result_id TEXT,
+          processed_at INTEGER,
+          PRIMARY KEY (job_id, viewer_id),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES ai_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_job_memory_viewers_batch
+          ON ai_job_memory_viewers (job_id, batch_index, status);
+        CREATE INDEX IF NOT EXISTS idx_ai_job_memory_viewers_viewer
+          ON ai_job_memory_viewers (viewer_id, processed_at DESC);
+
+        -- Memory evidence uses a seq local to the viewer excerpts in one batch.
+        -- The viewer_id column lets validation prove that a cited message was
+        -- actually written by the viewer whose memory is being changed.
+        CREATE TABLE IF NOT EXISTS ai_job_memory_messages (
+          job_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          seq INTEGER NOT NULL,
+          viewer_id TEXT NOT NULL,
+          event_id INTEGER NOT NULL,
+          PRIMARY KEY (job_id, batch_index, seq),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES ai_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_job_memory_messages_event
+          ON ai_job_memory_messages (job_id, event_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_job_memory_messages_viewer
+          ON ai_job_memory_messages (job_id, viewer_id);
+
+        -- Existing imported results keep working: their memory coverage is
+        -- derived lazily from ai_job_viewers (objective update only).
+      `);
+    }
   }
 ]);
 

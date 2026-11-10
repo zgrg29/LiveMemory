@@ -1,4 +1,4 @@
-﻿# 测试计划与结果（TEST_PLAN）
+# 测试计划与结果（TEST_PLAN）
 
 ## 1. 策略
 
@@ -598,3 +598,44 @@ duration ≈ 25.0s
 | 打包 EXE | 结果见 `docs/STATUS.md`（本轮实测） |
 
 > 自动监听没有下载视频/音频；网络测试只使用本地假网页或固定 fixture，真实 YouTube 仅 1 个频道、共约 5 次只读请求。
+
+## 22. 统一分析与长期记忆（P8 / v0.11.0）
+
+### 22.1 自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/integration/unified-analysis-memory.test.mjs` | A 五场每场一句话（客观场次/发言/最近时间、语义逐步积累、问候不生成兴趣）；B 普通问候（version 0、无事实、覆盖 no_semantics）；C 单条有效信息（stated + 证据 seq）；D 300 位低活跃观众（两批、全部覆盖、无 Top N、任务覆盖完成、300 个记忆头）；E 300 观众跨 6 批（每位只在一个记忆批次、全部摘录随行、乱序导入、重复导入幂等、部分覆盖）；缺少某观众更新 → `MEMORY_VIEWER_UPDATE_MISSING` 阻塞 |
+| `tests/integration/ai-batching.test.mjs` | 消息边界、seq→event 完整映射、乱序/缺失批次、汇总任务；仍全部通过 |
+| `tests/integration/ai-import.test.mjs` | 单批导入、证据、重复/新版本、回滚、旧包、清理；仍全部通过 |
+| `tests/integration/ai-api.test.mjs` | HTTP 任务/包/预览/导入/版本/汇总/报告；schema 1.2.0、memory 覆盖状态 |
+| `tests/integration/memory-local-merge.test.mjs` | 导入先建 version 0 客观头，再本地合并 version 1；原有 M7 规则 |
+| `tests/integration/memory-migration.test.mjs` | v9→v12；旧数据不变；新表；重复迁移 |
+| `tests/integration/monitoring-migration.test.mjs` | v10→v12；监听目标与统一记忆表共存 |
+| `tests/unit/ai-prompts.test.mjs` | 三语提示词含 batch/aggregate/memory 规则、`viewer_memory_updates`、schema 1.2.0、prompt m6.2 |
+| `tests/unit/memory-ui.test.mjs` | 独立记忆页已移除、旧链接进入 AI 分析；观众面板禁止 innerHTML；tokens |
+| `tests/unit/i18n.test.mjs` | 三语键/占位符一致（含新增 memory 预览/客观历史/错误原因） |
+
+### 22.2 关键验收对应
+
+| 任务要求 | 结果 |
+| --- | --- |
+| 一次导出/一次 AI/一次导入 | ✅ 同一 result 内 `session_topics` + `viewer_memory_updates`；测试 A/C |
+| 所有可识别观众 | ✅ 300 位低活跃观众全部覆盖；无 Top N/最低发言 |
+| 低频观众跨场积累 | ✅ 五场一句话：场次 5、发言 5、语义事实逐步增加 |
+| 只有礼物/SC | ✅ 客观历史接口与覆盖路径；真实平台礼物样本未做 |
+| 已有画像进入上下文 | ✅ `memory_context.viewers[].memory`，单测/流程覆盖 |
+| 分批不拆散观众 | ✅ 每位观众一个记忆批次、全部摘录随行 |
+| 缺少观众更新 | ✅ 阻塞导入并给出路径 |
+| 重复导入 | ✅ duplicate，不重复写入/覆盖状态不变 |
+| 独立工作流移除 | ✅ 页面/导航/文件删除；旧链接到 AI 中心 |
+| 真实 AI 返回统一 JSON | ⬜ **未执行**（只有合成样本） |
+| 真实浏览器 UI | ⬜ **未执行**（本机策略阻止） |
+| 打包 EXE | ⬜ 构建结果见 STATUS，运行验收未完成 |
+
+### 22.3 未验证边界
+
+- 真实 AI 是否稳定为每位观众返回条目、是否正确引用 viewer_excerpts seq；
+- 数千观众真实大场的内存/包大小/导入耗时；
+- 真实浏览器渲染、暗色、390px；
+- 旧 M7 任务数据在真实用户库中的只读查看（自动化只覆盖表结构）。

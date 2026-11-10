@@ -1,4 +1,4 @@
-import {getJobBatch, listJobBatches} from '../../storage/repositories/ai-jobs.mjs';
+import {getJobBatch, jobMemoryCoverage, listJobBatches} from '../../storage/repositories/ai-jobs.mjs';
 import {listResults} from '../../storage/repositories/ai-results.mjs';
 
 /**
@@ -29,12 +29,16 @@ export function computeJobStatus(db, job) {
   const aggregateRequired = job.batchTotal > 1;
   const aggregateImported = Boolean(finalResult);
   const aggregatePackageReady = Boolean(job.aggregatePackageId);
+  const memoryCoverage = jobMemoryCoverage(db, job.id);
+  const memoryReady = memoryCoverage.total === 0 || memoryCoverage.complete;
 
   let status;
-  if (finalResult) {
+  if (finalResult && memoryReady) {
+    status = 'complete';
+  } else if (job.batchTotal === 1 && importedBatches === 1 && memoryReady) {
     status = 'complete';
   } else if (job.batchTotal === 1) {
-    status = importedBatches === 1 ? 'complete' : (job.lastErrorAt ? 'invalid' : 'awaiting_import');
+    status = job.lastErrorAt ? 'invalid' : 'awaiting_import';
   } else if (missingBatches.length === 0) {
     status = 'awaiting_aggregate';
   } else if (importedBatches > 0) {
@@ -72,6 +76,9 @@ export function computeJobStatus(db, job) {
     aggregatePackageReady,
     totalMessages: job.totalMessages,
     maxMessages: job.maxMessages,
+    memoryViewersTotal: job.memoryViewersTotal,
+    memoryCoverage,
+    memoryReady,
     resultCount: results.length,
     versions,
     finalResult: finalResult

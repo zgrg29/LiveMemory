@@ -486,6 +486,15 @@ export const aiPage = {
                 job.legacy ? chip(t('ai.jobs.legacy'), 'neutral') : null),
               el('div', {className: 'job-meta'},
                 el('span', {text: coverageText(ctx, job)}),
+                status.memoryCoverage?.total > 0
+                  ? el('span', {
+                    className: status.memoryCoverage.complete ? '' : 'tertiary',
+                    text: t('ai.jobs.memoryCoverage', {
+                      covered: formatInteger(status.memoryCoverage.covered ?? 0, ctx.locale),
+                      total: formatInteger(status.memoryCoverage.total ?? 0, ctx.locale)
+                    })
+                  })
+                  : null,
                 el('span', {text: t('ai.jobs.prompt', {version: job.promptVersion})}),
                 el('span', {text: t('ai.jobs.versions', {versions: versionsText(status.versions)})}),
                 job.aggregateImported ? chip(t('ai.jobs.aggregateDone'), 'accent') : null)),
@@ -556,6 +565,30 @@ export const aiPage = {
           payload.ok ? chip(t(`ai.job.status.${action === 'duplicate' ? 'complete' : 'awaiting_import'}`), action === 'duplicate' ? 'accent' : 'warn') : chip(t('ai.job.status.invalid'), 'warn')),
         targetRows
       ];
+
+      if (payload.memory) {
+        const memory = payload.memory;
+        const coverage = memory.coverage ?? {};
+        const memoryRows = el('div', {className: 'def-list import-target'});
+        memoryRows.append(
+          defRow(t('ai.import.memoryViewers'), t('ai.import.memoryCoverageValue', {
+            covered: formatInteger(coverage.semantic + coverage.no_semantics, ctx.locale),
+            total: formatInteger(coverage.total ?? memory.viewerCount ?? 0, ctx.locale)
+          })),
+          defRow(t('ai.import.memorySemantic'), formatInteger(coverage.semantic ?? 0, ctx.locale)),
+          defRow(t('ai.import.memoryNoSemantic'), formatInteger(coverage.no_semantics ?? 0, ctx.locale)),
+          defRow(t('ai.import.memoryObjective'), formatInteger(coverage.objective_only ?? 0, ctx.locale)),
+          defRow(t('ai.import.memoryMissing'), formatInteger(coverage.missing_update ?? 0, ctx.locale)),
+          defRow(t('ai.import.memoryFacts'), formatInteger(memory.totals?.operations ?? 0, ctx.locale))
+        );
+        nodes.push(el('section', {className: 'card', style: {marginTop: '12px'}},
+          el('div', {className: 'card-head'},
+            el('div', {className: 'card-title', text: t('ai.import.memoryTitle')}),
+            el('div', {className: 'card-hint', text: t('ai.import.memoryHint')})),
+          el('div', {className: 'card-body'},
+            memoryRows,
+            el('p', {className: 'small tertiary', text: t('ai.import.memoryAuto')}))));
+      }
 
       if (target.legacy) {
         nodes.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '10px'}}, t('ai.import.legacyNotice')));
@@ -646,12 +679,19 @@ export const aiPage = {
         await refreshJobs();
         await refreshReport();
         if (!payload.duplicate && payload.result) {
+          const memoryCoverage = payload.job?.status?.memoryCoverage;
           previewHost.replaceChildren(el('div', {className: 'callout', style: {marginTop: '14px'}},
             el('div', {},
               el('div', {className: 'callout-title', text: t('ai.import.successTitle')}),
               el('div', {text: t('ai.import.successBody', {
                 version: formatInteger(payload.result.resultVersion, ctx.locale)
-              })}))));
+              })}),
+              memoryCoverage && Number(memoryCoverage.total) > 0
+                ? el('div', {className: 'small', text: t('ai.import.successMemory', {
+                  covered: formatInteger(memoryCoverage.covered ?? 0, ctx.locale),
+                  total: formatInteger(memoryCoverage.total ?? 0, ctx.locale)
+                })})
+                : null)));
           document.getElementById('ai-report')?.scrollIntoView({block: 'start'});
         } else {
           renderPreview();

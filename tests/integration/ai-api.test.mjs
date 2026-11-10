@@ -38,8 +38,8 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
   await t.test('status reports import support and the current schema', async () => {
     const {payload} = await jsonRequest(`${base}api/status`);
     assert.equal(payload.ai.import, true);
-    assert.equal(payload.ai.schemaVersion, '1.1.0');
-    assert.equal(payload.database.schemaVersion, 11);
+    assert.equal(payload.ai.schemaVersion, '1.2.0');
+    assert.equal(payload.database.schemaVersion, 12);
   });
 
   let job;
@@ -76,7 +76,7 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
     assert.equal(manifest.batch.index, 1);
 
     const instructions = await jsonRequest(`${base}api/ai/instructions?jobId=${encodeURIComponent(job.id)}&batchIndex=1`);
-    assert.equal(instructions.payload.promptVersion, 'lm-prompt-m6.1-en');
+    assert.equal(instructions.payload.promptVersion, 'lm-prompt-m6.2-en');
     assert.match(instructions.payload.text, /Batch analysis/);
     assert.match(instructions.payload.text, /schema_version/);
   });

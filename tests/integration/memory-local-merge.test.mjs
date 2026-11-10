@@ -45,8 +45,12 @@ test('the first merge creates memory version 1 from imported session analysis', 
   assert.equal(preview.apply, false);
   assert.equal(preview.totals.viewers, 2);
   assert.ok(preview.totals.added >= 2);
-  // A preview writes nothing at all.
-  assert.equal(getMemory(db, {broadcasterId: BROADCASTER, viewerId: VIEWER_0}), null);
+  // The analysis import creates an objective-only memory head (version 0);
+  // the deterministic merge is what adds semantic facts and version 1.
+  const before = getMemory(db, {broadcasterId: BROADCASTER, viewerId: VIEWER_0});
+  assert.ok(before);
+  assert.equal(before.version, 0);
+  assert.equal(listFacts(db, before.id).length, 0);
 
   const applied = mergeSessionIntoMemory({db, sessionId: session.id, apply: true, now: T0 + 2000});
   assert.equal(applied.totals.skipped, 0);

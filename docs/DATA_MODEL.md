@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**11**
+Schema 版本：**12**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -214,7 +214,7 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 | broadcaster_id | 创建任务时的主播快照（可空） |
 | kind | `session_analysis`（新任务） |
 | locale | 任务提示词语言 |
-| prompt_version | 例如 `lm-prompt-m6.1-zh-CN` |
+| prompt_version | 例如 `lm-prompt-m6.2-zh-CN` |
 | protocol_version | 分析包协议 `livememory-analysis-v1` |
 | batch_total / max_messages / total_messages | 批次总数、每批上限、消息总数（导出时快照） |
 | legacy | 1 = 由 M6 之前的整场结果自动创建 |
@@ -517,3 +517,46 @@ paused（用户暂停；正在进行的 recording 不受影响）
 - v10 → v11：`ALTER TABLE sessions ADD COLUMN monitor_target_id`、新增
   `monitor_targets` 与两个索引；旧场次该列为 NULL，旧数据不改写。
 - `monitor_targets` 纳入清空数据/恢复出厂范围；删除单个场次与删除目标都不删除对方。
+
+## 12. 统一分析与长期记忆覆盖（schema 12 / v0.11.0）
+
+### 12.1 原则
+
+- 一次分析任务同时覆盖本场报告与**全部可识别观众**；不存在只更新前 N 名观众的字段。
+- 每个观众只分配到一个分析批次，其本场全部可用发言（最近 120 条）随该批次导出；
+  `ai_job_memory_viewers` 保证覆盖，`ai_job_memory_messages` 保证证据可追溯。
+- 客观互动历史不新增统计表：继续使用 `viewers`、`viewer_sessions`、
+  `viewer_broadcasters`、`broadcaster_viewer_currency_totals` 等既有聚合；
+  导入时只确保 `viewer_memories` 头存在并更新 `last_session_id` / `last_update_at`，
+  不伪造语义版本。
+- 语义事实、证据、版本继续使用 `memory_facts` / `memory_fact_evidence` /
+  `memory_versions`，规则与 M7 相同。
+
+### 12.2 新增结构
+
+| 表/列 | 主键/唯一 | 关键列 |
+| --- | --- | --- |
+| `ai_jobs.memory_viewers_total` | — | 本任务需要覆盖的可识别观众总数 |
+| `ai_job_memory_viewers` | `(job_id, viewer_id)` | `batch_index`、`base_memory_id`、`base_version`、`message_count`、`status`、`result_id`、`processed_at` |
+| `ai_job_memory_messages` | `(job_id, batch_index, seq)` | `viewer_id`、`event_id`（记忆证据 `seq → 真实事件`） |
+
+`status` 取值：`pending`（所属批次尚未导入）、`semantic`（有新语义）、
+`no_semantics`（已处理但无新语义）、`objective_only`（旧结果/仅客观）、
+`missing_update`（缺少该观众的更新，阻塞导入）、`deleted`（记忆已删除，旧包不能恢复）。
+
+### 12.3 覆盖与状态
+
+- 导出时：每个观众一条 `ai_job_memory_viewers`（`pending`），任务 `memory_viewers_total`
+  记录总数；批次不应有 `pending` 之外的遗漏。
+- 导入时：同一事务内保存分析结果、确保客观记忆头、应用语义操作、更新覆盖状态。
+- `memoryCoverage.complete` 要求 `pending = 0` 且 `missing_update = 0`；
+  任务只有在全部分配观众处理完且（多批时）汇总结果导入后才可能 `complete`。
+- 同一结果重复导入是 `duplicate`，不增加版本、不重复计数；同一批次新结果需要显式新版本。
+
+### 12.4 迁移
+
+- v11 → v12：新增 `ai_jobs.memory_viewers_total`、两张覆盖/证据表和索引；
+  旧任务 `memory_viewers_total=0`，旧结果按无 `viewer_memory_updates` 处理，
+  仅更新客观历史，不阻断 M6 报告导入。
+- 旧 M7 独立记忆任务表（`memory_jobs` 等）保留，用于已存在数据的查看/删除；
+  不再由 UI 创建新的独立记忆任务。
