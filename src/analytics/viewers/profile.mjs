@@ -5,7 +5,6 @@ import {
   viewerSessionHistory
 } from '../../storage/repositories/viewers.mjs';
 import {
-  getBroadcaster,
   unassignedViewerSessions,
   unassignedViewerStats,
   unassignedViewerSupport,
@@ -88,45 +87,28 @@ export function buildViewerProfile(db, viewerId, {broadcasterId = null, unassign
     };
   } else if (broadcasterId) {
     const relationship = viewerBroadcasterRow(db, viewerId, broadcasterId);
-    const broadcasterRow = relationship ?? getBroadcaster(db, broadcasterId);
-    if (broadcasterRow) {
-      scope = relationship
-        ? {
-          kind: 'broadcaster',
-          broadcaster: {
-            id: broadcasterId,
-            platform: broadcasterRow.platform,
-            platformUid: broadcasterRow.platform_uid,
-            displayName: broadcasterRow.display_name,
-            identity: broadcasterRow.identity_quality
-          },
-          messageCount: Number(relationship.message_count ?? 0),
-          paymentEventCount: Number(relationship.payment_event_count ?? 0),
-          sessionCount: Number(relationship.session_count ?? 0),
-          firstSeenAt: relationship.first_seen_at,
-          lastSeenAt: relationship.last_seen_at,
-          support: groupCurrencyTotals(viewerBroadcasterSupport(db, viewerId, broadcasterId)),
-          sessions: mapSessions(viewerBroadcasterSessions(db, viewerId, broadcasterId, {limit: 50}))
-        }
-        : {
-          kind: 'broadcaster',
-          broadcaster: {
-            id: broadcasterId,
-            platform: broadcasterRow.platform,
-            platformUid: broadcasterRow.platform_uid,
-            displayName: broadcasterRow.display_name,
-            identity: broadcasterRow.identity_quality
-          },
-          messageCount: 0,
-          paymentEventCount: 0,
-          sessionCount: 0,
-          firstSeenAt: null,
-          lastSeenAt: null,
-          support: [],
-          sessions: [],
-          noRelationship: true
-        };
+    if (relationship) {
+      scope = {
+        kind: 'broadcaster',
+        broadcaster: {
+          id: broadcasterId,
+          platform: relationship.platform,
+          platformUid: relationship.platform_uid,
+          displayName: relationship.display_name,
+          identity: relationship.identity_quality
+        },
+        messageCount: Number(relationship.message_count ?? 0),
+        paymentEventCount: Number(relationship.payment_event_count ?? 0),
+        sessionCount: Number(relationship.session_count ?? 0),
+        firstSeenAt: relationship.first_seen_at,
+        lastSeenAt: relationship.last_seen_at,
+        support: groupCurrencyTotals(viewerBroadcasterSupport(db, viewerId, broadcasterId)),
+        sessions: mapSessions(viewerBroadcasterSessions(db, viewerId, broadcasterId, {limit: 50}))
+      };
     } else {
+      // The viewer has no recorded interaction with this broadcaster. Returning
+      // that broadcaster as an empty "scope" would make an unrelated channel
+      // look associated and would leak it into the detail page's scope picker.
       scope = {kind: 'none'};
     }
   }

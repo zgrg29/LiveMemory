@@ -4,7 +4,7 @@
  */
 export const APP_NAME = 'LiveMemory';
 export const APP_ID = 'livememory';
-export const APP_VERSION = '0.11.0';
+export const APP_VERSION = '0.11.1';
 export const APP_TAGLINE = 'Local-first livestream memory';
 export const APP_HOMEPAGE = 'https://github.com/zgrg29/LiveMemory';
 

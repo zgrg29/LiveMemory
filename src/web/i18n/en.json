@@ -449,7 +449,9 @@
         "room_fallback": "Identified by room",
         "simulated": "Simulated",
         "unresolved": "Unassigned"
-      }
+      },
+      "noRelatedTitle": "No related broadcaster",
+      "noRelatedBody": "This viewer has no recorded interaction with any broadcaster. Nothing is being merged across channels."
     },
     "metric": {
       "sessions": "Sessions",

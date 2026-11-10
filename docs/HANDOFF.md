@@ -1,6 +1,6 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-10 · P8 长期记忆与 AI 分析中心一体化 · v0.11.0（schema v12）
+本轮：2026-11-10 · P8 长期记忆一体化 + 观众档案主播范围补丁 · v0.11.1（schema v12）
 
 ## 1. 本轮结果
 
@@ -17,7 +17,7 @@
 | 测试 | **490 自动化全部通过**（本轮新增 1 个综合流程测试文件，并更新既有 schema/版本断言）。 |
 | 真实浏览器 UI | **未完成**。本机策略仍阻止无头浏览器；只有静态 UI 检查。 |
 | 真实 AI 统一结果 | **未完成**。只有合成结果；真实 AI 覆盖率与错误表现待验证。 |
-| 打包 EXE | **已构建、未能执行**（91.1 MB / 144 资源 / requireAdministrator / SHA-256 `6b7ca0aa…`）。 |
+| 打包 EXE | **已构建、未能执行**（91.1 MB / 145 资源 / requireAdministrator / SHA-256 `8cbd7209…`）。 |
 
 ## 2. 后端变化
 
@@ -44,7 +44,7 @@
 - `src/server/routes.mjs`：导入预览返回 `memory`；错误映射；`/api/status` 继续暴露 schema。
 - `src/analytics/sessions/summary.mjs`：`monitorTargetId`（上一轮）。
 - `src/memory/view.mjs`：观众记忆视图附带 `objective`。
-- 版本：`package.json`、`src/shared/app-info.mjs` → `0.11.0`。
+- 版本：统一记忆重构 → `0.11.0`；观众范围补丁 → `0.11.1`（`package.json`、`src/shared/app-info.mjs` 一致）。
 
 ### 2.3 数据库（schema 12）
 
@@ -101,10 +101,10 @@ GET  /api/memory/viewers/:id          观众长期记忆 + objective 客观历�
 ## 5. 测试 / 构建 / 验证
 
 - 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-  → **490 passed / 0 failed**，约 68 秒。
+  → **495 passed / 0 failed**，约 80 秒。
 - 新增 `tests/integration/unified-analysis-memory.test.mjs`（A–E + 缺失覆盖）。
 - 迁移测试更新到 schema 12；旧断言 1.1.0/m6.1 已更新为 1.2.0/m6.2。
-- 构建：`node scripts/build-windows.mjs` 成功（91.1 MB、144 资源、requireAdministrator、SHA-256 `6b7ca0aa…`）；运行验收未完成。
+- 构建：`node scripts/build-windows.mjs` 成功（91.1 MB、145 资源、requireAdministrator、SHA-256 `8cbd7209…`）；运行验收未完成。
 - **未运行**：真实浏览器、真实 AI 统一结果、真实大场性能、打包 EXE。
 
 ## 6. 未验证 / 边界
@@ -133,5 +133,18 @@ node scripts/build-windows.mjs
 
 ## 8. 本轮 Commit
 
-- 本轮功能与文档提交：`feat: unify long-term memory with AI analysis import`（本地 commit，未 Push；Hash 见 `git log -1`）。
+- 统一记忆重构：`808335d feat: unify long-term memory with AI analysis import`（本地 commit，未 Push）。
+- 观众范围补丁：见 `git log -1`（`fix: scope viewer broadcaster picker to real interactions`）。
 - 上一轮：`0ca7b8a feat: add persistent automatic live monitoring`。
+
+## 9. 补丁 0.11.1：观众档案主播范围
+
+| 项目 | 内容 |
+| --- | --- |
+| 现象 | 观众详情页「主播范围」显示软件记录的全部主播，而不是该观众实际出现过的主播 |
+| 根因 | 详情页把 `/api/broadcasters` 的全局列表传给选择器；`buildViewerProfile` 对无关系主播还会回退到全局 broadcaster |
+| 数据来源 | `profile.broadcasters` ← `viewer_broadcasters`，由真实聊天/礼物/SC/大航海等互动更新 |
+| UI | 新增 `src/web/js/pages/viewer-scope.js` 纯逻辑；详情只列关联主播、无「全部」；单主播隐藏下拉；无关联显示空状态；无效 scope 安全回退 |
+| 后端 | `buildViewerProfile` 无关系返回 `scope.kind='none'`，不再用 `getBroadcaster` 填充 |
+| 测试 | `tests/unit/viewer-scope.test.mjs`、`tests/integration/viewer-broadcaster-scope.test.mjs`；全量 495 passed |
+| 未验证 | 真实浏览器渲染/截图；EXE 运行验收 |

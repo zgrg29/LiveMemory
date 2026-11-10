@@ -449,7 +449,9 @@
         "room_fallback": "按直播间识别",
         "simulated": "模拟直播",
         "unresolved": "待确认"
-      }
+      },
+      "noRelatedTitle": "没有关联主播",
+      "noRelatedBody": "这位观众还没有与任何主播产生可识别的互动记录，因此没有可切换的主播范围。"
     },
     "metric": {
       "sessions": "参与场次",

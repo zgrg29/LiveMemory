@@ -449,7 +449,9 @@
         "room_fallback": "配信ルームで識別",
         "simulated": "シミュレーション",
         "unresolved": "未確認"
-      }
+      },
+      "noRelatedTitle": "関連する配信者がありません",
+      "noRelatedBody": "この視聴者には識別可能な配信者との交流記録がまだありません。チャンネルをまたいで統合することはありません。"
     },
     "metric": {
       "sessions": "参加配信",

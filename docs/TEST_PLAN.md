@@ -639,3 +639,18 @@ duration ≈ 25.0s
 - 数千观众真实大场的内存/包大小/导入耗时；
 - 真实浏览器渲染、暗色、390px；
 - 旧 M7 任务数据在真实用户库中的只读查看（自动化只覆盖表结构）。
+
+## 23. 观众档案主播范围补丁（v0.11.1）
+
+| 场景 | 测试 | 断言 |
+| --- | --- | --- |
+| 单主播 | `viewer-broadcaster-scope` / `viewer-scope` | 只返回该主播；详情隐藏下拉；`broadcasterCount=1` |
+| 双主播 | 同上 | 只返回两位实际主播，不含第三位 |
+| 多主播 | 同上 | 三位实际主播全部显示，无全局列表泄漏 |
+| 无关联主播 | 同上 | `profile.broadcasters=[]`；`resolveDetailScope→null`；UI 显示空状态 |
+| 跨平台同名 | `viewer-broadcaster-scope` | YouTube 与 Bilibili 同名观众各自只有自己的主播，ID 不合并 |
+| 仅礼物互动 | 同上 | `paymentEventCount=1`、`messageCount=0`、`sessionCount=1`，仍属于该主播 |
+| 无关 scope | 同上 | `buildViewerProfile(...,{broadcasterId: unrelated})` 返回 `scope.kind='none'` |
+| 无效/已删除 scope | `viewer-scope` | 回退到当前有效或第一个关联主播，绝不回退“全部主播” |
+
+全量结果：**495 passed / 0 failed**（约 80 秒）。真实浏览器渲染仍未验收。

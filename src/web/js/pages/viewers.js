@@ -24,6 +24,16 @@ import {
   renderMemoryTab,
   renderVersionsTab
 } from './viewer-memory.js';
+import {
+  SCOPE_ALL,
+  SCOPE_UNASSIGNED,
+  broadcasterName,
+  readScope,
+  resolveDetailScope,
+  resolveScope,
+  scopeOptions,
+  scopeSuffix
+} from './viewer-scope.js';
 
 /**
  * Viewer directory and long-term profile.
@@ -34,76 +44,12 @@ import {
  * separately and never mixed into a broadcaster's context.
  */
 
-const SCOPE_ALL = 'all';
-const SCOPE_UNASSIGNED = 'unassigned';
-
-function readScope(query) {
-  const raw = query?.get?.('broadcaster');
-  if (!raw) return null;
-  const value = String(raw).trim();
-  return value || null;
-}
-
-function scopeSuffix(scope) {
-  return scope && scope !== SCOPE_ALL ? `?broadcaster=${encodeURIComponent(scope)}` : '';
-}
-
 function replaceScopeUrl(path, scope) {
   window.history.replaceState(null, '', `#${path}${scopeSuffix(scope)}`);
 }
 
-function broadcasterName(broadcaster) {
-  return broadcaster?.displayName || broadcaster?.platformUid || broadcaster?.id || '—';
-}
-
-function scopeOptions(payload, t) {
-  const options = [{value: SCOPE_ALL, label: t('viewers.scope.all'), searchText: t('viewers.scope.all')}];
-  for (const broadcaster of payload?.broadcasters ?? []) {
-    const name = broadcasterName(broadcaster);
-    const current = broadcaster.id === payload.currentId;
-    const label = [
-      name,
-      platformLabel(broadcaster.platform, t),
-      current ? t('viewers.scope.currentBadge') : null
-    ].filter(Boolean).join(' · ');
-    options.push({
-      value: broadcaster.id,
-      label,
-      searchText: `${name} ${broadcaster.platformUid} ${broadcaster.platform}`.toLowerCase()
-    });
-  }
-  if ((payload?.unassigned?.sessionCount ?? 0) > 0) {
-    options.push({
-      value: SCOPE_UNASSIGNED,
-      label: `${t('viewers.scope.unassigned')} · ${payload.unassigned.sessionCount}`,
-      searchText: t('viewers.scope.unassigned').toLowerCase()
-    });
-  }
-  return options;
-}
-
-function resolveScope(payload, raw, {profile = null} = {}) {
-  const values = new Set([SCOPE_ALL]);
-  for (const broadcaster of payload?.broadcasters ?? []) values.add(broadcaster.id);
-  if ((payload?.unassigned?.sessionCount ?? 0) > 0) values.add(SCOPE_UNASSIGNED);
-  if (raw === SCOPE_ALL) return SCOPE_ALL;
-  if (raw && values.has(raw)) return raw;
-  if (profile) {
-    if (payload?.currentId && profile.broadcasters?.some((entry) => entry.id === payload.currentId)) {
-      return payload.currentId;
-    }
-    if (profile.broadcasters?.length > 0) return profile.broadcasters[0].id;
-    if ((payload?.unassigned?.sessionCount ?? 0) > 0 && (profile.sessions?.length ?? 0) > 0) {
-      return SCOPE_UNASSIGNED;
-    }
-    return SCOPE_ALL;
-  }
-  if (payload?.currentId && values.has(payload.currentId)) return payload.currentId;
-  return SCOPE_ALL;
-}
-
-function createScopePicker({t, payload, value, onChange}) {
-  const options = scopeOptions(payload, t);
+function createScopePicker({t, payload, profile = null, includeAll = true, value, onChange}) {
+  const options = scopeOptions(payload, t, {profile, includeAll});
   const select = el('select', {
     className: 'select scope-select',
     attrs: {'aria-label': t('viewers.scope.label')}
@@ -381,19 +327,18 @@ async function renderDetail(container, ctx, viewerId, query) {
     api.get('/api/broadcasters'),
     api.get(`/api/viewers/${encodeURIComponent(viewerId)}`)
   ]);
-  const scope = resolveScope(payload, readScope(query), {profile: baseProfile});
-  const profilePromise = scope === SCOPE_ALL
-    ? Promise.resolve(baseProfile)
-    : api.get(`/api/viewers/${encodeURIComponent(viewerId)}?${
-      scope === SCOPE_UNASSIGNED ? 'scope=unassigned' : `broadcasterId=${encodeURIComponent(scope)}`
-    }`);
+  const related = baseProfile.broadcasters ?? [];
+  const scope = resolveDetailScope(baseProfile, readScope(query), {currentId: payload.currentId});
+  const profilePromise = scope
+    ? api.get(`/api/viewers/${encodeURIComponent(viewerId)}?broadcasterId=${encodeURIComponent(scope)}`)
+    : Promise.resolve(baseProfile);
   const profile = await profilePromise;
   const {viewer, nicknames} = profile;
-  const scoped = scope !== SCOPE_ALL;
+  const scoped = Boolean(scope);
   const scopeData = profile.scope ?? null;
   const scopeName = scoped
-    ? (scope === SCOPE_UNASSIGNED ? t('viewers.scope.unassigned') : broadcasterName(scopeData?.broadcaster))
-    : t('viewers.scope.global');
+    ? broadcasterName(scopeData?.broadcaster)
+    : t('viewers.scope.noRelatedTitle');
   const metrics = scoped
     ? {
       sessionCount: scopeData?.sessionCount ?? 0,
@@ -456,21 +401,37 @@ async function renderDetail(container, ctx, viewerId, query) {
         headerChips)),
     el('div', {className: 'page-actions'}, focusButton));
 
-  const scopePicker = createScopePicker({
-    t,
-    payload,
-    value: scope,
-    onChange: (next) => {
-      ctx.navigate(`/viewers/${encodeURIComponent(viewerId)}${scopeSuffix(next)}`);
-    }
-  });
+  let scopePicker = null;
+  if (related.length > 1) {
+    scopePicker = createScopePicker({
+      t,
+      payload,
+      profile: baseProfile,
+      includeAll: false,
+      value: scope,
+      onChange: (next) => {
+        ctx.navigate(`/viewers/${encodeURIComponent(viewerId)}${scopeSuffix(next)}`);
+      }
+    });
+  } else if (related.length === 1) {
+    // One real association: a dropdown would be a no-op. Show the channel as
+    // read-only context instead of rendering a select with one option.
+    scopePicker = el('div', {className: 'scope-control'},
+      el('span', {className: 'scope-label', text: t('viewers.scope.label')}),
+      el('span', {className: 'scope-static', text: broadcasterName(related[0])}));
+  }
 
-  const scopeBar = el('section', {className: 'card scope-bar'},
-    el('div', {className: 'card-body'},
-      scopePicker,
-      el('div', {className: 'small tertiary', text: scoped
-        ? t('viewers.detail.scopeHint', {name: scopeName})
-        : t('viewers.detail.allScopeHint')})));
+  const scopeBar = related.length > 0
+    ? el('section', {className: 'card scope-bar'},
+      el('div', {className: 'card-body'},
+        scopePicker,
+        el('div', {className: 'small tertiary', text: scoped
+          ? t('viewers.detail.scopeHint', {name: scopeName})
+          : t('viewers.detail.allScopeHint')})))
+    : el('div', {className: 'callout callout--warn scope-callout'},
+      el('div', {},
+        el('div', {className: 'callout-title', text: t('viewers.scope.noRelatedTitle')}),
+        el('div', {text: t('viewers.scope.noRelatedBody')})));
 
   const statsGrid = el('div', {className: 'stat-grid'},
     statCard({label: t('viewers.metric.sessions'), value: formatInteger(metrics.sessionCount, ctx.locale)}),
@@ -617,9 +578,7 @@ async function renderDetail(container, ctx, viewerId, query) {
   // Long-term memory is always scoped to one broadcaster. When the page is in
   // the "all broadcasters" scope we fall back to the current broadcaster, and
   // never merge two channels' memories together.
-  const memoryBroadcasterId = scoped && scope !== SCOPE_UNASSIGNED
-    ? scope
-    : (payload.currentId ?? profile.broadcasters?.[0]?.id ?? null);
+  const memoryBroadcasterId = scope ?? related[0]?.id ?? null;
   let memoryView = null;
   let memoryState = 'idle';
 

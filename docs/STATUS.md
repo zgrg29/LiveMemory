@@ -1,13 +1,13 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-10（P8 长期记忆与 AI 分析中心一体化，版本 0.11.0，schema 12）
+最后更新：2026-11-10（P8 长期记忆一体化 + 观众范围补丁，版本 0.11.1，schema 12）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P8 / M6 / M7 核心完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.11.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 版本：`0.11.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
 - 数据库 schema：**12**（统一分析/记忆覆盖；v11 原地升级）
 - 分支：`main`，本地提交，未 Push
 - 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（本轮构建结果见 §5）
@@ -78,7 +78,9 @@
 ## 3. 自动化测试（本轮实测）
 
 - 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-  → **490 passed / 0 failed**（约 68 秒）。
+  → **495 passed / 0 failed**（约 80 秒）。
+- 新增 `tests/unit/viewer-scope.test.mjs` 与 `tests/integration/viewer-broadcaster-scope.test.mjs`：
+  单主播、双主播、多主播、无关联、跨平台同名、仅礼物互动、无效 scope 安全回退。
 - 新增 `tests/integration/unified-analysis-memory.test.mjs`：
   - A 同一观众连续五场、每场一句话：5 场互动、累计发言、最近时间、3 条语义事实逐步积累；
   - B 只说“晚上好”：version 0、无事实、覆盖 `no_semantics`，仍算已处理；
@@ -100,8 +102,8 @@
 ## 5. 构建结果（本轮实测）
 
 - `node scripts/build-windows.mjs` 成功：`dist/LiveMemory.exe`
-  - 大小 **91.1 MB**（95,564,288 bytes），资源 **144 个**，资源哈希 `660cb130f09da0da2d3e`
-  - SHA-256 `6b7ca0aaf778d36bfa2dd4e6b491efb9e98350b91cda57728e28e605db10a72e`
+  - 大小 **91.1 MB**（95,567,360 bytes），资源 **145 个**，资源哈希 `eebfef0bc14877462667`
+  - SHA-256 `8cbd7209c23d0c6198c4996c5f23577c826ce248351c9fb14cbca6075e7c4b47`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能执行验收**：本机应用控制/沙箱策略阻止启动新构建的 EXE；没有运行 `--version` 或打包后的
   schema 11→12 升级实测。
@@ -131,7 +133,8 @@
 
 `docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/AI_CONTRACT.md`、
 `docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、
-`docs/ROADMAP.md`、`log/2026-11-10-unified-analysis-memory.md`。
+`docs/ROADMAP.md`、`log/2026-11-10-unified-analysis-memory.md`、
+`log/2026-11-10-viewer-scope-fix.md`。
 
 ## 9. 下一步
 
@@ -140,3 +143,23 @@
 3. 在允许浏览器的机器上验收 AI 预览、观众客观历史卡、暗色、390px。
 4. 在无策略限制的 Windows 环境启动已构建 EXE，验证 schema 11→12 与打包 UI。
 5. 决定是否移除旧 `memory_jobs` 表的创建 API（当前仅保留历史数据，不再暴露 UI）。
+
+## 10. 补丁 0.11.1：观众档案主播范围
+
+- **问题**：观众详情页把 `/api/broadcasters` 的全部主播传给「主播范围」选择器，
+  导致只出现过 1 位主播的观众也看到软件记录过的全部主播。
+- **根因**：UI 的 `scopeOptions` 使用全局 broadcaster payload；详情页没有使用
+  `/api/viewers/:id` 已经返回的 `profile.broadcasters`。后端 `buildViewerProfile` 在请求
+  无关系主播时还会用 `getBroadcaster` 回退，制造了一个看似有效的空范围。
+- **修复**：
+  - 新增纯逻辑 `src/web/js/pages/viewer-scope.js`；详情选项只来自
+    `profile.broadcasters`（即 `viewer_broadcasters`，包含礼物/SC/大航海等可识别互动），
+    不再包含「全部主播」或未归属选项。
+  - 无效/已删除的 `?broadcaster=` 安全回退到当前有效主播或第一个关联主播；
+    无关联时 `null`，页面显示明确空状态。
+  - 只有一个关联主播时隐藏无意义的下拉框，改为只读标签。
+  - `buildViewerProfile` 无关系时返回 `scope.kind='none'`，不再回退到全局主播。
+  - 长期记忆上下文只使用有效关联主播，不再回退到全局当前主播。
+- **测试**：新增 `tests/unit/viewer-scope.test.mjs`、
+  `tests/integration/viewer-broadcaster-scope.test.mjs`；全量 **495 passed / 0 failed**。
+- **构建**：见 §5（0.11.1 重新构建）。
