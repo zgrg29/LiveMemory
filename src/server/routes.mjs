@@ -116,6 +116,7 @@ const SPEEDS = {calm: 1600, normal: 750, busy: 320};
 
 function statusPayload(deps) {
   const {paths, db, settingsStore, sessionManager, startedAt} = deps;
+  const monitoringStatus = deps.monitoring ? deps.monitoring.status() : null;
   return {
     server: {
       name: APP_NAME,
@@ -140,7 +141,14 @@ function statusPayload(deps) {
       promptVersion: MEMORY_PROMPT_VERSION
     },
     bilibili: deps.bilibili ? deps.bilibili.status() : null,
-    youtube: deps.youtube ? deps.youtube.status() : null
+    youtube: deps.youtube ? deps.youtube.status() : null,
+    monitoring: monitoringStatus
+      ? {
+        enabled: true,
+        summary: monitoringStatus.summary,
+        policy: monitoringStatus.policy
+      }
+      : null
   };
 }
 
@@ -228,6 +236,7 @@ function liveRecordingOverview(deps, recording) {
     broadcasterName: recording.broadcasterName,
     broadcasterId: recording.broadcasterId ?? null,
     broadcasterIdentity: recording.broadcasterIdentity ?? 'unresolved',
+    monitorTargetId: recording.monitorTargetId ?? row?.monitor_target_id ?? null,
     simulated: Boolean(recording.simulated),
     startedAt: recording.startedAt,
     platformStartedAt: recording.platformStartedAt ?? null,
@@ -383,6 +392,7 @@ export function buildRoutes() {
               schemaVersion: MEMORY_SCHEMA_VERSION,
               promptVersion: MEMORY_PROMPT_VERSION
             },
+            monitoring: {enabled: Boolean(deps.monitoring), requiresApiKey: false, requiresLogin: false},
             backup: {export: false, import: false}
           }
         });
@@ -1684,6 +1694,84 @@ export function buildRoutes() {
         sendJson(res, 200, memoryRetentionStatus(deps.db, {
           broadcasterId: url.searchParams.get('broadcasterId') || null
         }));
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/monitoring',
+      handler: ({res, deps}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        sendJson(res, 200, deps.monitoring.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/monitoring',
+      handler: async ({req, res, deps}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        const body = await readOptionalJson(req);
+        const target = await deps.monitoring.createTarget({
+          platform: body.platform,
+          input: body.input ?? body.url ?? body.roomId ?? body.channelId ?? body.handle,
+          enabled: body.autoMonitor !== false && body.enabled !== false
+        });
+        sendJson(res, 201, {target});
+      }
+    },
+    {
+      method: 'PATCH',
+      path: '/api/monitoring/:id',
+      handler: async ({req, res, deps, params}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        const body = await readOptionalJson(req);
+        const target = await deps.monitoring.updateTarget(params.id, {
+          action: body.action ?? null,
+          enabled: body.enabled === undefined ? null : body.enabled === true
+        });
+        sendJson(res, 200, {target});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/monitoring/:id/check',
+      handler: async ({req, res, deps, params}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        await readOptionalJson(req);
+        const target = await deps.monitoring.checkNow(params.id);
+        sendJson(res, 200, {target});
+      }
+    },
+    {
+      method: 'DELETE',
+      path: '/api/monitoring/:id',
+      handler: async ({req, res, deps, params}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        const body = await readOptionalJson(req);
+        const result = await deps.monitoring.deleteTarget(params.id, {confirm: body.confirm === true});
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/monitoring/:id/sessions',
+      handler: ({res, url, deps, params}) => {
+        if (!deps.monitoring) {
+          throw new AppError('MONITORING_DISABLED', {messageKey: 'errors.monitoringDisabled', httpStatus: 503});
+        }
+        const sessions = deps.monitoring.listSessions(params.id, {
+          limit: url.searchParams.get('limit') ?? 20
+        });
+        sendJson(res, 200, {sessions: sessions.map((row) => serializeSessionRow(row))});
       }
     },
     {

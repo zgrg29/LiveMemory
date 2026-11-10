@@ -95,6 +95,7 @@ export class SessionManager {
       broadcasterName: recording.broadcasterName,
       broadcasterId: recording.broadcasterId,
       broadcasterIdentity: recording.broadcasterIdentity,
+      monitorTargetId: recording.monitorTargetId ?? null,
       simulated: recording.simulated,
       startedAt: recording.startedAt,
       platformStartedAt: recording.platformStartedAt,
@@ -267,6 +268,7 @@ export class SessionManager {
     sourceQuality = null,
     simulated = false,
     platformStartedAt = null,
+    monitorTargetId = null,
     createAdapter,
     startOptions = {},
     meta = null,
@@ -299,6 +301,7 @@ export class SessionManager {
       simulated,
       startedAt,
       platformStartedAt,
+      monitorTargetId,
       now: startedAt
     });
     const adapter = createAdapter({sessionId: session.id});
@@ -313,6 +316,7 @@ export class SessionManager {
       simulated,
       startedAt,
       platformStartedAt,
+      monitorTargetId: monitorTargetId === null || monitorTargetId === undefined ? null : String(monitorTargetId),
       adapter,
       connection: CONNECTION_STATE.CONNECTING,
       detail: null,
@@ -394,6 +398,7 @@ export class SessionManager {
     sourceQuality = null,
     simulated = false,
     platformStartedAt = null,
+    monitorTargetId = null,
     createAdapter,
     meta = null,
     onEnded = null
@@ -407,6 +412,7 @@ export class SessionManager {
       sourceQuality,
       simulated,
       platformStartedAt,
+      monitorTargetId,
       createAdapter,
       meta,
       onEnded

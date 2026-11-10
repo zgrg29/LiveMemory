@@ -34,6 +34,7 @@ export function serializeSessionRow(row) {
     broadcasterName: row.broadcaster_name,
     broadcasterId: row.broadcaster_id ?? null,
     broadcasterIdentity: row.broadcaster_identity ?? 'unresolved',
+    monitorTargetId: row.monitor_target_id ?? null,
     status: row.status,
     endReason: row.end_reason ?? null,
     archived: row.archived_at !== null && row.archived_at !== undefined,

@@ -39,6 +39,7 @@ export function createSession(db, {
   simulated = false,
   startedAt = Date.now(),
   platformStartedAt = null,
+  monitorTargetId = null,
   now = startedAt
 }) {
   const sessionId = id ?? createId('ses');
@@ -47,7 +48,8 @@ export function createSession(db, {
       id, platform, platform_room_id, room_title, broadcaster_name, broadcaster_id,
       broadcaster_identity, status,
       storage_mode, source_quality, simulated, started_at, platform_started_at, ended_at, last_event_at,
-      message_count, gift_event_count, payment_event_count, ai_status, created_at, updated_at
+      message_count, gift_event_count, payment_event_count, ai_status,
+      created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'live', ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 'none', ?, ?)
   `).run(
     sessionId,
@@ -65,6 +67,12 @@ export function createSession(db, {
     now,
     now
   );
+  // Written separately so this helper keeps working against pre-v11 databases
+  // used by migration tests: a plain manual session never touches the column.
+  if (monitorTargetId !== null && monitorTargetId !== undefined) {
+    db.prepare('UPDATE sessions SET monitor_target_id = ? WHERE id = ?')
+      .run(String(monitorTargetId), sessionId);
+  }
   return getSession(db, sessionId);
 }
 

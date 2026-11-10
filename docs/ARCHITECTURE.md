@@ -23,6 +23,7 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/bilibili/     真实直播适配器（WebSocket，可多房间）
          ├─ src/platforms/youtube/      公开网页聊天（唯一路径；可多直播）
          ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
+         ├─ src/monitoring/             自动监听：目标状态机、调度/退避、平台检测器（Bilibili roomStatus、YouTube /live + RSS 回退）
          ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像/历史搜索/AI 报告）
          ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）

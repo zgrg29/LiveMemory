@@ -41,6 +41,7 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
       broadcasterName: session.broadcaster_name,
       broadcasterId: session.broadcaster_id ?? null,
       broadcasterIdentity: session.broadcaster_identity ?? 'unresolved',
+      monitorTargetId: session.monitor_target_id ?? null,
       status: session.status,
       endReason: session.end_reason ?? null,
       archived: session.archived_at !== null && session.archived_at !== undefined,

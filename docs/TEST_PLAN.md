@@ -1,4 +1,4 @@
-# 测试计划与结果（TEST_PLAN）
+﻿# 测试计划与结果（TEST_PLAN）
 
 ## 1. 策略
 
@@ -532,3 +532,69 @@ duration ≈ 25.0s
 | 打包 EXE（v0.9.0、schema 9→10） | ⬜ 未构建 |
 
 > 不把未运行的浏览器/EXE 检查写成通过。
+
+## 21. 自动直播监听（P7 / v0.10.0）
+
+### 21.1 自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/monitoring-bilibili-detector.test.mjs` | 房间号/URL/`blanc` 解析、非法输入拒绝、短号→真实房间号、主播身份、live/offline/carousel、429/-352/404/协议/网络错误映射 |
+| `tests/unit/monitoring-discovery.test.mjs` | 频道 URL / @handle / Channel ID / 视频链接解析、播放列表/剪辑/陌生域拒绝、`externalId` 优先于推荐频道、live/upcoming/ended/VOD/offline/owner mismatch/consent、RSS 时间窗与频道过滤、抖动/退避边界、公开状态派生、错误分类、摘要计数 |
+| `tests/integration/youtube-monitor-detector.test.mjs` | 真实 HTTP 形状的固定 HTML：handle/频道/视频反查、单次 `/live` 检测、429/网络/restricted、结构损坏 → RSS + watch 页确认、RSS 不单独判定直播、owner mismatch 拒绝 |
+| `tests/integration/automatic-monitoring.test.mjs` | 目标持久化、离线等待、开播创建普通 session、重连不新建场次、平台确认关播后回到 waiting、第二场新 session、失败退避到 error、429 `Retry-After`、暂停/恢复/删除语义、记录中禁止删除、多目标独立、重启恢复、M6 分析包导出回归 |
+| `tests/integration/monitoring-migration.test.mjs` | 真实 v10→v11、旧场次不变、新列/表/唯一约束、重复迁移无操作、新库直接 v11 |
+| `tests/integration/monitoring-api.test.mjs` | HTTP：添加/重复 409/列表/状态摘要/立即检查/暂停/暂停时检查 409/恢复/场次列表/删除确认/删除、重启恢复目标 |
+| `tests/integration/youtube-auto-monitoring.test.mjs` | 真实 detector + 真实匿名聊天 adapter + 真实 SessionManager：检查→开播→记录→聊天入库→聊天结束→目标 waiting→第二场新视频新 session→目标场次列表 2 条 |
+| `tests/unit/monitoring-ui.test.mjs` | 监听页字面三语 key、全部状态/错误码标签、监听 Tab 与手动 Tab 分离、无 innerHTML、状态 CSS、只用 tokens、窄屏规则 |
+
+### 21.2 覆盖矩阵（任务要求）
+
+| Bilibili | 覆盖 |
+| --- | --- |
+| 未开播等待 | ✅ 状态 waiting + 下次检查 |
+| 开播检测 | ✅ fake `liveStatus=1` |
+| 自动连接/开始记录 | ✅ 真实 `SessionManager` + fake adapter |
+| 关播检测/自动结束 | ✅ adapter `onEnd` + session ended |
+| 下一场自动开始 | ✅ 同一目标第二个 session |
+| 网络断线恢复 | ✅ reconnecting 不改变 session；错误不退避成关播 |
+| 平台接口异常 | ✅ 网络/429/协议错误 |
+| 多直播间同时监听 | ✅ 两目标独立状态 |
+| 真实平台长跑 | ⬜ 未执行 |
+
+| YouTube | 覆盖 |
+| --- | --- |
+| 频道 URL / @handle / Channel ID | ✅ 解析 + HTTP 添加 |
+| 无直播 / 预定 / 正在直播 / 已结束 | ✅ 固定页面 fixture |
+| 视频 ID 提取 | ✅ owner 校验 |
+| 新直播发现 / 旧直播不重复 | ✅ 两场端到端不同 video id |
+| 频道页面异常 | ✅ 结构损坏 → RSS 回退；空 feed → 显式错误 |
+| 限流和退避 | ✅ 429 `Retry-After` |
+| 聊天不可用 | ✅ 错误码映射与可见 error（单元/状态机覆盖；未接真实样本） |
+| 多频道同时监听 | ✅ 多目标独立调度（Bilibili 为主，YouTube 解析/检测独立） |
+| 真实 YouTube 页面 | 🟡 2026-11-10 只读实测 1 个频道（Lofi Girl）解析成功；不等于长期稳定 |
+
+| 通用 | 覆盖 |
+| --- | --- |
+| Tab 持久化 | ✅ 目标 Tab 由 `monitor_targets` 驱动，不因 session 结束消失 |
+| 软件重启恢复 | ✅ HTTP 测试真实重启；启动错峰 |
+| 暂停与恢复 | ✅ |
+| 重复添加目标 | ✅ 409 `MONITOR_TARGET_EXISTS` |
+| 重复开播事件 | ✅ 平台状态机 + 同一 session |
+| 网络重连不错误分场 | ✅ 连接状态与 session 分离 |
+| 自动与手动共存 | ✅ 手动场次 tab 与监听 tab 分开；重复房间被拒绝 |
+| 数据库迁移 | ✅ v10→v11、v1→v11、旧库不变 |
+| M6/M7 回归 | ✅ 自动场次导出 `livememory-analysis-v1`；普通 sessions 表 |
+| Windows 构建/UI | ⬜ 见 §21.3 |
+
+### 21.3 真实浏览器与构建
+
+| 检查 | 结果 |
+| --- | --- |
+| 自动监听页面真实渲染/截图/390px | ⬜ **未执行**：本机策略仍终止无头 Edge/Chrome |
+| `scripts/verify-monitoring-ui.mjs` | ⬜ 未编写（本轮只有静态 UI 检查） |
+| 真实 Bilibili「开播→关播→再开播」 | ⬜ 未捕获 |
+| 真实 YouTube 长跑 | ⬜ 未执行（仅少量只读页面解析） |
+| 打包 EXE | 结果见 `docs/STATUS.md`（本轮实测） |
+
+> 自动监听没有下载视频/音频；网络测试只使用本地假网页或固定 fixture，真实 YouTube 仅 1 个频道、共约 5 次只读请求。

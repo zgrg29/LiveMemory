@@ -1071,7 +1071,11 @@
     "memoryPackageNotFound": "导出目录中缺少该文件。",
     "memoryDeleteConfirmRequired": "请明确确认删除。此操作不可撤销。",
     "memoryReviewFailed": "该处理操作无法应用。",
-    "memoryRollbackFailed": "无法恢复该版本。"
+    "memoryRollbackFailed": "无法恢复该版本。",
+    "monitorTargetExists": "该直播间或频道已在自动监听列表中。",
+    "monitorTargetRecording": "本场仍在记录，请先停止记录再删除监听目标。",
+    "monitorTargetPaused": "监听已暂停，请先恢复监听。",
+    "monitoringDisabled": "自动监听当前不可用。"
   },
   "toast": {
     "saved": "已保存",
@@ -1276,6 +1280,110 @@
     "job": {
       "applied": "已应用",
       "missing": "未导入"
+    }
+  },
+  "monitoring": {
+    "untitled": "未命名监听目标",
+    "chip": "自动监听",
+    "tabsHint": "自动监听的 Tab 对应直播间或频道，而不是单场直播。本场结束后 Tab 不会消失；下次开播会在同一个 Tab 中开始新的独立记录。",
+    "tabAria": "{name}，自动监听：{state}",
+    "state": {
+      "waiting": "等待开播",
+      "checking": "正在检查",
+      "connecting": "正在连接",
+      "recording": "直播中 · 正在记录",
+      "reconnecting": "正在重连",
+      "ending": "正在确认关播",
+      "paused": "监听已暂停",
+      "error": "需要处理"
+    },
+    "target": {
+      "subtitle": "{platform} · {key}",
+      "waitingHint": "软件会在后台检查这个直播间或频道。开播后自动连接并开始记录；关播后保存本场并继续等待。",
+      "pausedHint": "自动监听已暂停。已经开始的记录不会被停止；恢复监听只会重新检查下一场开播。",
+      "recordingHint": "本场正在自动记录。停止记录只会结束这一场；监听目标与 Tab 会保留。"
+    },
+    "info": {
+      "title": "监听信息",
+      "hint": "只读的公开状态检查",
+      "state": "当前状态",
+      "interval": "检查频率",
+      "lastCheck": "上次检查",
+      "nextCheck": "下次检查",
+      "lastLive": "上次直播",
+      "target": "监听目标"
+    },
+    "interval": {
+      "seconds": "约每 {n} 秒检查一次"
+    },
+    "action": {
+      "viewRecording": "查看本场记录",
+      "pause": "暂停监听",
+      "pauseHint": "暂停后不会检查或开始新场次；正在进行的记录会继续。",
+      "checkNow": "立即检查",
+      "resume": "恢复监听",
+      "retry": "立即重试",
+      "delete": "删除监听目标"
+    },
+    "sessions": {
+      "title": "最近直播",
+      "hint": "这个监听目标产生的独立场次",
+      "empty": "还没有自动记录的直播",
+      "emptyBody": "开播之后，这里会出现第一场记录。",
+      "open": "查看：{title}",
+      "untitled": "未命名直播"
+    },
+    "error": {
+      "title": "监听出错",
+      "nextRetry": "下次自动重试：{time}",
+      "network": "网络连接失败，稍后会自动重试。",
+      "rateLimited": "平台正在限流，已按平台要求退避。",
+      "blocked": "平台拒绝了公开状态检查（可能需要验证或登录）。",
+      "protocol": "无法解析平台页面，页面结构可能已经变化。",
+      "notFound": "找不到该直播间或频道。",
+      "restricted": "平台要求验证或登录，无法读取公开状态。",
+      "offlineRace": "开播状态在连接前发生变化，稍后会再次检查。",
+      "chatUnavailable": "直播已经开始，但公开聊天不可用。",
+      "duplicate": "该直播间或频道已在监听列表中。",
+      "invalidInput": "请输入有效的直播间链接、房间号或频道地址。",
+      "notConfigured": "当前平台不可用。",
+      "unknown": "监听时发生未知错误。"
+    },
+    "paused": {
+      "title": "自动监听已暂停",
+      "body": "恢复监听后会继续等待下一次开播。"
+    },
+    "delete": {
+      "title": "删除监听目标",
+      "subtitle": "确定停止监听“{name}”吗？",
+      "body": "删除后不会再自动检查这个直播间或频道。",
+      "keepHistory": "已经记录的直播历史不会被删除。",
+      "confirm": "删除监听目标"
+    },
+    "toast": {
+      "paused": "已暂停自动监听",
+      "resumed": "已恢复自动监听",
+      "retried": "已重新开始检查",
+      "deleted": "已删除监听目标",
+      "added": "已添加自动监听：{name}"
+    },
+    "add": {
+      "toggle": "自动监听此直播间 / 频道",
+      "toggleHint": "保存后，软件运行期间会自动检查{platform}是否开播。",
+      "action": "添加自动监听",
+      "adding": "正在添加…",
+      "note": "添加后不需要反复粘贴链接。开播自动开始记录，关播自动保存，Tab 会一直保留。",
+      "rateNote": "等待开播时只做低频、只读的公开状态检查，不会下载视频或音频。",
+      "bilibiliPlaceholder": "直播间链接或房间号",
+      "bilibiliLabel": "直播间链接或房间号",
+      "youtubePlaceholder": "频道链接、@handle、Channel ID 或直播链接",
+      "youtubeLabel": "频道链接、@handle、Channel ID 或直播链接"
+    },
+    "hero": {
+      "autoChip": "自动监听",
+      "stopHint": "停止记录只会结束本场；监听目标与 Tab 会保留，下次开播会自动开始新的记录。",
+      "platformEndedNote": "平台已确认关播，本场记录已自动结束并保存。",
+      "endedNote": "本场记录已结束并保存。监听目标会保留，等待下次开播。"
     }
   }
 }

@@ -7,6 +7,7 @@ import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
+import {MonitoringManager} from '../monitoring/manager.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
@@ -96,15 +97,37 @@ export async function startServer({
       now,
       webBase: youtubeWebBase
     });
+    const monitoring = new MonitoringManager({
+      db,
+      sessionManager,
+      bilibili,
+      youtube,
+      logger,
+      now,
+      onChange: () => {
+        try {
+          hub.broadcast('monitoring', monitoring.status());
+        } catch (error) {
+          logger?.warn({event: 'monitor.broadcast.failed', code: error?.code ?? 'unknown'});
+        }
+      }
+    });
     runRetention(db, {
       now: now(),
       days: settingsStore.get().youtubeRawRetentionDays,
       logger
     });
-    return {paths, db, settingsStore, sessionManager, bilibili, youtube, recovered, migration};
+    return {paths, db, settingsStore, sessionManager, bilibili, youtube, monitoring, recovered, migration};
   }
 
   async function stopAdapters(instance) {
+    // Stop the scheduler first: it must not start a new session while the
+    // manager and database are being torn down.
+    try {
+      instance.monitoring?.stop();
+    } catch (error) {
+      logger?.error({event: 'shutdown.monitor.failed', code: error?.code ?? 'unknown'});
+    }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
@@ -128,6 +151,7 @@ export async function startServer({
     get sessionManager() { return runtime.sessionManager; },
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
+    get monitoring() { return runtime.monitoring; },
     get maintenance() { return state.maintenance; },
     set maintenance(value) { state.maintenance = Boolean(value); },
     hub,
@@ -192,6 +216,10 @@ export async function startServer({
     recoveredSessions: runtime.recovered.length
   });
 
+  // Restore persisted automatic-monitoring targets. Checks are staggered, so a
+  // restart with many channels does not produce a request burst.
+  runtime.monitoring.start();
+
   // Historical rows abandoned by a crash/shutdown are probed after the server
   // is available so a slow/blocked platform cannot delay startup. The probe is
   // idempotent, never changes `ended_at`, and only annotates platform state.
@@ -247,6 +275,7 @@ export async function startServer({
     get sessionManager() { return runtime.sessionManager; },
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
+    get monitoring() { return runtime.monitoring; },
     get runtime() { return runtime; },
     get deps() { return deps; },
     hub,

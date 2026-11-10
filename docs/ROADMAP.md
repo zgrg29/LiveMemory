@@ -251,6 +251,28 @@
 **交付**：主播可以把每场直播的分析持续合并成每位观众的长期记忆，看到「谁知道什么、什么时候说的、
 证据在哪、最近有什么变化」，并能在不接 AI API 的前提下用外部 AI 处理矛盾与近况变化。
 
+## P7 自动直播监听与持久化 Tab ✅（v0.10.0）
+
+- ✅ 持久监听目标（schema v11 `monitor_targets`）+ `sessions.monitor_target_id`；目标与单场记录彻底分离
+- ✅ 统一监听状态机：waiting / checking / connecting / recording（含派生 reconnecting）/ ending / paused / error
+- ✅ 统一调度：到期检查、错峰启动、每平台串行 pacer（Bilibili ≥1.2s、YouTube ≥2.5s）、最多 2 并发
+- ✅ 抖动 + 指数退避 + `Retry-After`；连续 4 次失败进入可见 error，30 分钟后低速重试；不静默重试
+- ✅ Bilibili：固定真实房间号（URL/短号规范化）+ `get_info.live_status` 低频检测；复用现有 WebSocket 适配器与下播确认
+- ✅ YouTube：公开 `/channel/<id>/live` + `ytInitialPlayerResponse`（owner 校验、isLive/isLiveNow、预定直播区分），解析失败时 RSS + watch 页确认回退；无 Data API/OAuth/API Key/Cookie
+- ✅ 频道身份：频道 URL、@handle、`/c/`、`/user/`、裸 Channel ID、已知视频链接反查；`externalId` 优先
+- ✅ 发现直播后复用现有聊天采集；不下载视频/音频
+- ✅ 网络重连沿用同一 session；只有确认新一场才创建新 session；关播后 Tab 保留
+- ✅ Tab：监听 Tab 固定展示目标状态、最近检查/下次检查/上次直播、错误原因、最近场次；可暂停/恢复/立即检查/删除
+- ✅ 区分关闭 Tab（仅手动结束场次）、暂停监听、停止当前记录、删除监听目标；记录中禁止删除目标
+- ✅ 重启恢复目标（错峰），不要求软件关闭时继续监听
+- ✅ 与 M6/M7 兼容：自动场次就是普通 `sessions`，可导出 AI 包、导入结果、参与长期记忆
+- ✅ 清空数据/恢复出厂/删除场次/数据迁移联动
+- ⬜ 真实双平台长时间运行（跨多天、真实下播→再开播）样本
+- ⬜ 真实 YouTube 页面结构变化的回归演练（只做了少量只读实测）
+- ⬜ 多目标（10+）长时间请求量与限流观测
+
+**交付**：用户添加一次直播间/频道，软件在运行期间自动完成开播检测、记录、关播保存，并在同一持久 Tab 中等待下一场。
+
 ## M8 Windows 正式发布 ⬜
 
 - ⬜ EXE 打包与干净 Windows 环境验收
@@ -263,9 +285,9 @@
 ## 依赖关系
 
 ```text
-M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡
+M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 → P7 ✅
                      ↘ M5 ⬜（可与 M3/M4 并行设计）
 所有 → M8 ⬜
 ```
 
-M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路径的条款合规评估与长期稳定性。M6 已完成文件协议与结果 Schema 的兼容性扩展；M5 备份与 M7 画像应继续沿用版本化、可校验的格式。
+M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路径的条款合规评估与长期稳定性。P7 的真实浏览器界面验证与真实平台长时间运行仍需在允许网络与浏览器的环境补验。M6 已完成文件协议与结果 Schema 的兼容性扩展；M5 备份与 M7 画像应继续沿用版本化、可校验的格式。

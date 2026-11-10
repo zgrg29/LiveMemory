@@ -1071,7 +1071,11 @@
     "memoryPackageNotFound": "The package file is missing from disk.",
     "memoryDeleteConfirmRequired": "Confirm the deletion explicitly. It cannot be undone.",
     "memoryReviewFailed": "That review action could not be applied.",
-    "memoryRollbackFailed": "That version could not be restored."
+    "memoryRollbackFailed": "That version could not be restored.",
+    "monitorTargetExists": "This room or channel is already in the auto-monitor list.",
+    "monitorTargetRecording": "This broadcast is still being recorded. Stop the recording before deleting the target.",
+    "monitorTargetPaused": "Monitoring is paused. Resume it first.",
+    "monitoringDisabled": "Automatic monitoring is not available."
   },
   "toast": {
     "saved": "Saved",
@@ -1276,6 +1280,110 @@
     "job": {
       "applied": "Applied",
       "missing": "Not imported"
+    }
+  },
+  "monitoring": {
+    "untitled": "Untitled target",
+    "chip": "Auto-monitor",
+    "tabsHint": "An auto-monitor tab belongs to a room or channel, not to one broadcast. It stays after the stream ends; the next broadcast starts a new, separate recording in the same tab.",
+    "tabAria": "{name}, auto-monitor: {state}",
+    "state": {
+      "waiting": "Waiting for live",
+      "checking": "Checking",
+      "connecting": "Connecting",
+      "recording": "Live · recording",
+      "reconnecting": "Reconnecting",
+      "ending": "Confirming end",
+      "paused": "Monitoring paused",
+      "error": "Needs attention"
+    },
+    "target": {
+      "subtitle": "{platform} · {key}",
+      "waitingHint": "LiveMemory checks this target in the background. When it goes live it connects and starts recording; when the broadcast ends it saves the session and keeps waiting.",
+      "pausedHint": "Monitoring is paused. A capture that is already running is not stopped; resuming only re-enables checks for the next broadcast.",
+      "recordingHint": "This broadcast is being recorded automatically. Stopping the recording ends only this session; the target and its tab stay."
+    },
+    "info": {
+      "title": "Monitoring",
+      "hint": "Read-only public status checks",
+      "state": "State",
+      "interval": "Check interval",
+      "lastCheck": "Last check",
+      "nextCheck": "Next check",
+      "lastLive": "Last live",
+      "target": "Target"
+    },
+    "interval": {
+      "seconds": "About every {n} seconds"
+    },
+    "action": {
+      "viewRecording": "View current recording",
+      "pause": "Pause monitoring",
+      "pauseHint": "Pausing stops new checks and new sessions; a running recording continues.",
+      "checkNow": "Check now",
+      "resume": "Resume monitoring",
+      "retry": "Retry now",
+      "delete": "Delete target"
+    },
+    "sessions": {
+      "title": "Recent broadcasts",
+      "hint": "Separate sessions created by this target",
+      "empty": "No automatic recordings yet",
+      "emptyBody": "The first recording will appear here after the broadcast starts.",
+      "open": "Open: {title}",
+      "untitled": "Untitled broadcast"
+    },
+    "error": {
+      "title": "Monitoring error",
+      "nextRetry": "Next automatic retry: {time}",
+      "network": "The network request failed; it will be retried later.",
+      "rateLimited": "The platform is rate limiting; checks back off as requested.",
+      "blocked": "The platform refused the public status check (verification or login may be required).",
+      "protocol": "The platform page could not be parsed; its markup may have changed.",
+      "notFound": "This room or channel could not be found.",
+      "restricted": "The platform requires verification or login before its public state can be read.",
+      "offlineRace": "The live state changed before connecting; it will be checked again shortly.",
+      "chatUnavailable": "The broadcast is live, but its public chat is not available.",
+      "duplicate": "This room or channel is already in the monitoring list.",
+      "invalidInput": "Enter a valid room link, room id or channel address.",
+      "notConfigured": "This platform is not available.",
+      "unknown": "An unknown monitoring error occurred."
+    },
+    "paused": {
+      "title": "Automatic monitoring is paused",
+      "body": "Resume monitoring to wait for the next broadcast again."
+    },
+    "delete": {
+      "title": "Delete monitoring target",
+      "subtitle": "Stop monitoring “{name}”?",
+      "body": "No automatic checks will run for this target afterwards.",
+      "keepHistory": "Recorded broadcast history is not deleted.",
+      "confirm": "Delete target"
+    },
+    "toast": {
+      "paused": "Automatic monitoring paused",
+      "resumed": "Automatic monitoring resumed",
+      "retried": "Check restarted",
+      "deleted": "Monitoring target deleted",
+      "added": "Auto-monitor added: {name}"
+    },
+    "add": {
+      "toggle": "Auto-monitor this room / channel",
+      "toggleHint": "While LiveMemory is running, {platform} is checked automatically and a recording starts when the broadcast goes live.",
+      "action": "Add auto-monitor",
+      "adding": "Adding…",
+      "note": "After adding, you never need to paste the link again. Live starts and stops are recorded automatically, and the tab stays.",
+      "rateNote": "While waiting, LiveMemory only performs low-frequency, read-only public status checks. It never downloads video or audio.",
+      "bilibiliPlaceholder": "Live room link or room id",
+      "bilibiliLabel": "Live room link or room id",
+      "youtubePlaceholder": "Channel link, @handle, channel ID or live link",
+      "youtubeLabel": "Channel link, @handle, channel ID or live link"
+    },
+    "hero": {
+      "autoChip": "Auto-monitor",
+      "stopHint": "Stopping the recording ends only this session. The target and its tab stay, and the next broadcast starts a new recording automatically.",
+      "platformEndedNote": "The platform confirmed the end; this recording was finished and saved automatically.",
+      "endedNote": "This recording has ended and is saved. The monitoring target stays and waits for the next broadcast."
     }
   }
 }

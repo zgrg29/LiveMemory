@@ -335,3 +335,67 @@ is_paid, source_quality, dedupe_key
 | 审计 | `app_meta['retention.lastRun']` 记录时间、天数、清理条数 |
 
 主播登录 Google **不代表**获得无限期保存其他观众数据的授权；统计与身份保留是对产品长期记忆价值的最小妥协，原始文本按窗口删除。
+
+## 8. 自动开播监听（v0.10.0）
+
+### 8.1 统一架构
+
+```text
+monitor_targets（持久目标，schema 11）
+  → MonitoringManager（状态机 / 调度 / 重试 / 会话创建）
+  → Platform Detector（Bilibili roomStatus / YouTube channel live page）
+  → SessionManager.startPlatform（普通适配器 + 普通 events 写入）
+  → sessions（每场一条，monitor_target_id 关联目标）
+```
+
+监听目标与单场 `sessions` 是两个概念。关播只结束当前 session，目标保留；下次开播创建新的
+session。网络重连不创建新 session（连接状态由适配器维护）。
+
+| 状态 | 含义 |
+| --- | --- |
+| `waiting` | 已启用、当前未开播，等待下次检查 |
+| `checking` | 正在执行一次只读检测 |
+| `connecting` | 已确认开播，正在创建并连接会话 |
+| `recording` | 本场正在记录；公开视图可派生 `reconnecting` |
+| `ending` | 平台已报告结束，正在确认/收尾 |
+| `paused` | 用户暂停；当前记录不停止 |
+| `error` | 连续失败或输入不可用，需要处理；30 分钟后低速重试 |
+
+### 8.2 Bilibili
+
+- 目标为真实房间号：用户可粘贴直播间 URL、短房间号或真实房间号；添加时用
+  `room_init` 规范化，并读取 `getInfoByRoom` 的主播名/UID。
+- 等待开播时只请求 `room/v1/Room/get_info`（`live_status` 0/1/2），**不使用 WebSocket 心跳或
+  弹幕连接状态判断开播**。
+- 确认 `live_status=1` 后调用 `BilibiliService.connectResolved`，仍由现有适配器再次校验并
+  建立 WebSocket；`live_status=2`（轮播）视为未开播。
+- 记录开始后由现有适配器负责下播确认（WS `LIVE`/`PREPARING` + 60 秒状态查询 + 两次有效离线）。
+- 失败（超时、429、-352、异常响应）只退避，不结束、不开始新场次。
+
+### 8.3 YouTube
+
+- 目标为稳定频道 ID：接受 `/channel/UC...`、`@handle`、`/c/...`、`/user/...`、裸 Channel ID，
+  以及普通/直播视频链接（通过公开 watch 页解析所属频道）。
+- 等待开播时请求 `/channel/<id>/live`：直播时页面内嵌 watch 播放器
+  （`videoDetails.isLive` / `microdata.isLiveNow`），未直播时返回频道页。
+- 必须同时满足「视频 ID 合法」「`channelId` 与目标一致」「`isLive`/`isLiveNow` 为真」才创建
+  会话；`isUpcoming` 只算等待，首映/普通视频/已结束不算直播。
+- 页面结构解析失败时，回退到频道 RSS（最近 6 小时）+ 最多 2 个候选视频的公开 watch 页确认；
+  RSS 条目本身不会被当成直播。
+- 发现后使用现有 `YouTubeService.connectDetected` 与匿名公开聊天适配器；不调用 Data API、
+  OAuth、API Key，不发送 Cookie。
+
+### 8.4 频率、缓存与限流
+
+| 平台 | 等待时基准间隔 | 抖动 | 429/失败 |
+| --- | --- | --- | --- |
+| Bilibili | 60 秒 | ±12%（45–90 秒） | `Retry-After`；否则指数退避至 10 分钟 |
+| YouTube | 180 秒 | ±12%（120–240 秒） | `Retry-After`；否则指数退避至 30 分钟 |
+
+- 每个平台一个 `RequestPacer`（Bilibili ≥1.2 秒、YouTube ≥2.5 秒请求间隔），最多 2 个并发检查。
+- 启动/重启时目标错峰 0–45 秒检查；新增目标 0.5–3 秒后首次检查。
+- 正在记录的目标不参与监听轮询，避免与适配器自身状态查询重复。
+- 缓存：频道身份、显示名、上次观察结果保存在目标行；浏览器窗口只读 API，不自行轮询平台。
+- 连续失败 4 次进入 `error`，30 分钟后重试；错误码与翻译后的原因显示在目标页。
+
+详细调研、许可证与真实页面实测见 `docs/YOUTUBE_AUTO_DISCOVERY.md`。

@@ -741,6 +741,56 @@ export const MIGRATIONS = Object.freeze([
           ON memory_results (job_id, batch_index);
       `);
     }
+  },
+  {
+    version: 11,
+    name: 'persistent-monitor-targets',
+    up(db) {
+      // Automatic live monitoring: a persistent target is the room/channel the
+      // user follows, not one broadcast. It survives the end of a stream; every
+      // new broadcast creates a normal `sessions` row linked back to the target.
+      //
+      // `state` is the monitoring lifecycle (waiting / checking / connecting /
+      // recording / ending / paused / error). The capture connection state is
+      // NOT copied here: it stays on the recording/adapter so a network
+      // reconnect can never be mistaken for a new broadcast.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS monitor_targets (
+          id TEXT PRIMARY KEY,
+          platform TEXT NOT NULL,
+          target_key TEXT NOT NULL,
+          display_name TEXT,
+          input TEXT,
+          broadcaster_id TEXT,
+          platform_uid TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          state TEXT NOT NULL DEFAULT 'waiting',
+          next_check_at INTEGER,
+          last_check_at INTEGER,
+          last_live_at INTEGER,
+          last_session_id TEXT,
+          active_session_id TEXT,
+          consecutive_failures INTEGER NOT NULL DEFAULT 0,
+          last_error_code TEXT,
+          last_error_at INTEGER,
+          paused_at INTEGER,
+          meta_json TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (platform, target_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_monitor_targets_next
+          ON monitor_targets (enabled, state, next_check_at);
+        CREATE INDEX IF NOT EXISTS idx_monitor_targets_broadcaster
+          ON monitor_targets (broadcaster_id, updated_at DESC);
+
+        ALTER TABLE sessions ADD COLUMN monitor_target_id TEXT;
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_monitor_target
+          ON sessions (monitor_target_id, started_at DESC);
+      `);
+    }
   }
 ]);
 

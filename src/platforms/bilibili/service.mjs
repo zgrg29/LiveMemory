@@ -112,7 +112,45 @@ export class BilibiliService {
     };
   }
 
-  async connect(roomId, {sourceQuality = SOURCE_QUALITY.ESTIMATED} = {}) {
+  /**
+   * Start a capture for a room whose live state was already verified by the
+   * automatic monitor. This still creates a normal session and a normal adapter:
+   * the adapter repeats the platform live check, so a race where the stream ends
+   * between detection and connection is refused instead of recording an empty
+   * room. Passing the resolved room only avoids duplicate metadata requests.
+   */
+  async connectResolved(room, {monitorTargetId = null, sourceQuality = SOURCE_QUALITY.ESTIMATED} = {}) {
+    const roomId = parseRoomId(room?.roomId);
+    const adapter = new BilibiliLiveAdapter({
+      roomId,
+      api: this.api,
+      WebSocketImpl: this.WebSocketImpl,
+      logger: this.logger,
+      now: this.now
+    });
+    const result = await this.sessionManager.startPlatform({
+      platform: 'bilibili',
+      platformRoomId: String(roomId),
+      roomTitle: room?.title ?? `Bilibili ${roomId}`,
+      broadcasterName: room?.anchorName ?? null,
+      broadcasterUid: room?.anchorUid ?? null,
+      sourceQuality,
+      simulated: false,
+      monitorTargetId,
+      createAdapter: () => adapter,
+      meta: {room: {...room, roomId}}
+    });
+    if (!result.started) throw duplicateRoomError(result.duplicate);
+    this.logger?.info({
+      event: 'bilibili.session.started',
+      sessionId: result.session.id,
+      roomId,
+      monitorTargetId: monitorTargetId ?? null
+    });
+    return {session: result.session, room: {...room, roomId}, connection: adapter.snapshot()};
+  }
+
+  async connect(roomId, {sourceQuality = SOURCE_QUALITY.ESTIMATED, monitorTargetId = null} = {}) {
     const room = await this.checkRoom(roomId);
     // A capture only makes sense for an actual live broadcast. Carousel/replay
     // rooms are not live and an offline room would create a session with no
@@ -132,27 +170,7 @@ export class BilibiliService {
         httpStatus: 409
       });
     }
-    const adapter = new BilibiliLiveAdapter({
-      roomId: room.roomId,
-      api: this.api,
-      WebSocketImpl: this.WebSocketImpl,
-      logger: this.logger,
-      now: this.now
-    });
-    const result = await this.sessionManager.startPlatform({
-      platform: 'bilibili',
-      platformRoomId: String(room.roomId),
-      roomTitle: room.title ?? `Bilibili ${room.roomId}`,
-      broadcasterName: room.anchorName ?? null,
-      broadcasterUid: room.anchorUid ?? null,
-      sourceQuality,
-      simulated: false,
-      createAdapter: () => adapter,
-      meta: {room}
-    });
-    if (!result.started) throw duplicateRoomError(result.duplicate);
-    this.logger?.info({event: 'bilibili.session.started', sessionId: result.session.id, roomId: room.roomId});
-    return {session: result.session, room, connection: adapter.snapshot()};
+    return this.connectResolved(room, {monitorTargetId, sourceQuality});
   }
 
   /**

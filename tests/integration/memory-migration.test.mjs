@@ -70,8 +70,8 @@ test('a v9 database upgrades to v10 keeping every existing row', () => {
 
     const result = migrate(db, {now: T0 + 1000});
     assert.equal(result.from, 9);
-    assert.equal(result.to, 10);
-    assert.deepEqual(result.applied, [10]);
+    assert.equal(result.to, 11);
+    assert.deepEqual(result.applied, [10, 11]);
 
     for (const table of [
       'viewer_memories',
@@ -105,20 +105,20 @@ test('a v9 database upgrades to v10 keeping every existing row', () => {
     const index = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_memory_facts_dedupe'").get();
     assert.match(index.sql, /WHERE status <> 'superseded'/);
 
-    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 10, to: 10, applied: []});
+    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 11, to: 11, applied: []});
   } finally {
     db.close();
   }
 });
 
-test('a fresh database creates the full schema at version 10', () => {
+test('a fresh database creates the full schema at version 11', () => {
   const db = openDatabase({memory: true});
   try {
     const result = migrate(db, {now: T0});
     assert.equal(result.from, 0);
-    assert.equal(result.to, 10);
-    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    assert.equal(currentSchemaVersion(db), 10);
+    assert.equal(result.to, 11);
+    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    assert.equal(currentSchemaVersion(db), 11);
   } finally {
     db.close();
   }

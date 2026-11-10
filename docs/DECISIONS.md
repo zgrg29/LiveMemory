@@ -411,3 +411,47 @@
 
 **后果**：下播能在合理时间自动结束，其他直播不受影响；代价是每个 Bilibili 房间多一个
 周期 HTTP 查询，且平台接口长期风控行为仍需观察。真实“直播中→下播”端到端样本仍待捕获。
+
+## ADR-032 自动监听以持久目标为中心，YouTube 用公开频道页而非官方 API
+
+**状态**：已采纳（v0.10.0，schema 11）
+
+**背景**：用户要求“添加一次直播间/频道，软件长期自动记录每一场”，且 Tab 必须跨场保留。
+现有 Tab 完全由 active recording 派生，关播即消失；YouTube 视频 ID 每场不同，不能作为监听目标。
+同时用户明确不把 Google Data API/OAuth/API Key 作为默认前提，要求优先研究开源方案。
+
+**决定**：
+
+- 新增 `monitor_targets` 作为持久目标（Bilibili 房间 / YouTube 频道），`sessions` 仍是单场记录；
+  `sessions.monitor_target_id` 只是关联，不做级联删除。目标是 Tab 的数据源，关播不删除目标。
+- 监听状态机独立于适配器连接状态；`reconnecting` 是公开派生状态，数据库仍为 `recording`，
+  网络重连不得创建新场次。只有确认新的 `live` 才创建新 session。
+- 统一 `MonitoringManager` 负责调度/退避/会话创建；平台差异只在 detector：
+  Bilibili 用公开 `room_status`；YouTube 用公开 `/channel/<id>/live` + `ytInitialPlayerResponse`，
+  解析失败时 RSS + watch 页确认回退。
+- YouTube 不引入 streammon（无 LICENSE，不能复制）、livestream_saver（GPL-3.0，不兼容）、
+  yt-dlp/pytchat（Python/外部进程，已有同类聊天实现）；只参考公开事实与 yt-dlp 的
+  `live_status` 语义。零运行时依赖不变。
+- 等待开播才轮询；记录中不重复轮询。Bilibili 约 60 秒、YouTube 约 180 秒，带抖动、
+  每平台串行 pacer、指数退避与 `Retry-After`；连续失败进入可见 `error`。
+
+**后果**：Tab 与目标长期稳定，自动场次完全复用 M6/M7；代价是 YouTube 依赖公开页面结构，
+页面改版可能触发 RSS 回退或显式错误，检测延迟最长约 2–4 分钟。真实长期稳定性仍需观察，
+不能描述为 YouTube 官方/稳定 API。
+
+## ADR-033 监听目标删除与场次删除互不级联
+
+**状态**：已采纳（v0.10.0）
+
+**背景**：监听目标与单场记录是两个生命周期；用户可能想停止监听但保留历史，也可能删除某场但继续监听。
+
+**决定**：
+
+- 删除目标：拒绝于记录中；否则删除目标行，并把该目标的 `sessions.monitor_target_id`
+  置空（历史保留），同时清空目标上的 `active_session_id`/`last_session_id`。
+- 删除场次：事务删除场次专属数据，但只清空目标上的指针，**不删除目标**。
+- 清空全部数据/恢复出厂：目标与场次一起删除。
+- 暂停监听不停止当前记录；停止当前记录不删除目标。
+
+**后果**：用户不会因为整理 Tab 或删除一场而意外丢失长期监听配置，也不会因为删除监听目标而丢失历史；
+代价是 UI 必须明确区分四种操作（关闭 Tab / 暂停 / 停止记录 / 删除目标），并在记录中禁止删除目标。

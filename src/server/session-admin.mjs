@@ -184,6 +184,15 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
     db.prepare('DELETE FROM session_currency_totals WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM viewer_sessions WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM events WHERE session_id = ?').run(id);
+    // A persistent monitoring target may point at this broadcast. The target
+    // and every other broadcast survive; only the dangling pointers are cleared.
+    db.prepare(`
+      UPDATE monitor_targets
+         SET active_session_id = CASE WHEN active_session_id = ? THEN NULL ELSE active_session_id END,
+             last_session_id = CASE WHEN last_session_id = ? THEN NULL ELSE last_session_id END,
+             updated_at = ?
+       WHERE active_session_id = ? OR last_session_id = ?
+    `).run(id, id, now, id, id);
     if (!deleteSession(db, id)) throw sessionNotFound();
     // Long-term memory facts that cited this broadcast stay, but their evidence
     // is now gone. Mark that honestly instead of leaving a "verified" claim.

@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**9**
+Schema 版本：**11**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -53,6 +53,7 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | gift_event_count | INTEGER | 礼物事件数 |
 | payment_event_count | INTEGER | 所有付费事件数 |
 | ai_status | TEXT | `none` / `exported` / `imported` |
+| monitor_target_id | TEXT | schema v11：产生本场记录的持久监听目标；手动连接为 NULL。不是外键，删除目标不删除历史 |
 | created_at / updated_at | INTEGER | 毫秒 |
 
 索引：`started_at DESC`、`status`、`broadcaster_id, started_at DESC`（v5）；
@@ -469,3 +470,50 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 
 - v9 → v10 只新增表与索引，不改写任何既有行；旧库现场升级（测试覆盖真实 v9 库）。
 - 记忆表同时纳入清空数据/恢复出厂范围。
+
+## 11. 自动监听目标（schema 11 / v0.10.0）
+
+### 11.1 概念分离
+
+| 概念 | 表 | 生命周期 |
+| --- | --- | --- |
+| 监听目标（直播间 / 频道） | `monitor_targets` | 用户添加后长期存在；关播不删除，只有显式删除才移除 |
+| 单场直播记录 | `sessions` | 每次开播一条；结束只改该行，不影响目标与其他场次 |
+
+`monitor_targets` **不是**场次的父亲：删除目标不级联删除 `sessions`，只把
+`sessions.monitor_target_id` 置空（历史保留）。删除场次也只清空目标上的
+`active_session_id` / `last_session_id` 指针。
+
+### 11.2 表
+
+| 表 | 主键/唯一 | 关键列 |
+| --- | --- | --- |
+| `monitor_targets` | `id`；`UNIQUE(platform, target_key)` | `platform`(bilibili/youtube)、`target_key`(真实房间号/频道 ID)、`display_name`、`input`、`broadcaster_id`、`platform_uid`、`enabled`、`state`、`next_check_at`、`last_check_at`、`last_live_at`、`last_session_id`、`active_session_id`、`consecutive_failures`、`last_error_code`/`last_error_at`、`paused_at`、`meta_json` |
+
+索引：`(enabled, state, next_check_at)` 供调度器选取到期目标；
+`broadcaster_id, updated_at DESC` 供按主播查看。
+
+### 11.3 状态与不变量
+
+`state` 是**监听生命周期**，不是采集连接状态：
+
+```text
+waiting → checking → connecting → recording → ending → waiting
+   ↑          ↓            ↓
+   └── error ←┴────────────┘
+paused（用户暂停；正在进行的 recording 不受影响）
+```
+
+- `recording` 时公开状态可由连接状态派生为 `reconnecting`，但数据库不把它写成新状态：
+  **网络重连不是新的一场直播**，仍使用同一个 `session_id`。
+- 只有 `sessions.status` 不再是 `live`（平台确认下播、用户停止、进程恢复）时，目标才回到
+  `waiting` / `paused`；下一次确认 `live` 才创建新场次。
+- 连续失败达到阈值进入 `error` 并显示原因；30 分钟后低频重试，用户也可手动重试。
+- 同一 `(platform, target_key)` 只能有一条目标；重复添加返回 409，不是静默合并。
+- 正在记录时删除目标被拒绝（409）；必须先停止记录。暂停监听不停止当前记录。
+
+### 11.4 迁移
+
+- v10 → v11：`ALTER TABLE sessions ADD COLUMN monitor_target_id`、新增
+  `monitor_targets` 与两个索引；旧场次该列为 NULL，旧数据不改写。
+- `monitor_targets` 纳入清空数据/恢复出厂范围；删除单个场次与删除目标都不删除对方。

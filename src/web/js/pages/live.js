@@ -1,5 +1,6 @@
 import {api} from '../api.js';
 import {TimelineChart} from '../chart.js';
+import {createModal} from '../dialog.js';
 import {
   chip,
   clear,
@@ -44,6 +45,30 @@ const STATE_META = {
   idle: {label: 'live.tabs.stateStopped', tone: 'neutral', dot: false, ended: true}
 };
 
+/** Persistent monitoring target states (a tab per room/channel, not per stream). */
+const MONITOR_STATE_META = {
+  waiting: {label: 'monitoring.state.waiting', tone: 'neutral', dot: false},
+  checking: {label: 'monitoring.state.checking', tone: 'neutral', dot: true},
+  connecting: {label: 'monitoring.state.connecting', tone: 'neutral', dot: true},
+  recording: {label: 'monitoring.state.recording', tone: 'live', dot: true},
+  reconnecting: {label: 'monitoring.state.reconnecting', tone: 'warn', dot: true},
+  ending: {label: 'monitoring.state.ending', tone: 'warn', dot: true},
+  paused: {label: 'monitoring.state.paused', tone: 'neutral', dot: false},
+  error: {label: 'monitoring.state.error', tone: 'danger', dot: false}
+};
+
+function monitorStateMeta(state, t) {
+  const meta = MONITOR_STATE_META[state] ?? MONITOR_STATE_META.waiting;
+  return {...meta, text: t(meta.label)};
+}
+
+function monitorName(target, t) {
+  return target?.displayName
+    || target?.targetKey
+    || platformLabel(target?.platform, t)
+    || t('monitoring.untitled');
+}
+
 function stateMeta(state, t) {
   const meta = STATE_META[state] ?? STATE_META.idle;
   return {...meta, text: t(meta.label)};
@@ -73,10 +98,15 @@ export const livePage = {
     let viewToken = 0;
     /** Active recordings as reported by the server. */
     let recordings = [];
+    /** Persistent monitoring targets (one tab per room/channel). */
+    let targets = [];
+    let monitoringPolicy = null;
     /** Locally kept tabs for recordings that ended while this page is open. */
     const retired = new Map();
     let selectedId = null;
-    /** 'new' | 'loading' | 'live' | 'retired' | 'error' */
+    /** When set, the selected tab is a persistent monitoring target. */
+    let selectedTargetId = null;
+    /** 'new' | 'loading' | 'live' | 'retired' | 'error' | 'target' */
     let viewKind = 'new';
     let refs = {};
     let chart = null;
@@ -93,6 +123,10 @@ export const livePage = {
     let checkedVideo = null;
     let biliStatus = null;
     let youtubeStatus = null;
+    let biliAutoMonitor = false;
+    let youtubeAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: ''};
+    let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
     let loginHintText = '';
@@ -126,19 +160,51 @@ export const livePage = {
       clear(tabsHost);
       const activeIds = new Set(recordings.map((recording) => recording.sessionId));
       const retiredList = [...retired.values()].filter((recording) => !activeIds.has(recording.sessionId));
+      const targetIds = new Set(targets.map((target) => target.id));
+      // A broadcast produced by a persistent target is represented by that
+      // target's tab; it must not create a second, stream-only tab.
+      const manualRecordings = recordings.filter((recording) => (
+        !recording.monitorTargetId || !targetIds.has(recording.monitorTargetId)
+      ));
       const scrollHost = el('div', {className: 'recording-tabs-scroll'});
       const tabList = el('div', {
         className: 'recording-tabs-bar',
         attrs: {role: 'tablist', 'aria-label': t('live.tabs.aria')}
       });
 
+      function appendMonitorTab(target) {
+        const selected = target.id === selectedTargetId;
+        const meta = monitorStateMeta(target.state, t);
+        const name = monitorName(target, t);
+        const group = el('div', {
+          className: 'recording-tab-group recording-tab-group--monitor',
+          dataset: {selected: String(selected), state: target.state}
+        });
+        group.append(el('button', {
+          className: 'recording-tab recording-tab--monitor',
+          type: 'button',
+          attrs: {
+            role: 'tab',
+            'aria-selected': selected ? 'true' : 'false',
+            'aria-label': t('monitoring.tabAria', {name, state: meta.text}),
+            title: `${name} · ${platformLabel(target.platform, t)} · ${meta.text}`
+          },
+          onClick: () => openTarget(target)
+        },
+        el('span', {className: 'recording-tab-dot', dataset: {state: target.state}, attrs: {'aria-hidden': 'true'}}),
+        el('span', {className: 'recording-tab-monitorMark', text: '◎', attrs: {'aria-hidden': 'true'}}),
+        el('span', {className: 'recording-tab-label', text: name}),
+        el('span', {className: 'recording-tab-state', text: meta.text})));
+        scrollHost.append(group);
+      }
+
       const newTab = el('button', {
         className: 'recording-tab recording-tab--new',
         type: 'button',
-        dataset: {selected: String(selectedId === null)},
+        dataset: {selected: String(selectedId === null && selectedTargetId === null)},
         attrs: {
           role: 'tab',
-          'aria-selected': selectedId === null ? 'true' : 'false',
+          'aria-selected': selectedId === null && selectedTargetId === null ? 'true' : 'false',
           'aria-label': t('live.tabs.newAria'),
           title: t('live.tabs.newTitle')
         },
@@ -146,7 +212,6 @@ export const livePage = {
       },
       el('span', {className: 'recording-tab-plus', text: '+', attrs: {'aria-hidden': 'true'}}),
       el('span', {className: 'recording-tab-label', text: t('live.tabs.new')}));
-      tabList.append(newTab, scrollHost);
 
       function appendTab(recording, {isRetired = false} = {}) {
         const selected = recording.sessionId === selectedId;
@@ -197,12 +262,17 @@ export const livePage = {
         scrollHost.append(group);
       }
 
-      for (const recording of recordings) appendTab(recording);
+      for (const target of targets) appendMonitorTab(target);
+      tabList.append(newTab, scrollHost);
+      for (const recording of manualRecordings) appendTab(recording);
       for (const recording of retiredList) appendTab(recording, {isRetired: true});
 
       tabsHost.append(tabList);
-      if (recordings.length > 1) {
+      if (targets.length + manualRecordings.length > 1) {
         tabsHost.append(el('p', {className: 'recording-tabs-hint', text: t('live.tabs.hint')}));
+      }
+      if (targets.length > 0) {
+        tabsHost.append(el('p', {className: 'recording-tabs-hint', text: t('monitoring.tabsHint')}));
       }
       window.requestAnimationFrame(() => {
         const node = selectedTabNode(scrollHost);
@@ -248,6 +318,7 @@ export const livePage = {
 
     function selectNew() {
       selectedId = null;
+      selectedTargetId = null;
       viewKind = 'new';
       viewToken += 1;
       destroyChart();
@@ -275,8 +346,15 @@ export const livePage = {
     }
 
     async function refreshRecordings() {
-      const payload = await api.get('/api/live/recordings');
+      const [payload, monitoring] = await Promise.all([
+        api.get('/api/live/recordings'),
+        api.get('/api/monitoring').catch(() => null)
+      ]);
       if (destroyed) return payload;
+      if (monitoring) {
+        targets = Array.isArray(monitoring.targets) ? monitoring.targets : [];
+        monitoringPolicy = monitoring.policy ?? monitoringPolicy;
+      }
       const next = Array.isArray(payload?.recordings) ? payload.recordings : [];
       const nextIds = new Set(next.map((recording) => recording.sessionId));
       const previousList = recordings;
@@ -290,7 +368,18 @@ export const livePage = {
           await openSession(previous.sessionId, {force: true});
         }
       }
+      if (selectedTargetId && !targets.some((target) => target.id === selectedTargetId)) {
+        selectedTargetId = null;
+        if (viewKind === 'target') selectNew();
+      }
       renderTabs();
+      const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null;
+      if (selectedTarget?.activeSessionId && viewKind === 'target') {
+        // The followed channel started broadcasting while its waiting tab was
+        // open: move that same tab to the live recording view.
+        await openSession(selectedTarget.activeSessionId, {force: true, monitorTargetId: selectedTarget.id});
+        return payload;
+      }
       if (!selectedId) {
         updateNewNotice();
         return payload;
@@ -443,6 +532,18 @@ export const livePage = {
           attrs: {title: t('live.hero.stopHint')},
           onClick: (event) => stopSelected(event.currentTarget)
         });
+      const monitorTarget = session.monitorTargetId
+        ? targets.find((target) => target.id === session.monitorTargetId) ?? null
+        : null;
+      const monitorAction = monitorTarget
+        ? el('button', {
+          className: 'button button--ghost',
+          type: 'button',
+          text: monitorTarget.enabled ? t('monitoring.action.pause') : t('monitoring.action.resume'),
+          attrs: {title: t('monitoring.action.pauseHint')},
+          onClick: (event) => changeTarget(monitorTarget, monitorTarget.enabled ? 'pause' : 'resume', event.currentTarget)
+        })
+        : null;
 
       const hero = el('section', {className: 'hero', dataset: {live: ended ? 'false' : 'true'}},
         el('div', {className: 'hero-body'},
@@ -450,6 +551,7 @@ export const livePage = {
             el('div', {className: 'hero-eyebrow'},
               stateHost,
               session.simulated ? chip(t('live.hero.simulatedChip'), 'neutral') : null,
+              session.monitorTargetId ? chip(t('monitoring.hero.autoChip'), 'accent') : null,
               session.platform === 'mock' ? null : chip(platformLabel(session.platform, t), 'neutral')),
             el('h1', {className: 'hero-title', text: title}),
             el('p', {
@@ -465,18 +567,23 @@ export const livePage = {
               el('span', {className: 'hero-divider'}),
               el('span', {className: 'hero-clock-label', text: t('live.stats.messages')}),
               el('span', {className: 'hero-clock-value', text: '0', dataset: {role: 'hero-messages'}})),
-            !ended ? el('p', {className: 'hero-note', text: t('live.hero.stopHint')}) : null,
+            !ended
+              ? el('p', {
+                className: 'hero-note',
+                text: session.monitorTargetId ? t('monitoring.hero.stopHint') : t('live.hero.stopHint')
+              })
+              : null,
             ended
               ? el('p', {
                 className: 'hero-note',
                 text: state === 'failed'
                   ? t('live.hero.failedNotice')
                   : (session.endReason === 'platform_ended' || session.endReason === 'platform_not_live'
-                    ? t('live.hero.platformEndedNotice')
-                    : t('live.hero.endedNotice'))
+                    ? t(session.monitorTargetId ? 'monitoring.hero.platformEndedNote' : 'live.hero.platformEndedNotice')
+                    : t(session.monitorTargetId ? 'monitoring.hero.endedNote' : 'live.hero.endedNotice'))
               })
               : null),
-          el('div', {className: 'hero-actions'}, action)));
+          el('div', {className: 'hero-actions'}, monitorAction, action)));
 
       refs.stateHost = stateHost;
       refs.connectionLine = connectionHost;
@@ -756,14 +863,20 @@ export const livePage = {
 
     /* ------------------------------------------------------- open a tab */
 
-    async function openSession(sessionId, {force = false} = {}) {
+    async function openSession(sessionId, {force = false, monitorTargetId = null} = {}) {
       const id = String(sessionId);
       if (!force && selectedId === id && (viewKind === 'live' || viewKind === 'retired')) return;
-      selectedId = id;
-      const token = ++viewToken;
-      renderTabs();
       const recording = recordings.find((item) => item.sessionId === id) ?? null;
       const retiredRecording = retired.get(id) ?? null;
+      const targetId = monitorTargetId
+        ?? recording?.monitorTargetId
+        ?? retiredRecording?.monitorTargetId
+        ?? targets.find((target) => target.activeSessionId === id || target.lastSessionId === id)?.id
+        ?? null;
+      selectedId = id;
+      selectedTargetId = targetId;
+      const token = ++viewToken;
+      renderTabs();
       const cached = summaryCache.get(id) ?? null;
       viewKind = 'loading';
       if (cached) {
@@ -779,6 +892,9 @@ export const livePage = {
         const summary = await api.get(`/api/sessions/${encodeURIComponent(id)}`);
         if (destroyed || token !== viewToken) return;
         summaryCache.set(id, summary);
+        if (!selectedTargetId && summary.session.monitorTargetId) {
+          selectedTargetId = summary.session.monitorTargetId;
+        }
         if (summary.session.status !== 'live') {
           if (!retiredRecording && recording) retireRecording(recording);
           renderSession(summary, retired.get(id) ?? recording, {readOnly: true});
@@ -793,6 +909,277 @@ export const livePage = {
         if (destroyed || token !== viewToken) return;
         renderError(error);
       }
+    }
+
+    /* ------------------------------------------------- persistent target */
+
+    async function openTarget(target) {
+      if (!target) return;
+      const active = target.activeSessionId
+        ? recordings.find((recording) => recording.sessionId === target.activeSessionId)
+        : null;
+      if (active) {
+        await openSession(target.activeSessionId, {force: true, monitorTargetId: target.id});
+        return;
+      }
+      selectedTargetId = target.id;
+      selectedId = null;
+      viewKind = 'target';
+      const token = ++viewToken;
+      destroyChart();
+      renderTabs();
+      renderTargetView(target);
+      await loadTargetSessions(target, token);
+    }
+
+    function monitorInfoRow(label, value) {
+      return el('div', {className: 'monitor-info-row'},
+        el('span', {className: 'monitor-info-label', text: label}),
+        el('span', {className: 'monitor-info-value', text: value}));
+    }
+
+    function targetCheckIntervalText(target) {
+      const ms = monitoringPolicy?.[target.platform]?.checkIntervalMs;
+      if (!Number.isFinite(Number(ms))) return null;
+      return t('monitoring.interval.seconds', {n: Math.round(Number(ms) / 1000)});
+    }
+
+    function renderTargetView(target) {
+      refs = {};
+      destroyChart();
+      clear(bodyHost);
+      const meta = monitorStateMeta(target.state, t);
+      const name = monitorName(target, t);
+      const interval = targetCheckIntervalText(target);
+
+      const actions = el('div', {className: 'hero-actions monitor-actions'});
+      if (target.activeSessionId) {
+        actions.append(el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('monitoring.action.viewRecording'),
+          onClick: () => openSession(target.activeSessionId, {force: true, monitorTargetId: target.id})
+        }));
+      }
+      if (target.enabled) {
+        actions.append(el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('monitoring.action.pause'),
+          attrs: {title: t('monitoring.action.pauseHint')},
+          onClick: (event) => changeTarget(target, 'pause', event.currentTarget)
+        }));
+        actions.append(el('button', {
+          className: 'button button--ghost',
+          type: 'button',
+          text: t('monitoring.action.checkNow'),
+          attrs: target.activeSessionId ? {disabled: ''} : {},
+          onClick: (event) => checkTargetNow(target, event.currentTarget)
+        }));
+      } else {
+        actions.append(el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('monitoring.action.resume'),
+          onClick: (event) => changeTarget(target, 'resume', event.currentTarget)
+        }));
+      }
+      actions.append(el('button', {
+        className: 'button button--ghost button--danger-text',
+        type: 'button',
+        text: t('monitoring.action.delete'),
+        onClick: () => openDeleteTargetDialog(target)
+      }));
+
+      const hero = el('section', {className: 'hero', dataset: {live: target.state === 'recording' ? 'true' : 'false'}},
+        el('div', {className: 'hero-body'},
+          el('div', {className: 'hero-text'},
+            el('div', {className: 'hero-eyebrow'},
+              chip(t('monitoring.chip'), 'accent'),
+              chip(platformLabel(target.platform, t), 'neutral'),
+              chip(meta.text, meta.tone, {dot: meta.dot})),
+            el('h1', {className: 'hero-title', text: name}),
+            el('p', {className: 'hero-sub', text: t('monitoring.target.subtitle', {
+              platform: platformLabel(target.platform, t),
+              key: target.targetKey
+            })}),
+            target.enabled
+              ? el('p', {className: 'hero-note', text: t('monitoring.target.waitingHint')})
+              : el('p', {className: 'hero-note', text: t('monitoring.target.pausedHint')}),
+            target.activeSessionId
+              ? el('p', {className: 'hero-note', text: t('monitoring.target.recordingHint')})
+              : null),
+          actions));
+
+      bodyHost.append(hero);
+
+      if (target.error) {
+        bodyHost.append(el('div', {className: 'callout callout--danger', style: {marginTop: '16px'}},
+          el('div', {className: 'callout-title', text: t('monitoring.error.title')}),
+          el('p', {text: ctx.describeError(target.error)}),
+          target.nextCheckAt
+            ? el('p', {className: 'callout-note', text: t('monitoring.error.nextRetry', {
+              time: formatDateTime(target.nextCheckAt, ctx.locale)
+            })})
+            : null,
+          el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+            el('button', {
+              className: 'button button--secondary button--small',
+              type: 'button',
+              text: t('monitoring.action.retry'),
+              onClick: (event) => changeTarget(target, 'retry', event.currentTarget)
+            }))));
+      } else if (target.state === 'paused') {
+        bodyHost.append(el('div', {className: 'callout callout--neutral', style: {marginTop: '16px'}},
+          el('div', {className: 'callout-title', text: t('monitoring.paused.title')}),
+          el('p', {text: t('monitoring.paused.body')})));
+      }
+
+      const info = el('section', {className: 'card', style: {marginTop: '16px'}},
+        el('div', {className: 'card-head'},
+          el('div', {className: 'card-title', text: t('monitoring.info.title')}),
+          el('div', {className: 'card-hint', text: t('monitoring.info.hint')})),
+        el('div', {className: 'card-body monitor-info'},
+          monitorInfoRow(t('monitoring.info.state'), meta.text),
+          interval ? monitorInfoRow(t('monitoring.info.interval'), interval) : null,
+          target.lastCheckAt
+            ? monitorInfoRow(t('monitoring.info.lastCheck'), formatDateTime(target.lastCheckAt, ctx.locale))
+            : null,
+          target.enabled && target.nextCheckAt
+            ? monitorInfoRow(t('monitoring.info.nextCheck'), formatDateTime(target.nextCheckAt, ctx.locale))
+            : null,
+          target.lastLiveAt
+            ? monitorInfoRow(t('monitoring.info.lastLive'), formatDateTime(target.lastLiveAt, ctx.locale))
+            : null,
+          monitorInfoRow(t('monitoring.info.target'), target.targetKey)));
+
+      refs.targetSessionsHost = el('div', {className: 'monitor-sessions'});
+      const sessionsCard = el('section', {className: 'card', style: {marginTop: '16px'}},
+        el('div', {className: 'card-head'},
+          el('div', {className: 'card-title', text: t('monitoring.sessions.title')}),
+          el('div', {className: 'card-hint', text: t('monitoring.sessions.hint')})),
+        refs.targetSessionsHost);
+
+      bodyHost.append(info, sessionsCard);
+      refs.targetSessionsHost.append(el('div', {className: 'card-body'}, loadingBlock()));
+    }
+
+    async function loadTargetSessions(target, token) {
+      let payload = null;
+      try {
+        payload = await api.get(`/api/monitoring/${encodeURIComponent(target.id)}/sessions?limit=10`);
+      } catch {
+        payload = null;
+      }
+      if (destroyed || token !== viewToken || selectedTargetId !== target.id) return;
+      const host = refs.targetSessionsHost;
+      if (!host) return;
+      clear(host);
+      const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+      if (sessions.length === 0) {
+        host.append(el('div', {className: 'card-body'},
+          emptyState({title: t('monitoring.sessions.empty'), body: t('monitoring.sessions.emptyBody'), glyph: '◎'})));
+        return;
+      }
+      for (const session of sessions) {
+        const duration = session.endedAt ? session.endedAt - session.startedAt : Date.now() - session.startedAt;
+        host.append(el('button', {
+          className: 'monitor-session',
+          type: 'button',
+          attrs: {
+            'aria-label': t('monitoring.sessions.open', {title: session.roomTitle || t('monitoring.sessions.untitled')})
+          },
+          onClick: () => ctx.navigate(`/history/${encodeURIComponent(session.id)}`)
+        },
+        el('div', {className: 'monitor-session-main'},
+          el('div', {className: 'row-title'},
+            el('span', {className: 'row-title-text', text: session.roomTitle || t('monitoring.sessions.untitled')})),
+          el('div', {className: 'monitor-session-meta', text: `${formatDateTime(session.startedAt, ctx.locale)} · ${formatDuration(duration, t)}`})),
+        el('div', {className: 'monitor-session-stats'},
+          el('span', {text: `${t('live.stats.messages')} ${formatInteger(session.messageCount, ctx.locale)}`}),
+          el('span', {text: `${t('live.stats.viewers')} ${formatInteger(session.uniqueViewerCount, ctx.locale)}`}),
+          statusChip(session, t))));
+      }
+    }
+
+    async function changeTarget(target, action, button) {
+      if (button) button.disabled = true;
+      try {
+        await api.patch(`/api/monitoring/${encodeURIComponent(target.id)}`, {action});
+        await refreshRecordings();
+        const next = targets.find((item) => item.id === target.id) ?? null;
+        if (next) await openTarget(next);
+        else selectNew();
+        ctx.toast(t(action === 'pause'
+          ? 'monitoring.toast.paused'
+          : action === 'resume' ? 'monitoring.toast.resumed' : 'monitoring.toast.retried'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function checkTargetNow(target, button) {
+      if (button) button.disabled = true;
+      try {
+        await api.post(`/api/monitoring/${encodeURIComponent(target.id)}/check`, {});
+        await refreshRecordings();
+        const next = targets.find((item) => item.id === target.id) ?? null;
+        if (next) await openTarget(next);
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function openDeleteTargetDialog(target) {
+      const name = monitorName(target, t);
+      const modal = createModal({
+        title: t('monitoring.delete.title'),
+        subtitle: t('monitoring.delete.subtitle', {name}),
+        t,
+        tone: 'danger'
+      });
+      const errorHost = el('div', {className: 'callout callout--danger'});
+      errorHost.hidden = true;
+      modal.body.append(
+        el('p', {text: t('monitoring.delete.body')}),
+        el('p', {className: 'monitor-delete-note', text: t('monitoring.delete.keepHistory')}),
+        errorHost
+      );
+      const cancel = el('button', {
+        className: 'button button--secondary',
+        type: 'button',
+        text: t('common.cancel'),
+        onClick: () => modal.close()
+      });
+      const remove = el('button', {
+        className: 'button button--danger',
+        type: 'button',
+        text: t('monitoring.delete.confirm')
+      });
+      remove.addEventListener('click', async () => {
+        remove.disabled = true;
+        try {
+          await api.delete(`/api/monitoring/${encodeURIComponent(target.id)}`, {confirm: true});
+          modal.close();
+          targets = targets.filter((item) => item.id !== target.id);
+          if (selectedTargetId === target.id) {
+            selectedTargetId = null;
+            selectNew();
+          } else {
+            renderTabs();
+          }
+          ctx.toast(t('monitoring.toast.deleted'));
+          await ctx.refreshStatus();
+        } catch (error) {
+          remove.disabled = false;
+          errorHost.hidden = false;
+          errorHost.textContent = ctx.describeError(error);
+        }
+      });
+      modal.actions.append(cancel, remove);
     }
 
     /* -------------------------------------------------------- live polls */
@@ -976,6 +1363,71 @@ export const livePage = {
       return t('live.source.loginSignedIn', {name});
     }
 
+    function autoMonitorToggle(platform, checked, onChange) {
+      const input = el('input', {attrs: {type: 'checkbox'}});
+      input.checked = checked;
+      input.addEventListener('change', () => onChange(input.checked));
+      return el('label', {className: 'monitor-toggle'},
+        input,
+        el('span', {className: 'monitor-toggle-text'},
+          el('span', {className: 'monitor-toggle-title', text: t('monitoring.add.toggle')}),
+          el('span', {className: 'monitor-toggle-hint', text: t('monitoring.add.toggleHint', {platform: platformLabel(platform, t)})})));
+    }
+
+    function buildAutoMonitorSection(platform) {
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          spellcheck: 'false',
+          placeholder: t(`monitoring.add.${platform}Placeholder`),
+          'aria-label': t(`monitoring.add.${platform}Label`)
+        }
+      });
+      input.value = autoInputs[platform] ?? '';
+      input.addEventListener('input', () => {
+        autoInputs[platform] = input.value;
+      });
+      refs.autoInput = input;
+      return el('div', {className: 'monitor-add'},
+        el('div', {className: 'source-row'},
+          el('label', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t(`monitoring.add.${platform}Label`)}),
+            input),
+          el('button', {
+            className: 'button button--primary',
+            type: 'button',
+            text: t('monitoring.add.action'),
+            onClick: (event) => addMonitoredTarget(platform, event.currentTarget)
+          })),
+        el('p', {className: 'source-note', text: t('monitoring.add.note')}),
+        el('p', {className: 'source-note', text: t('monitoring.add.rateNote')}));
+    }
+
+    async function addMonitoredTarget(platform, button) {
+      const value = String(refs.autoInput?.value ?? '').trim();
+      if (!value) {
+        ctx.toast(t('monitoring.error.invalidInput'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('monitoring.add.adding');
+      try {
+        const payload = await api.post('/api/monitoring', {platform, input: value});
+        autoInputs[platform] = '';
+        await refreshRecordings();
+        const target = targets.find((item) => item.id === payload.target?.id) ?? payload.target;
+        await openTarget(target);
+        ctx.toast(t('monitoring.toast.added', {name: monitorName(target, t)}));
+        await ctx.refreshStatus();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
     function buildBiliPanel() {
       const panel = el('div', {className: 'source-panel'});
       const login = biliStatus?.login;
@@ -1016,6 +1468,18 @@ export const livePage = {
       panel.append(qrWrap);
       panel.append(el('p', {className: 'source-note', text: t('live.source.loginScanHint')}));
       if (qrState?.url && Date.now() < qrState.expiresAt) drawQr(qrState.url);
+
+      panel.append(autoMonitorToggle('bilibili', biliAutoMonitor, (checked) => {
+        biliAutoMonitor = checked;
+        checkedRoom = null;
+        renderSource();
+      }));
+      if (biliAutoMonitor) {
+        panel.append(buildAutoMonitorSection('bilibili'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.anonymousNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.identityNote')}));
+        return panel;
+      }
 
       const input = el('input', {
         className: 'input',
@@ -1084,6 +1548,18 @@ export const livePage = {
       if (!status) {
         panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
           t('live.source.youtubeUnavailable')));
+        return panel;
+      }
+
+      panel.append(autoMonitorToggle('youtube', youtubeAutoMonitor, (checked) => {
+        youtubeAutoMonitor = checked;
+        checkedVideo = null;
+        renderSource();
+      }));
+      if (youtubeAutoMonitor) {
+        panel.append(buildAutoMonitorSection('youtube'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeIdentityNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.youtubeMoneyNote')}));
         return panel;
       }
 
@@ -1495,18 +1971,30 @@ export const livePage = {
       if (!destroyed) scheduleRecordingsRefresh();
     });
 
+    const offMonitoring = ctx.on('monitoring', () => {
+      if (!destroyed) scheduleRecordingsRefresh();
+    });
+
     /* ------------------------------------------------------------- initial */
 
-    const [recordingsPayload, sessionsPayload] = await Promise.all([
+    const [recordingsPayload, sessionsPayload, monitoringPayload] = await Promise.all([
       api.get('/api/live/recordings').catch(() => ({recordings: []})),
-      api.get('/api/sessions?limit=10').catch(() => ({sessions: []}))
+      api.get('/api/sessions?limit=10').catch(() => ({sessions: []})),
+      api.get('/api/monitoring').catch(() => null)
     ]);
     recordings = Array.isArray(recordingsPayload?.recordings) ? recordingsPayload.recordings : [];
+    targets = Array.isArray(monitoringPayload?.targets) ? monitoringPayload.targets : [];
+    monitoringPolicy = monitoringPayload?.policy ?? null;
     lastSessionRow = (sessionsPayload?.sessions ?? []).find((row) => row.status !== 'live') ?? null;
     await loadSourceStatuses();
 
     renderTabs();
-    if (recordings.length > 0) {
+    const liveTarget = targets.find((target) => target.activeSessionId) ?? null;
+    if (liveTarget) {
+      await openTarget(liveTarget);
+    } else if (targets.length > 0) {
+      await openTarget(targets[0]);
+    } else if (recordings.length > 0) {
       await openSession(recordings.at(-1).sessionId, {force: true});
     } else {
       selectNew();
@@ -1521,6 +2009,7 @@ export const livePage = {
       viewToken += 1;
       offEvent();
       offStatus();
+      offMonitoring();
       clearInterval(elapsedTimer);
       clearInterval(loginTimer);
       clearInterval(pollTimer);

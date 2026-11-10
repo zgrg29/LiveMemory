@@ -60,9 +60,10 @@ test('schema v1 databases upgrade to the current schema without losing old messa
   // badges and the raw displayed amount, v5 broadcaster identity and the
   // broadcaster × viewer context, v6 the session leaderboard index, v7 archive
   // state, end reason and the history/search indexes, v8 AI jobs/results,
-  // v9 platform live status and v10 long-term viewer memory.
-  assert.deepEqual(result.applied, [2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.equal(currentSchemaVersion(db), 10);
+  // v9 platform live status, v10 long-term viewer memory, v11 persistent
+  // automatic-monitoring targets.
+  assert.deepEqual(result.applied, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(currentSchemaVersion(db), 11);
   const columnsAfter = db.prepare('PRAGMA table_info(events)').all().map((row) => row.name);
   assert.ok(columnsAfter.includes('emotes'));
   assert.ok(columnsAfter.includes('badges'));

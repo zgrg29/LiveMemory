@@ -168,6 +168,57 @@ export class YouTubeService {
     };
   }
 
+  /**
+   * Start a capture for a broadcast that the automatic monitor already
+   * identified. The public watch page was parsed by the detector, so no extra
+   * metadata request is made here; the adapter still opens the public chat page
+   * and fails honestly if chat is unavailable, members-only or disabled.
+   */
+  async connectDetected(video, {monitorTargetId = null, input = null} = {}) {
+    const blocker = checkAnonymousRecordable(video);
+    if (blocker) throw toApiError(blocker);
+    const adapter = new YouTubeAnonymousLiveChatAdapter({
+      videoId: video.videoId,
+      video,
+      client: this.anonymous,
+      logger: this.logger,
+      now: this.now
+    });
+    const result = await this.sessionManager.startPlatform({
+      platform: 'youtube',
+      platformRoomId: video.videoId,
+      roomTitle: video.title ?? `YouTube ${video.videoId}`,
+      broadcasterName: video.channelTitle ?? null,
+      broadcasterUid: video.channelId ?? null,
+      sourceQuality: SOURCE_QUALITY_ESTIMATED,
+      simulated: false,
+      platformStartedAt: epochOrNull(video.actualStartTime),
+      monitorTargetId,
+      createAdapter: () => adapter,
+      meta: {video, detection: 'monitor', input: input ?? null},
+      onEnded: ({reason}) => {
+        this.lastEnd = {reason, at: this.now(), mode: 'web'};
+        this.#applyRetention();
+      }
+    });
+    if (!result.started) {
+      try {
+        await adapter.stop();
+      } catch {
+        /* ignore */
+      }
+      throw duplicateRoomError(result.duplicate);
+    }
+    this.logger?.info({
+      event: 'youtube.session.started',
+      sessionId: result.session.id,
+      videoId: video.videoId,
+      mode: 'web',
+      monitorTargetId: monitorTargetId ?? null
+    });
+    return {session: result.session, video: {...video, input: input ?? null}, connection: adapter.snapshot()};
+  }
+
   async connect(input) {
     const video = await this.checkVideo(input);
     const blocker = checkAnonymousRecordable(video);

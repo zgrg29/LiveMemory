@@ -16,6 +16,7 @@ import {withTransaction} from '../storage/database/connection.mjs';
  */
 
 const CLEARED_TABLES = Object.freeze([
+  'monitor_targets',
   'sessions',
   'events',
   'viewers',
@@ -156,6 +157,7 @@ function clearDatabase(db, {factory = false} = {}) {
     db.exec('DELETE FROM session_currency_totals');
     db.exec('DELETE FROM ai_packages');
     db.exec('DELETE FROM events');
+    db.exec('DELETE FROM monitor_targets');
     db.exec('DELETE FROM sessions');
     db.exec('DELETE FROM viewers');
     db.exec('DELETE FROM broadcasters');
@@ -176,6 +178,9 @@ async function rebuildRuntime(deps, root) {
   await deps.relocation.stop();
   const next = deps.relocation.build(root);
   deps.relocation.swap(next);
+  // A rebuilt runtime owns a fresh scheduler; the old one was stopped together
+  // with its adapters.
+  next.monitoring?.start?.();
   return next;
 }
 

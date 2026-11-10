@@ -1,5 +1,54 @@
 # 版本变化（CHANGELOG）
 
+## 0.10.0 — 2026-11-10（自动直播监听与持久化 Tab）
+
+### 新增
+
+- **自动直播监听（schema 11）**：新增 `monitor_targets`（持久监听目标）与
+  `sessions.monitor_target_id`。目标对应 Bilibili 直播间或 YouTube 频道，**不等于单场直播**：
+  关播只结束当前 session，目标与 Tab 保留；下次开播创建新的独立 session。
+- **统一监听核心**（`src/monitoring/`）：状态机 `waiting / checking / connecting / recording /
+  ending / paused / error`；公开视图可从连接状态派生 `reconnecting`，但数据库不会把重连写成新一场。
+  调度器按到期时间检查，启动错峰，每平台串行 pacer，最多 2 个并发；抖动 + 指数退避 +
+  `Retry-After`；连续 4 次失败进入可见 `error`，30 分钟后低速重试。
+- **Bilibili 自动监听**：支持直播间 URL、短房间号、真实房间号；添加时规范化并保存主播身份；
+  等待开播时只查询公开 `get_info.live_status`（约 1 分钟，45–90 秒抖动）；确认开播后复用现有
+  WebSocket 适配器，下播确认仍由现有 `LIVE`/`PREPARING` + `live_status` 逻辑负责。
+- **YouTube 自动监听**：支持频道 URL、`@handle`、`/c/`、`/user/`、裸 Channel ID 和已知视频链接；
+  用公开 `/channel/<id>/live` 页面判断直播（`videoDetails.channelId` 必须匹配、`isLive`/`isLiveNow`），
+  预定直播/首映/普通视频/回放不当作直播；解析失败时用 RSS + 最多 2 个 watch 页确认回退。
+  **不需要 Google Data API、OAuth、API Key、Cookie 或登录**，也不下载视频/音频。
+- **持久 Tab**：监听 Tab 固定在直播页，显示等待/检查/连接/记录/重连/确认结束/暂停/错误，
+  以及上次检查、下次检查、上次直播、错误原因和最近场次；可在 Tab 内暂停/恢复/立即检查/删除。
+  删除目标不删除历史场次；记录中删除目标被拒绝；暂停监听不停止当前记录。
+- **重启恢复**：目标持久化，重启后错峰恢复；不要求软件关闭时继续监听。启动时残留的
+  `checking/connecting/ending` 与已中断场次会被安全归位。
+- **API**：`GET/POST /api/monitoring`、`PATCH/DELETE /api/monitoring/:id`、
+  `POST /api/monitoring/:id/check`、`GET /api/monitoring/:id/sessions`；`/api/status` 与
+  `/api/bootstrap` 增加 `monitoring` 能力与摘要。
+- **M6/M7 兼容**：自动记录的场次是普通 `sessions`，可查看聊天/观众/统计、导出 AI 分析包、
+  导入结果、参与长期观众记忆；`buildSessionSummary` 与 `serializeSessionRow` 暴露
+  `monitorTargetId`。
+- **数据管理**：删除场次清空目标指针但保留目标；删除目标只清空历史指针；清空数据/恢复出厂
+  删除全部目标；数据目录迁移沿用现有数据库迁移流程。
+- **文档**：新增 `docs/YOUTUBE_AUTO_DISCOVERY.md`（streammon / livestream_saver / yt-dlp /
+  pytchat 调研、许可证、14 项比较、真实页面实测、请求预算与限制）。
+
+### 测试
+
+- 新增：Bilibili 检测器、YouTube 频道解析/页面解析/RSS 回退、监听状态机与调度、
+  schema v10→v11 迁移、HTTP 目标 CRUD 与重启恢复、YouTube 两场自动记录端到端、
+  M6 AI 包导出回归、监听 Tab/三语/CSS 静态检查。
+- 全量 `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+  的结果见 `docs/STATUS.md`（本轮实测）。
+
+### 未完成
+
+- 真实双平台跨多天「开播→下播→再开播」长跑样本；
+- 真实浏览器界面验收与截图（本机策略仍阻止无头浏览器）；
+- 10+ 目标的长期请求量/限流观测；
+- YouTube 页面结构变化的真实回归演练（本轮只做了少量只读实测）。
+
 ## 0.9.0 — 2026-11-10（M7：长期观众记忆）
 
 ### 新增
