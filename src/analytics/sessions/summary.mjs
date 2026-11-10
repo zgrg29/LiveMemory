@@ -52,6 +52,11 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
       platformStartedAt: session.platform_started_at ?? null,
       endedAt: session.ended_at,
       lastEventAt: session.last_event_at,
+      platformStatus: session.platform_status ?? null,
+      platformStatusAt: session.platform_status_at ?? null,
+      lastLiveSeenAt: session.last_live_seen_at ?? null,
+      platformEndedAt: session.platform_ended_at ?? null,
+      platformEndQuality: session.platform_end_quality ?? null,
       aiStatus: session.ai_status,
       durationMs,
       uniqueViewerCount: Number(session.unique_viewer_count ?? 0)

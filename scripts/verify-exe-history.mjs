@@ -342,7 +342,7 @@ let instance = await launchExe();
 try {
   await useEnglishUi();
   const status = await (await fetch(`${base}/api/status`)).json();
-  record('packaged EXE upgrades the v6 database to schema 8', status.database.schemaVersion === 8, {
+  record('packaged EXE upgrades the v6 database to schema 9', status.database.schemaVersion === 9, {
     schema: status.database.schemaVersion,
     version: status.server.version
   });
@@ -402,7 +402,7 @@ try {
   await evaluate("document.querySelector('.modal .button--primary')?.click(); 'clicked'");
   await sleep(1400);
   view = await evaluate(ROWS);
-  record('stopping from the EXE history list updates the status', view.rows.length === 1 && view.rows[0].chips.includes('Recording stopped'), {
+  record('stopping from the EXE history list updates the status', view.rows.length === 1 && view.rows[0].chips.includes('Stopped by user'), {
     chips: view.rows[0]?.chips
   });
   const recordingsAfterStop = await (await fetch(`${base}/api/live/recordings`)).json();
@@ -478,7 +478,7 @@ try {
   instance = await launchExe();
   await useEnglishUi();
   const restartedStatus = await (await fetch(`${base}/api/status`)).json();
-  record('restarting the EXE keeps schema 8 and no running capture', restartedStatus.database.schemaVersion === 8
+  record('restarting the EXE keeps schema 9 and no running capture', restartedStatus.database.schemaVersion === 9
     && (restartedStatus.platform.activeCount ?? 0) === 0, {
     schema: restartedStatus.database.schemaVersion,
     activeCount: restartedStatus.platform.activeCount

@@ -1,130 +1,131 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-09 · M6 AI 分析结果导入、分批汇总与直播分析报告 · v0.8.0（schema v8）
+本轮：2026-11-10 · Bilibili 直播生命周期检测修复 · v0.8.1（schema v9）
 
 ## 1. 本轮结果
 
 | 目标 | 结论 |
 | --- | --- |
-| 分析任务与导出 | 已完成。`POST /api/ai/jobs` 创建带提示词版本的任务，按消息边界拆批导出；旧 `/api/ai/packages` 保留。 |
-| 批次机制 | 已完成。稳定批次 id、seq 范围/时间覆盖/消息数/校验和；`ai_job_messages` 保存 seq→event 映射；不丢消息、不重复。 |
-| 文件/粘贴导入 | 已完成。JSON 文件与文本框；8 MB 上限；预览 → 确认 → 单事务写入。 |
-| 严格校验 | 已完成。自研 JSON Schema 子集 + 业务校验（场次/任务/批次/主播/观众/时间/消息引用/范围/汇总前置条件）。 |
-| 错误体验 | 已完成。字段路径 + 原因 + 修复建议；三语；无部分写入。 |
-| 重复与版本 | 已完成。相同结果判重复不写；不同结果需显式确认新版本并保留旧版本。 |
-| 分批汇总 | 已完成。乱序/重复/缺失检测；全部批次后可生成第二阶段汇总包；最终结果导入后任务完成；不拼接部分结果。 |
-| 分析报告 | 已完成。摘要、话题时间线、情绪、争论、片段建议、观众画像、来源与证据；原文不可用时明确标记。 |
-| 安全 | 已完成。AI JSON 只按白名单存储、只作文本渲染、不执行、不能改事件/金额/设置；身份不按昵称猜测。 |
-| 三语提示词 | 已完成。`lm-prompt-m6.1-zh-CN/ja/en`，记录在任务与包中，字段语义一致。 |
-| 数据兼容 | schema 8 仅新增表/列/索引；旧分析包与 1.0.0 结果仍可导入；v7→v8、v6→v8 均由打包 EXE 实测。 |
-| 删除/清空 | 已完成。删除场次级联任务/批次/结果/证据并删除包文件；清空数据包含全部 AI 表。 |
-| 测试 | 354 自动化全部通过；浏览器 UI 17/17；打包 EXE AI 14/14；EXE 矩阵 10/10；EXE 历史回归 19/19。 |
-| 真实 AI | **未调用**。只验证了符合 Schema 的合成结果；不要写成真实 AI 已验证。 |
+| 根本原因 | 已定位。Bilibili 适配器忽略 `PREPARING`/`STOP_LIVE`、不处理 `LIVE`、从不查询 `live_status`；`status='live'` 只代表本地 WebSocket 采集仍在运行。 |
+| 平台/采集状态分离 | 已完成。schema 9 新增 `platform_status`、`platform_status_at`、`last_live_seen_at`、`platform_ended_at`、`platform_end_quality`。 |
+| WebSocket 状态事件 | 已完成。处理当前房间的 `LIVE`/`PREPARING`/`STOP_LIVE`；校验 room id、generation、重复/乱序；旧连接不能结束新场次。 |
+| 定期状态查询 | 已完成。每 60 秒查询 `room/v1/Room/get_info` 的 `live_status`；8 秒超时、指数退避、每房间独立定时器。 |
+| 下播确认 | 已完成。WebSocket 下播事件 + 1 次有效离线查询，或 2 次连续有效离线查询；失败/429/-352/异常响应绝不算下播。 |
+| 自动结束 | 已完成。清定时器/WebSocket/重连 → 写最终事件 → 更新 `ended_at`/`end_reason='platform_ended'`/平台状态 → SSE 刷新；保留全部数据。 |
+| 多直播间 | 已完成。A 下播只结束 A；B/C 继续；已停止 adapter 的异步回调被 generation/recording 双重丢弃。 |
+| 快速重开 | 已完成。同一房间重新开播创建新场次；旧场次 ended，旧回调不能写入新场次。 |
+| 历史异常数据 | 已完成。启动恢复不再把最后弹幕当结束时间；后台探测历史 Bilibili 行，证据不足标 unknown，不编造 `platform_ended_at`，幂等、有日志。 |
+| UI | 已完成。历史列表/详情/多场标签区分已下播、手动停止、采集中断、平台未知；平台结束后不再显示绿色直播中；时长固定；三语 + 明暗 + 390px。 |
+| 测试 | 386 自动化全部通过；EXE 矩阵 10/10；EXE 历史 19/19；EXE 生命周期 UI 21/21。 |
+| 真实下播 | **未完成端到端**。真实 4 房间 20 分钟监控全部保持 live、无误结束，但期间没有主播下播；不能声称真实下播已验证。 |
 
 ## 2. 后端变化
 
-### 2.1 新模块
+### 2.1 新模块 / 关键改动
 
-- `src/ai/constants.mjs`：协议、结果 Schema 版本、提示词版本、批次边界、导入上限、任务 id 生成。
-- `src/ai/export/context.mjs`：三语包共用的消息行、表情字典、观众上下文、会话上下文、包 notes。
-- `src/ai/export/job.mjs`：
-  - `createAnalysisJob({db, sessionId, locale, exportsDir, batchSize, now})`：拆批、写 ZIP、事务写
-    job/batch/messages/viewers/packages；
-  - `buildAggregatePackage({db, jobId, exportsDir, now})`：全部分批结果导入后生成第二阶段包；
-  - 失败时删除本次写出的 ZIP，不留下半套任务。
-- `src/ai/tasks/status.mjs`：`computeJobStatus()` / `recomputeSessionAiStatus()`；状态永远从数据库行计算。
-- `src/ai/import/schema-validator.mjs`：无依赖 JSON Schema 2020-12 子集校验器（含结构/深度/节点上限）。
-- `src/ai/import/validate.mjs`：`validateAnalysisImport({db,text,source,now})` 预览/语义校验；
-  `parseImportText`、`canonicalJson`、`sanitizeResult`。
-- `src/ai/import/importer.mjs`：`importAnalysisResult({..., createVersion})`；旧版结果自动创建 legacy job；
-  单事务写结果与证据；失败回滚。
-- `src/analytics/ai/report.mjs`：`buildSessionAnalysisReport(db, sessionId)`；完整/单批/部分三种模式；
-  证据解析到真实 `events` 行；原文清理/删除时标记不可用。
+- `src/shared/live-status.mjs`：平台状态常量（`live` / `ended` / `not_started` / `carousel` /
+  `unknown` / `ending`）、结束质量（`event` / `poll` / `unknown`）、`live_status` 映射。
+- `src/storage/database/migrations/index.mjs`：**v9** 新增 5 个 `sessions` 列与
+  `idx_sessions_platform_status`。
+- `src/storage/repositories/sessions.mjs`：
+  - `setSessionPlatformStatus()`：只更新平台状态，不碰采集状态；live 观测清除未确认的结束证据；
+  - `listSessionsNeedingPlatformRepair()`：只挑崩溃/退出且从未修复的 Bilibili 行；
+  - `recoverInterruptedSessions()`：`ended_at=now`（检测时间），不再用 `last_event_at`；
+  - 返回被恢复的完整行，供启动探测使用。
+- `src/platforms/bilibili/api.mjs`：新增 `roomStatus()`（`get_info`），缺字段/无效值抛错，
+  429/-352/超时保持可区分。
+- `src/platforms/bilibili/adapter.mjs`：
+  - 处理 `LIVE`/`PREPARING`/`STOP_LIVE`；
+  - 每房间独立状态轮询、离线确认、退避；
+  - `#confirmEnd()` 清定时器、关 socket、写平台状态、调用 `onEnd({reason:'platform_ended'})`；
+  - `onPlatformStatus` 回调把观测交给 SessionManager；
+  - 初始连接时未开播/轮播直接失败，避免创建空场次。
+- `src/platforms/bilibili/recovery.mjs`：历史行分类与修复，不改 `ended_at`、不编造结束时间、
+  失败留待下次、修复后幂等。
+- `src/platforms/bilibili/service.mjs`：`connect()` 拒绝未开播/轮播；新增
+  `repairHistoricalSessions()`。
+- `src/platforms/shared/session-manager.mjs`：
+  - 新增 `#onPlatformStatus()`、`emitStatus()`；
+  - `#publicRecording()` 暴露平台状态；
+  - `onEvent` 写入前确认 recording 仍存在且未停止。
+- `src/server/index.mjs`：服务器就绪后后台执行历史平台状态修复（不阻塞启动）。
+- 序列化/读模型：`serializeSessionRow`、`buildSessionSummary`、`searchHistory`、
+  `liveRecordingOverview` 均增加平台状态字段。
 
-### 2.2 仓储
+### 2.2 路由
 
-- `src/storage/repositories/ai-jobs.mjs`：任务、批次、seq 映射、批次观众集合、失败记录、汇总包来源。
-- `src/storage/repositories/ai-results.mjs`：结果版本、scope（`batch:N` / `final`）、校验和、证据。
-- `ai-packages.mjs`：新增 `jobId` / `batchIndex` / `stage` / `promptVersion`，保留旧调用默认值。
-- `events.mjs`：`listSessionMessagesAsc` 支持 `offset`；新增 `getEventById`、`countSessionMessages`。
-- `sessions.mjs`：沿用 `setSessionAiStatus`；状态由 `recomputeSessionAiStatus` 写入。
+没有新增 HTTP 路径；`/api/live/recordings`、`/api/sessions`、`/api/sessions/:id`、
+`/api/history/search` 的响应增加：
 
-### 2.3 路由
-
-```text
-POST   /api/ai/jobs                      创建任务并导出全部批次
-GET    /api/ai/jobs?sessionId=           任务列表 + 计算状态 + 包
-GET    /api/ai/jobs/:id                  任务 + 批次 + 包 + 结果版本
-POST   /api/ai/jobs/:id/aggregate        生成第二阶段汇总包
-GET    /api/ai/instructions?locale=&jobId=&batchIndex=&stage=
-POST   /api/ai/import/preview            只读预检查
-POST   /api/ai/import                    确认导入（createVersion 可显式开新版本）
-GET    /api/ai/sessions/:id/report       报告读模型
-GET    /api/ai/results/:id               单个结果（含原始 JSON）
-GET    /api/ai/results/:id/download      下载结果 JSON 供审计
+```json
+{
+  "platformStatus": "ended",
+  "platformStatusAt": 1794278400000,
+  "lastLiveSeenAt": 1794277800000,
+  "platformEndedAt": 1794278399000,
+  "platformEndQuality": "event"
+}
 ```
 
-- `POST /api/ai/import/preview` 与 `/api/ai/import` 使用约 8 MB 请求上限；其他 API 仍为 1 MB。
-- 超大请求会先读完/丢弃再返回 413，避免客户端只看到连接重置。
-- `/api/ai/packages` 与 `/api/ai/packages/:id/download` 继续兼容；包序列化新增 job/批次/阶段/提示词版本。
+### 2.3 数据模型
 
-### 2.4 数据模型
-
-- schema **8** 新增表：`ai_jobs`、`ai_job_batches`、`ai_job_messages`、`ai_job_viewers`、`ai_results`、
-  `ai_result_evidence`。
-- `ai_packages` 新增列：`job_id`、`batch_index`、`stage`（默认 `single`）、`prompt_version`。
-- 删除场次：显式删除 `ai_results`、`ai_jobs`（级联批次/映射/观众）与 `ai_packages`，再删其他子表；
-  `assertNoResidue` 增加 `ai_jobs` / `ai_results`；提交后删除包文件。
-- `maintenance.clearDatabase()` 明确删除全部 AI 表（先证据/结果/映射/批次/任务，再包与业务表），
-  `CLEARED_TABLES` 同步用于预览、备份计数和清空后校验。
+- schema **9**；旧库原地升级，旧行 5 个新列全为 NULL（不猜测历史平台状态）。
+- `status` 仍只表示本地采集；`platform_status` 表示平台直播状态。
+- 自动下播：`status='ended'`、`end_reason='platform_ended'`、`ended_at` = 本地结束时间，
+  `platform_ended_at` = 确认的平台结束时间/检测时间，`platform_end_quality` 记录证据类型。
+- 未确认/未知：`platform_ended_at=NULL`，UI 显示「未知」，不复制最后弹幕时间。
 
 ## 3. 前端变化
 
-- `src/web/js/pages/ai.js` 重写：任务创建/批次包下载/提示词选择/文件与粘贴导入/预览错误/确认版本/
-  任务状态/汇总包/重新分析。
-- `src/web/js/pages/ai-report.js` 新增：报告渲染（摘要、话题、情绪、争论、片段、画像、来源、证据）。
-- `history.js`：详情卡读取 `/api/ai/sessions/:id/report`，有报告时显示摘要与完整报告入口；
-  部分结果显示不完整；仅导出显示等待导入。
-- `shared.js`：`aiChip` 支持 partial / complete / invalid。
-- i18n：三语新增 `ai.setup.*`、`ai.job.status.*`、`ai.jobs.*`、`ai.report.*`、`ai.import.*`
-  （含 `reason.*` 与 `fix.*`）、`history.detail.aiViewReport`、`history.ai.partial/complete`、
-  错误键与 toast。
-- 样式：`pages.css` 新增导入预览、错误/警告、任务行、报告卡、证据、情绪、片段、画像、来源、
-  响应式规则；沿用 tokens，不写死颜色。
-- 安全：AI 文本一律通过 `el`/`textContent`；无 `innerHTML`/`eval`/`Function`；证据原文与不可用状态
-  均为纯文本。
+- `src/web/js/pages/shared.js`：
+  - `captureStatusMeta()`：采集状态（直播中/确认中/正在结束记录/手动停止/采集中断/已结束）；
+  - `platformStatusMeta()` / `platformStatusChip()`：平台状态独立标签；
+  - `endReasonLabelKey()`：结束原因三语；
+  - 平台已下播/确认中时采集标签不再是绿色。
+- `src/web/js/pages/live.js`：多场标签显示平台结束；hero 使用采集+平台双状态；
+  已下播提示；未开播房间禁用开始按钮。
+- `src/web/js/pages/history.js`：列表增加平台状态 chip；详情增加「直播生命周期」卡
+  （采集状态、平台状态、最后确认直播中、平台结束时间、检测时间、结束原因）与
+  「结束时间未知」说明；平台自动结束提示。
+- `src/web/i18n/{zh-CN,ja,en}.json`：新增 `status.*`、`history.detail.*`、
+  `history.endReason.*`、`live.hero.platformEndedNotice`、`live.source.onlyLiveCanStart`、
+  `errors.bilibiliRoomNotLive|Carousel` 等键；三语键完全一致。
+- 样式沿用 tokens；未引入 innerHTML；390px 无横向溢出。
 
 ## 4. 关键规则（下一轮不要破坏）
 
-1. **AI 结果不可信**：不得执行、不得直接合并进事件/金额/计数、不得按昵称解析观众身份。
-2. **身份隔离**：结果只能引用该批次 `viewer_context` 中的 `viewer_id`；汇总阶段只能引用任务内批次并集。
-3. **证据必须可解析**：`seq` 必须来自 `ai_job_messages`；`{batch, seq}` 必须属于该任务；报告显示真实
-   事件行；原文已清理时明确不可用。
-4. **不拼接部分结果**：多批任务未导入全部批次或未导入汇总结果时，状态不能标 complete。
-5. **版本只追加**：相同校验和判重复；不同内容必须 `createVersion: true`；旧版本保留。
-6. **任务状态从数据库计算**，不要新增前端临时状态作为唯一依据。
-7. **删除/清空必须覆盖 AI 表**：改动 schema 时同步 `session-admin`、`maintenance`、`DATA_MODEL` 与测试。
-8. **提示词版本**：任何提示词语义变化都要改 `PROMPT_VERSION`，并在任务/包中记录；三语一起改。
+1. **连接 ≠ 直播**：WebSocket 连接、无弹幕、网络断开、用户停止都不能推断平台状态。
+2. **失败 ≠ 下播**：超时、429、-352、缺字段、房间不匹配、无效 `live_status` 只退避。
+3. **确认后才结束**：WS 下播事件 + 1 次有效离线，或连续 2 次有效离线。
+4. **一个房间一场**：A 下播只结束 A；快速重开必须新场次；重连 `live_time` 变化或
+   `PREPARING` 后不同 `live_key` 的 `LIVE` 要结束旧场次。
+5. **旧回调不能复活**：generation + recording 存在性 + `stopping` 三重保护。
+6. **不编造结束时间**：`platform_ended_at` 只在有证据时写；历史修复不写；最后弹幕不是下播时间。
+7. **不删数据**：自动下播/历史修复不删除事件、观众、金额、AI 关联。
+8. **状态从数据库读**：前端不保存唯一状态；SSE/轮询后重新读取。
 
 ## 5. 测试 / 构建 / 验证
 
-- 全量：**354 passed / 0 failed / 约 48.3 秒**。
-- 新增：`ai-import`、`ai-batching`、`ai-api`、`ai-migration`、`ai-prompts`、`ai-ui` 测试与 `ai-fixtures`。
-- 浏览器 UI：`node scripts/demo-ai.mjs --port 48370` + `node scripts/verify-ai-ui.mjs --port 9224 --base http://127.0.0.1:48370` → **17/17**。
-- EXE：90.6 MB / 117 资源 / SHA-256 `215bb6c0fcefb6bcd2b17b51f0391af886b2ab2ccc67409648348ba0a2f12f05`；
-  `verify-exe.mjs` **10/10**；`verify-exe-ai.mjs` **14/14**；`verify-exe-history.mjs` **19/19**；
-  `--version` = 0.8.0。
-- **未使用真实 AI**：所有测试结果由真实包元数据构造；真实 AI 输出差异是下一轮的首要验证项。
+- 全量：**386 passed / 0 failed / 约 50–75 秒**。
+- 新增：`bilibili-lifecycle`、`live-lifecycle`、`platform-status-recovery`、
+  `platform-status-migration`、`bilibili-status-api`、`bilibili-service`、
+  `live-status-ui`、`session-status-serialization`。
+- EXE：90.7 MB / 119 资源 / SHA-256 `62f03b290d98652b6db93eaa491a24b68bdcff4338c31bca779cda78b0f6a409`；
+  静态校验 manifest=`requireAdministrator`、嵌入版本 `0.8.1`、资源哈希 `4972ae...`、迁移 9 字符串。
+  **最终哈希在本机被执行策略（Device Guard）拦截，未能启动**；同源的 `23a040...` 构建实测
+  `verify-exe.mjs` **10/10**、`verify-exe-history.mjs` **19/19**、`verify-live-status-ui.mjs` **21/21**；
+  最终差异只是重连抖动保护，已由 386 项源码测试覆盖。最终哈希必须在无该策略/签名后复验。
+- 真实 4 房间 20 分钟：全部保持 live，170 条真实事件，无误结束；
+  **未观察到真实下播**。
 
 ## 6. 未验证 / 边界
 
-- 真实 AI 服务（ChatGPT/Claude/Gemini 等）的实际文件读取、输出长度与格式差异。
+- 真实「直播中→下播」端到端（本轮监控期间未发生）。
+- 真实 `PREPARING` 样本：只按协议/类型定义与受控帧验证。
+- 数小时状态轮询下的 429/-352 长期行为。
 - 真实 UAC、管理员桌面完整流程（EXE 使用 asInvoker 临时副本验证功能）。
-- 真实文件夹选择器人工点击。
-- 本轮无新的真实 Bilibili/YouTube 采集。
-- YouTube 30 天清理不会删除已导入 AI 结果中的观众画像/摘要；这是已知保留限制，不得声称完全合规。
-- 无单结果版本删除 UI/API；无后台自动重试/断点续传；不导入用户提供的 ZIP；不处理视频/切片。
-- 单任务上限 50,000 条；未做 10 万条与 20+ 批次压力测试。
+- 轮播房间只验证了接口值 2 与适配器分类，未长时间记录轮播。
+- YouTube 生命周期未在本轮改动。
 
 ## 7. 常用命令
 
@@ -132,18 +133,17 @@ GET    /api/ai/results/:id/download      下载结果 JSON 供审计
 :: 全量测试
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: AI UI 模拟 + 浏览器验证
-node scripts/demo-ai.mjs --port 48370
-node scripts/verify-ai-ui.mjs --port 9224 --base http://127.0.0.1:48370
-
-:: 构建 / 校验 EXE
+:: 构建 / EXE 验证
 node scripts/build-windows.mjs
 node scripts/verify-exe.mjs
-node scripts/verify-exe-ai.mjs
-node scripts/verify-exe-history.mjs
+node scripts/verify-exe-history.mjs --port 49321 --debug-port 9224
+node scripts/verify-live-status-ui.mjs --port 49340 --debug-port 9224
+
+:: 真实 Bilibili 单房间探测（示例）
+node scripts/probe-bilibili.mjs 5050 30
 ```
 
 ## 8. 本轮 Commit
 
 - 本轮功能与文档提交：见 `git log -1`（本地 commit，未 Push）。
-- 上一轮：`de292eb feat: manage and search live history sessions`。
+- 上一轮：`ca39789 feat: import AI analysis results with batched reports`。

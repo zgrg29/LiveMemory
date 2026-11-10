@@ -192,6 +192,25 @@ export async function startServer({
     recoveredSessions: runtime.recovered.length
   });
 
+  // Historical rows abandoned by a crash/shutdown are probed after the server
+  // is available so a slow/blocked platform cannot delay startup. The probe is
+  // idempotent, never changes `ended_at`, and only annotates platform state.
+  runtime.bilibili?.repairHistoricalSessions({now: now()})
+    .then((result) => {
+      if (result.checked > 0) {
+        logger?.info({
+          event: 'session.platform.repair.summary',
+          checked: result.checked,
+          updated: result.updated,
+          failed: result.failed,
+          skipped: result.skipped
+        });
+      }
+    })
+    .catch((error) => {
+      logger?.warn({event: 'session.platform.repair.error', code: error?.code ?? 'unknown'});
+    });
+
   let closed = false;
   async function close() {
     if (closed) return false;

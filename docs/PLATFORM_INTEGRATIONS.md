@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；v0.8.1 增加平台直播状态与下播检测（WebSocket `LIVE`/`PREPARING` + 定期 `live_status` 查询），已用真实房间验证状态查询与 4 房间 20 分钟并发，但真实“直播中→下播”端到端仍未捕获。礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。** 模拟平台（mock）保持可用。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -154,6 +154,58 @@ node scripts/probe-bilibili-emotes.mjs 5050 35
 :: 端到端：房间 → 连接 → 入库 → 控制台读模型 → 停止
 node scripts/verify-bilibili.mjs 5050 20
 ```
+
+### 2.9 直播状态与下播检测（v0.8.1）
+
+Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务端会保持连接，离线房间也可能
+收到零散弹幕/在线排名消息。`sessions.status` 只描述本地采集，平台状态单独记录。
+
+**真实接口（2026-11-10 实测）**
+
+| 房间 | 接口 | 结果 |
+| --- | --- | --- |
+| `22014628`（用户问题房间） | `room/v1/Room/get_info` | HTTP 200，`live_status=0`，标题仍可读 |
+| `6`（真实房间 `7734200`） | 同上 | `live_status=1` |
+| `5440` / `22637261` | 同上 | `live_status=2`（轮播） |
+| 高频匿名请求 | `xlive/web-room/v1/index/getInfoByRoom` | `code=-352` 风控；状态轮询因此改用轻量 `get_info` |
+
+`live_status`：0 未开播，1 直播中，2 轮播中。字段缺失/其他数值视为“状态未知”，**不是**离线。
+
+**WebSocket 状态命令**（协议字段来自真实抓包/类型定义，设备受控帧测试）
+
+| 命令 | 关键字段 | 处理 |
+| --- | --- | --- |
+| `LIVE` | `live_key`、`live_time`、`roomid` | 当前房间/当前 generation → `platform_status=live`，重置离线计数 |
+| `PREPARING` | `roomid`、`round` | 校验房间 → `ending`，立即查询一次 `live_status` |
+| `STOP_LIVE` | 旧命令/房间 | 与 `PREPARING` 同路径 |
+
+- 连接在线房间 25 秒**没有**收到 `LIVE`；连接离线房间 20 秒只收到
+  `ONLINE_RANK_*`/`STOP_LIVE_ROOM_LIST`，**没有**收到 `PREPARING`。因此 `LIVE`/`PREPARING`
+  只能作为“状态变化”信号，不能替代定期查询。
+- 状态查询：每 60 秒一次；收到下播事件立即查；首次离线后 15 秒复查；
+  8 秒超时；失败按 60→120→240→300 秒退避（有下播事件时 10→20→40→80→120 秒）。
+- 确认规则：**WS 下播事件 + 1 次有效离线查询**，或 **2 次连续有效离线查询**。
+  超时、429、-352、缺字段、房间不匹配、无效 `live_status` 只退避，绝不结束。
+- 确认后停止该场采集、清定时器/WebSocket/重连、写最终事件、更新
+  `ended_at` / `end_reason='platform_ended'` / `platform_ended_at` / `platform_end_quality`，
+  保留全部事件、观众、金额与 AI 关联，SSE 通知前端。
+- 同一房间快速下播再开播：旧场次已 `ended`，重新记录会创建新 `sessions` 行；
+  旧 adapter 的异步回调由 generation + recording 存在性丢弃。
+- 重连时平台 `live_time` 变化，或 `PREPARING` 后收到不同 `live_key`/`live_time` 的 `LIVE`，
+  视为新直播：结束旧场次，不把两场写入同一行。
+- 未开播/轮播房间在 `BilibiliService.connect()` 中直接拒绝（409，三语错误），
+  避免创建没有直播的场次。
+
+**验证状态**：真实 4 房间 20 分钟并发监控（`1946295012`、`2002290`、`27585820`、
+`1814406243`）全部保持 `platform_status=live`，共 170 条真实事件，未误结束；
+监控期间没有主播下播，**未完成真实“直播中→下播”端到端验证**。真实下播事件仍待捕获。
+
+**已知限制**
+
+- `PREPARING` 不是所有下播场景都保证发送；状态轮询是兜底。
+- `get_info` 可能 429/风控；长期退避行为未做数小时验证。
+- 平台实际结束时间通常只能精确到检测时刻；未知时 UI 显示“未知”，不伪造。
+- 轮播（`live_status=2`）按非直播处理；若主播从轮播恢复直播，需要重新开始记录。
 
 ## 3. YouTube Live（v0.5.0：只保留公开网页聊天）
 

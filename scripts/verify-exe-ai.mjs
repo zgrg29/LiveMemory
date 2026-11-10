@@ -350,8 +350,8 @@ let instance = await launchExe();
 try {
   await useEnglishUi();
   const status = await (await fetch(`${base}/api/status`)).json();
-  record('packaged EXE upgrades the real v7 database to schema 8', status.database.schemaVersion === 8
-    && status.server.version === '0.8.0', {schema: status.database.schemaVersion, version: status.server.version});
+  record('packaged EXE upgrades the real v7 database to schema 9', status.database.schemaVersion === 9
+    && status.server.version === '0.8.1', {schema: status.database.schemaVersion, version: status.server.version});
   record('the packaged EXE reports AI import as available', status.ai.import === true);
 
   await send('Page.enable');
@@ -535,8 +535,8 @@ try {
   await useEnglishUi();
   const restartedStatus = await (await fetch(`${base}/api/status`)).json();
   const restartedReport = await (await fetch(`${base}/api/ai/sessions/${encodeURIComponent(session.id)}/report`)).json();
-  record('the packaged EXE keeps schema 8, the task, result versions and the report after a restart',
-    restartedStatus.database.schemaVersion === 8
+  record('the packaged EXE keeps schema 9, the task, result versions and the report after a restart',
+    restartedStatus.database.schemaVersion === 9
       && restartedReport.complete === true
       && restartedReport.result.resultVersion === 1
       && restartedReport.report.summary.includes('EXE aggregate verification complete'), {

@@ -5,6 +5,7 @@ import {CookieStore} from './cookie-store.mjs';
 import {AppError} from '../../shared/errors.mjs';
 import {duplicateRoomError} from '../../shared/recording.mjs';
 import {SOURCE_QUALITY} from '../../shared/events.mjs';
+import {repairBilibiliPlatformStatuses} from './recovery.mjs';
 
 /**
  * Glue between the HTTP layer, the login flow and the live adapter.
@@ -113,6 +114,24 @@ export class BilibiliService {
 
   async connect(roomId, {sourceQuality = SOURCE_QUALITY.ESTIMATED} = {}) {
     const room = await this.checkRoom(roomId);
+    // A capture only makes sense for an actual live broadcast. Carousel/replay
+    // rooms are not live and an offline room would create a session with no
+    // broadcast behind it. The adapter repeats this check to close the race
+    // where the stream ends between validation and the WebSocket handshake.
+    if (room.liveStatus === 0) {
+      throw new AppError('BILIBILI_ROOM_OFFLINE', {
+        messageKey: 'errors.bilibiliRoomNotLive',
+        details: {roomId: room.roomId, liveStatus: room.liveStatus},
+        httpStatus: 409
+      });
+    }
+    if (room.liveStatus === 2) {
+      throw new AppError('BILIBILI_ROOM_CAROUSEL', {
+        messageKey: 'errors.bilibiliRoomCarousel',
+        details: {roomId: room.roomId, liveStatus: room.liveStatus},
+        httpStatus: 409
+      });
+    }
     const adapter = new BilibiliLiveAdapter({
       roomId: room.roomId,
       api: this.api,
@@ -134,6 +153,24 @@ export class BilibiliService {
     if (!result.started) throw duplicateRoomError(result.duplicate);
     this.logger?.info({event: 'bilibili.session.started', sessionId: result.session.id, roomId: room.roomId});
     return {session: result.session, room, connection: adapter.snapshot()};
+  }
+
+  /**
+   * Annotate historic Bilibili captures that ended with a crash/shutdown and
+   * have no platform state yet. This never touches live recordings, user stops,
+   * adapter failures or the recorded end time.
+   */
+  async repairHistoricalSessions({limit = 25, now = this.now()} = {}) {
+    const db = this.sessionManager?.db;
+    if (!db) return {checked: 0, updated: 0, failed: 0, skipped: 0};
+    return repairBilibiliPlatformStatuses({
+      db,
+      api: this.api,
+      now,
+      limit,
+      logger: this.logger,
+      onUpdated: () => this.sessionManager.emitStatus()
+    });
   }
 
   async disconnect({sessionId = null} = {}) {

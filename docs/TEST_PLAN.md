@@ -448,3 +448,61 @@ duration ≈ 25.0s
 | 真实 AI | — | ⬜ **未调用**；只验证 Schema 合法合成结果 |
 
 > 上述 AI 结果均由真实导出的包元数据构造，不是任何真实 AI 服务的输出。
+
+## 16. Bilibili 直播生命周期专项验证（v0.8.1）
+
+### 16.1 自动化
+
+- 全量：**386 passed / 0 failed / 约 50–75 秒**（`node --test --test-isolation=none`）。
+- `tests/unit/bilibili-lifecycle.test.mjs`：
+  - PREPARING + 1 次有效离线 → 结束一次，`endQuality=event`；
+  - 两次连续离线 → 结束，`endQuality=poll`；
+  - 长时间无弹幕但 `live_status=1` → 不结束；
+  - 超时 / 429 / 无效状态 → 不结束，持续退避；
+  - PREPARING 后 LIVE → 取消结束，保持 live；
+  - 其他房间 PREPARING、停止后旧帧、重复 PREPARING → 不结束/不复活；
+  - PREPARING 后收到不同 `live_key`/`live_time` 的 LIVE、重连 `live_time` 变化 → 结束旧场次；
+  - 重连抖动不重置离线确认计数；
+  - 轮播 `live_status=2` → 结束，`platformStatus=carousel`。
+- `tests/integration/live-lifecycle.test.mjs`：
+  - 三场同时记录，A 平台结束只结束 A，B/C 继续；
+  - 结束前写入的事件保留，结束后旧回调不再写入；
+  - 手动停止 vs 平台自动结束的 `end_reason` 与平台状态不同；
+  - 重复结束只结束一次；
+  - 同一房间下播后快速重开创建新场次，旧回调不能写入新场次。
+- `tests/integration/platform-status-recovery.test.mjs`：
+  - 启动恢复 `ended_at` = 检测时间，不使用最后弹幕时间；
+  - 历史修复只处理 shutdown/startup_recovery，不改编排时间，不写未知 `platform_ended_at`；
+  - 429 失败保留 NULL 下次重试；修复后幂等；当前 live 不污染旧场次。
+- `tests/integration/platform-status-migration.test.mjs`：v8→v9、新列/索引、旧行 NULL、
+  重复迁移无操作、新库直接 v9。
+- `tests/unit/bilibili-status-api.test.mjs`：0/1/2、缺字段/非法值、429、-352。
+- `tests/unit/bilibili-service.test.mjs`：未开播/轮播创建前拒绝。
+- `tests/unit/live-status-ui.test.mjs`：绿色 Live 不会出现在已下播状态；三语键；UI 结构。
+- `tests/unit/session-status-serialization.test.mjs`：API/摘要/历史搜索字段与固定时长。
+
+### 16.2 打包 EXE / 浏览器
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| EXE 启动、schema 9、版本 0.8.1 | `scripts/verify-exe.mjs` | ✅ 10/10 |
+| 真实 v6 数据库 → schema 9、历史/停止/删除/重启 | `scripts/verify-exe-history.mjs` | ✅ 19/19 |
+| 已下播不再显示绿色 Live | `scripts/verify-live-status-ui.mjs` | ✅ 21/21 |
+| 未知平台结束时间显示 Unknown + 说明 | 同上 | ✅ |
+| 自动下播详情/手动停止详情/固定时长 | 同上 | ✅ |
+| 中文生命周期文案 | 同上 | ✅ 截图 `live-status-history-v081-zh.png` |
+| 390px 黑暗主题无横向溢出 | 同上 | ✅ 截图 `live-status-history-v081-dark-390.png` |
+
+### 16.3 真实 Bilibili
+
+| 检查 | 结果 |
+| --- | --- |
+| `get_info` 真实状态 0/1/2 | ✅ `22014628=0`、`6=1`、`5440`/`22637261`=2 |
+| 高频 `getInfoByRoom` 风控 | ✅ 匿名返回 `-352`，轮询改用 `get_info` |
+| 在线房间 25 秒无 LIVE 事件 | ✅ 证实必须轮询 |
+| 离线房间 20 秒无 PREPARING | ✅ 证实“连接/无弹幕”不能推断状态 |
+| 4 个真实房间 20 分钟并发 | ✅ 4/4 保持 live，170 条真实事件，无误结束 |
+| 真实数据库副本 v8→v9 + 历史修复 | ✅ 问题行 `22014628` 标为 ended、结束时间 NULL/unknown、`ended_at` 与 2951 条事件不变、YouTube 行不动 |
+| 真实“直播中→下播” | ⬜ **未捕获**；不能声称完全验证 |
+
+> 真实房间测试只写 `tests/.tmp` 下的临时数据库，未触碰用户 `E:\新建文件夹` 的真实数据。

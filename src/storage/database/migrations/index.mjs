@@ -496,6 +496,32 @@ export const MIGRATIONS = Object.freeze([
       db.exec('ALTER TABLE ai_packages ADD COLUMN prompt_version TEXT');
       db.exec('CREATE INDEX IF NOT EXISTS idx_ai_packages_job ON ai_packages (job_id, batch_index)');
     }
+  },
+  {
+    version: 9,
+    name: 'session-platform-live-status',
+    up(db) {
+      // Platform state is a separate axis from the local capture state. A
+      // WebSocket can stay connected after the streamer stops; `status='live'`
+      // must therefore never be used as "the broadcast is still live".
+      //
+      // platform_status: live / ended / not_started / carousel / unknown / ending
+      // platform_status_at: when that state was last observed/confirmed
+      // last_live_seen_at: last reliable confirmation that the room was live
+      // platform_ended_at: best platform-side end time; NULL when unknown
+      // platform_end_quality: event / poll / unknown
+      db.exec('ALTER TABLE sessions ADD COLUMN platform_status TEXT');
+      db.exec('ALTER TABLE sessions ADD COLUMN platform_status_at INTEGER');
+      db.exec('ALTER TABLE sessions ADD COLUMN last_live_seen_at INTEGER');
+      db.exec('ALTER TABLE sessions ADD COLUMN platform_ended_at INTEGER');
+      db.exec('ALTER TABLE sessions ADD COLUMN platform_end_quality TEXT');
+      // Old rows stay NULL on purpose: there is no honest way to infer whether
+      // a historic broadcast ended, is still live, or was stopped by the user.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_sessions_platform_status
+          ON sessions (platform, platform_status, started_at DESC);
+      `);
+    }
   }
 ]);
 

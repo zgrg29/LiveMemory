@@ -1,5 +1,38 @@
 # 版本变化（CHANGELOG）
 
+## 0.8.1 — 2026-11-10（Bilibili 直播生命周期检测修复）
+
+### 修复
+
+- **Bilibili 下播后仍显示「直播中」**：适配器此前忽略 `PREPARING`/`STOP_LIVE`，
+  不处理 `LIVE`，也从不查询 `live_status`；`sessions.status='live'` 只代表本地
+  WebSocket 采集仍在运行。现在平台状态与采集状态分离，并由多信号确认下播。
+- 启动恢复不再把最后一条弹幕时间当作场次结束时间；`ended_at` 使用启动检测时间，
+  `platform_ended_at` 在证据不足时保持 NULL。
+- 旧适配器的异步回调不能在停止/结束后写入场次；快速下播再开播创建新场次；
+  重连 `live_time` 变化或 `PREPARING` 后的新 `LIVE` 会结束旧场次，避免混场。
+
+### 新增
+
+- schema **9**：`sessions.platform_status`、`platform_status_at`、`last_live_seen_at`、
+  `platform_ended_at`、`platform_end_quality` 与索引。
+- Bilibili 每 60 秒 `room/v1/Room/get_info` 状态查询，8 秒超时、指数退避、每房间独立。
+- WebSocket `LIVE`/`PREPARING`/`STOP_LIVE` 处理；WS 下播事件 + 1 次有效离线查询，
+  或 2 次连续有效离线查询才结束。
+- 自动下播：清定时器/WebSocket/重连 → 写最终事件 → 更新结束时间/原因/平台状态 →
+  SSE 刷新；保留全部数据。
+- 历史异常行启动后台探测：证据不足标 `unknown`，不编造结束时间，幂等且可追溯。
+- 历史列表/详情/多场标签区分「直播中、已下播、手动停止、采集中断、平台未知」；
+  平台结束后不再显示绿色；详情新增生命周期卡；三语 + 明暗 + 390px。
+- 未开播/轮播房间在创建采集前被拒绝，并显示三语错误。
+- 新增 `scripts/verify-live-status-ui.mjs` 与生命周期测试；
+  schema 9 / v8→v9 迁移测试；真实 Bilibili 状态接口与 4 房间 20 分钟监控。
+
+### 测试
+
+- 386 自动化全部通过；EXE 矩阵 10/10；EXE 历史 19/19；EXE 生命周期 UI 21/21。
+- **未完成真实下播端到端**：真实监控期间没有主播下播，不能声称已完全验证。
+
 ## 0.8.0 — 2026-11-09（M6：AI 分析结果导入、分批汇总与直播分析报告）
 
 ### 新增

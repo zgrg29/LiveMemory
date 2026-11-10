@@ -91,9 +91,10 @@ buildSessionAnalysisReport()
 6. 获取单实例锁 `runtime/instance.lock`；若已有存活实例，打印地址并打开浏览器后退出。
 7. `startServer()`：
    - 迁移数据库并记录 schema 版本
-   - 将遗留 `live` 场次标记为 `interrupted`
+   - 将遗留 `live` 场次标记为 `interrupted`（`ended_at` = 启动检测时间，不用最后弹幕时间）
    - 绑定 `127.0.0.1:preferredPort`（冲突 +1…+9，最后 0）
    - 写 `runtime/runtime.json`（pid/port/url）
+   - 服务就绪后后台探测历史 Bilibili 行的平台状态（不阻塞启动、不改编排时间）
 8. 打印数据目录、控制台地址、日志目录、连接状态、退出方式。
 9. 打开系统默认浏览器（`cmd /c start "" <url>`）。
 10. 等待 SIGINT/SIGTERM 或服务关闭 → 逆序关闭并清理 runtime 文件。
@@ -233,6 +234,40 @@ stopSession(sessionId)
 - 归档不改变采集状态，不删除任何数据。
 - 删除后观众/主播衍生数据按剩余证据重建，避免“删了场次但长期统计仍有旧数据”。
 - 搜索与删除都只走这一处业务模块，列表页与详情页不会出现两套行为。
+
+## 3.5 平台直播状态与下播检测（v0.8.1）
+
+```text
+sessions.status         本地采集：live / ended / interrupted
+sessions.platform_status 平台直播：live / ended / not_started / carousel / unknown / ending
+```
+
+Bilibili 适配器同时维护两条独立信号：
+
+```text
+WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation）
+   ├─ LIVE      → platform_status=live，重置离线计数，last_live_seen_at
+   └─ PREPARING → platform_status=ending，立即查询一次状态
+
+定时器: room/v1/Room/get_info `live_status`
+   ├─ 1 → live
+   ├─ 0/2 → 第一次记 ending，15s 后再查；连续 2 次有效离线才结束
+   └─ 超时/429/-352/缺字段/房间不匹配 → 只退避，绝不结束
+
+确认结束
+  → 清心跳/看门狗/轮询/重连
+  → 关闭 WebSocket
+  → 写 platform_status、platform_ended_at、platform_end_quality
+  → endSession(status='ended', end_reason='platform_ended')
+  → SSE 'status' → 前端刷新
+```
+
+- `onPlatformStatus` 只写该 `sessionId` 的平台字段，不改变采集状态；`onEnd` 才停止采集。
+- 旧适配器回调在 `SessionManager` 中通过 recording 存在性 + `stopping` 丢弃，
+  适配器内部通过 generation 丢弃。
+- 历史修复 `repairBilibiliPlatformStatuses()` 只注解 `platform_status IS NULL` 且
+  `shutdown`/`startup_recovery` 的 Bilibili 行；不改 `ended_at`、不写未知结束时间。
+- 未开播/轮播房间在 `BilibiliService.connect()` 创建场次前拒绝。
 
 ## 4. 读模型
 

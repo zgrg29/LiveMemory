@@ -4,7 +4,8 @@ import {
   findLiveSessionByRoom,
   getSession,
   listLiveSessions,
-  recoverInterruptedSessions
+  recoverInterruptedSessions,
+  setSessionPlatformStatus
 } from '../../storage/repositories/sessions.mjs';
 import {upsertBroadcaster} from '../../storage/repositories/broadcasters.mjs';
 import {resolveBroadcasterIdentity} from '../../shared/broadcaster.mjs';
@@ -64,7 +65,11 @@ export class SessionManager {
     const recovered = recoverInterruptedSessions(this.db, {now: this.now()});
     this.recordings.clear();
     if (recovered.length > 0) {
-      this.logger?.warn({event: 'session.recovered', count: recovered.length, sessions: recovered});
+      this.logger?.warn({
+        event: 'session.recovered',
+        count: recovered.length,
+        sessions: recovered.map((row) => row.id)
+      });
     }
     return recovered;
   }
@@ -97,6 +102,11 @@ export class SessionManager {
         state: recording.connection,
         detail: recording.detail
       },
+      platformStatus: recording.platformStatus ?? null,
+      platformStatusAt: recording.platformStatusAt ?? null,
+      lastLiveSeenAt: recording.lastLiveSeenAt ?? null,
+      platformEndedAt: recording.platformEndedAt ?? null,
+      platformEndQuality: recording.platformEndQuality ?? null,
       meta: recording.meta ?? null
     };
   }
@@ -143,6 +153,11 @@ export class SessionManager {
     }
   }
 
+  /** Public refresh hook for startup repair and other out-of-band row changes. */
+  emitStatus() {
+    this.#emitStatus();
+  }
+
   /* ---------------------------------------------------------- duplicate guard */
 
   /** @returns {null | {reason:string, sessionId:string, session:object|null}} */
@@ -185,6 +200,46 @@ export class SessionManager {
     recording.connection = state;
     recording.detail = detail ?? null;
     this.#emitStatus();
+  }
+
+  /**
+   * Record a platform observation for one recording only.
+   *
+   * The capture status (`sessions.status`) is intentionally untouched here.
+   * A stale callback from a stopped/replaced adapter is ignored because the
+   * recording is gone from the map and the adapter generation is invalid.
+   */
+  #onPlatformStatus(sessionId, info) {
+    const id = String(sessionId);
+    const recording = this.recordings.get(id);
+    if (!recording || recording.stopping) return false;
+    const at = Number.isFinite(Number(info?.at)) ? Number(info.at) : this.now();
+    if (Number.isFinite(Number(recording.startedAt)) && at < recording.startedAt) return false;
+    try {
+      const row = setSessionPlatformStatus(this.db, id, {
+        status: info?.status,
+        at,
+        lastLiveSeenAt: info?.lastLiveSeenAt ?? null,
+        platformEndedAt: info?.platformEndedAt ?? null,
+        endQuality: info?.endQuality ?? null,
+        now: at
+      });
+      if (!row) return false;
+      recording.platformStatus = row.platform_status ?? null;
+      recording.platformStatusAt = row.platform_status_at ?? null;
+      recording.lastLiveSeenAt = row.last_live_seen_at ?? null;
+      recording.platformEndedAt = row.platform_ended_at ?? null;
+      recording.platformEndQuality = row.platform_end_quality ?? null;
+      this.#emitStatus();
+      return true;
+    } catch (error) {
+      this.logger?.warn({
+        event: 'session.platform.status.failed',
+        sessionId: id,
+        code: error?.code ?? 'unknown'
+      });
+      return false;
+    }
   }
 
   async #handleAdapterEnd(sessionId, info) {
@@ -261,6 +316,11 @@ export class SessionManager {
       adapter,
       connection: CONNECTION_STATE.CONNECTING,
       detail: null,
+      platformStatus: session.platform_status ?? null,
+      platformStatusAt: session.platform_status_at ?? null,
+      lastLiveSeenAt: session.last_live_seen_at ?? null,
+      platformEndedAt: session.platform_ended_at ?? null,
+      platformEndQuality: session.platform_end_quality ?? null,
       meta,
       onEnded,
       stopping: false
@@ -273,6 +333,10 @@ export class SessionManager {
         ...startOptions,
         onEvent: (draft) => {
           try {
+            // A stopped/ended adapter may still deliver a queued callback. It
+            // must never reopen or append to the finished session.
+            const current = this.recordings.get(session.id);
+            if (!current || current.stopping) return;
             // The session id is always the one this adapter was started for, so
             // two simultaneous broadcasts can never cross-write events.
             this.ingest.record({...draft, session_id: session.id});
@@ -281,6 +345,7 @@ export class SessionManager {
           }
         },
         onStateChange: (change) => this.#onAdapterState(session.id, change?.state, change?.detail),
+        onPlatformStatus: (info) => this.#onPlatformStatus(session.id, info),
         onEnd: (info) => {
           this.#handleAdapterEnd(session.id, info).catch(() => {});
         }

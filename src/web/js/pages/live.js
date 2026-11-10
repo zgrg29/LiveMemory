@@ -15,7 +15,12 @@ import {
   loadingBlock,
   statCard
 } from '../ui.js';
-import {platformLabel, supportPrimaryText} from './shared.js';
+import {
+  platformLabel,
+  platformStatusChip,
+  statusChip,
+  supportPrimaryText
+} from './shared.js';
 
 /**
  * Live page: several broadcasts can be recorded at the same time.
@@ -148,6 +153,13 @@ export const livePage = {
         const state = isRetired ? (recording.finalState ?? 'stopped') : recording.connection.state;
         const meta = stateMeta(state, t);
         const name = tabName(recording, t);
+        const platformEnded = isRetired && (
+          recording.finalReason === 'platform_ended'
+          || recording.finalReason === 'platform_not_live'
+          || recording.platformStatus === 'ended'
+          || recording.platformStatus === 'carousel'
+        );
+        const stateText = platformEnded ? t('status.platformEnded') : meta.text;
         const group = el('div', {
           className: 'recording-tab-group',
           dataset: {selected: String(selected), state}
@@ -158,14 +170,14 @@ export const livePage = {
           attrs: {
             role: 'tab',
             'aria-selected': selected ? 'true' : 'false',
-            'aria-label': t('live.tabs.tabAria', {name, state: meta.text}),
-            title: `${name} · ${platformLabel(recording.platform, t)} · ${meta.text}`
+            'aria-label': t('live.tabs.tabAria', {name, state: stateText}),
+            title: `${name} · ${platformLabel(recording.platform, t)} · ${stateText}`
           },
           onClick: () => openSession(recording.sessionId)
         },
         el('span', {className: 'recording-tab-dot', dataset: {state}, attrs: {'aria-hidden': 'true'}}),
         el('span', {className: 'recording-tab-label', text: name}),
-        el('span', {className: 'recording-tab-state', text: meta.text}));
+        el('span', {className: 'recording-tab-state', text: stateText}));
         group.append(tab);
         if (isRetired) {
           group.append(el('button', {
@@ -284,7 +296,14 @@ export const livePage = {
         return payload;
       }
       const selected = recordings.find((recording) => recording.sessionId === selectedId) ?? null;
-      if (selected) updateHeroConnection(selected);
+      if (selected) {
+        if (refs.session) {
+          refs.session.platformStatus = selected.platformStatus ?? refs.session.platformStatus;
+          refs.session.platformStatusAt = selected.platformStatusAt ?? refs.session.platformStatusAt;
+          refs.session.lastLiveSeenAt = selected.lastLiveSeenAt ?? refs.session.lastLiveSeenAt;
+        }
+        updateHeroConnection(selected);
+      }
       return payload;
     }
 
@@ -371,7 +390,19 @@ export const livePage = {
       clear(refs.stateHost);
       const state = recording?.connection?.state ?? 'connected';
       const meta = stateMeta(state, t);
-      refs.stateHost.append(chip(meta.text, meta.tone, {dot: meta.dot && !meta.ended}));
+      const session = refs.session ?? null;
+      const transportTrouble = ['connecting', 'reconnecting', 'auth_required', 'failed'].includes(state);
+      if (session && !transportTrouble) {
+        // Capture state and platform state are separate. The capture chip turns
+        // non-green as soon as the platform reports an end, even while the last
+        // confirmation query runs.
+        const captureChip = statusChip(session, t);
+        if (captureChip) refs.stateHost.append(captureChip);
+        const platformChip = platformStatusChip(session, t);
+        if (platformChip) refs.stateHost.append(platformChip);
+      } else {
+        refs.stateHost.append(chip(meta.text, meta.tone, {dot: meta.dot && !meta.ended}));
+      }
       if (refs.connectionLine) connectDetailChips(refs.connectionLine, recording);
     }
 
@@ -436,7 +467,14 @@ export const livePage = {
               el('span', {className: 'hero-clock-value', text: '0', dataset: {role: 'hero-messages'}})),
             !ended ? el('p', {className: 'hero-note', text: t('live.hero.stopHint')}) : null,
             ended
-              ? el('p', {className: 'hero-note', text: state === 'failed' ? t('live.hero.failedNotice') : t('live.hero.endedNotice')})
+              ? el('p', {
+                className: 'hero-note',
+                text: state === 'failed'
+                  ? t('live.hero.failedNotice')
+                  : (session.endReason === 'platform_ended' || session.endReason === 'platform_not_live'
+                    ? t('live.hero.platformEndedNotice')
+                    : t('live.hero.endedNotice'))
+              })
               : null),
           el('div', {className: 'hero-actions'}, action)));
 
@@ -444,6 +482,7 @@ export const livePage = {
       refs.connectionLine = connectionHost;
       refs.elapsedValue = elapsedValue;
       refs.heroMessages = hero.querySelector('[data-role="hero-messages"]');
+      refs.session = session;
       updateHeroConnection(displayRecording);
 
       const messages = statRef({label: t('live.stats.messages'), sub: t('live.stats.messagesSub')});
@@ -1013,13 +1052,21 @@ export const livePage = {
         if (checkedRoom.anchorName) details.push(`${t('live.source.anchor')}: ${checkedRoom.anchorName}`);
         if (checkedRoom.online) details.push(`${t('live.source.online')}: ${formatInteger(checkedRoom.online, ctx.locale)}`);
         if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+        const canStart = checkedRoom.liveStatus === 1;
         meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
           el('button', {
             className: 'button button--primary',
             type: 'button',
-            text: t('live.source.start'),
-            onClick: (event) => connectRoom(event.currentTarget)
+            text: canStart ? t('live.source.start') : t('live.source.waitForLive'),
+            attrs: canStart ? {} : {disabled: ''},
+            onClick: (event) => {
+              if (!canStart) return;
+              connectRoom(event.currentTarget);
+            }
           })));
+        if (!canStart) {
+          meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+        }
         panel.append(meta);
       }
 

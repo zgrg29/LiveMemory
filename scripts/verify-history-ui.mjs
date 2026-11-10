@@ -369,7 +369,7 @@ await evaluate(`(() => {
 })()`);
 await sleep(1400);
 view = await evaluate(LIST_SNAPSHOT);
-record('stopping from the history list updates the status immediately', view.rows.length === 1 && view.rows[0].chips.includes('Recording stopped'), {
+record('stopping from the history list updates the status immediately', view.rows.length === 1 && view.rows[0].chips.includes('Stopped by user'), {
   chips: view.rows[0]?.chips
 });
 await openRowMenu(0);

@@ -186,6 +186,20 @@
 - ⬜ 可选密码加密（成熟 AEAD + KDF）
 - ⬜ 跨电脑模拟迁移测试
 
+## Bilibili 直播生命周期修复 ✅（v0.8.1）
+
+- ✅ 平台状态与本地采集状态分离（schema v9：`platform_status`、`platform_status_at`、
+  `last_live_seen_at`、`platform_ended_at`、`platform_end_quality`）
+- ✅ WebSocket `LIVE`/`PREPARING`/`STOP_LIVE` + 每 60 秒 `live_status` 查询
+- ✅ WS 下播事件 + 1 次有效离线，或 2 次连续有效离线才确认；超时/429/-352/异常不算下播
+- ✅ 自动结束：清定时器/WebSocket/重连、写最终事件、更新结束时间/原因、SSE 刷新、保留全部数据
+- ✅ 多房间隔离：A 下播只结束 A；快速重开创建新场次；旧回调不能复活
+- ✅ 启动恢复不再用最后弹幕时间；历史异常行后台探测，证据不足标 unknown，不编造结束时间
+- ✅ 历史列表/详情/多场标签区分已下播、手动停止、采集中断、平台未知；三语 + 明暗 + 390px
+- ✅ 386 自动化测试；EXE 矩阵 10/10；EXE 历史 19/19；EXE 生命周期 UI 21/21
+- ⬜ 真实「直播中→下播」端到端样本（真实监控期间未发生）
+- ⬜ 数小时轮询下的 429/-352 长期行为
+
 ## M6 AI 文件往返与直播分析 ✅（v0.8.0）
 
 - ✅ 分析包导出（`livememory-analysis-v1`，含三语说明与结果 Schema），新增 job/batch/coverage/prompt_version 元数据

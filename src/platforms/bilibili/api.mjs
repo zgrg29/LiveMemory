@@ -144,6 +144,36 @@ export class BilibiliApi {
     };
   }
 
+  /**
+   * Current live status from the public room endpoint.
+   *
+   * `live_status` is 0 (not started), 1 (live) or 2 (carousel). The field is
+   * required: a missing/unknown value is a failure, never an implicit 0. Rate
+   * limits, risk control (-352) and timeouts surface as BilibiliError so the
+   * caller can back off without declaring the broadcast over.
+   */
+  async roomStatus(roomId, {timeoutMs = 8000} = {}) {
+    const {data} = await this.request(
+      `${LIVE_API}/room/v1/Room/get_info?room_id=${encodeURIComponent(roomId)}`,
+      {withBuvid: true, timeoutMs}
+    );
+    const status = Number(data?.live_status);
+    if (!Number.isInteger(status) || ![0, 1, 2].includes(status)) {
+      throw new BilibiliError('STATUS_INVALID', 'room response has no valid live_status');
+    }
+    const resolvedRoom = Number(data?.room_id);
+    if (!Number.isInteger(resolvedRoom) || resolvedRoom <= 0) {
+      throw new BilibiliError('STATUS_INVALID', 'room response has no valid room_id');
+    }
+    return {
+      roomId: resolvedRoom,
+      liveStatus: status,
+      liveTime: data?.live_time ?? null,
+      title: data?.title ?? null,
+      online: Number(data?.online ?? 0) || null
+    };
+  }
+
   /** Room metadata used for the session title. Optional: failures are tolerated. */
   async roomInfo(roomId) {
     const {data} = await this.request(`${LIVE_API}/xlive/web-room/v1/index/getInfoByRoom?room_id=${encodeURIComponent(roomId)}`, {withBuvid: true});

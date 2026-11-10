@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**8**
+Schema 版本：**9**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -44,6 +44,11 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | started_at | INTEGER | 本地开始记录的时间（毫秒） |
 | platform_started_at | INTEGER | 平台侧直播开始时间（YouTube `actualStartTime`，可空；schema v3） |
 | ended_at / last_event_at | INTEGER | 毫秒 |
+| platform_status | TEXT | schema v9：`live` / `ended` / `not_started` / `carousel` / `unknown` / `ending`；平台直播状态，独立于本地采集 |
+| platform_status_at | INTEGER | schema v9：最近一次平台状态观测/确认时间 |
+| last_live_seen_at | INTEGER | schema v9：最近一次可靠确认「平台直播中」的时间 |
+| platform_ended_at | INTEGER | schema v9：有证据的平台结束时间；未知为 NULL，绝不填最后弹幕时间 |
+| platform_end_quality | TEXT | schema v9：`event` / `poll` / `unknown`，记录结束时间证据 |
 | message_count | INTEGER | 聊天 + SC 条数 |
 | gift_event_count | INTEGER | 礼物事件数 |
 | payment_event_count | INTEGER | 所有付费事件数 |
@@ -54,12 +59,25 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 schema v7 新增 `idx_sessions_history (archived_at, started_at DESC)` 与
 `idx_sessions_platform_started (platform, started_at DESC)` 供历史列表筛选/排序。
 
-**状态语义（v0.7.0）**：`status=ended` 仅表示“本地没有正在运行的采集”。
+**状态语义（v0.7.0 / v0.8.1）**：`status` 只表示本地采集（`live` / `ended` / `interrupted`）。
 `end_reason=user` 表示用户在应用内停止记录，**不代表 Bilibili/YouTube 直播结束**；
-UI 对这种情况显示“已停止记录”，其他 ended 显示“已结束”。归档（`archived_at`）与状态正交：
-归档不改变 status，也不删除任何数据。
+`end_reason=platform_ended` 表示确认平台下播后自动结束；`startup_recovery` / `shutdown` 表示
+软件中断，不是平台结束。归档（`archived_at`）与状态正交：归档不改变 status，也不删除任何数据。
 
-**多场并发（v0.6.0）**：`sessions` 允许同时存在多条 `status='live'`，每行对应一场独立广播。`platform + platform_room_id` 的重复启动由 `SessionManager` 在进程内同步检查（先内存、再数据库）拒绝，不依赖数据库唯一索引；单实例锁保证不会有两个进程同时写入。启动时所有残留 `live` 行会标记为 `interrupted`，不会自动恢复。
+平台状态在 `platform_status` 中独立记录：
+
+- `live`：最近一次有效查询/事件确认直播中；
+- `ended`：确认平台已下播（`S`/两次有效离线查询），或历史证据表明曾直播且当前不再直播；
+- `not_started`：未开播（当前正常不会创建采集，保留给历史/边界）；
+- `carousel`：平台 `live_status=2` 轮播/回放，不是实时直播；
+- `unknown`：没有可靠平台证据；不得假定为直播中或已下播；
+- `ending`：已收到下播信号，正在确认（内部过渡态，不是最终状态）。
+
+`platform_ended_at` 只在 WebSocket 下播事件 + 有效离线查询（`event`）或两次有效离线查询
+（`poll`）后写入；历史修复/崩溃恢复不写。`platform_end_quality=unknown` 时 UI 必须显示“未知”，
+不能用 `last_event_at` 代替。
+
+**多场并发（v0.6.0）**：`sessions` 允许同时存在多条 `status='live'`，每行对应一场独立广播。`platform + platform_room_id` 的重复启动由 `SessionManager` 在进程内同步检查（先内存、再数据库）拒绝，不依赖数据库唯一索引；单实例锁保证不会有两个进程同时写入。启动时所有残留 `live` 行会标记为 `interrupted`，不会自动恢复；`ended_at` 写启动检测时间，`platform_ended_at` 保持 NULL，随后由后台探测补平台状态（见 §7）。
 
 ### events
 
@@ -342,6 +360,26 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 > 来源的观众画像。**已知限制**：YouTube 30 天原文清理目前只清空事件正文/表情/徽章/过期昵称，不会自动删除
 > 已导入 AI 结果中的画像或摘要；这些本地衍生存到用户删除场次或清空数据为止，不得声称完全符合平台政策。
 
+### 6.3 启动恢复与历史平台状态修复（v0.8.1）
+
+启动时：
+
+1. `recoverInterruptedSessions()` 将遗留 `live` 行改为 `interrupted`，
+   `end_reason='startup_recovery'`，`ended_at` = 启动检测时间；
+   **不**使用 `last_event_at`，`platform_ended_at` 保持 NULL。
+2. 服务就绪后后台 `repairBilibiliPlatformStatuses()` 探测
+   `platform_status IS NULL` 且 `end_reason IN (NULL,'shutdown','startup_recovery')` 的
+   Bilibili 已结束/中断行（最多 25 行）：
+   - 当前 `live_status=0` 且该行有直播证据 → `platform_status='ended'`；
+   - 当前 `2` → `carousel`；
+   - 当前 `1` → `unknown`（当前直播可能是新场次，旧行不能改为 live）；
+   - 无直播证据 → `unknown`；
+   - 网络/429/-352 → 不写，下次启动重试；
+   - 只写平台字段，不改 `status`、`ended_at`、事件、金额、观众或 AI 数据；
+   - 写 `session.platform.repaired` / `session.platform.repair.failed` 日志；
+   - 修复后 `platform_status` 非 NULL，后续启动不再重复查询（幂等）。
+3. 用户手动停止（`end_reason='user'`）、适配器失败、已归类 `platform_ended` 的行不在修复范围。
+
 ## 7. 迁移策略
 
 - 只追加迁移，不修改已应用迁移。
@@ -369,7 +407,15 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
   - `ai_packages` 增加 `job_id`、`batch_index`、`stage`（默认 `single`）、`prompt_version`；
   - 旧包行保持 `job_id=NULL`、`batch_index=NULL`、`stage='single'`，旧分析包仍可导入（legacy 任务）；
   - 不重写旧表、不删除历史；`tests/integration/ai-migration.test.mjs` 覆盖 v7→v8 与级联删除；
-    打包 EXE 用真实 schema 7 数据库实测升级到 8。
+    打包 EXE 用真实 schema 7 数据库实测升级到 9。
+- **v8 → v9**：
+  - `sessions` 增加 `platform_status`、`platform_status_at`、`last_live_seen_at`、
+    `platform_ended_at`、`platform_end_quality`；
+  - 新建 `idx_sessions_platform_status (platform, platform_status, started_at DESC)`；
+  - 旧行 5 列全部 NULL：不猜测历史平台状态，也不伪造平台结束时间；
+  - 不重写表、不影响 AI 表/事件/金额/观众；
+  - `tests/integration/platform-status-migration.test.mjs` 覆盖 v8→v9、重复迁移无操作、
+    新库直接 v9。
 - 未来迁移需在 `tests/integration/` 增加升级路径测试（v1→v5 见 `migration-emotes.test.mjs`；v4→v5 见 `broadcaster-identity.test.mjs`；v7→v8 见 `ai-migration.test.mjs`）。
 
 ## 8. 备份、清空与数据位置

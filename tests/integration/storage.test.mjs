@@ -132,10 +132,15 @@ test('a live session left open by a crash is marked interrupted on recovery', ()
   ingest.record(chatEvent({session_id: session.id, viewer_uid: 'z', display_name: 'Zed', external_id: 'z1', occurred_at: T + 4000}));
   assert.ok(findLiveSession(db));
   const recovered = recoverInterruptedSessions(db, {now: T + 60_000});
-  assert.deepEqual(recovered, [session.id]);
+  assert.deepEqual(recovered.map((row) => row.id), [session.id]);
+  assert.equal(recovered[0].platform, 'mock');
   const stored = getSession(db, session.id);
   assert.equal(stored.status, 'interrupted');
-  assert.equal(stored.ended_at, T + 4000, 'ends at the last recorded event');
+  // Recovery records when the abandoned capture was detected, never the last
+  // chat message (that would fabricate a platform end time).
+  assert.equal(stored.ended_at, T + 60_000);
+  assert.notEqual(stored.ended_at, T + 4000);
+  assert.equal(stored.platform_ended_at, null);
   assert.equal(findLiveSession(db), null);
   closeDatabase(db);
 });

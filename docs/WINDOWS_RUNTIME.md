@@ -190,21 +190,27 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 资源哈希变化会生成新目录；旧目录可在升级时清理（M8）。
 
 
-## 9. 已验证 / 未验证（v0.8.0）
+## 9. 已验证 / 未验证（v0.8.1）
 
-已验证（本机，2026-11-09）：
+已验证（本机，2026-11-10）：
 
 - 构建成功，PE 子系统 = 3（Console）。
-- 本轮构建：**90.6 MB，117 个资源文件，SHA-256 `215bb6c0fcefb6bcd2b17b51f0391af886b2ab2ccc67409648348ba0a2f12f05`**。
-- **PE Manifest 实测**：`scripts/pe-manifest.mjs` 读取 `RT_MANIFEST`，level=`requireAdministrator`，Manifest 773 bytes。
-- 非提升进程启动最终 EXE：`spawnSync` 返回 `EACCES`，说明 Windows 在程序代码执行前拒绝启动（Manifest 生效）。
+- 本轮构建：**90.7 MB，119 个资源文件，SHA-256 `62f03b290d98652b6db93eaa491a24b68bdcff4338c31bca779cda78b0f6a409`**。
+- **本机执行限制**：最终哈希在 2026-11-10 11:30 后被执行主机的 Device Guard 策略拦截
+  （`blocked by your organization's Device Guard policy`）。同一策略下 `23a040...` 旧构建仍可执行；
+  最终哈希为新建未签名二进制，本机无法启动。静态校验通过（manifest/版本/资源哈希/迁移字符串），
+  但**不能声称最终哈希 EXE 已在本机启动验收**；需在无该策略的机器、签名或加入允许列表后复验。
+- **PE Manifest 实测**：`scripts/pe-manifest.mjs` 读取最终 `RT_MANIFEST`，level=`requireAdministrator`，Manifest 773 bytes。
+- **以下功能场景均为同源 `23a040...` 构建实测**；最终哈希受 Device Guard 限制，未执行。
+- 非提升进程启动同源构建：`spawnSync` 返回 `EACCES`，说明 Windows 在程序代码执行前拒绝启动（Manifest 生效）。
 - `scripts/verify-exe.mjs`：**manifest 检查 + 9 个功能场景 = 10/10 通过**；由于当前会话不是管理员，功能场景使用同一二进制的临时 `asInvoker` 副本，并明确打印该事实。若在管理员会话运行，则直接使用最终 EXE。
 - 管理员检查消息：asInvoker EXE 副本在未设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 时，`--lang zh-CN/ja/en` 分别打印对应“需要管理员权限”消息并以 1 退出（真实 EXE 启动器代码路径）。
-- `LiveMemory.exe --version`（asInvoker 副本）→ `LiveMemory 0.8.0`。
+- `LiveMemory.exe --version`（asInvoker 副本）→ `LiveMemory 0.8.1`。
 - 默认无 `--lang` 的 asInvoker EXE 控制台输出英文；`--lang zh-CN`/`ja` 仍可切换。
-- 全新数据目录启动确认 SQLite schema=8、`ai_jobs` / `ai_results` / `ai_result_evidence` 等 M6 表存在。
-- **打包 EXE AI 往返 UI**：`scripts/verify-exe-ai.mjs` 使用真实 schema 7 数据库启动 `dist/LiveMemory.exe` 的 asInvoker 副本，14/14 通过——v7→v8 升级、UI 创建 3 批任务、粘贴导入 3 个批次、版本记录、汇总包、最终报告、证据来自 EXE 数据库、重启后任务/结果/报告/4 个包文件保持。
-- **打包 EXE 历史管理 UI**：`scripts/verify-exe-history.mjs` 使用真实 schema 6 数据库，19/19 通过——v6→v8 升级、历史保留、观众搜索、归档、包含归档、启动模拟直播并从历史列表停止、永久删除、共享观众聚合、重启后归档保持与删除不复活。
+- 全新数据目录启动确认 SQLite schema=9、新增 `sessions.platform_status` 等生命周期列存在。
+- **打包 EXE AI 往返 UI**：`scripts/verify-exe-ai.mjs` 使用真实 schema 7 数据库启动 `dist/LiveMemory.exe` 的 asInvoker 副本，14/14 通过——v7→v9 升级、UI 创建 3 批任务、粘贴导入 3 个批次、版本记录、汇总包、最终报告、证据来自 EXE 数据库、重启后任务/结果/报告/4 个包文件保持。
+- **打包 EXE 历史管理 UI**：`scripts/verify-exe-history.mjs` 使用真实 schema 6 数据库，19/19 通过——v6→v9 升级、历史保留、观众搜索、归档、包含归档、启动模拟直播并从历史列表停止、永久删除、共享观众聚合、重启后归档保持与删除不复活。
+- **打包 EXE 生命周期 UI**：`scripts/verify-live-status-ui.mjs` 使用真实 schema 9 数据库与 `dist/LiveMemory.exe` 的 asInvoker 副本，21/21 通过——已下播不再显示绿色 Live、未知结束时间明确标 Unknown、自动下播/手动停止详情、时长固定、中文文案、390px 黑暗主题无横向溢出。
 - `/api/youtube/status` 只含 `mode=web`、`capabilities.requiresApiKey/Login/Cookie=false` 与 30 天保留策略；`/api/youtube/login/status` 返回 404；PATCH `youtubeCaptureMode` 返回 400。
 - 真实多场：EXE asInvoker 副本附加 3 场真实直播（2 YouTube + Bilibili），3/3 connected，停止一场后 2 场仍 connected；详见 STATUS §4 / TEST_PLAN §13.3（v0.6.0 历史结果）。
 - 默认数据目录不可写时回退 `%TEMP%\LiveMemory` 并启动；不可写目录：退出码 1、三语提示、失败步骤、错误码（`EPERM`）、启动日志与 `startup-error.json`。

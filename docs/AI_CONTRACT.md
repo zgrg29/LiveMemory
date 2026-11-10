@@ -1,6 +1,6 @@
 # AI 文件往返协议（AI_CONTRACT）
 
-版本：**M6 / 0.8.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+版本：**M6 / 0.8.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
 结果 Schema 版本 **1.1.0**（兼容 1.0.0） · 提示词版本 **`lm-prompt-m6.1-<locale>`**
 
 ## 1. 原则
@@ -53,7 +53,7 @@ result.schema.json     livememory-analysis-result-v1（1.1.0）
   "result_protocol": "livememory-analysis-result-v1",
   "schema_version": "1.1.0",
   "created_at": "2026-11-09T10:00:10.000Z",
-  "app": {"name": "LiveMemory", "version": "0.8.0"},
+  "app": {"name": "LiveMemory", "version": "0.8.1"},
   "locale": "ja",
   "prompt_version": "lm-prompt-m6.1-ja",
   "session_id": "ses_...",

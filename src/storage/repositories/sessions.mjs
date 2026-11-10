@@ -1,4 +1,9 @@
 import {createId} from '../../shared/ids.mjs';
+import {
+  normalizePlatformEndQuality,
+  normalizePlatformStatus,
+  PLATFORM_STATUS
+} from '../../shared/live-status.mjs';
 
 /**
  * Session persistence. A session is one live broadcast capture window.
@@ -124,21 +129,140 @@ export function findLiveSessionByRoom(db, platform, platformRoomId) {
 
 /**
  * Mark every still-live session as interrupted. Called once at startup: if the
- * process was killed (console closed, power loss) no honest "live" session can
+ * process was killed (console closed, power loss) no honest "live" capture can
  * remain open afterwards.
+ *
+ * `ended_at` is the moment recovery observed the abandoned capture, not the
+ * last chat message and not the platform's end time. The last message is often
+ * hours earlier and must never be presented as the broadcast end. The platform
+ * status stays NULL until a later probe has real evidence; `platform_ended_at`
+ * stays NULL because the true end time is unknown.
+ *
+ * @returns {Array<object>} the rows that were recovered (for a follow-up probe)
  */
 export function recoverInterruptedSessions(db, {now = Date.now()} = {}) {
-  const rows = db.prepare("SELECT id FROM sessions WHERE status = 'live'").all();
+  const rows = db.prepare(`
+    SELECT id, platform, platform_room_id, status, started_at, last_event_at,
+           message_count, end_reason
+      FROM sessions
+     WHERE status = 'live'
+     ORDER BY started_at ASC
+  `).all();
   if (rows.length === 0) return [];
   db.prepare(`
     UPDATE sessions
        SET status = 'interrupted',
-           ended_at = COALESCE(last_event_at, started_at),
+           ended_at = ?,
            end_reason = 'startup_recovery',
            updated_at = ?
      WHERE status = 'live'
-  `).run(now);
-  return rows.map((row) => row.id);
+  `).run(now, now);
+  return rows.map((row) => ({...row, status: SESSION_STATUS.INTERRUPTED, ended_at: now}));
+}
+
+/**
+ * Historical rows that were left without any platform state. Only captures that
+ * ended because the process went away are eligible: a user stop, an adapter
+ * failure or an already classified platform end is never rewritten here.
+ */
+export function listSessionsNeedingPlatformRepair(db, {
+  platform = 'bilibili',
+  limit = 25
+} = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
+  return db.prepare(`
+    SELECT *
+      FROM sessions
+     WHERE platform = ?
+       AND platform_status IS NULL
+       AND status IN ('ended', 'interrupted')
+       AND (end_reason IS NULL OR end_reason IN ('shutdown', 'startup_recovery'))
+     ORDER BY started_at DESC
+     LIMIT ?
+  `).all(String(platform), safeLimit);
+}
+
+/**
+ * Record a platform observation without touching the capture status.
+ *
+ * A live observation clears any unconfirmed end evidence; an `ending` or
+ * non-live observation records the observation time but never invents a
+ * platform end time. Only a confirmed end may pass `platformEndedAt`.
+ */
+export function setSessionPlatformStatus(db, sessionId, {
+  status,
+  at = Date.now(),
+  lastLiveSeenAt = null,
+  platformEndedAt = null,
+  endQuality = null,
+  now = at
+} = {}) {
+  const normalized = normalizePlatformStatus(status);
+  if (!normalized) throw new Error(`invalid platform status: ${String(status)}`);
+  const quality = normalizePlatformEndQuality(endQuality);
+  const id = String(sessionId);
+  const rawAt = at === null || at === undefined ? now : at;
+  const observedAt = Number.isFinite(Number(rawAt)) ? Math.trunc(Number(rawAt)) : Number(now);
+
+  if (normalized === PLATFORM_STATUS.LIVE) {
+    const liveAt = lastLiveSeenAt === null || lastLiveSeenAt === undefined
+      ? observedAt
+      : (Number.isFinite(Number(lastLiveSeenAt)) ? Math.trunc(Number(lastLiveSeenAt)) : observedAt);
+    db.prepare(`
+      UPDATE sessions
+         SET platform_status = ?,
+             platform_status_at = ?,
+             last_live_seen_at = CASE
+               WHEN last_live_seen_at IS NULL OR last_live_seen_at < ? THEN ?
+               ELSE last_live_seen_at
+             END,
+             platform_ended_at = NULL,
+             platform_end_quality = NULL,
+             updated_at = ?
+       WHERE id = ?
+    `).run(normalized, observedAt, liveAt, liveAt, Number(now), id);
+  } else {
+    // Do not coerce null/undefined through Number(): Number(null) is 0, which
+    // would fabricate a 1970 end time or a last-live time.
+    const liveAt = lastLiveSeenAt === null || lastLiveSeenAt === undefined
+      ? null
+      : (Number.isFinite(Number(lastLiveSeenAt)) ? Math.trunc(Number(lastLiveSeenAt)) : null);
+    const endedAt = platformEndedAt === null || platformEndedAt === undefined
+      ? null
+      : (Number.isFinite(Number(platformEndedAt)) ? Math.trunc(Number(platformEndedAt)) : null);
+    db.prepare(`
+      UPDATE sessions
+         SET platform_status = ?,
+             platform_status_at = ?,
+             last_live_seen_at = CASE
+               WHEN ? IS NOT NULL AND (last_live_seen_at IS NULL OR last_live_seen_at < ?) THEN ?
+               ELSE last_live_seen_at
+             END,
+             platform_ended_at = CASE
+               WHEN ? IS NOT NULL AND platform_ended_at IS NULL THEN ?
+               ELSE platform_ended_at
+             END,
+             platform_end_quality = CASE
+               WHEN ? IS NOT NULL AND platform_end_quality IS NULL THEN ?
+               ELSE platform_end_quality
+             END,
+             updated_at = ?
+       WHERE id = ?
+    `).run(
+      normalized,
+      observedAt,
+      liveAt,
+      liveAt,
+      liveAt,
+      endedAt,
+      endedAt,
+      quality,
+      quality,
+      Number(now),
+      id
+    );
+  }
+  return getSession(db, id);
 }
 
 /**

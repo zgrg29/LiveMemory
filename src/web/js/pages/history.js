@@ -5,7 +5,10 @@ import {
   archivedChip,
   aiChip,
   broadcasterIdentityChip,
+  endReasonLabelKey,
   platformLabel,
+  platformStatusChip,
+  platformStatusLabel,
   statusChip,
   supportPrimaryText,
   supportRows
@@ -487,6 +490,7 @@ function buildRow(ctx, row, {onChanged}) {
       el('div', {className: 'history-title', text: row.roomTitle || platformLabel(row.platform, t)}),
       el('div', {className: 'history-sub'},
         statusChip(row, t),
+        platformStatusChip(row, t),
         archivedChip(row, t),
         row.simulated ? chip(t('status.simulated'), 'neutral') : null,
         row.broadcasterName
@@ -575,6 +579,7 @@ async function renderDetail(container, ctx, sessionId, query) {
       el('h1', {className: 'detail-title', text: session.roomTitle || platformLabel(session.platform, t)}),
       el('div', {className: 'detail-meta'},
         statusChip(session, t),
+        platformStatusChip(session, t, {force: true}),
         archivedChip(session, t),
         session.simulated ? chip(t('status.simulated'), 'neutral') : null,
         chip(platformLabel(session.platform, t), 'neutral'),
@@ -604,6 +609,50 @@ async function renderDetail(container, ctx, sessionId, query) {
       sub: t('live.stats.supportSub')
     }),
     statCard({label: t('live.stats.rate'), value: formatInteger(stats.peakMessagesPerMinute, ctx.locale), sub: t('live.stats.rateSub')}));
+
+  const lifecycleRow = (labelKey, value) => el('div', {className: 'def-row'},
+    el('span', {className: 'def-key', text: t(labelKey)}),
+    el('span', {className: 'def-value'}, value));
+
+  const lifecycleCard = el('section', {className: 'card', style: {marginTop: '16px'}},
+    el('div', {className: 'card-head'},
+      el('div', {className: 'card-title', text: t('history.detail.lifecycleTitle')}),
+      el('div', {className: 'card-hint', text: t('history.detail.lifecycleHint')})),
+    el('div', {className: 'card-body'},
+      el('div', {className: 'def-list'},
+        lifecycleRow('history.detail.captureStatus', statusChip(session, t)),
+        lifecycleRow(
+          'history.detail.platformStatus',
+          platformStatusChip(session, t, {force: true}) ?? t('status.platformUnknown')
+        ),
+        lifecycleRow(
+          'history.detail.lastLiveSeenAt',
+          session.lastLiveSeenAt ? formatDateTime(session.lastLiveSeenAt, ctx.locale) : '—'
+        ),
+        lifecycleRow(
+          'history.detail.platformEndedAt',
+          session.platformEndedAt
+            ? formatDateTime(session.platformEndedAt, ctx.locale)
+            : t('history.detail.platformEndUnknown')
+        ),
+        lifecycleRow(
+          'history.detail.platformCheckedAt',
+          session.platformStatusAt ? formatDateTime(session.platformStatusAt, ctx.locale) : '—'
+        ),
+        lifecycleRow(
+          'history.detail.endReason',
+          t(endReasonLabelKey(session.endReason))
+        ))),
+    el('div', {className: 'card-body'},
+      el('p', {
+        className: 'source-note',
+        text: session.platformStatus
+          ? t('history.detail.platformStatusNote', {status: platformStatusLabel(session.platformStatus, t)})
+          : t('history.detail.platformStatusUnknownNote')
+      }),
+      session.status !== 'live' && !session.platformEndedAt
+        ? el('p', {className: 'source-note', text: t('history.detail.platformEndUnknownNote')})
+        : null));
 
   const canvas = el('canvas', {className: 'chart-canvas', attrs: {role: 'img'}});
   const chartCard = el('section', {className: 'card', style: {marginTop: '16px'}},
@@ -664,6 +713,12 @@ async function renderDetail(container, ctx, sessionId, query) {
         el('div', {className: 'callout-title', text: t('history.detail.stoppedTitle')}),
         el('div', {text: t('history.detail.stoppedBody')}))));
   }
+  if (session.endReason === 'platform_ended' || session.endReason === 'platform_not_live') {
+    notices.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '12px'}},
+      el('div', {},
+        el('div', {className: 'callout-title', text: t('history.detail.platformEndedTitle')}),
+        el('div', {text: t('history.detail.platformEndedBody')}))));
+  }
   if (session.simulated) {
     notices.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '16px'}},
       el('div', {className: 'callout-title', text: t('status.simulated')}),
@@ -675,7 +730,7 @@ async function renderDetail(container, ctx, sessionId, query) {
       el('div', {text: t('history.detail.interruptedNote')})));
   }
 
-  container.append(back, head, statsGrid, ...notices);
+  container.append(back, head, statsGrid, lifecycleCard, ...notices);
 
   if (viewerId) {
     container.append(await buildViewerCard(ctx, session, viewerId));

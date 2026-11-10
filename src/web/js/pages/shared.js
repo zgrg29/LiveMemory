@@ -30,15 +30,96 @@ export function supportSecondaryText(support, locale, t) {
 }
 
 /**
- * Capture status. `ended` with `endReason = user` means the user stopped local
- * recording, not that the platform broadcast ended; the label says so.
+ * Platform state and local capture state are different facts.
+ *
+ * The pure mapping is exported so the browser and the Node tests use exactly
+ * the same labels. It never turns "socket connected" or "no chat messages"
+ * into "live", and it never shows a green Live chip after the platform has
+ * reported an end.
  */
+const PLATFORM_STATUS_META = Object.freeze({
+  live: {label: 'status.platformLive', tone: 'live', dot: true},
+  ended: {label: 'status.platformEnded', tone: 'neutral', dot: false},
+  not_started: {label: 'status.platformNotStarted', tone: 'neutral', dot: false},
+  carousel: {label: 'status.platformCarousel', tone: 'warn', dot: false},
+  unknown: {label: 'status.platformUnknown', tone: 'warn', dot: false},
+  ending: {label: 'status.platformEnding', tone: 'warn', dot: true}
+});
+
+export function platformStatusMeta(status) {
+  return PLATFORM_STATUS_META[status] ?? PLATFORM_STATUS_META.unknown;
+}
+
+export function platformStatusLabel(status, t) {
+  return t(platformStatusMeta(status).label);
+}
+
+/**
+ * Capture status label. An ended capture with `endReason = user` is a manual
+ * stop, not a platform end. While an end signal is being confirmed the capture
+ * chip stops being green and says "ending recording".
+ */
+export function captureStatusMeta(session) {
+  if (!session) return null;
+  if (session.status === 'live') {
+    const platform = session.platformStatus;
+    if (platform === 'ending') {
+      return {label: 'status.confirmingEnd', tone: 'warn', dot: true};
+    }
+    if (platform === 'ended' || platform === 'not_started' || platform === 'carousel') {
+      return {label: 'status.endingCapture', tone: 'warn', dot: true};
+    }
+    return {label: 'status.live', tone: 'live', dot: true};
+  }
+  if (session.status === 'interrupted') {
+    return {label: 'status.captureInterrupted', tone: 'warn', dot: false};
+  }
+  if (session.endReason === 'user') {
+    return {label: 'status.manualStopped', tone: 'neutral', dot: false};
+  }
+  if (session.endReason === 'platform_ended'
+    || session.platformStatus === 'ended'
+    || session.platformStatus === 'carousel') {
+    return {label: 'status.platformEnded', tone: 'neutral', dot: false};
+  }
+  return {label: 'status.ended', tone: 'neutral', dot: false};
+}
+
 export function statusChip(session, t) {
   if (!session) return null;
-  if (session.status === 'live') return chip(t('status.live'), 'live', {dot: true});
-  if (session.status === 'interrupted') return chip(t('status.interrupted'), 'warn');
-  if (session.endReason === 'user') return chip(t('status.stopped'), 'neutral');
-  return chip(t('status.ended'), 'neutral');
+  const meta = captureStatusMeta(session);
+  return chip(t(meta.label), meta.tone, {dot: meta.dot});
+}
+
+const END_REASON_KEYS = Object.freeze({
+  user: 'history.endReason.user',
+  platform_ended: 'history.endReason.platformEnded',
+  platform_not_live: 'history.endReason.platformNotLive',
+  startup_recovery: 'history.endReason.startupRecovery',
+  shutdown: 'history.endReason.shutdown',
+  failed: 'history.endReason.failed',
+  adapter_end: 'history.endReason.adapterEnd'
+});
+
+export function endReasonLabelKey(reason) {
+  return END_REASON_KEYS[reason] ?? 'history.endReason.unknown';
+}
+
+/**
+ * Secondary platform chip. It is omitted when the capture chip already states
+ * the same fact, but callers can force it (the session detail always does).
+ */
+export function platformStatusChip(session, t, {force = false} = {}) {
+  if (!session || !session.platformStatus) return null;
+  if (!force) {
+    // The capture chip already covers a running capture (including the
+    // "confirming end" transition). The platform chip adds information only
+    // for ended/interrupted rows.
+    if (session.status === 'live') return null;
+    if (session.platformStatus === 'ended' || session.platformStatus === 'carousel') return null;
+  }
+  const meta = platformStatusMeta(session.platformStatus);
+  return chip(`${t('status.platformPrefix')}: ${t(meta.label)}`, meta.tone, {dot: meta.dot});
 }
 
 /** Archive is a management flag, shown next to (never instead of) the status. */
