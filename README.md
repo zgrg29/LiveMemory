@@ -12,8 +12,12 @@ Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no A
 
 LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析通过「导出 AI 分析包 → 手动交给任意 AI 服务 → 导入结果」完成，软件本身不连接任何 AI 服务，也不绑定 AI 品牌。
 
-### 现在能做什么（v0.8.1）
+### 现在能做什么（v0.9.0）
 
+- **长期观众记忆（v0.9.0）**：每位「主播 × 观众」一份会持续更新的长期记忆；每条事实都记录来源场次、引用消息、时间、可信度（观众明确说过 / AI 推断 / 无法确认）与状态（当前 / 可能过时 / 矛盾 / 已替换 / 待确认）；「备考 → 考试结束」这类变化用状态替换保留历史，而不是覆盖
+- **跨场次增量更新**：一键把已导入的单场 AI 分析合并进长期记忆（不调用 AI）；需要处理矛盾或近况变化时，导出「记忆更新包」交给任意 AI，导入 JSON 后先看到逐位观众的真实差异，再决定是否应用；重复导入不会重复应用，每次更新都是可回滚的新版本
+- **观众档案标签页**：概览 / 长期记忆 / 互动历史 / 历史版本；可按需展开证据原文、确认或忽略推断、忘记单条、恢复旧版本、删除整位观众的长期记忆
+- **记忆工作台**：`长期记忆` 页面四步完成「选择直播 → 本地合并 → 生成 AI 更新包 → 导入预览应用」，并显示最近任务、最近更新的观众与保留/清理说明
 - 双击启动本地控制台，自动打开系统默认浏览器，数据保存在 `%LOCALAPPDATA%\LiveMemory\`
 - 中文 / 日本語 / English 三语界面；语言切换同时放在**页面顶栏**（外观切换旁），三种语言名始终以各自语言显示，默认跟随系统、可手动覆盖并持久保存。**启动器控制台默认英文**，`--lang` 可覆盖，与网页语言互不影响
 - **同时记录多场直播**：每个直播间独立标签、连接状态、统计与停止按钮；同一直播间重复启动被拒绝；一场失败/停止不影响其他场
@@ -133,6 +137,10 @@ node scripts/build-windows.mjs
 
 LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「AI 分析パッケージ出力 → 任意の AI サービスに手動で渡す → 結果を取り込む」方式で、クラウドや API キーは使わず、特定の AI ブランドにも依存しません。
 
+- **長期メモリ（v0.9.0）**: 「配信者 × 視聴者」ごとに 1 つの長期メモリ。各事実は出典の配信・引用メッセージ・時刻・確度（本人が明言 / AI の推測 / 未確認）と状態（現在 / 古い可能性 / 矛盾 / 置換済み / 確認待ち）を持ちます。「試験勉強中 → 試験終了」のような変化は置換として履歴を残し、上書きしません
+- **配信をまたぐ差分更新**: 取り込み済みの配信分析をワンクリックで長期メモリへ統合（AI 不使用）。矛盾や近況の変化を扱うときは「メモリ更新パッケージ」を書き出して任意の AI に渡し、返った JSON を取り込むと、適用前に視聴者ごとの実際の差分が表示されます。同じ結果の再取り込みは適用されず、更新はすべて新バージョンとして復元できます
+- **視聴者プロフィールのタブ**: 概要 / 長期メモリ / 交流履歴 / バージョン。根拠の原文を開く、推測を確認/無視する、1 件を忘れる、以前のバージョンへ戻す、視聴者 1 人の長期メモリを削除する、が可能です
+- **メモリのワークスペース**: 「長期メモリ」ページで「配信選択 → ローカル統合 → AI 更新パッケージ作成 → 取り込みプレビューと適用」の 4 段階。最近のジョブ、最近更新した視聴者、保存とクリーンアップの説明も表示します
 - 対応 UI / コンソール: 简体中文・日本語・English（システム言語に追従、手動変更は保存されます）。起動コンソールは既定で英語、`--lang` で切り替え可能
 - **複数配信の同時記録**: 配信ごとに独立したタブ・接続状態・統計・停止操作。同じ配信ルームの重複起動は拒否され、1 件の失敗/停止は他に影響しません
 - **ライブ記録タブ**: 固定の「新規記録」と横スクロール可能な配信タブ。接続中/記録中/再接続中/停止済み/接続失敗を表示。ページ移動や再読み込みでもバックグラウンド記録は継続します
@@ -147,7 +155,7 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 - AI 分析は「パッケージ出力 → 任意の AI に手動で渡す → JSON を取り込む」方式です。M6 で **メッセージ境界の自動分割、三言語プロンプト（バージョン記録）、JSON ファイル/貼り付け取り込み、厳格な Schema・場面・配信者・視聴者・時刻・メッセージ参照検証、重複取り込み防止、結果バージョン、第 2 段階の統合パッケージ、分析レポート**を実装しました。ソフトが AI API を呼ぶことはありません
 - **分析レポート**: 配信要約、話題タイムライン、感情の変化、論争、見返し候補、視聴者プロフィール、プロンプト/結果バージョンと出所。根拠は実際のメッセージに解決され、原文が保持期間で消えている場合は「利用不可」と明示します。映像・音声は分析していないことも明記します
 - AI 結果は外部入力として扱い、HTML/スクリプトを実行せず、金額・件数・設定を変更できません。同一結果の再取り込みは重複として扱い、異なる結果は明示的に新しいバージョンとして追加します
-- AI 結果の長期保存（視聴者プロフィールを含む）は現時点の既知の制限です。YouTube の 30 日クリーンアップは既に取り込んだ AI プロフィールを自動削除しません。完全な準拠を主張してはいけません
+- AI 结果の長期保存（視聴者プロフィールを含む）は v0.9.0 の長期メモリで扱います。ただし YouTube の 30 日クリーンアップ後は根拠が「原文削除済み」となり、メモリ自体は残ります。プラットフォームポリシーへの完全準拠を主張してはいけません
 - ポータブルバックアップは今後実装予定
 
 開発時は Node.js 22.5 以降が必要です（SQLite は実行環境に内蔵）。詳細は [docs/STATUS.md](docs/STATUS.md) と [docs/WINDOWS_RUNTIME.md](docs/WINDOWS_RUNTIME.md) を参照してください。
@@ -159,6 +167,8 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis is a manual round trip: export an AI analysis package, give it to any AI service you choose, import the result. No cloud service, no API key, no vendor account.
 
 Current build (v0.8.1) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. **M6 adds the complete manual AI round trip**: a versioned analysis task, automatic message-boundary batching, localized versioned prompts, JSON file or paste import, strict schema/session/task/batch/broadcaster/viewer/time/evidence validation, duplicate and explicit result versioning, a stage-2 aggregate package for long streams, and a traceable live analysis report. LiveMemory never calls an AI API. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v9). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. The launcher console defaults to English while the web UI keeps all three languages (`--lang` overrides the console only). Real-AI end-to-end samples and portable backup remain future work — see [docs/STATUS.md](docs/STATUS.md).
+
+**M7 (v0.9.0) adds long-term viewer memory**: one memory per broadcaster × viewer, holding atomic facts with source session, quoted message, timestamp, certainty (stated / inferred / uncertain) and status (current / possibly outdated / contradicted / superseded / needs confirmation). A state change such as "preparing for an exam" → "the exam is over" is stored as a supersede with history instead of overwriting. Updates can be merged locally from an already-imported session analysis (no AI at all) or through a versioned memory update package (`livememory-memory-update-v1`) that any AI can answer; the app validates viewer ids, quoted messages, target facts and schema before showing the exact per-viewer diff, then applies it as a new version in one transaction. Re-importing the same answer changes nothing, every update can be rolled back, a human can confirm or forget a single fact, and deleting one viewer's memory blocks older packages from restoring it. Viewer profiles now have Overview / Long-term memory / Interaction history / Versions tabs, and a Memory workspace walks through the whole round trip.
 
 Streamers never create an API key, OAuth client or Google Cloud project. The public-web path was re-validated in v0.6.0 with real concurrent captures (two YouTube broadcasts, YouTube + Bilibili, three streams, and the built EXE attached to the same three streams). Its terms compliance remains unconfirmed (see [docs/STATUS.md](docs/STATUS.md) and [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md)).
 

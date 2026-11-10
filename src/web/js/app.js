@@ -12,6 +12,7 @@ import {
 import {livePage} from './pages/live.js';
 import {historyPage} from './pages/history.js';
 import {viewersPage} from './pages/viewers.js';
+import {memoryPage} from './pages/memory.js';
 import {aiPage} from './pages/ai.js';
 import {settingsPage} from './pages/settings.js';
 
@@ -81,6 +82,7 @@ const ROUTES = [
   {pattern: /^\/history\/([^/]+)$/, page: historyPage, nav: 'history', params: ['id']},
   {pattern: /^\/viewers$/, page: viewersPage, nav: 'viewers'},
   {pattern: /^\/viewers\/([^/]+)$/, page: viewersPage, nav: 'viewers', params: ['id']},
+  {pattern: /^\/memory$/, page: memoryPage, nav: 'memory'},
   {pattern: /^\/ai$/, page: aiPage, nav: 'ai'},
   {pattern: /^\/settings$/, page: settingsPage, nav: 'settings'}
 ];

@@ -56,7 +56,7 @@ test('local API serves the console, records a session, exports a package and res
     assert.equal(health.port, server.port);
 
     const bootstrap = await (await fetch(`${base}api/bootstrap`)).json();
-    assert.equal(bootstrap.app.version, '0.8.1');
+    assert.equal(bootstrap.app.version, '0.9.0');
     assert.equal(bootstrap.effective.locale, 'en');
     assert.equal(bootstrap.settings.locale, 'system');
     assert.equal(bootstrap.settings.theme, 'system');

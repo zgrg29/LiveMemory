@@ -1,5 +1,44 @@
 # 版本变化（CHANGELOG）
 
+## 0.9.0 — 2026-11-10（M7：长期观众记忆）
+
+### 新增
+
+- **长期观众记忆（schema 10，8 张新表）**：`viewer_memories`、`memory_facts`、`memory_fact_evidence`、
+  `memory_versions`、`memory_jobs`、`memory_job_batches`、`memory_job_messages`、`memory_job_viewers`、
+  `memory_results`。记忆按 `broadcaster × viewer` 唯一；同一平台账号在不同主播处是两份独立记忆。
+- **跨场次增量更新**：
+  - 一键合并已导入的 M6 单场分析（不调用 AI），只新增/确认，不重复、不删除；
+  - AI 记忆更新包（`livememory-memory-update-v1`）+ 三语提示词 `lm-prompt-m7.1-*`，按观众分批；
+  - 合并引擎支持 `add`/`confirm`/`update`/`supersede`/`conflict`/`outdated`/`uncertain`。
+- **事实、证据与可信度**：`certainty`（stated / inferred / uncertain）与 `status`（active / outdated /
+  conflicted / superseded / needs_confirmation）分离；事实级证据（场次、批次、`seq`、`event_id`）；
+  原文清理或事件删除后证据降级为 purged / partial / unavailable。
+- **版本与差异**：每次应用写一个版本（完整快照 + 逐条差异）；可回滚，回滚本身也是新版本；每个记忆保留最近 20 个版本。
+- **矛盾与状态变化**：状态变化用 `supersede` 保留旧事实；矛盾双方标记 `conflicted`，不替主播裁决；
+  超 180 天未确认的活跃兴趣/偏好标记 `outdated`，绝不转成 dislike。
+- **人工复核**：确认、标记过时、恢复、忘记单条；每次操作产生新版本。
+- **隐私**：删除单个观众的长期记忆（墓碑阻止旧包恢复）；本地合并不复活已删除记忆；
+  过期清理（默认仅预览）；原始聊天清理/删除场次/清空数据/恢复出厂全部联动。
+- **界面**：新增 `#/memory` 四步工作台（选择直播 → 本地合并 → 导出 AI 包 → 导入预览应用）+
+  最近任务 + 最近观众 + 保留与清理；观众档案改为「概览 / 长期记忆 / 互动历史 / 历史版本」标签页。
+- **文档**：`docs/AI_CONTRACT.md` 新增记忆协议章节；`docs/DATA_MODEL.md`、`docs/PRIVACY_SECURITY.md`、
+  `docs/UI_DESIGN.md`、`docs/TEST_PLAN.md`、`docs/ROADMAP.md` 同步更新。
+- **测试**：新增 8 个测试文件（模型、引擎、UI 静态、本地合并、AI 工作流、隐私、迁移、HTTP API），
+  全量 **450 passed / 0 failed**。
+
+### 修复
+
+- 修复 180 天过时规则误伤「身份类」与「不确定」事实；修复兴趣-反感同话题互相覆盖的风险
+  （改为显式矛盾）；修复同话题 `conflict` 会破坏「一话题一条存活事实」唯一约束的问题；
+  修复人工复核可复活已替换事实的问题；修复本地合并可能复活已删除记忆的问题。
+
+### 未完成
+
+- 真实浏览器渲染/截图（本机策略阻止无头 Edge/Chrome 启动）；
+- 打包 EXE 运行验收（v0.9.0 已构建：91.0 MB / 134 资源 / requireAdministrator，本机 EPERM 无法启动）；
+- 真实 AI 服务往返与大观众量性能验证。
+
 ## 0.8.1 — 2026-11-10（Bilibili 直播生命周期检测修复）
 
 ### 修复

@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatInteger,
   initials,
+  loadingBlock,
   pageHead,
   statCard
 } from '../ui.js';
@@ -17,6 +18,12 @@ import {
   supportPrimaryText,
   supportRows
 } from './shared.js';
+import {
+  fetchMemoryView,
+  renderMemorySummaryCard,
+  renderMemoryTab,
+  renderVersionsTab
+} from './viewer-memory.js';
 
 /**
  * Viewer directory and long-term profile.
@@ -607,28 +614,143 @@ async function renderDetail(container, ctx, viewerId, query) {
         el('div', {className: 'small tertiary', style: {marginTop: '10px'}, text: t('viewers.detail.globalHint')})))
     : null;
 
-  const interestsCard = el('section', {className: 'card'},
-    el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('viewers.detail.interestsTitle')})),
-    el('div', {className: 'card-body'},
-      emptyState({title: t('common.notAvailable'), body: t('viewers.detail.interestsEmpty'), glyph: '◇'}),
-      el('div', {className: 'callout callout--neutral', style: {marginTop: '12px'}}, t('viewers.detail.notes'))));
+  // Long-term memory is always scoped to one broadcaster. When the page is in
+  // the "all broadcasters" scope we fall back to the current broadcaster, and
+  // never merge two channels' memories together.
+  const memoryBroadcasterId = scoped && scope !== SCOPE_UNASSIGNED
+    ? scope
+    : (payload.currentId ?? profile.broadcasters?.[0]?.id ?? null);
+  let memoryView = null;
+  let memoryState = 'idle';
 
-  container.append(
-    back,
-    hero,
-    scopeBar,
+  const tabsHost = el('div', {className: 'tabs', attrs: {role: 'tablist', 'aria-label': t('memory.pageTitle')}});
+  const panelHost = el('div', {className: 'tab-panel'});
+  const TAB_KEYS = Object.freeze([
+    ['overview', 'viewers.detail.tabOverview'],
+    ['memory', 'viewers.detail.tabMemory'],
+    ['history', 'viewers.detail.tabHistory'],
+    ['versions', 'viewers.detail.tabVersions']
+  ]);
+  let activeTab = 'overview';
+
+  const overviewPanel = el('div', {className: 'stack'},
     el('div', {className: 'scope-context-head'},
       el('div', {className: 'section-title', text: contextTitle}),
       scoped && scopeData?.broadcaster
         ? broadcasterIdentityChip(scopeData.broadcaster.identity, t)
         : null),
     statsGrid,
-    el('div', {className: 'grid-2-equal', style: {marginTop: '16px'}}, supportCard, identityCard),
-    el('div', {style: {marginTop: '16px'}}, sessionsCard),
-    el('div', {className: 'grid-2-equal', style: {marginTop: '16px'}}, broadcastersCard, nicknameCard),
-    globalCard ? el('div', {style: {marginTop: '16px'}}, globalCard) : null,
-    el('div', {style: {marginTop: '16px'}}, interestsCard)
+    el('div', {className: 'grid-2-equal'}, supportCard, identityCard),
+    el('div', {className: 'grid-2-equal'}, broadcastersCard, nicknameCard),
+    globalCard,
+    el('div', {className: 'memory-summary-host'}));
+
+  const historyPanel = el('div', {className: 'stack'},
+    sessionsCard,
+    el('div', {className: 'small tertiary', text: t('memory.versionsHint')}));
+
+  const versionsPanel = el('div', {className: 'stack'});
+  const memoryPanel = el('div', {className: 'stack'});
+
+  const summaryHost = overviewPanel.querySelector('.memory-summary-host');
+
+  function paintTabs() {
+    tabsHost.replaceChildren(...TAB_KEYS.map(([key, labelKey]) => el('button', {
+      className: 'tab',
+      type: 'button',
+      text: t(labelKey),
+      attrs: {
+        role: 'tab',
+        'aria-selected': String(activeTab === key),
+        tabindex: activeTab === key ? '0' : '-1'
+      },
+      onClick: () => setTab(key)
+    })));
+  }
+
+  function paintSummary() {
+    if (!summaryHost) return;
+    summaryHost.replaceChildren(renderMemorySummaryCard({
+      ctx,
+      view: memoryView ?? {memory: null, facts: [], groups: {}},
+      onOpen: () => setTab('memory')
+    }));
+  }
+
+  function paintPanel() {
+    panelHost.replaceChildren();
+    if (activeTab === 'overview') {
+      panelHost.append(overviewPanel);
+      return;
+    }
+    if (activeTab === 'history') {
+      panelHost.append(historyPanel);
+      return;
+    }
+    if (!memoryBroadcasterId) {
+      panelHost.append(el('section', {className: 'card'},
+        el('div', {className: 'card-body'},
+          emptyState({title: t('memory.noMemory'), body: t('memory.noMemoryBody'), glyph: '◇'}))));
+      return;
+    }
+    if (memoryState === 'loading') panelHost.append(loadingBlock());
+    else if (memoryState === 'error') {
+      panelHost.append(el('section', {className: 'card'},
+        el('div', {className: 'card-body'},
+          emptyState({
+            title: t('common.error'),
+            body: null,
+            glyph: '!',
+            action: el('button', {
+              className: 'button button--secondary',
+              type: 'button',
+              text: t('common.retry'),
+              onClick: () => loadMemory(true)
+            })
+          }))));
+    } else if (activeTab === 'versions') {
+      renderVersionsTab({ctx, host: panelHost, view: memoryView, viewerId, broadcasterId: memoryBroadcasterId, reload: () => loadMemory(true)});
+    } else {
+      renderMemoryTab({ctx, host: panelHost, view: memoryView, viewerId, broadcasterId: memoryBroadcasterId, reload: () => loadMemory(true)});
+    }
+  }
+
+  async function loadMemory(force = false) {
+    if (!memoryBroadcasterId) return;
+    if (memoryView && !force) return;
+    memoryState = 'loading';
+    if (activeTab === 'memory' || activeTab === 'versions') paintPanel();
+    try {
+      memoryView = await fetchMemoryView(viewerId, memoryBroadcasterId);
+      memoryState = 'ready';
+    } catch (error) {
+      memoryState = 'error';
+      ctx.toast(ctx.describeError(error), {tone: 'error'});
+    }
+    paintSummary();
+    if (activeTab === 'memory' || activeTab === 'versions') paintPanel();
+  }
+
+  function setTab(key) {
+    activeTab = key;
+    paintTabs();
+    paintPanel();
+    if ((key === 'memory' || key === 'versions') && !memoryView) {
+      loadMemory().catch(() => {});
+    }
+  }
+
+  container.append(
+    back,
+    hero,
+    scopeBar,
+    tabsHost,
+    panelHost
   );
+  paintTabs();
+  paintSummary();
+  paintPanel();
+  loadMemory().catch(() => {});
 
   return undefined;
 }

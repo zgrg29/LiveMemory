@@ -506,3 +506,29 @@ duration ≈ 25.0s
 | 真实“直播中→下播” | ⬜ **未捕获**；不能声称完全验证 |
 
 > 真实房间测试只写 `tests/.tmp` 下的临时数据库，未触碰用户 `E:\新建文件夹` 的真实数据。
+
+## 20. 长期观众记忆（M7 / v0.9.0）
+
+### 20.1 自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/memory-model.test.mjs` | 话题归一化（大小写/空格/标点/emoji、CJK 保留）、去重键按 kind 区分、文本清理、证据去重、差异（新增/变更/确认/删除/不变）、180 天过时规则、分组 |
+| `tests/unit/memory-engine.test.mjs` | 新增去重、stated/inferred 升降级、兴趣-反感矛盾、supersede 历史、确认复活过时、拒绝确认已替换、同键冲突跳过、未知目标跳过、uncertain、outdated、人工确认/忽略/忘记/恢复、禁止复活 |
+| `tests/unit/memory-ui.test.mjs` | 页面字面 key 三语存在、状态/可信度/类型标签、禁止 innerHTML、页面与导航注册、导航图标、协议常量与 Schema 一致、三语提示词内容、CSS 只用 tokens |
+| `tests/integration/memory-local-merge.test.mjs` | 首次 V1、第二场 V2、三场 V3、重复合幂等、兴趣停止提及标过时（不转 dislike）、主播隔离、无分析/无主播/无场次报错 |
+| `tests/integration/memory-ai-workflow.test.mjs` | 包结构/映射、导入新增+证据解析、重复导入、需新版本、乱序批次与缺失批次、未知观众、stated 无证据拒绝、inferred 无证据降级、坏 JSON/旧 Schema/错协议、越界 seq/跨批次/陌生事实 id、跨场 supersede、矛盾双方、中日英原文 |
+| `tests/integration/memory-privacy.test.mjs` | 删除记忆 + 墓碑拒绝旧包、删除后新包重建、本地合并不复活、主播隔离删除、原文清理降级、删除场次清包与证据降级、过期清理预览/执行、清空数据覆盖记忆表 |
+| `tests/integration/memory-migration.test.mjs` | v9→v10 真实升级、旧数据不变、部分唯一索引、重复迁移无操作、新库 v10 |
+| `tests/integration/memory-api.test.mjs` | HTTP 全流程：状态/总览、无分析 409、预览不写、应用、人工确认、回滚、任务创建/下载/指令、导入预览/导入/重复、错误 JSON 422、清理预览、删除确认 |
+
+### 20.2 手工 / 浏览器（本轮结果）
+
+| 检查 | 结果 |
+| --- | --- |
+| `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` | ✅ 450 passed / 0 failed |
+| 记忆工作台真实渲染、合并预览、分组、证据、版本、暗色、390px | ⬜ **未执行**：本机应用控制策略终止无头 Edge/Chrome（Edge `-2147483645`、Chrome `-36863`） |
+| `scripts/verify-memory-ui.mjs` | ⬜ 已编写，等待可运行浏览器的环境 |
+| 打包 EXE（v0.9.0、schema 9→10） | ⬜ 未构建 |
+
+> 不把未运行的浏览器/EXE 检查写成通过。

@@ -32,7 +32,16 @@ const CLEARED_TABLES = Object.freeze([
   'ai_job_messages',
   'ai_job_viewers',
   'ai_results',
-  'ai_result_evidence'
+  'ai_result_evidence',
+  'viewer_memories',
+  'memory_facts',
+  'memory_fact_evidence',
+  'memory_versions',
+  'memory_jobs',
+  'memory_job_batches',
+  'memory_job_messages',
+  'memory_job_viewers',
+  'memory_results'
 ]);
 
 function tableCounts(db) {
@@ -124,6 +133,15 @@ function clearDatabase(db, {factory = false} = {}) {
   withTransaction(db, () => {
     // Child tables first so this works regardless of cascade timing. Explicit
     // deletes also cover databases where a foreign key was disabled.
+    db.exec('DELETE FROM memory_job_messages');
+    db.exec('DELETE FROM memory_results');
+    db.exec('DELETE FROM memory_job_viewers');
+    db.exec('DELETE FROM memory_job_batches');
+    db.exec('DELETE FROM memory_jobs');
+    db.exec('DELETE FROM memory_fact_evidence');
+    db.exec('DELETE FROM memory_facts');
+    db.exec('DELETE FROM memory_versions');
+    db.exec('DELETE FROM viewer_memories');
     db.exec('DELETE FROM ai_result_evidence');
     db.exec('DELETE FROM ai_results');
     db.exec('DELETE FROM ai_job_messages');

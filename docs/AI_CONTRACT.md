@@ -420,3 +420,106 @@ M6 兼容性扩展（均为可选）：
 - 旧 1.0.0 结果（无 `schema_version` / `job_id` / `batch_id` / 扩展字段）仍可校验与导入。
 - `message_refs` 同时接受整数与 `{batch, seq}`；多批任务只接受后者。
 - Schema 版本不认识时拒绝并提示使用包内 `result.schema.json`；未来新增字段必须保持可选或提升 Schema 版本。
+
+## 10. 长期记忆更新协议（M7 / v0.9.0）
+
+本节是 M6 分析协议之外的**独立协议**，两者互不替代：M6 回答「这场直播发生了什么」，
+M7 回答「这位观众现在应该被记住什么」。
+
+### 10.1 协议标识
+
+- 协议：`livememory-memory-update-v1`
+- Schema：`src/memory/schemas/memory-update-result-v1.schema.json`，版本 **1.0.0**
+- 提示词：`lm-prompt-m7.1-zh-CN` / `-ja` / `-en`（由软件生成，三语完整）
+- 任务类型：`viewer_memory_update`；任务 id `<session_id>-memory`（多批为 `<session_id>-memory-bNN`）
+- 包文件名：`LiveMemory-Memory-<session 后缀>-<job 后缀>-bNNofMM-<YYYYMMDD-HHmm>-<locale>.zip`
+
+### 10.2 包内容
+
+| 文件 | 内容 |
+| --- | --- |
+| `manifest.json` | 协议、Schema、任务/批次、主播、观众数、消息数、提示词版本、文件校验和 |
+| `memory_context.json` | 场次与主播快照、`job`/`batch`、本批观众（身份、本场统计、主播维度累计、**现有记忆** `facts[].id/kind/topic/statement/certainty/status/...`）、表情字典 |
+| `viewer_excerpts.jsonl` | 本批观众的发言，每行 JSON；`seq` 为本包内引用号，按观众分组连续排列 |
+| `instructions.md` | 三语任务说明：证据规则、状态变化 vs 矛盾、禁止推断敏感属性、禁止输出金额/计数 |
+| `result.schema.json` | 结果 Schema |
+
+分批规则：默认 20 位观众/批（上限 20），单批消息上限 2000，每位观众最多导出最近 120 条含正文的发言；
+`memory_job_messages` 记录每批的 `seq → event_id`，导入时只接受真实存在的 `seq`。
+`memory_job_viewers.base_version` 记录导出时该观众的记忆版本；导入时版本不一致会给出 `MEMORY_BASE_STALE` 警告。
+
+### 10.3 结果结构
+
+```json
+{
+  "protocol": "livememory-memory-update-v1",
+  "schema_version": "1.0.0",
+  "job_id": "mjob_...",
+  "batch_id": "mjob_...-b01",
+  "broadcaster_id": "bilibili:room:5050",
+  "task_id": "ses_...-memory",
+  "session_id": "ses_...",
+  "locale": "zh-CN",
+  "viewer_operations": [
+    {
+      "viewer_id": "bilibili:12345",
+      "summary": "可选的一两句话概括当前状态",
+      "operations": [
+        {
+          "op": "add | confirm | update | supersede | conflict | outdated | uncertain",
+          "kind": "interest | dislike | identity | life_event | topic | preference | community | other",
+          "topic": "考试",
+          "statement": "考试已经结束，正在等成绩",
+          "certainty": "stated | inferred | uncertain",
+          "confidence": 0.9,
+          "target_fact_id": "mfc_...",
+          "reason": "可选",
+          "valid_from": "2026-11-10T10:00:00.000Z",
+          "valid_until": "2026-11-10T10:00:00.000Z",
+          "evidence": [1, 2, {"batch": 1, "seq": 7}]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 10.4 校验规则（导入端，全部强制）
+
+1. 8 MB 上限；剥离一层 Markdown 围栏；结构深度/节点/字符串长度/危险键防护；JSON Schema 严格校验。
+2. `protocol` 必须等于 `livememory-memory-update-v1`；`schema_version` 只接受 `1.0.0`。
+3. `job_id`、`batch_id` 必填且必须存在于本地数据库；`task_id`、`session_id`、`broadcaster_id` 必须匹配快照。
+4. `viewer_id` 必须在该批次 `memory_job_viewers`；重复 ID 拒绝；昵称永不参与身份解析。
+5. 定向操作（confirm/update/supersede/conflict/outdated）必须提供 `target_fact_id`，且必须是**该观众**现有记忆中的事实。
+6. `evidence` 的 `(batch, seq)` 必须命中该批次的 `seq → event_id` 映射；跨批次或越界拒绝。
+   事件被删除或原文已清理时只警告，并把该证据标记为不可用。
+7. `certainty='stated'` 且无证据 → **拒绝**（`MEMORY_EVIDENCE_REQUIRED`）；
+   `inferred` 且无证据 → 降级为 `uncertain` 并给出 `MEMORY_CERTAINTY_DOWNGRADED` 警告。
+8. 该观众的长期记忆已被删除，且删除时间晚于任务创建时间 → `MEMORY_DELETED` 拒绝（防止恢复已删除数据）。
+9. 规范化字段白名单后计算 SHA-256：完全相同 → `duplicate`，不写；同批次已有不同结果 → 需显式 `createVersion`。
+10. 预览由真实合并引擎计算，显示每位观众的新增/变更/确认/跳过及其原因；不写库。
+
+### 10.5 合并语义（软件侧，不交给 AI 决定）
+
+- `add` 命中同一 `kind + topic` → 视为确认，刷新 `last_confirmed_at` 并追加证据，不产生重复事实。
+- `stated` 可把 `inferred` 升级；反向永不发生。`certainty='inferred'` 永远不会写入 `user_verified`。
+- 同话题的 `interest` 与 `dislike` → 两条事实都标记 `conflicted`，等待人工处理。
+- `supersede` → 旧事实 `status=superseded` + `valid_until` + `superseded_by`；新事实为当前状态，历史保留。
+- `outdated` → 只标记，不删除；超过 180 天未再确认的活跃兴趣/偏好自动标记为 `outdated`。
+- 非身份类事实没有「自动删除」；只有用户显式「忘记单条」或删除整份记忆才会移除。
+- 每次应用 = 一个 SQLite 事务：`memory_results` + 每位观众的版本 + 事实集合 + 版本快照。
+
+### 10.6 错误码（节选）
+
+`MEMORY_JOB_REQUIRED`、`MEMORY_JOB_NOT_FOUND`、`MEMORY_BATCH_REQUIRED`、`MEMORY_BATCH_UNKNOWN`、
+`MEMORY_TASK_MISMATCH`、`MEMORY_SESSION_MISMATCH`、`MEMORY_BROADCASTER_MISMATCH`、
+`MEMORY_VIEWER_UNKNOWN`、`MEMORY_VIEWER_DUPLICATE`、`MEMORY_SCOPE_MISMATCH`、
+`MEMORY_FACT_TARGET_REQUIRED`、`MEMORY_FACT_UNKNOWN`、`MEMORY_OP_UNKNOWN`、
+`MEMORY_STATEMENT_REQUIRED`、`MEMORY_EVIDENCE_REQUIRED`、`MEMORY_REF_UNKNOWN`、
+`MEMORY_REF_OTHER_BATCH`、`MEMORY_EVIDENCE_TOO_MANY`、`MEMORY_OPS_TOO_MANY`、`MEMORY_DELETED`。
+
+警告：`MEMORY_NO_EVIDENCE`、`MEMORY_CERTAINTY_DOWNGRADED`、`MEMORY_EVIDENCE_PURGED`、
+`MEMORY_EVIDENCE_DELETED`、`MEMORY_BASE_STALE`、`MEMORY_LOCALE_MISMATCH`、`MEMORY_KIND_DEFAULTED`、
+`MEMORY_TOPIC_CONFLICT`、`MEMORY_EMPTY`。
+
+错误码与修复建议通过 `ai.import.reason.*` / `ai.import.fix.*` 三语显示，界面不展示英文原文。

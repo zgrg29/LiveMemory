@@ -436,3 +436,36 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
   ```
 - 只保存路径指针，不保存数据库内容或凭据；数据库移动后仍能被启动器找到。
 - 目标必须已存在且包含 `database/livememory.db`；否则启动报错，不创建空库。
+
+## 10. 长期观众记忆（schema 10 / v0.9.0）
+
+### 10.1 表
+
+| 表 | 主键/唯一 | 关键列 |
+| --- | --- | --- |
+| `viewer_memories` | `id`；`UNIQUE(broadcaster_id, viewer_id)` | `status`(active/deleted)、`version`、`summary`、`summary_certainty`、`first_memory_at`、`last_update_at`、`last_session_id`、`last_job_id`、`deleted_at`、`delete_reason` |
+| `memory_facts` | `id` | `memory_id`、`kind`、`topic`、`statement`、`certainty`(stated/inferred/uncertain)、`status`(active/outdated/conflicted/superseded/needs_confirmation)、`status_reason`、`confidence`、`dedupe_key`、`evidence_status`/`evidence_count`/`evidence_available`、`source_kind`/`source_session_id`/`source_job_id`/`source_result_id`/`source_label`、`valid_from`/`valid_until`、`superseded_by`、`conflicts_with`、`user_verified`、`first_seen_at`/`last_confirmed_at` |
+| `memory_fact_evidence` | `(fact_id, source_key)` | `session_id`、`batch_index`、`seq`、`event_id`、`observed_at`、`available` |
+| `memory_versions` | `id`；`UNIQUE(memory_id, version)`；`UNIQUE(memory_id, source_key)` | `source_kind`、`source_job_id`、`source_result_id`、`source_session_id`、`counts_json`、`diff_json`、`snapshot_json`、`applied_at` |
+| `memory_jobs` | `id` | `broadcaster_id`、`session_id`、`locale`、`prompt_version`、`protocol_version`、`schema_version`、`scope`、`batch_total`、`viewers_total`、`messages_total`、`last_error_*` |
+| `memory_job_batches` | `(job_id, batch_index)`；`UNIQUE(job_id, batch_id)` | `task_id`、`viewer_count`、`message_count`、`checksum`、`file_name`、`bytes`、`package_checksum` |
+| `memory_job_messages` | `(job_id, batch_index, seq)` | `event_id` |
+| `memory_job_viewers` | `(job_id, batch_index, viewer_id)` | `base_memory_id`、`base_version` |
+| `memory_results` | `id`；`UNIQUE(job_id, batch_id, checksum)` | `batch_index`、`result_json`、`viewer_total`、`op_total`、`evidence_total`、`evidence_missing`、`applied_at` |
+
+### 10.2 约束与不变量
+
+- 记忆只属于一个 `broadcaster_id`；不存在跨主播记忆行。
+- 「一个话题一条存活事实」由**部分唯一索引**保证：`idx_memory_facts_dedupe(memory_id, dedupe_key) WHERE status <> 'superseded'`。
+  因此 `supersede` 可以复用话题键（旧事实退出索引），而 `conflict`/同键 `update` 被引擎拒绝或跳过。
+- `memory_facts` 是当前状态；`memory_versions.snapshot_json` 是对应版本的完整事实集合，`diff_json` 是逐条差异。
+  两者在同一事务内写入，永不漂移。
+- 删除记忆 = 删除事实/证据/版本 + 记忆头标记 `deleted`（`version=0`）。墓碑用于拒绝删除前生成的旧更新包。
+- 删除场次：删除 `memory_jobs`（级联批次/映射/结果）与导出文件；事实保留，证据状态刷新为不可用。
+- `memory_results` 只保存已通过校验并被应用的结果；预览不落库。
+- 金额不进入任何记忆列；`source_label` 只存来源类型标签。
+
+### 10.3 迁移
+
+- v9 → v10 只新增表与索引，不改写任何既有行；旧库现场升级（测试覆盖真实 v9 库）。
+- 记忆表同时纳入清空数据/恢复出厂范围。

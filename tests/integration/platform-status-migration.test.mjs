@@ -56,8 +56,8 @@ test('v8 databases upgrade to v9 without rewriting history', () => {
 
     const result = migrate(db, {now: T0});
     assert.equal(result.from, 8);
-    assert.equal(result.to, 9);
-    assert.deepEqual(result.applied, [9]);
+    assert.equal(result.to, 10);
+    assert.deepEqual(result.applied, [9, 10]);
 
     const columns = db.prepare('PRAGMA table_info(sessions)').all().map((column) => column.name);
     for (const name of [
@@ -88,19 +88,19 @@ test('v8 databases upgrade to v9 without rewriting history', () => {
     assert.equal(row.platform_end_quality, null);
 
     // Re-running the migration is a no-op.
-    assert.deepEqual(migrate(db, {now: T0 + 1000}), {from: 9, to: 9, applied: []});
+    assert.deepEqual(migrate(db, {now: T0 + 1000}), {from: 10, to: 10, applied: []});
   } finally {
     db.close();
   }
 });
 
-test('a fresh database creates schema 9 directly', () => {
+test('a fresh database creates the full schema directly', () => {
   const db = openDatabase({memory: true});
   try {
     const result = migrate(db, {now: T0});
     assert.equal(result.from, 0);
-    assert.equal(result.to, 9);
-    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert.equal(result.to, 10);
+    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   } finally {
     db.close();
   }

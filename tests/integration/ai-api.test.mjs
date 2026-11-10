@@ -39,7 +39,7 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
     const {payload} = await jsonRequest(`${base}api/status`);
     assert.equal(payload.ai.import, true);
     assert.equal(payload.ai.schemaVersion, '1.1.0');
-    assert.equal(payload.database.schemaVersion, 9);
+    assert.equal(payload.database.schemaVersion, 10);
   });
 
   let job;

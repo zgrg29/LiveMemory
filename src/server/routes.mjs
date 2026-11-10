@@ -58,6 +58,36 @@ import {
   listJobs
 } from '../storage/repositories/ai-jobs.mjs';
 import {getResult, listResults} from '../storage/repositories/ai-results.mjs';
+import {
+  getMemory,
+  getMemoryBatch,
+  getMemoryJob,
+  listMemoryBatches
+} from '../storage/repositories/viewer-memory.mjs';
+import {
+  buildMemoryJobView,
+  buildMemoryOverviewView,
+  buildViewerMemoryView,
+  listMemoryJobViews,
+  listMemorySourceSessions
+} from '../memory/view.mjs';
+import {mergeSessionIntoMemory} from '../memory/local.mjs';
+import {createMemoryUpdateJob} from '../memory/export.mjs';
+import {validateMemoryImport} from '../memory/validate.mjs';
+import {importMemoryUpdate} from '../memory/importer.mjs';
+import {buildMemoryInstructions, memoryInstructionVersion} from '../memory/prompt.mjs';
+import {
+  deleteViewerMemory,
+  memoryRetentionStatus,
+  pruneStaleMemories
+} from '../memory/maintenance.mjs';
+import {reviewMemoryFact, rollbackMemory} from '../memory/store.mjs';
+import {
+  MAX_MEMORY_IMPORT_BYTES,
+  MEMORY_PROTOCOL,
+  MEMORY_SCHEMA_VERSION,
+  MEMORY_PROMPT_VERSION
+} from '../memory/constants.mjs';
 import {computeJobStatus, recomputeSessionAiStatus} from '../ai/tasks/status.mjs';
 import {validateAnalysisImport} from '../ai/import/validate.mjs';
 import {importAnalysisResult} from '../ai/import/importer.mjs';
@@ -103,6 +133,12 @@ function statusPayload(deps) {
     data: {dir: paths.root},
     storage: {mode: settingsStore.get().storageMode},
     ai: {export: true, import: true, protocol: ANALYSIS_PROTOCOL, schemaVersion: RESULT_SCHEMA_VERSION},
+    memory: {
+      enabled: true,
+      protocol: MEMORY_PROTOCOL,
+      schemaVersion: MEMORY_SCHEMA_VERSION,
+      promptVersion: MEMORY_PROMPT_VERSION
+    },
     bilibili: deps.bilibili ? deps.bilibili.status() : null,
     youtube: deps.youtube ? deps.youtube.status() : null
   };
@@ -341,6 +377,12 @@ export function buildRoutes() {
               }
             ],
             ai: {export: true, import: true, schemaVersion: RESULT_SCHEMA_VERSION},
+            memory: {
+              enabled: true,
+              protocol: MEMORY_PROTOCOL,
+              schemaVersion: MEMORY_SCHEMA_VERSION,
+              promptVersion: MEMORY_PROMPT_VERSION
+            },
             backup: {export: false, import: false}
           }
         });
@@ -1250,14 +1292,407 @@ export function buildRoutes() {
         res.end(body);
       }
     },
+    /* ------------------------------------------------- long-term memory (M7) */
+    {
+      method: 'GET',
+      path: '/api/memory/overview',
+      handler: ({res, url, deps}) => {
+        const broadcasterId = url.searchParams.get('broadcasterId') || null;
+        sendJson(res, 200, {
+          ...buildMemoryOverviewView(deps.db, {broadcasterId}),
+          sessions: listMemorySourceSessions(deps.db, {broadcasterId, limit: 30}),
+          jobs: listMemoryJobViews(deps.db, {broadcasterId, limit: 10}),
+          retention: memoryRetentionStatus(deps.db, {broadcasterId})
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/sessions',
+      handler: ({res, url, deps}) => {
+        const broadcasterId = url.searchParams.get('broadcasterId') || null;
+        sendJson(res, 200, {
+          sessions: listMemorySourceSessions(deps.db, {broadcasterId, limit: 30})
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/merge',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const result = mergeSessionIntoMemory({
+          db: deps.db,
+          sessionId,
+          apply: body.apply === true,
+          viewerIds: Array.isArray(body.viewerIds) ? body.viewerIds : null,
+          limit: body.limit ?? 500,
+          now: Date.now()
+        });
+        if (!result.ok) {
+          if (result.reason === 'SESSION_NOT_FOUND') {
+            throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+          }
+          if (result.reason === 'MEMORY_BROADCASTER_REQUIRED') {
+            throw new AppError('MEMORY_BROADCASTER_REQUIRED', {
+              messageKey: 'errors.memoryBroadcasterRequired',
+              httpStatus: 409
+            });
+          }
+          if (result.reason === 'MEMORY_NO_ANALYSIS') {
+            throw new AppError('MEMORY_NO_ANALYSIS', {
+              messageKey: 'errors.memoryNoAnalysis',
+              httpStatus: 409
+            });
+          }
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        if (result.apply) {
+          deps.logger?.info({
+            event: 'memory.session_merged',
+            sessionId,
+            viewers: result.totals.viewers,
+            added: result.totals.added,
+            skipped: result.totals.skipped
+          });
+        }
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/jobs',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const requested = body.locale ? normalizeLocale(body.locale) : null;
+        const locale = requested && requested !== 'system'
+          ? requested
+          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        let created;
+        try {
+          created = await createMemoryUpdateJob({
+            db: deps.db,
+            sessionId,
+            locale,
+            exportsDir: deps.paths.exports,
+            viewerIds: Array.isArray(body.viewerIds) ? body.viewerIds : null,
+            viewersPerBatch: body.viewersPerBatch,
+            now: Date.now()
+          });
+        } catch (error) {
+          if (error?.code === 'MEMORY_BROADCASTER_REQUIRED') {
+            throw new AppError('MEMORY_BROADCASTER_REQUIRED', {
+              messageKey: 'errors.memoryBroadcasterRequired',
+              httpStatus: 409
+            });
+          }
+          if (error?.code === 'MEMORY_NO_VIEWERS') {
+            throw new AppError('MEMORY_NO_VIEWERS', {
+              messageKey: 'errors.memoryNoViewers',
+              httpStatus: 409
+            });
+          }
+          throw error;
+        }
+        if (!created) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        deps.logger?.info({
+          event: 'memory.job.created',
+          jobId: created.job.id,
+          sessionId,
+          batches: created.job.batchTotal,
+          viewers: created.job.viewersTotal
+        });
+        sendJson(res, 201, buildMemoryJobView(deps.db, {
+          ...created.job,
+          lastErrorAt: null,
+          lastErrorCode: null,
+          lastErrorJson: null,
+          updatedAt: created.job.createdAt
+        }));
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/jobs',
+      handler: ({res, url, deps}) => {
+        sendJson(res, 200, {
+          jobs: listMemoryJobViews(deps.db, {
+            sessionId: url.searchParams.get('sessionId') || null,
+            broadcasterId: url.searchParams.get('broadcasterId') || null,
+            limit: 30
+          })
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/jobs/:id',
+      handler: ({res, params, deps}) => {
+        const job = getMemoryJob(deps.db, params.id);
+        if (!job) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryJobNotFound');
+        sendJson(res, 200, buildMemoryJobView(deps.db, job));
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/jobs/:id/instructions',
+      handler: ({res, url, params, deps}) => {
+        const mapped = getMemoryJob(deps.db, params.id);
+        if (!mapped) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryJobNotFound');
+        const batches = listMemoryBatches(deps.db, mapped.id);
+        const requested = Number(url.searchParams.get('batchIndex'));
+        const batch = batches.find((row) => row.batchIndex === (Number.isFinite(requested) ? requested : 1))
+          ?? batches[0];
+        if (!batch) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryJobNotFound');
+        const session = getSession(deps.db, mapped.sessionId);
+        const text = buildMemoryInstructions(mapped.locale, {
+          session: session
+            ? {id: session.id, startedAt: session.started_at, endedAt: session.ended_at}
+            : null,
+          broadcaster: {id: mapped.broadcasterId},
+          batch: {
+            index: batch.batchIndex,
+            total: mapped.batchTotal,
+            batchId: batch.batchId,
+            taskId: batch.taskId,
+            viewerCount: batch.viewerCount
+          },
+          jobId: mapped.id
+        });
+        sendJson(res, 200, {
+          locale: mapped.locale,
+          text,
+          promptVersion: mapped.promptVersion,
+          protocolVersion: mapped.protocolVersion,
+          schemaVersion: mapped.schemaVersion,
+          batch: {
+            index: batch.batchIndex,
+            batchId: batch.batchId,
+            taskId: batch.taskId,
+            viewerCount: batch.viewerCount,
+            messageCount: batch.messageCount
+          },
+          promptVersionLabel: memoryInstructionVersion(mapped.locale)
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/jobs/:id/batches/:index/download',
+      handler: ({res, params, deps}) => {
+        const batch = getMemoryBatch(deps.db, params.id, Number(params.index));
+        if (!batch?.fileName) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryPackageNotFound');
+        const absolute = join(deps.paths.exports, batch.fileName);
+        if (!existsSync(absolute)) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryPackageNotFound');
+        const stat = statSync(absolute);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Length': stat.size,
+          'Content-Disposition': `attachment; filename="${batch.fileName.replace(/"/g, '')}"`,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        createReadStream(absolute).pipe(res);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/viewers/:id',
+      handler: ({res, url, params, deps}) => {
+        const broadcasterId = url.searchParams.get('broadcasterId') || currentBroadcasterId(deps.db) || null;
+        const view = buildViewerMemoryView(deps.db, {broadcasterId, viewerId: params.id});
+        if (!view) throw notFound(ERROR_CODES.VIEWER_NOT_FOUND, 'errors.viewerNotFound');
+        sendJson(res, 200, view);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/viewers/:id/delete',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readOptionalJson(req);
+        const broadcasterId = body.broadcasterId || currentBroadcasterId(deps.db) || null;
+        const result = deleteViewerMemory({
+          db: deps.db,
+          broadcasterId,
+          viewerId: params.id,
+          confirm: body.confirm === true,
+          now: Date.now()
+        });
+        if (result.deleted) {
+          deps.logger?.info({
+            event: 'memory.deleted',
+            viewerId: params.id,
+            broadcasterId,
+            facts: result.factsRemoved,
+            versions: result.versionsRemoved
+          });
+        }
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/viewers/:id/facts/:factId/review',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readOptionalJson(req);
+        const broadcasterId = body.broadcasterId || currentBroadcasterId(deps.db) || null;
+        const memory = getMemory(deps.db, {broadcasterId, viewerId: params.id});
+        if (!memory) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryNotFound');
+        if (memory.status !== 'active') {
+          throw new AppError('MEMORY_DELETED', {messageKey: 'errors.memoryDeleted', httpStatus: 409});
+        }
+        const result = reviewMemoryFact({
+          db: deps.db,
+          memoryId: memory.id,
+          factId: params.factId,
+          action: String(body.action ?? ''),
+          now: Date.now()
+        });
+        if (!result.ok) {
+          throw new AppError('MEMORY_REVIEW_FAILED', {
+            messageKey: 'errors.memoryReviewFailed',
+            details: {reason: result.reason},
+            httpStatus: 409
+          });
+        }
+        sendJson(res, 200, {
+          ...result,
+          view: buildViewerMemoryView(deps.db, {broadcasterId, viewerId: params.id})
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/viewers/:id/rollback',
+      handler: async ({req, res, params, deps}) => {
+        const body = await readOptionalJson(req);
+        const broadcasterId = body.broadcasterId || currentBroadcasterId(deps.db) || null;
+        const memory = getMemory(deps.db, {broadcasterId, viewerId: params.id});
+        if (!memory) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.memoryNotFound');
+        const result = rollbackMemory({
+          db: deps.db,
+          memoryId: memory.id,
+          version: Number(body.version),
+          now: Date.now()
+        });
+        if (!result.ok) {
+          throw new AppError('MEMORY_ROLLBACK_FAILED', {
+            messageKey: 'errors.memoryRollbackFailed',
+            details: {reason: result.reason},
+            httpStatus: 409
+          });
+        }
+        deps.logger?.info({event: 'memory.rolled_back', memoryId: memory.id, version: result.version});
+        sendJson(res, 200, {
+          ...result,
+          view: buildViewerMemoryView(deps.db, {broadcasterId, viewerId: params.id})
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/import/preview',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req, {limit: MAX_MEMORY_IMPORT_BYTES + 64 * 1024});
+        if (typeof body.json !== 'string') {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.aiImportTextRequired', httpStatus: 400});
+        }
+        const preview = validateMemoryImport({
+          db: deps.db,
+          text: body.json,
+          source: body.source === 'file' ? 'file' : 'paste',
+          now: Date.now()
+        });
+        sendJson(res, 200, {
+          ok: preview.ok,
+          action: preview.action,
+          errors: preview.errors,
+          warnings: preview.warnings,
+          target: preview.target,
+          totals: preview.totals,
+          plan: preview.plan,
+          operations: preview.operations,
+          checksum: preview.checksum,
+          evidence: {total: preview.evidenceTotal, missing: preview.evidenceMissing},
+          requiresVersionConfirm: Boolean(preview.target?.requiresVersionConfirm),
+          schemaVersion: preview.target?.schemaVersion ?? null
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/import',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req, {limit: MAX_MEMORY_IMPORT_BYTES + 64 * 1024});
+        if (typeof body.json !== 'string') {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.aiImportTextRequired', httpStatus: 400});
+        }
+        const outcome = importMemoryUpdate({
+          db: deps.db,
+          text: body.json,
+          source: body.source === 'file' ? 'file' : 'paste',
+          createVersion: body.createVersion === true,
+          now: Date.now()
+        });
+        deps.logger?.info({
+          event: 'memory.result_imported',
+          jobId: outcome.job?.id ?? null,
+          duplicate: outcome.duplicate,
+          viewers: outcome.versions?.length ?? 0
+        });
+        sendJson(res, outcome.duplicate ? 200 : 201, {
+          duplicate: outcome.duplicate,
+          applied: outcome.applied,
+          result: outcome.result,
+          versions: outcome.versions ?? [],
+          job: outcome.job ? buildMemoryJobView(deps.db, outcome.job) : null,
+          totals: outcome.preview?.totals ?? null
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/memory/prune',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const broadcasterId = body.broadcasterId || null;
+        const result = pruneStaleMemories({
+          db: deps.db,
+          broadcasterId,
+          olderThanDays: body.olderThanDays,
+          dryRun: body.dryRun !== false,
+          now: Date.now()
+        });
+        if (!result.dryRun) {
+          deps.logger?.info({event: 'memory.pruned', removed: result.removed, days: result.days});
+        }
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/memory/retention',
+      handler: ({res, url, deps}) => {
+        sendJson(res, 200, memoryRetentionStatus(deps.db, {
+          broadcasterId: url.searchParams.get('broadcasterId') || null
+        }));
+      }
+    },
     {
       method: 'GET',
       path: '/api/bilibili/status',
       handler: ({res, deps}) => {
         sendJson(res, 200, deps.bilibili.status());
       }
-    },
-    {
+    },    {
       method: 'POST',
       path: '/api/bilibili/login/qrcode',
       handler: async ({req, res, deps}) => {

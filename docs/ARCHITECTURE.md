@@ -418,5 +418,8 @@ node.exe (官方运行时，含 node:sqlite)
 
 - 平台适配器：实现 `PlatformAdapter.start({onEvent,onStateChange})`，产出 canonical event，即可复用全部统计、UI 与 AI 导出。
 - 备份：复用 `shared/zip.mjs`，加入 `manifest.json` → `checksums.json` → `database/` → `settings/`。
-- AI 导入：M6 已实现 `src/ai/import/`（JSON 校验 → 事务写入 `ai_results`/`ai_result_evidence`）与报告；
-  下一阶段为 AI 观众画像的版本化、保留/去标识化与单版本删除（M7）。
+- AI 导入：M6 已实现 `src/ai/import/`（JSON 校验 → 事务写入 `ai_results`/`ai_result_evidence`）与报告。
+- 长期记忆：M7 已实现 `src/memory/`（`broadcaster × viewer` 记忆、原子事实、事实级证据、
+  仅追加版本与差异、本地合并、`livememory-memory-update-v1` 往返、删除与保留）。
+  依赖方向仍为 `web → server → memory/analytics/storage → shared`；`src/memory` 复用
+  `ai/import` 的解析/校验工具与 `shared/zip.mjs`，不改写 M6 的分析表。

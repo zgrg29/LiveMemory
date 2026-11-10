@@ -23,6 +23,8 @@
  * left untouched.
  */
 
+import {refreshMemoryEvidence} from './repositories/viewer-memory.mjs';
+
 export const DEFAULT_YOUTUBE_RAW_RETENTION_DAYS = 30;
 export const MIN_RETENTION_DAYS = 1;
 /**
@@ -150,6 +152,16 @@ export function runRetention(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_R
   try {
     const result = purgeExpiredRawEvents(db, {now, days, platforms});
     const nicknameResult = purgeExpiredYouTubeNicknames(db, {now, days});
+    // Long-term memory may cite messages that were just purged or events that
+    // were deleted. The memory itself is kept; its evidence is downgraded so the
+    // profile stops claiming that a now-unreadable chat line proves something.
+    let memoryEvidence = null;
+    try {
+      memoryEvidence = refreshMemoryEvidence(db, {now}).length;
+    } catch (error) {
+      memoryEvidence = null;
+      logger?.warn({event: 'retention.memory_evidence_failed', code: error?.code ?? 'unknown'});
+    }
     const summary = {
       at: Math.trunc(Number(now)),
       days: normalizeRetentionDays(days),
@@ -157,6 +169,7 @@ export function runRetention(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_R
       purged: result.purged,
       purgedNicknames: nicknameResult.purgedNicknames,
       clearedViewerNicknames: nicknameResult.clearedViewerNicknames,
+      memoryFactsRechecked: memoryEvidence,
       cutoff: result.cutoff
     };
     writeMeta(db, 'retention.lastRun', summary, now);

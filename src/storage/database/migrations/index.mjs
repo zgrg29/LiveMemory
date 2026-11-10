@@ -522,6 +522,225 @@ export const MIGRATIONS = Object.freeze([
           ON sessions (platform, platform_status, started_at DESC);
       `);
     }
+  },
+  {
+    version: 10,
+    name: 'long-term-viewer-memory',
+    up(db) {
+      // M7: long-term viewer memory.
+      //
+      // Every memory is scoped to exactly one `broadcaster × viewer` pair. The
+      // same platform account seen in two channels therefore has two completely
+      // independent memories; nothing is shared or merged across channels.
+      //
+      // The head row keeps the current version pointer. Atomic knowledge lives
+      // in `memory_facts`, one row per fact, with:
+      //   certainty: stated (the viewer said it) / inferred (AI guess) /
+      //              uncertain (cannot be confirmed)
+      //   status:    active / outdated / conflicted / superseded /
+      //              needs_confirmation
+      // AI output can never move an inference into "stated" on its own, and a
+      // fact is never silently deleted because a new export disagreed with it.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS viewer_memories (
+          id TEXT PRIMARY KEY,
+          broadcaster_id TEXT NOT NULL REFERENCES broadcasters (id) ON DELETE CASCADE,
+          viewer_id TEXT NOT NULL REFERENCES viewers (id) ON DELETE CASCADE,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+          version INTEGER NOT NULL DEFAULT 0,
+          summary TEXT,
+          summary_certainty TEXT,
+          first_memory_at INTEGER NOT NULL,
+          last_update_at INTEGER NOT NULL,
+          last_session_id TEXT,
+          last_job_id TEXT,
+          deleted_at INTEGER,
+          delete_reason TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (broadcaster_id, viewer_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_viewer_memories_broadcaster
+          ON viewer_memories (broadcaster_id, last_update_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_viewer_memories_viewer
+          ON viewer_memories (viewer_id);
+
+        CREATE TABLE IF NOT EXISTS memory_facts (
+          id TEXT PRIMARY KEY,
+          memory_id TEXT NOT NULL REFERENCES viewer_memories (id) ON DELETE CASCADE,
+          broadcaster_id TEXT NOT NULL,
+          viewer_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          topic TEXT,
+          statement TEXT NOT NULL,
+          certainty TEXT NOT NULL,
+          status TEXT NOT NULL,
+          status_reason TEXT,
+          confidence REAL,
+          dedupe_key TEXT NOT NULL,
+          evidence_status TEXT NOT NULL DEFAULT 'none',
+          evidence_count INTEGER NOT NULL DEFAULT 0,
+          evidence_available INTEGER NOT NULL DEFAULT 0,
+          source_kind TEXT NOT NULL,
+          source_session_id TEXT,
+          source_job_id TEXT,
+          source_result_id TEXT,
+          source_label TEXT,
+          valid_from INTEGER,
+          valid_until INTEGER,
+          superseded_by TEXT,
+          conflicts_with TEXT,
+          user_verified INTEGER NOT NULL DEFAULT 0,
+          first_seen_at INTEGER NOT NULL,
+          last_confirmed_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        -- Only one *live* fact per topic. Superseded rows deliberately leave the
+        -- index so a state change ("preparing for an exam" -> "exam is over")
+        -- can keep its history while the new state reuses the same topic key.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_facts_dedupe
+          ON memory_facts (memory_id, dedupe_key)
+          WHERE status <> 'superseded';
+        CREATE INDEX IF NOT EXISTS idx_memory_facts_memory
+          ON memory_facts (memory_id, status, kind);
+
+        CREATE TABLE IF NOT EXISTS memory_fact_evidence (
+          fact_id TEXT NOT NULL REFERENCES memory_facts (id) ON DELETE CASCADE,
+          source_key TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          batch_index INTEGER,
+          seq INTEGER,
+          event_id INTEGER,
+          observed_at INTEGER,
+          available INTEGER NOT NULL DEFAULT 1,
+          PRIMARY KEY (fact_id, source_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_evidence_event
+          ON memory_fact_evidence (event_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_evidence_session
+          ON memory_fact_evidence (session_id);
+
+        -- Append-only memory versions. snapshot_json holds the full fact set
+        -- of that version so any earlier state can be restored; diff_json
+        -- records what actually changed, which is what the UI shows.
+        CREATE TABLE IF NOT EXISTS memory_versions (
+          id TEXT PRIMARY KEY,
+          memory_id TEXT NOT NULL REFERENCES viewer_memories (id) ON DELETE CASCADE,
+          version INTEGER NOT NULL,
+          source_kind TEXT NOT NULL,
+          source_job_id TEXT,
+          source_result_id TEXT,
+          source_session_id TEXT,
+          source_key TEXT NOT NULL,
+          counts_json TEXT NOT NULL,
+          diff_json TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          applied_at INTEGER NOT NULL,
+          UNIQUE (memory_id, version)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_versions_source
+          ON memory_versions (memory_id, source_key);
+        CREATE INDEX IF NOT EXISTS idx_memory_versions_applied
+          ON memory_versions (memory_id, applied_at DESC);
+
+        -- A memory update job always belongs to one session: that session is
+        -- the "new information" being merged into the existing memories.
+        CREATE TABLE IF NOT EXISTS memory_jobs (
+          id TEXT PRIMARY KEY,
+          broadcaster_id TEXT,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          locale TEXT NOT NULL,
+          prompt_version TEXT NOT NULL,
+          protocol_version TEXT NOT NULL,
+          schema_version TEXT NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'session',
+          batch_total INTEGER NOT NULL DEFAULT 1,
+          viewers_total INTEGER NOT NULL DEFAULT 0,
+          messages_total INTEGER NOT NULL DEFAULT 0,
+          last_error_at INTEGER,
+          last_error_code TEXT,
+          last_error_json TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_jobs_session
+          ON memory_jobs (session_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_jobs_broadcaster
+          ON memory_jobs (broadcaster_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS memory_job_batches (
+          job_id TEXT NOT NULL REFERENCES memory_jobs (id) ON DELETE CASCADE,
+          batch_index INTEGER NOT NULL,
+          batch_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          viewer_count INTEGER NOT NULL DEFAULT 0,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          checksum TEXT NOT NULL,
+          file_name TEXT,
+          bytes INTEGER,
+          package_checksum TEXT,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (job_id, batch_index),
+          UNIQUE (job_id, batch_id)
+        );
+
+        -- seq -> real event id inside one batch. An imported memory update may
+        -- only cite (batch, seq) pairs that exist here, so invented sources are
+        -- rejected instead of being stored as evidence.
+        CREATE TABLE IF NOT EXISTS memory_job_messages (
+          job_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          seq INTEGER NOT NULL,
+          event_id INTEGER NOT NULL,
+          PRIMARY KEY (job_id, batch_index, seq),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES memory_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS memory_job_viewers (
+          job_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          viewer_id TEXT NOT NULL,
+          base_memory_id TEXT,
+          base_version INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (job_id, batch_index, viewer_id),
+          FOREIGN KEY (job_id, batch_index)
+            REFERENCES memory_job_batches (job_id, batch_index) ON DELETE CASCADE
+        );
+
+        -- One applied AI answer per (job, batch, checksum). Re-importing the
+        -- identical answer is a no-op; a different answer for an already
+        -- applied batch needs an explicit new version.
+        CREATE TABLE IF NOT EXISTS memory_results (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL REFERENCES memory_jobs (id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL,
+          batch_index INTEGER NOT NULL,
+          batch_id TEXT NOT NULL,
+          checksum TEXT NOT NULL,
+          protocol_version TEXT NOT NULL,
+          schema_version TEXT NOT NULL,
+          locale TEXT NOT NULL,
+          source TEXT NOT NULL,
+          result_json TEXT NOT NULL,
+          viewer_total INTEGER NOT NULL DEFAULT 0,
+          op_total INTEGER NOT NULL DEFAULT 0,
+          evidence_total INTEGER NOT NULL DEFAULT 0,
+          evidence_missing INTEGER NOT NULL DEFAULT 0,
+          applied_at INTEGER NOT NULL,
+          UNIQUE (job_id, batch_id, checksum)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_results_job
+          ON memory_results (job_id, batch_index);
+      `);
+    }
   }
 ]);
 

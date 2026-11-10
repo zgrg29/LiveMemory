@@ -9,6 +9,7 @@ import {
 } from '../storage/repositories/sessions.mjs';
 import {rebuildViewerAggregates} from '../storage/repositories/viewers.mjs';
 import {rebuildViewerBroadcasterAggregates} from '../storage/repositories/broadcasters.mjs';
+import {refreshMemoryEvidence} from '../storage/repositories/viewer-memory.mjs';
 
 /**
  * Session administration shared by every surface (live recording, history list
@@ -98,6 +99,7 @@ function assertNoResidue(db, sessionId) {
     ['ai_packages', 'session_id'],
     ['ai_jobs', 'session_id'],
     ['ai_results', 'session_id'],
+    ['memory_jobs', 'session_id'],
     ['sessions', 'id']
   ];
   for (const [table, column] of checks) {
@@ -147,6 +149,15 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
   }
 
   const packages = db.prepare('SELECT id, file_name, relative_path FROM ai_packages WHERE session_id = ?').all(id);
+  // Memory update packages belong to this session too. They are listed from
+  // their batch rows (memory packages are deliberately not part of the AI
+  // analysis package table).
+  const memoryPackages = db.prepare(`
+    SELECT b.file_name
+      FROM memory_job_batches b
+      JOIN memory_jobs j ON j.id = b.job_id
+     WHERE j.session_id = ? AND b.file_name IS NOT NULL
+  `).all(id);
   const viewerIds = db.prepare(`
     SELECT viewer_id FROM viewer_sessions WHERE session_id = ?
     UNION
@@ -169,10 +180,14 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
     db.prepare('DELETE FROM ai_results WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_jobs WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_packages WHERE session_id = ?').run(id);
+    db.prepare('DELETE FROM memory_jobs WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM session_currency_totals WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM viewer_sessions WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM events WHERE session_id = ?').run(id);
     if (!deleteSession(db, id)) throw sessionNotFound();
+    // Long-term memory facts that cited this broadcast stay, but their evidence
+    // is now gone. Mark that honestly instead of leaving a "verified" claim.
+    refreshMemoryEvidence(db, {now});
 
     let viewersRemoved = 0;
     let viewersKept = 0;
@@ -202,7 +217,11 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
 
   const removedFiles = [];
   const fileErrors = [];
-  for (const pkg of packages) {
+  const filesToRemove = [
+    ...packages.map((pkg) => ({relative_path: pkg.relative_path})),
+    ...memoryPackages.map((pkg) => ({relative_path: pkg.file_name}))
+  ];
+  for (const pkg of filesToRemove) {
     const absolute = safeExportPath(deps.paths?.exports, pkg.relative_path);
     if (!absolute) {
       fileErrors.push({name: pkg.relative_path, error: 'unsafe_path'});

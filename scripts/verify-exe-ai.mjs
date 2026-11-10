@@ -351,7 +351,7 @@ try {
   await useEnglishUi();
   const status = await (await fetch(`${base}/api/status`)).json();
   record('packaged EXE upgrades the real v7 database to schema 9', status.database.schemaVersion === 9
-    && status.server.version === '0.8.1', {schema: status.database.schemaVersion, version: status.server.version});
+    && status.server.version === '0.9.0', {schema: status.database.schemaVersion, version: status.server.version});
   record('the packaged EXE reports AI import as available', status.ai.import === true);
 
   await send('Page.enable');
