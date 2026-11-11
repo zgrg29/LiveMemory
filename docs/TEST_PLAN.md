@@ -654,3 +654,45 @@ duration ≈ 25.0s
 | 无效/已删除 scope | `viewer-scope` | 回退到当前有效或第一个关联主播，绝不回退“全部主播” |
 
 全量结果：**495 passed / 0 failed**（约 80 秒）。真实浏览器渲染仍未验收。
+
+## 24. 自动 AI 分析（v0.12.0）
+
+### 24.1 自动化测试（Mock transport / 本地 HTTP）
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/auto-client.test.mjs` | 纯 JSON/围栏/前后说明提取；数组拒绝；滑动窗口；匿名请求头；JSON mode；429 `Retry-After`；5xx；timeout；空 content；非 JSON 响应 |
+| `tests/unit/auto-prompt.test.mjs` | 批次契约列出每位观众 ID 与证据 seq；汇总契约禁止记忆更新；上下文预算错误；修复消息保留原包与错误列表 |
+| `tests/integration/auto-analysis.test.mjs` | 单批成功；3 批 + 汇总；primary 失败→备用；全失败不写结果；一次 Schema 修复；错误证据拒绝；第 2 批失败保留第 1 批并恢复；重复点击 409；取消后恢复；重启 interrupted 后恢复；汇总失败保留全部批次；失败不覆盖旧记忆；重复导入 duplicate |
+| `tests/integration/auto-api.test.mjs` | `consent` 400；202；运行中 409；状态/取消；超过 12 批 422 且不创建 job；手动 preview/import 仍可用 |
+| `tests/unit/ai-ui.test.mjs` | 自动按钮/阶段/取消/同意/详情；三语精确错误文案；无 `alert()`、无 `innerHTML`；手动控件仍存在；配置里不含未验证 provider |
+
+全量结果：**525 passed / 0 failed**（约 93 秒，2026-11-11）。
+
+### 24.2 真实匿名 API 测试（非自动化，需外部网络）
+
+命令（会真实发出请求，勿频繁运行）：
+
+```bat
+node tests/.tmp/auto-real.mjs
+node tests/.tmp/auto-memory-real.mjs
+node tests/.tmp/prompt-probe.mjs
+node tests/.tmp/pollinations-probe.mjs
+```
+
+| 场景 | 结果 |
+| --- | --- |
+| OVH `gpt-oss-20b` 基础/JSON/多语言 | ✅ 200，真实模型回答 |
+| OVH 真实 LiveMemory 包（3 观众） | ✅ `complete`、`semantic=3`、`source=auto`，证据 seq 正确 |
+| OVH 真实跨场次记忆（画画→吉他） | ✅ 旧事实 `superseded`，新增“吉他”与“最近不怎么画画了” |
+| Murakumo | ❌ 503/502；无有效回答 |
+| llmfaucet | ❌ DNS NXDOMAIN |
+| LLM7 | ❌ 官方要求 Token；未集成 |
+| Pollinations 真实包 | ❌ HTTP 400；未集成 |
+
+### 24.3 未验证
+
+- 真实浏览器渲染/截图、暗色、390px；
+- 打包 EXE 的出站网络行为；
+- 数千观众/数万消息大场的实际耗时与免费限流；
+- 第二个通过完整 LiveMemory 包的匿名 provider。

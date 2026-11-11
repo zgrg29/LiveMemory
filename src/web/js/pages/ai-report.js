@@ -228,7 +228,11 @@ function renderProvenance(ctx, payload) {
       done: formatInteger(job.batchesImported ?? 0, ctx.locale),
       total: formatInteger(job.batchTotal ?? 0, ctx.locale),
       messages: formatInteger(job.totalMessages ?? 0, ctx.locale)
-    }), result?.source === 'file' ? t('ai.report.sourceFile') : t('ai.report.sourcePaste')]
+    }), result?.source === 'auto'
+      ? t('ai.report.sourceAuto')
+      : result?.source === 'file'
+        ? t('ai.report.sourceFile')
+        : t('ai.report.sourcePaste')]
   ];
   return el('div', {className: 'def-list report-provenance'},
     rows.map(([key, value]) => el('div', {className: 'def-row'},

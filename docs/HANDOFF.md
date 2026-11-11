@@ -1,119 +1,117 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-10 · P8 长期记忆一体化 + 观众档案主播范围补丁 · v0.11.1（schema v12）
+本轮：2026-11-11 · P9 匿名免费 AI 自动分析 · v0.12.0（schema 12）
 
 ## 1. 本轮结果
 
 | 目标 | 结论 |
 | --- | --- |
-| 审计“为什么只更新 4 位观众” | 已完成。旧提示词要求“证据不足的观众请省略”，旧 M7 本地合并只消费 `viewer_profiles`，而独立记忆任务又要求第二次 AI 往返；三者叠加导致只更新少数高活跃观众。 |
-| 一次分析/一次导入 | 已完成。结果 Schema 1.2.0 新增 `viewer_memory_updates`；导入在同一事务保存报告与记忆。 |
-| 所有可识别观众 | 已完成。无最低发言/活跃度/Top N；300 位低活跃观众测试全部覆盖。 |
-| 低频观众跨场积累 | 已完成。五场每场一句话：客观场次/发言/时间 + 3 条逐步积累的语义事实。 |
-| 已有画像进入上下文 | 已完成。`memory_context.json` 提供每位观众现有 summary/facts/version；`viewer_context.json` 也带 `memory`。 |
-| 分批不拆散观众 | 已完成。观众只分配一个记忆批次，全部可用摘录（最近 120 条）随行；批次按消息+观众共同决定。 |
-| 覆盖状态与预览 | 已完成。`ai_job_memory_viewers` / `ai_job_memory_messages`；预览显示覆盖/新语义/无新语义/仅客观/缺失。 |
-| 移除独立记忆工作流 | 已完成。删除 `#/memory` 页面/导航/文件；旧链接进入 AI 分析中心；观众详情保留长期记忆与客观历史。 |
-| 测试 | **490 自动化全部通过**（本轮新增 1 个综合流程测试文件，并更新既有 schema/版本断言）。 |
-| 真实浏览器 UI | **未完成**。本机策略仍阻止无头浏览器；只有静态 UI 检查。 |
-| 真实 AI 统一结果 | **未完成**。只有合成结果；真实 AI 覆盖率与错误表现待验证。 |
-| 打包 EXE | **已构建、未能执行**（91.1 MB / 145 资源 / requireAdministrator / SHA-256 `8cbd7209…`）。 |
+| 先真实测试匿名接口 | **已完成**。OVHcloud AI Endpoints 的 `gpt-oss-20b` 匿名接口通过真实 LiveMemory 包校验；Murakumo / llmfaucet / LLM7 / Pollinations 均未通过，详见 `docs/ANONYMOUS_AI_RESEARCH.md`。 |
+| 一键自动创建任务、分析、校验、导入 | **已完成**。`AutoAnalysisRunner` 使用现有 `createAnalysisJob` / `validateAnalysisImport` / `importAnalysisResult` / `buildAggregatePackage`。 |
+| 多批次与第二阶段汇总 | **已完成**。自动批次更小（250 消息 / 25 观众 / 600 摘录），最多 12 批；每批导入后自动生成汇总包并导入 final。 |
+| 观众长期记忆 | **已完成**。真实 3 观众包得到 3 条语义事实、正确证据；真实跨场次“学画画 → 改学吉他”测试中旧事实被 `superseded`，新事实新增。 |
+| 失败降级 | **已完成**。按钮正下方固定红色文案；详情折叠显示稳定错误码/HTTP 状态；手动导出/导入完全保留；不弹 `alert()`。 |
+| 首次使用隐私确认 | **已完成**。`localStorage` 记录一次同意；服务端要求 `consent:true`；文案明确第三方处理。 |
+| 重复点击 / 页面切换 / 重启 | **已完成**。服务端按 session 去重；状态来自服务端；`runtime/ai-auto.json` 记录 jobId/阶段/错误，重启标记 `interrupted`，可恢复同一任务。 |
+| 取消 | **已完成**。取消仅停止后续请求；已导入批次保留。 |
+| 测试 | **全量 525 passed / 0 failed**（约 93 秒）；真实匿名 API 测试单独执行，不混入 mock。 |
+| 真实浏览器 UI | **仍未完成**。本机策略阻止无头浏览器；只有静态 UI 测试 + HTTP 端到端测试。 |
+| 打包 EXE | **已构建、未能运行**：`dist/LiveMemory.exe` 91.2 MB / 151 资源 / requireAdministrator / SHA-256 `342294c…`；本机直接运行被“需要提升”拒绝。 |
 
-## 2. 后端变化
+## 2. 真实接口结论
 
-### 2.1 新模块
+| 服务 | 匿名 | 实测 | 结论 |
+| --- | --- | --- | --- |
+| OVHcloud AI Endpoints `gpt-oss-20b` | ✅ 官方 2 req/min | 真实包通过；Runner `complete`、`semantic=3` | **唯一采用** |
+| Murakumo | 文档允许 | `/ready` 503、`murakumo/free` 502、`mishima` 180s 后无容量 | 不集成 |
+| llmfaucet | — | 域名 NXDOMAIN | 不集成 |
+| LLM7.io | 未确认 | 无 Key 可 200，但官方要求 Token | 不集成 |
+| Pollinations | 匿名层存在 | 基础 JSON 通过；真实包 HTTP 400 | 不集成 |
+
+## 3. 后端变化
+
+### 3.1 新模块
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/memory/embedded.mjs` | 校验/预览/应用嵌入在分析结果中的长期记忆更新；观众覆盖、证据归属、版本与事务 |
-| `src/memory/objective.mjs` | 客观互动历史的记忆头确保与读模型；不产生语义版本 |
-| `src/storage/repositories/monitor-targets.mjs` | 上一轮监听目标仓储（未变） |
+| `src/ai/auto/config.mjs` | 已验证 provider、模型、匿名限流、批次/上下文/输出预算、稳定错误码 |
+| `src/ai/auto/client.mjs` | `fetch` + `AbortSignal`、滑动窗口限流、`Retry-After`、JSON 提取、错误分类 |
+| `src/ai/auto/prompt.mjs` | 读取现有 ZIP 包、内联批次/汇总内容、精确观众 ID 与证据 seq、修复提示词、上下文预算 |
+| `src/ai/auto/state.mjs` | `runtime/ai-auto.json`：jobId、阶段、批次、错误码；不含聊天/提示词 |
+| `src/ai/auto/runner.mjs` | 创建/恢复任务、逐批调用、校验、导入、汇总、取消、重试、恢复、请求预算 |
+| `src/ai/auto/errors.mjs` | `AutoAnalysisError` 与脱敏 detail |
 
-### 2.2 修改
+### 3.2 修改
 
-- `src/ai/constants.mjs`：Schema 1.2.0、prompt m6.2、观众/摘录上限。
-- `src/ai/export/job.mjs`：观众分配、`memory_context.json`、`viewer_excerpts.jsonl`、
-  `ai_job_memory_viewers/messages`、批次由消息与观众共同决定、固定消息切片保持兼容。
-- `src/ai/export/context.mjs`：`viewer_context` 增加 `memory`；`buildMemoryPayload`。
-- `src/ai/schemas/analysis-result-v1.schema.json`：`viewer_memory_updates` 与 1.2.0。
-- `src/ai/prompts/instructions.mjs`：三语任务说明，要求覆盖每位观众、无最低门槛、客观统计不由 AI 输出、
-  证据/状态变化/冲突规则；汇总阶段不再更新记忆。
-- `src/ai/import/validate.mjs`：合并嵌入记忆校验、sanitize、目标/预览。
-- `src/ai/import/importer.mjs`：事务内应用记忆、客观历史、覆盖状态。
-- `src/ai/tasks/status.mjs`：任务状态包含 `memoryCoverage` / `memoryReady`，未覆盖不得 complete。
-- `src/server/routes.mjs`：导入预览返回 `memory`；错误映射；`/api/status` 继续暴露 schema。
-- `src/analytics/sessions/summary.mjs`：`monitorTargetId`（上一轮）。
-- `src/memory/view.mjs`：观众记忆视图附带 `objective`。
-- 版本：统一记忆重构 → `0.11.0`；观众范围补丁 → `0.11.1`（`package.json`、`src/shared/app-info.mjs` 一致）。
+- `src/ai/export/job.mjs`：`createAnalysisJob()` 新增可选 `memoryViewersPerBatch` / `maxMemoryExcerptMessages`，默认值保持原行为；自动模式传入更小上限。批次计算、观众分配、证据映射均复用。
+- `src/server/index.mjs`：运行时创建 `AutoAnalysisRunner`；`deps.auto`；`stopAdapters` 先 `auto.shutdown()`。
+- `src/server/routes.mjs`：4 个 `/api/ai/auto/*` 路由；错误映射；`AUTO_TOO_MANY_BATCHES` 422。
+- `package.json` / `src/shared/app-info.mjs`：0.12.0。
+- 数据库 schema **不变（12）**；没有新表、没有迁移。
 
-### 2.3 数据库（schema 12）
+### 3.3 API
 
 ```text
-ai_jobs.memory_viewers_total INTEGER NOT NULL DEFAULT 0
-ai_job_memory_viewers(job_id, viewer_id, batch_index, base_memory_id, base_version,
-                      message_count, status, result_id, processed_at)
-ai_job_memory_messages(job_id, batch_index, seq, viewer_id, event_id)
+GET  /api/ai/auto/services
+GET  /api/ai/auto/status?sessionId=
+POST /api/ai/auto/run      {sessionId, locale?, consent:true}
+POST /api/ai/auto/cancel   {sessionId}
 ```
 
-状态：`pending` / `semantic` / `no_semantics` / `objective_only` / `missing_update` / `deleted`。
-旧 M7 `memory_jobs` 等表保留历史，不再由 UI 创建新任务。
+状态字段：`status`（idle/running/complete/failed/canceled/interrupted）、`stage`（preparing/connecting/analyzing/validating/importing/aggregating/complete）、`batchIndex`、`batchTotal`、`jobId`、`error{code,detail}`、`job{state,memoryCoverage,...}`、`services`。
 
-### 2.4 关键 API
+### 3.4 关键安全/正确性规则
 
-```text
-POST /api/ai/jobs                     创建统一分析任务（含全部观众）
-GET  /api/ai/jobs/:id                 状态含 memoryCoverage / memoryReady
-POST /api/ai/import/preview           返回 memory.coverage / totals / plan
-POST /api/ai/import                   同一事务保存报告 + 记忆 + 覆盖
-GET  /api/memory/viewers/:id          观众长期记忆 + objective 客观历史
-```
+1. **同一个导入路径**：自动回答必须先 `validateAnalysisImport()` 通过，再由 `importAnalysisResult({source:'auto'})` 在单事务写入；不能直接写 `ai_*` 或事件表。
+2. **不降低 Schema**：观众覆盖、稳定 ID、证据归属、时间窗口、重复导入保护全部沿用。
+3. **不跳过观众**：自动批次仍由 `createAnalysisJob()` 分配全部可识别观众；超出 12 批时明确失败，不静默裁剪。
+4. **不伪造证据**：提示词列出每位观众允许的 excerpt seq；验证器拒绝跨观众/不存在 seq。
+5. **不把推断写成事实**：沿用 `stated/inferred/uncertain` 与证据规则。
+6. **不覆盖手动结果**：自动任务只处理自己创建的任务；手动任务/结果不受影响。
+7. **不无限重试**：每个 provider 一次网络重试、一次修复；单次运行有请求预算；429 等待上限 90 秒。
+8. **不泄漏**：日志/状态文件只含 code、provider、HTTP 状态、批次/耗时；不含提示词、聊天、回答。
+9. **不发送无关数据**：只发送当前分析包（聊天、观众上下文、已有记忆、Schema），不发送数据库文件、凭据、其他直播。
 
-旧 `/api/memory/jobs`、`/api/memory/merge`、`/api/memory/import` 仍保留用于已有数据/测试，
-不再有 UI 入口；下一轮可评估是否移除。
+## 4. 前端变化
 
-## 3. 前端变化
+`src/web/js/pages/ai.js`：
 
-- 删除 `src/web/js/pages/memory.js`；`src/web/index.html` 移除「长期记忆」导航。
-- `src/web/js/app.js`：`#/memory` 路由指向 AI 分析中心（旧书签兼容），不再导入 `memoryPage`。
-- `src/web/js/pages/ai.js`：
-  - 导入预览新增长期记忆覆盖卡（已覆盖/新语义/无新语义/仅客观/缺失/操作数）；
-  - 任务行显示 `长期记忆覆盖 X/Y`；
-  - 导入成功 callout 显示记忆覆盖人数。
-- `src/web/js/pages/viewer-memory.js`：
-  - 新增「客观互动历史」卡：首次/最近、场次、发言、付费、最近场次（可跳转历史）；
-  - 无版本 0 语义事实时显示「已记录互动，暂无语义记忆」；
-  - 来源新增 `session_analysis_result`。
-- 三语新增 `ai.import.memory*`、`ai.jobs.memoryCoverage`、`memory.objective.*`、
-  `memory.noSemantic*`、`memory.sourceAnalysisResult`、错误原因。
-- CSS：客观历史列表；继续保持无 `innerHTML`、只用 tokens。
-
-## 4. 关键规则（下一轮不要破坏）
-
-1. 一次分析结果同时承担本场报告与长期记忆；不要再引入独立记忆 AI 任务。
-2. 每位可识别观众必须有且仅有一条 `viewer_memory_updates`；缺失即导入错误。
-3. 观众只分配一个记忆批次，全部可用摘录随行；不得 Top N/最低活跃度裁剪。
-4. 客观历史只由真实记录更新；AI 不能写金额/计数/时间/身份。
-5. `stated` 必须有本观众的消息证据；无证据的 `inferred` 降级为 `uncertain`。
-6. 无新语义 ≠ 未处理；`pending` 才是未处理。
-7. 删除记忆后的旧包不能恢复；重复导入幂等；分析+记忆同一事务。
-8. 三语键一致；前端禁止 `innerHTML`。
+- 「创建分析任务」卡内、手动控件上方新增 `autoPanel`：
+  - 主按钮「自动 AI 分析」、免费匿名 chip、说明；
+  - 按钮正下方的红色错误文案（三语精确文案）与折叠「查看详情」；
+  - 取消按钮；
+  - 真实阶段文案（准备/连接/第 X/Y 批/验证/更新记忆/汇总/完成/取消）。
+- 首次点击使用自定义 modal 征求同意；`localStorage` key `livememory.aiAutoConsent.v1`。
+- 轮询 `/api/ai/auto/status`（1.5s），页面切换/刷新后从服务端恢复；同一任务运行中禁用按钮。
+- 完成时刷新任务/报告；失败时保留手动区域，不切换模式。
+- 所有动态文本 `textContent`，无 `innerHTML`、无 `alert()`。
+- `src/web/js/pages/ai-report.js`：来源显示 `sourceAuto`。
+- 三语 `src/web/i18n/*.json`：新增 `ai.auto.*`、`ai.report.sourceAuto`、`errors.aiAuto*`；更新 `ai.pageSubtitle` 与 `ai.setup.note`，不再声称软件从不调用 AI API。
+- `src/web/styles/pages.css`：`.auto-panel` / `.auto-actions` / `.auto-status` / `.auto-error` / `.auto-details` / `.auto-divider`，使用 tokens，≤700px 换行。
 
 ## 5. 测试 / 构建 / 验证
 
-- 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-  → **495 passed / 0 failed**，约 80 秒。
-- 新增 `tests/integration/unified-analysis-memory.test.mjs`（A–E + 缺失覆盖）。
-- 迁移测试更新到 schema 12；旧断言 1.1.0/m6.1 已更新为 1.2.0/m6.2。
-- 构建：`node scripts/build-windows.mjs` 成功（91.1 MB、145 资源、requireAdministrator、SHA-256 `8cbd7209…`）；运行验收未完成。
-- **未运行**：真实浏览器、真实 AI 统一结果、真实大场性能、打包 EXE。
+- 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` → **525 passed / 0 failed**，约 93 秒。
+- 新增：
+  - `tests/unit/auto-client.test.mjs`：JSON 提取、限流、匿名请求、429/5xx/timeout/非 JSON。
+  - `tests/unit/auto-prompt.test.mjs`：观众 ID/证据 seq、汇总契约、上下文预算、修复提示。
+  - `tests/integration/auto-analysis.test.mjs`：成功、多批、备用、全失败、修复、错误证据、部分成功后恢复、重复点击、取消/恢复、重启、汇总失败、旧记忆不被覆盖、重复导入幂等。
+  - `tests/integration/auto-api.test.mjs`：HTTP 同意、202、409、状态、422 规模限制、取消、手动路径仍可用。
+  - `tests/unit/ai-ui.test.mjs`：按钮/状态/错误文案/三语键/无 alert/无 innerHTML。
+- 真实匿名 API 探针（非自动化）：`tests/.tmp/auto-real.mjs`、`auto-memory-real.mjs`、`prompt-probe.mjs`、`pollinations-probe.mjs`。结果写入 `docs/ANONYMOUS_AI_RESEARCH.md`。
+- 构建：`node scripts/build-windows.mjs` 成功（v0.12.0，91.2 MB、151 资源、requireAdministrator、SHA-256 `342294c…`）；**未能运行验收**，直接执行被 Windows 以“请求的操作需要提升”拒绝。
+- 真实浏览器：**未运行**（本机策略）。
 
 ## 6. 未验证 / 边界
 
-- 真实 AI 是否稳定返回每位观众的条目、是否正确引用 `viewer_excerpts` seq；
-- 数千观众包大小/导入耗时/内存；
-- 真实浏览器 UI、暗色、390px；
-- 打包 EXE 启动与 schema 11→12 真实升级；
-- 旧 M7 任务数据在真实用户库中的只读查看。
+- 真实 EXE 出站请求、代理/防火墙/UAC 下的行为；
+- 真实浏览器渲染、暗色、390px、按钮位置截图；
+- 数千观众/数万消息大场的自动批次与耗时；
+- OVH 2 req/min 在长任务中的实际总耗时；
+- 模型在多语言、反讽、低活跃观众上的长期稳定性；
+- Murakumo 恢复后的可用性；
+- Pollinations 真实包 HTTP 400 的具体原因；
+- 自动分析期间删除场次/清空数据的交互（服务端会失败并显示红色提示，未做额外 UI 守卫）。
 
 ## 7. 常用命令
 
@@ -121,30 +119,20 @@ GET  /api/memory/viewers/:id          观众长期记忆 + objective 客观历�
 :: 全量测试
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: 只看统一记忆
-node --test --test-isolation=none "tests/integration/unified-analysis-memory.test.mjs"
+:: 只测自动分析
+node --test --test-isolation=none "tests/unit/auto-*.test.mjs" "tests/integration/auto-*.test.mjs"
 
 :: 启动
 node src/launcher/launcher.mjs --no-open
 
-:: 打包
-node scripts/build-windows.mjs
+:: 真实匿名接口探针（会发外部请求，勿频繁运行）
+node tests/.tmp/auto-real.mjs
 ```
 
 ## 8. 本轮 Commit
 
-- 统一记忆重构：`808335d feat: unify long-term memory with AI analysis import`（本地 commit，未 Push）。
-- 观众范围补丁：见 `git log -1`（`fix: scope viewer broadcaster picker to real interactions`）。
-- 上一轮：`0ca7b8a feat: add persistent automatic live monitoring`。
+- 待提交：`feat: add automatic anonymous AI analysis`（本地 commit，未 Push；hash 见提交输出）。
 
-## 9. 补丁 0.11.1：观众档案主播范围
+## 9. 上一轮（v0.11.1）摘要
 
-| 项目 | 内容 |
-| --- | --- |
-| 现象 | 观众详情页「主播范围」显示软件记录的全部主播，而不是该观众实际出现过的主播 |
-| 根因 | 详情页把 `/api/broadcasters` 的全局列表传给选择器；`buildViewerProfile` 对无关系主播还会回退到全局 broadcaster |
-| 数据来源 | `profile.broadcasters` ← `viewer_broadcasters`，由真实聊天/礼物/SC/大航海等互动更新 |
-| UI | 新增 `src/web/js/pages/viewer-scope.js` 纯逻辑；详情只列关联主播、无「全部」；单主播隐藏下拉；无关联显示空状态；无效 scope 安全回退 |
-| 后端 | `buildViewerProfile` 无关系返回 `scope.kind='none'`，不再用 `getBroadcaster` 填充 |
-| 测试 | `tests/unit/viewer-scope.test.mjs`、`tests/integration/viewer-broadcaster-scope.test.mjs`；全量 495 passed |
-| 未验证 | 真实浏览器渲染/截图；EXE 运行验收 |
+P8 统一分析与长期记忆：一次分析结果同时承担本场报告与全部可识别观众的长期记忆；删除独立记忆页；修复观众档案主播范围。详见 `log/2026-11-10-unified-analysis-memory.md` 与 `log/2026-11-10-viewer-scope-fix.md`。

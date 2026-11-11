@@ -1,8 +1,8 @@
 # LiveMemory 直播记忆
 
-本地优先、不依赖 AI API 的直播记录与长期观众记忆系统，支持 **Bilibili Live** 与 **YouTube Live**（两者均已接入真实直播）。
+本地优先、不要求 AI API Key 的直播记录与长期观众记忆系统：可手动文件往返，也可一键使用已验证的匿名免费 AI。支持 **Bilibili Live** 与 **YouTube Live**（两者均已接入真实直播）。
 
-Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no AI API keys, no account required.
+Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no AI API keys, no account required, with an optional verified anonymous one-click analysis.
 
 ---
 
@@ -10,9 +10,11 @@ Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no A
 
 ### 这是什么
 
-LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析通过「导出 AI 分析包 → 手动交给任意 AI 服务 → 导入结果」完成，软件本身不连接任何 AI 服务，也不绑定 AI 品牌。
+LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。AI 分析支持两条路径：默认的「导出 AI 分析包 → 手动交给任意 AI 服务 → 导入结果」，以及可选的「自动 AI 分析」（只在用户确认后，由本地进程直接调用一个经过实测的匿名免费接口）。手动路径不连接任何 AI 服务；两条路径都不要求 API Key、账号或开发者服务器。
 
-### 现在能做什么（v0.11.1）
+### 现在能做什么（v0.12.0）
+
+- **一键自动 AI 分析（v0.12.0）**：在 AI 分析中心选择一场直播，点击「自动 AI 分析」，软件自动创建/恢复任务、按批次发送当前分析包、校验 AI 返回的 JSON、在同一事务中导入本场报告与观众长期记忆、生成第二阶段汇总；全程不需要下载/上传文件。当前使用 OVHcloud AI Endpoints 的匿名 `gpt-oss-20b`（官方 2 请求/分钟/IP/模型）；首次使用会明确告知数据会发送给第三方并请求确认。失败时按钮下方显示红色提示，手动流程原样保留。
 
 - **一次 AI 分析，同时完成本场报告与长期记忆（v0.11.0）**：AI 分析中心导出的同一个任务里，自动包含本场聊天、**全部可识别观众**、每位观众在本场的完整发言摘录、已有长期画像与客观互动统计。用户只导出一次、交给 AI 一次、导入一次；导入时在同一事务里保存本场分析并增量合并长期记忆。**没有最低发言次数、最低活跃度或 Top N 门槛**：每场只说一句话的观众也会持续积累场次、首次/最近出现、累计发言、支持与语义记忆。
 - **客观互动历史与 AI 语义记忆分开**：首次/最近出现、参与场次、累计发言、支持等由软件根据真实记录确定性更新，AI 不能修改；兴趣、经历、状态变化等才由 AI 提供，并且必须有来源或明确标为推断/待确认。只有问候或礼物时，允许没有新语义记忆，但观众仍会被标记为「已处理」，互动历史继续累计。
@@ -39,7 +41,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **Bilibili 直播**：真实 WebSocket 弹幕、礼物、醒目留言、大航海、平台表情；扫码登录可选
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
-- **M6：完整 AI 文件往返**：选择直播 → 创建带提示词版本的分析任务 → 按消息边界自动分批导出 `.zip` → 复制三语提示词 → 交给任意 AI → 上传 JSON 或粘贴文本 → 预检查 → 确认导入 → 查看报告；软件不调用任何 AI API
+- **M6：完整 AI 文件往返**：选择直播 → 创建带提示词版本的分析任务 → 按消息边界自动分批导出 `.zip` → 复制三语提示词 → 交给任意 AI → 上传 JSON 或粘贴文本 → 预检查 → 确认导入 → 查看报告；手动流程不调用任何 AI API（自动流程见上）
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用
 - **分批与汇总**：长直播拆成多批，乱序/重复/缺失批次可识别；全部分批导入后生成第二阶段汇总包，最终结果导入后任务才完成；部分结果不会被拼接成整场报告
 - **分析报告**：直播摘要、话题时间线、情绪变化、争论热点、值得回看的候选片段、观众画像、提示词/结果版本与来源；明确说明只分析聊天与事件，没有视频/音频
@@ -139,7 +141,9 @@ node scripts/build-windows.mjs
 
 ## 日本語
 
-LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「AI 分析パッケージ出力 → 任意の AI サービスに手動で渡す → 結果を取り込む」方式で、クラウドや API キーは使わず、特定の AI ブランドにも依存しません。
+LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「AI 分析パッケージ出力 → 任意の AI サービスに手動で渡す → 結果を取り込む」方式に加え、確認後にだけ動く「自動 AI 分析」も選べます。クラウドや API キーは不要で、特定の AI ブランドにも依存しません。
+
+- **ワンクリック自動 AI 分析（v0.12.0）**: AI 分析センターで配信を選び「自動 AI 分析」を押すと、タスク作成/復元、批次ごとの送信、JSON の検証、レポートと長期メモリの同一トランザクション取り込み、第 2 段階の統合まで自動で行います。ファイルのダウンロード/アップロードは不要です。現在は OVHcloud AI Endpoints の匿名 `gpt-oss-20b`（公式 2 リクエスト/分/IP/モデル）を使用し、初回は第三者の無料 AI にデータを送ることを明示して同意を求めます。失敗時はボタン直下に赤い案内を表示し、手動フローはそのまま使えます。
 
 - **自動ライブ監視（v0.10.0）**: Bilibili の配信ルームまたは YouTube チャンネルを一度追加すると、アプリの実行中に配信開始を検出して自動で記録を開始し、終了を検出して保存したあと次の配信を待ちます。**監視タブは 1 回の配信ではなくルーム／チャンネルに対応し、配信が終わっても消えません**。次回は同じタブで新しい独立した記録が始まります。Bilibili は固定ルーム ID と低頻度の公開状態確認、YouTube は公開チャンネルの `/live` ページ（解析失敗時は RSS にフォールバック）を使い、**Google Data API / OAuth / API キー / Cookie は不要**です。待機中は読み取り専用の低頻度確認（Bilibili 約 1 分、YouTube 約 3 分、ジッターと指数バックオフ付き）のみを行い、ネットワーク切断を配信終了とは扱いません。監視の一時停止／再開、今すぐ確認、対象の削除ができ、対象を削除しても過去の配信記録は残ります
 - **1 回の AI 分析で配信レポートと長期メモリを同時更新（v0.11.0）**: AI 分析センターが書き出す 1 つのタスクに、今回のチャット、**識別可能な全視聴者**、各視聴者の今回の発言抜粋、既存の長期メモリと客観的な交流統計を含めます。ユーザーは 1 回書き出し、1 回 AI に渡し、1 回取り込むだけです。取り込み時は同じトランザクションで配信レポートを保存し、長期メモリを差分更新します。最低発言回数・最低活躍度・Top N の条件はなく、1 配信に 1 言だけの視聴者も配信数・初回/最近・発言数・支援・意味メモリを積み重ねます
@@ -147,9 +151,7 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 - **独立した長期メモリ・ワークフローを廃止**: `長期メモリ` の独立ページは削除し、旧ブックマークは AI 分析センターへ移動します。視聴者詳細の長期メモリタブは残し、要約・**客観的な交流履歴**・興味・最近の変化・根拠・履歴バージョン・確認/修正/削除を表示します
 - **視聴者プロフィールの配信者範囲を実データに限定（v0.11.1）**: 個別視聴者の詳細では、その視聴者が実際に交流した配信者だけを表示します（チャット、ギフト、SC、メンバーシップなど識別可能な交流）。同名でもプラットフォーム/安定 ID が異なる視聴者は統合しません。配信者が 1 人だけの場合は不要な選択肢を表示せず、関連がなければ明示的な空状態を表示し、全配信者へフォールバックしません。
 - **長期メモリのデータモデル（v0.9.0 から継続）**: 「配信者 × 視聴者」ごとに 1 つの長期メモリ。各事実は出典の配信・引用メッセージ・時刻・確度（本人が明言 / AI の推測 / 未確認）と状態（現在 / 古い可能性 / 矛盾 / 置換済み / 確認待ち）を持ちます。状態変化は置換として履歴を残し、上書きしません。バージョンは復元でき、削除後の古いパッケージでは復活しません
-- **配信をまたぐ差分更新**: 取り込み済みの配信分析をワンクリックで長期メモリへ統合（AI 不使用）。矛盾や近況の変化を扱うときは「メモリ更新パッケージ」を書き出して任意の AI に渡し、返った JSON を取り込むと、適用前に視聴者ごとの実際の差分が表示されます。同じ結果の再取り込みは適用されず、更新はすべて新バージョンとして復元できます
 - **視聴者プロフィールのタブ**: 概要 / 長期メモリ / 交流履歴 / バージョン。根拠の原文を開く、推測を確認/無視する、1 件を忘れる、以前のバージョンへ戻す、視聴者 1 人の長期メモリを削除する、が可能です
-- **メモリのワークスペース**: 「長期メモリ」ページで「配信選択 → ローカル統合 → AI 更新パッケージ作成 → 取り込みプレビューと適用」の 4 段階。最近のジョブ、最近更新した視聴者、保存とクリーンアップの説明も表示します
 - 対応 UI / コンソール: 简体中文・日本語・English（システム言語に追従、手動変更は保存されます）。起動コンソールは既定で英語、`--lang` で切り替え可能
 - **複数配信の同時記録**: 配信ごとに独立したタブ・接続状態・統計・停止操作。同じ配信ルームの重複起動は拒否され、1 件の失敗/停止は他に影響しません
 - **ライブ記録タブ**: 固定の「新規記録」と横スクロール可能な配信タブ。接続中/記録中/再接続中/停止済み/接続失敗を表示。ページ移動や再読み込みでもバックグラウンド記録は継続します
@@ -161,7 +163,7 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 - 対応: 起動・設定・模擬配信の記録・履歴・視聴者一覧・AI 分析パッケージ出力・Bilibili 実配信（チャット/絵文字）・YouTube 実配信（Super Chat / Super Sticker / メンバー / 多通貨）
 - YouTube は公開ライブページの Web チャットのみを使用します。Google ログイン、API キー、OAuth、Cookie は不要です。この仕組みは YouTube の公式で安定した API ではなく、プラットフォームの変更により利用できなくなる可能性があります。設定/プライバシー説明にのみ短く記載し、接続のたびにモード警告を出しません
 - チャット本文・絵文字/バッジ・金額表示・古いニックネームは YouTube のポリシーに合わせて既定 30 日で削除し、統計・安定した Channel ID・金額合計は保持します（完全な個人データ削除ではありません）
-- AI 分析は「パッケージ出力 → 任意の AI に手動で渡す → JSON を取り込む」方式です。M6 で **メッセージ境界の自動分割、三言語プロンプト（バージョン記録）、JSON ファイル/貼り付け取り込み、厳格な Schema・場面・配信者・視聴者・時刻・メッセージ参照検証、重複取り込み防止、結果バージョン、第 2 段階の統合パッケージ、分析レポート**を実装しました。ソフトが AI API を呼ぶことはありません
+- AI 分析は「パッケージ出力 → 任意の AI に手動で渡す → JSON を取り込む」方式です。M6 で **メッセージ境界の自動分割、三言語プロンプト（バージョン記録）、JSON ファイル/貼り付け取り込み、厳格な Schema・場面・配信者・視聴者・時刻・メッセージ参照検証、重複取り込み防止、結果バージョン、第 2 段階の統合パッケージ、分析レポート**を実装しました。手動フローは AI API を呼びません。v0.12.0 の自動フローは、ユーザーが同意した場合にだけ検証済みの匿名サービスを呼びます。
 - **分析レポート**: 配信要約、話題タイムライン、感情の変化、論争、見返し候補、視聴者プロフィール、プロンプト/結果バージョンと出所。根拠は実際のメッセージに解決され、原文が保持期間で消えている場合は「利用不可」と明示します。映像・音声は分析していないことも明記します
 - AI 結果は外部入力として扱い、HTML/スクリプトを実行せず、金額・件数・設定を変更できません。同一結果の再取り込みは重複として扱い、異なる結果は明示的に新しいバージョンとして追加します
 - AI 结果の長期保存（視聴者プロフィールを含む）は v0.9.0 の長期メモリで扱います。ただし YouTube の 30 日クリーンアップ後は根拠が「原文削除済み」となり、メモリ自体は残ります。プラットフォームポリシーへの完全準拠を主張してはいけません
@@ -173,15 +175,17 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 
 ## English
 
-LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis is a manual round trip: export an AI analysis package, give it to any AI service you choose, import the result. No cloud service, no API key, no vendor account.
+LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis supports a manual round trip (export an AI analysis package, give it to any AI service you choose, import the result) and an optional one-click automatic path that only calls a verified anonymous provider after you confirm. No cloud service, no API key, no vendor account.
 
-Current build (v0.11.1) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. **M6 adds the complete manual AI round trip**: a versioned analysis task, automatic message-boundary batching, localized versioned prompts, JSON file or paste import, strict schema/session/task/batch/broadcaster/viewer/time/evidence validation, duplicate and explicit result versioning, a stage-2 aggregate package for long streams, and a traceable live analysis report. LiveMemory never calls an AI API. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v9). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. The launcher console defaults to English while the web UI keeps all three languages (`--lang` overrides the console only). Real-AI end-to-end samples and portable backup remain future work — see [docs/STATUS.md](docs/STATUS.md).
+Current build (v0.12.0) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. **M6 adds the complete manual AI round trip**: a versioned analysis task, automatic message-boundary batching, localized versioned prompts, JSON file or paste import, strict schema/session/task/batch/broadcaster/viewer/time/evidence validation, duplicate and explicit result versioning, a stage-2 aggregate package for long streams, and a traceable live analysis report. The manual path never calls an AI API; the optional automatic path only calls a verified anonymous provider after the user confirms. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v9). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. The launcher console defaults to English while the web UI keeps all three languages (`--lang` overrides the console only). Real-AI end-to-end samples and portable backup remain future work — see [docs/STATUS.md](docs/STATUS.md).
 
 **M7 (v0.9.0) adds long-term viewer memory**: one memory per broadcaster × viewer, holding atomic facts with source session, quoted message, timestamp, certainty (stated / inferred / uncertain) and status (current / possibly outdated / contradicted / superseded / needs confirmation). A state change such as "preparing for an exam" → "the exam is over" is stored as a supersede with history instead of overwriting. Updates can be merged locally from an already-imported session analysis (no AI at all) or through a versioned memory update package (`livememory-memory-update-v1`) that any AI can answer; the app validates viewer ids, quoted messages, target facts and schema before showing the exact per-viewer diff, then applies it as a new version in one transaction. Re-importing the same answer changes nothing, every update can be rolled back, a human can confirm or forget a single fact, and deleting one viewer's memory blocks older packages from restoring it. Viewer profiles now have Overview / Long-term memory / Interaction history / Versions tabs, and a Memory workspace walks through the whole round trip.
 
 **v0.11.0 makes long-term memory part of the normal AI analysis import**: one exported task now contains the session report context AND every identifiable viewer, each viewer's complete session excerpts, their existing long-term memory and objective interaction history. The user exports once, asks any AI once, and imports once; the import saves the session report and applies the memory increment in the same transaction. There is no minimum message count, activity threshold or Top-N cut, and viewers whose messages fall in different batches are assigned to exactly one memory batch so their excerpts are never split. Objective history (first/last seen, sessions, messages, support) is updated deterministically from real records and cannot be written by AI; a greeting or gift-only viewer is still processed and marked as "no new semantic information". The standalone Memory workspace was removed; the viewer detail page keeps the long-term memory tab with objective history, facts, evidence, changes and versions.
 
 **v0.11.1 fixes the viewer-detail broadcaster scope**: the picker now lists only the broadcasters that viewer actually interacted with (chat, gifts, SC, memberships and other identifiable events), never the global broadcaster list. Same-name viewers on different platforms or stable IDs stay separate. A single related broadcaster is shown read-only instead of a one-option dropdown, and a viewer with no related broadcaster gets an explicit empty state rather than falling back to all channels.
+
+**v0.12.0 adds one-click automatic AI analysis**: choose a broadcast in the AI analysis centre and press "Automatic AI analysis". The app creates or resumes a normal analysis task, sends each package batch to a verified anonymous provider, validates the answer with the same strict schema/business rules, imports the report and viewer memory in one transaction, builds the stage-2 aggregate, and refreshes the report. No ZIP or JSON handling is required from the user. The first use asks for explicit consent to send the current broadcast's chat and related viewer memory to a third-party free service. The current provider is OVHcloud AI Endpoints `gpt-oss-20b` (anonymous, documented 2 requests/minute/IP/model); there is deliberately no fallback to a provider that has not passed a real LiveMemory package. If it fails, the exact red message appears under the button, the technical reason is collapsed, and the complete manual round trip remains available. See [docs/ANONYMOUS_AI_RESEARCH.md](docs/ANONYMOUS_AI_RESEARCH.md).
 
 Streamers never create an API key, OAuth client or Google Cloud project. The public-web path was re-validated in v0.6.0 with real concurrent captures (two YouTube broadcasts, YouTube + Bilibili, three streams, and the built EXE attached to the same three streams). Its terms compliance remains unconfirmed (see [docs/STATUS.md](docs/STATUS.md) and [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md)).
 

@@ -1,5 +1,39 @@
 # 版本变化（CHANGELOG）
 
+## 0.12.0 — 2026-11-11（匿名免费 AI 自动分析）
+
+### 新增
+
+- **真实接口调查**：先实测再集成。OVHcloud AI Endpoints `gpt-oss-20b` 匿名通道通过真实
+  LiveMemory 包；Murakumo / llmfaucet / LLM7 / Pollinations 均未通过，详见
+  `docs/ANONYMOUS_AI_RESEARCH.md`。
+- **`src/ai/auto/`**：provider 配置、匿名限流客户端、包内提示词、持久状态、Runner、错误类型。
+- **一键自动分析**：创建/恢复任务 → 逐批发送 → 现有 Schema/业务校验 → 事务导入 →
+  第二阶段汇总 → complete；全部可识别观众仍进入批次。
+- **新 API**：`GET /api/ai/auto/services`、`GET /api/ai/auto/status`、
+  `POST /api/ai/auto/run`（要求 `consent:true`）、`POST /api/ai/auto/cancel`。
+- **UI**：AI 分析中心新增「自动 AI 分析」按钮、免费匿名 chip、首次隐私同意、真实阶段文案、
+  取消、失败时按钮下方固定红色文案 + 折叠详情；手动导出/导入完全保留。
+- **三语**：`ai.auto.*`、`ai.report.sourceAuto`、`errors.aiAuto*`；更新自动/手动说明。
+
+### 修复 / 加固
+
+- 输出预算最低 8000 tokens（实测 3040 会截断 gpt-oss 的 JSON）；最多一次修复、一次网络重试。
+- 自动批次 250 消息 / 25 观众 / 600 摘录，最多 12 批；超出明确失败，不静默裁剪观众。
+- 进度状态持久化到 `runtime/ai-auto.json`（无聊天/提示词）；重启标记 interrupted，
+  再次点击复用同一 job 并跳过已导入批次。
+- 失败不删除已完成结果、不覆盖已有长期记忆、不自动切换手动模式。
+- 日志/状态只记录稳定错误码、provider、HTTP 状态、批次与耗时。
+
+### 测试
+
+- 新增 `auto-client`、`auto-prompt`、`auto-analysis`、`auto-api` 与 AI UI 静态测试。
+- 全量 **525 passed / 0 failed**（约 93 秒）。
+- 真实 OVH 包：`complete`、`semantic=3`、`source=auto`；真实跨场次“画画→吉他”旧事实 `superseded`。
+- 构建：`dist/LiveMemory.exe` 91.2 MB / 151 资源 / requireAdministrator / SHA-256
+  `342294c…`；本机直接运行被“需要提升”拒绝，**运行验收未完成**。
+- 未验证：真实浏览器 UI、打包 EXE 出站请求、数千观众大场耗时。
+
 ## 0.11.1 — 2026-11-10（观众档案主播范围修复）
 
 ### 修复

@@ -8,6 +8,7 @@ import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
+import {AutoAnalysisRunner} from '../ai/auto/runner.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
@@ -55,6 +56,7 @@ export async function startServer({
   systemLocale = null,
   youtubeWebBase = null,
   beginLockMove = null,
+  auto = null,
   env = process.env
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
@@ -117,7 +119,14 @@ export async function startServer({
       days: settingsStore.get().youtubeRawRetentionDays,
       logger
     });
-    return {paths, db, settingsStore, sessionManager, bilibili, youtube, monitoring, recovered, migration};
+    const autoAnalysis = new AutoAnalysisRunner({
+      db,
+      paths,
+      logger,
+      now,
+      ...(auto ?? {})
+    });
+    return {paths, db, settingsStore, sessionManager, bilibili, youtube, monitoring, auto: autoAnalysis, recovered, migration};
   }
 
   async function stopAdapters(instance) {
@@ -127,6 +136,13 @@ export async function startServer({
       instance.monitoring?.stop();
     } catch (error) {
       logger?.error({event: 'shutdown.monitor.failed', code: error?.code ?? 'unknown'});
+    }
+    // Automatic analysis is an in-process task that also writes analysis rows;
+    // abort it before the database is closed.
+    try {
+      await instance.auto?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.auto.failed', code: error?.code ?? 'unknown'});
     }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
@@ -152,6 +168,7 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
+    get auto() { return runtime.auto; },
     get maintenance() { return state.maintenance; },
     set maintenance(value) { state.maintenance = Boolean(value); },
     hub,
@@ -276,6 +293,7 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
+    get auto() { return runtime.auto; },
     get runtime() { return runtime; },
     get deps() { return deps; },
     hub,

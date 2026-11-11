@@ -1337,6 +1337,103 @@
   margin-bottom: var(--space-5);
 }
 
+/* One-click automatic analysis: kept inside the normal task card, above the
+   manual controls, so a failure never hides or replaces the manual round trip. */
+
+.auto-panel {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.auto-panel [hidden] {
+  display: none !important;
+}
+
+.auto-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.auto-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.auto-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.auto-status {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auto-status--success {
+  color: var(--success);
+}
+
+.auto-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.auto-details {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auto-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.auto-details .small {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.auto-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.auto-divider::before,
+.auto-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--hairline);
+}
+
+@media (max-width: 700px) {
+  .auto-panel-head {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}
+
 .step-card {
   position: relative;
   padding: var(--space-4);

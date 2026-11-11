@@ -29,7 +29,8 @@ LiveMemory.exe (Node SEA)
          ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
          ├─ src/ai/tasks/               任务状态计算（从数据库事实）
-         └─ src/ai/prompts/             三语提示词与提示词版本
+         ├─ src/ai/prompts/             三语提示词与提示词版本
+         └─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
    └─ src/web/                          浏览器控制台（原生 ES Modules）
 ```
 
@@ -111,6 +112,42 @@ computeJobStatus()
 - 无新语义 ≠ 未处理：`no_semantics` 仍覆盖，`pending` 才是未处理。
 - 删除记忆后的旧包不能恢复；同一结果重复导入不写。
 - 独立的 M7 记忆任务不再是用户流程；旧任务表保留只读历史。
+
+## 1.3 自动分析数据流（v0.12.0）
+
+```text
+AutoAnalysisRunner.start({sessionId, locale, consent:true})
+  ├─ 预检查：消息/观众/摘录 → 需要批次数；>12 直接失败，不创建任务
+  ├─ 若有进行中的同一 auto job：恢复（相同 job/batch/观众分配）
+  └─ 否则 createAnalysisJob({batchSize:250, viewersPerBatch:25, excerptsPerBatch:600})
+
+每批
+  ├─ 读取导出的 ZIP（manifest/messages/viewer_context/memory_context/
+  │   viewer_excerpts/session_context/instructions/schema）
+  ├─ buildBatchPrompt()：内联包内容 + 精确 viewer_id + 允许的证据 seq + 输出契约
+  ├─ callProvider()：无 Key、JSON mode、2/60s 限流、180s 超时、最多一次网络重试
+  ├─ validateAnalysisImport()：Schema + 业务 + 观众覆盖 + 证据归属（只读预览）
+  ├─ 失败：一次修复请求；再失败则切换已验证 provider 或停止
+  └─ importAnalysisResult({source:'auto'})：单事务保存报告 + 记忆 + 覆盖
+
+全部批次后
+  ├─ buildAggregatePackage()（复用 M6）
+  ├─ buildAggregatePrompt()：只合并已验证 batch_results；viewer_memory_updates 必须 []
+  └─ validate + import final
+
+状态
+  ├─ 内存 active map（防同一 session 重复启动）
+  ├─ runtime/ai-auto.json：jobId/stage/batchIndex/batchTotal/error（无聊天/提示词）
+  └─ 重启：running → interrupted；再次点击复用同一 job，已导入批次跳过
+```
+
+关键保证：
+
+- 自动模式只新增入口，不改变 M6/M7/P8 的协议、Schema、事务和覆盖率规则。
+- AI 永远不能直接写数据库；所有写入仍经 `validateAnalysisImport` + `importAnalysisResult`。
+- 批次失败不会回滚已成功批次；`partial` 状态与已导入结果保留。
+- 所有 provider 失败后停止自动流程；UI 显示统一红色提示，手动流程继续可用。
+- `runtime/ai-auto.json` 与日志不含聊天正文、提示词、模型回答或观众隐私内容。
 
 ## 2. 启动时序
 
@@ -384,6 +421,10 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 | GET | `/api/ai/sessions/:id/report` | 直播分析报告读模型 |
 | GET | `/api/ai/results/:id` | 单个结果元数据 + 原始 JSON |
 | GET | `/api/ai/results/:id/download` | 下载结果 JSON 供审计 |
+| GET | `/api/ai/auto/services` | 已验证匿名服务与自动批次数上限 |
+| GET | `/api/ai/auto/status` | 自动分析状态（按 `sessionId`；真实阶段/批次/错误） |
+| POST | `/api/ai/auto/run` | 启动或恢复自动分析（必须 `consent:true`） |
+| POST | `/api/ai/auto/cancel` | 取消自动分析（保留已导入批次） |
 
 ## 5.1 数据目录迁移（运行中切换）
 

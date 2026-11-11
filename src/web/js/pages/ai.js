@@ -120,6 +120,10 @@ export const aiPage = {
     let fileState = null;
     let busy = false;
     let justCreated = false;
+    let autoStatus = null;
+    let autoTimer = null;
+    let autoRunning = false;
+    let autoRefreshedFor = null;
 
     container.append(pageHead({title: t('ai.pageTitle'), subtitle: t('ai.pageSubtitle')}));
 
@@ -173,12 +177,52 @@ export const aiPage = {
     });
     const createResult = el('div', {className: 'stack stack--tight'});
 
+    /* ------------------------------------------------------------ automatic */
+
+    const autoButton = el('button', {
+      className: 'button button--primary',
+      type: 'button',
+      text: t('ai.auto.button')
+    });
+    const autoCancelButton = el('button', {
+      className: 'button button--ghost button--small',
+      type: 'button',
+      text: t('ai.auto.cancel'),
+      hidden: true
+    });
+    const autoStatusText = el('div', {
+      className: 'auto-status',
+      attrs: {role: 'status', 'aria-live': 'polite'}
+    });
+    const autoError = el('div', {
+      className: 'auto-error',
+      attrs: {role: 'alert'},
+      hidden: true
+    });
+    const autoDetailsText = el('div', {className: 'small tertiary'});
+    const autoDetails = el('details', {className: 'auto-details', hidden: true},
+      el('summary', {text: t('ai.auto.details')}),
+      autoDetailsText);
+    const autoPanel = el('section', {className: 'auto-panel', attrs: {'aria-label': t('ai.auto.title')}},
+      el('div', {className: 'auto-panel-head'},
+        el('div', {},
+          el('div', {className: 'auto-panel-title', text: t('ai.auto.title')}),
+          el('div', {className: 'small tertiary', text: t('ai.auto.body')})),
+        chip(t('ai.auto.badge'), 'accent')),
+      el('div', {className: 'auto-actions'}, autoButton, autoCancelButton),
+      autoError,
+      autoStatusText,
+      autoDetails);
+
     const setupCard = el('section', {className: 'card'},
       el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('ai.setup.title')})),
       el('div', {className: 'card-body'},
         el('div', {className: 'grid-2-equal'},
           field(t('ai.setup.sessionLabel'), sessionSelect),
           field(t('ai.setup.languageLabel'), languageSelect)),
+        autoPanel,
+        el('div', {className: 'auto-divider'},
+          el('span', {text: t('ai.auto.manualDivider')})),
         el('details', {className: 'advanced'},
           el('summary', {text: t('ai.setup.advanced')}),
           el('div', {className: 'advanced-body'},
@@ -800,10 +844,209 @@ export const aiPage = {
       await createTask();
     }
 
+    /* ------------------------------------------------------- automatic flow */
+
+    const AUTO_CONSENT_KEY = 'livememory.aiAutoConsent.v1';
+
+    function autoConsentGranted() {
+      try {
+        return window.localStorage.getItem(AUTO_CONSENT_KEY) === 'granted';
+      } catch {
+        return false;
+      }
+    }
+
+    function storeAutoConsent() {
+      try {
+        window.localStorage.setItem(AUTO_CONSENT_KEY, 'granted');
+      } catch {
+        // Private mode / disabled storage: ask again next time, but do not block.
+      }
+    }
+
+    function askAutoConsent() {
+      return new Promise((resolve) => {
+        const modal = createModal({title: t('ai.auto.consentTitle'), t: ctx.t});
+        modal.body.append(
+          el('p', {className: 'modal-desc', text: t('ai.auto.consentBody')}),
+          el('p', {className: 'small tertiary', text: t('ai.auto.consentHint')}));
+        const cancel = el('button', {
+          className: 'button button--ghost',
+          type: 'button',
+          text: t('common.cancel'),
+          onClick: () => {
+            modal.close();
+            resolve(false);
+          }
+        });
+        const ok = el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('ai.auto.consentContinue'),
+          onClick: () => {
+            modal.close();
+            resolve(true);
+          }
+        });
+        modal.actions.append(cancel, ok);
+        ok.focus();
+      });
+    }
+
+    function clearAutoError() {
+      autoError.hidden = true;
+      autoError.textContent = '';
+      autoDetails.hidden = true;
+      autoDetailsText.textContent = '';
+    }
+
+    function showAutoError(code, detail) {
+      // One simple sentence is the primary message. Technical information only
+      // lives in the collapsed details, never in an alert() dialog.
+      autoError.hidden = false;
+      autoError.textContent = t('ai.auto.error.summary');
+      const reasonKey = `ai.auto.reason.${code}`;
+      const reason = t(reasonKey);
+      const localizedReason = reason === reasonKey ? String(code ?? '') : reason;
+      autoDetails.hidden = false;
+      autoDetailsText.textContent = detail
+        ? `${localizedReason} · ${detail}`
+        : localizedReason;
+    }
+
+    function autoStageLabel(status) {
+      const stage = status?.stage ?? 'preparing';
+      const index = Math.max(1, Number(status?.batchIndex ?? 1));
+      const total = Math.max(index, Number(status?.batchTotal ?? status?.job?.batchTotal ?? 1));
+      if (stage === 'connecting') return t('ai.auto.status.connecting');
+      if (stage === 'analyzing') return t('ai.auto.status.analyzing', {index, total});
+      if (stage === 'validating') return t('ai.auto.status.validating');
+      if (stage === 'importing') return t('ai.auto.status.updating');
+      if (stage === 'aggregating') return t('ai.auto.status.aggregating');
+      if (stage === 'complete') return t('ai.auto.status.complete');
+      if (stage === 'canceled') return t('ai.auto.status.canceled');
+      return t('ai.auto.status.preparing');
+    }
+
+    function renderAutoStatus(status) {
+      autoStatus = status;
+      autoRunning = Boolean(status?.running);
+      autoCancelButton.hidden = !autoRunning;
+      autoCancelButton.disabled = !autoRunning;
+      if (autoRunning) {
+        autoButton.disabled = true;
+        autoButton.textContent = t('ai.auto.buttonBusy');
+        clearAutoError();
+        autoStatusText.className = 'auto-status';
+        autoStatusText.textContent = autoStageLabel(status);
+        return;
+      }
+      autoButton.disabled = !selectedId;
+      autoButton.textContent = t('ai.auto.button');
+      if (!status || status.status === 'idle') {
+        autoStatusText.textContent = '';
+        autoStatusText.className = 'auto-status';
+        clearAutoError();
+        return;
+      }
+      if (status.status === 'complete') {
+        clearAutoError();
+        const coverage = status.job?.memoryCoverage;
+        autoStatusText.className = 'auto-status auto-status--success';
+        autoStatusText.textContent = coverage && Number(coverage.total) > 0
+          ? t('ai.auto.status.completeMemory', {
+            covered: formatInteger(coverage.covered ?? 0, ctx.locale),
+            total: formatInteger(coverage.total ?? 0, ctx.locale)
+          })
+          : t('ai.auto.status.complete');
+        return;
+      }
+      if (status.status === 'canceled') {
+        clearAutoError();
+        autoStatusText.className = 'auto-status';
+        autoStatusText.textContent = t('ai.auto.status.canceled');
+        return;
+      }
+      // failed or interrupted: red sentence below the button, details collapsed.
+      autoStatusText.className = 'auto-status';
+      autoStatusText.textContent = '';
+      showAutoError(status.error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', status.error?.detail ?? null);
+    }
+
+    async function refreshAutoStatus() {
+      if (autoTimer) {
+        window.clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+      if (!selectedId) {
+        renderAutoStatus({status: 'idle'});
+        return;
+      }
+      try {
+        const status = await api.get(`/api/ai/auto/status?sessionId=${encodeURIComponent(selectedId)}`);
+        renderAutoStatus(status);
+        if (status.running) {
+          autoTimer = window.setTimeout(refreshAutoStatus, 1500);
+        } else if (status.status === 'complete') {
+          const key = `${selectedId}:${status.jobId ?? ''}`;
+          if (autoRefreshedFor !== key) {
+            autoRefreshedFor = key;
+            await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
+          }
+        }
+      } catch {
+        // A local status read must not be presented as an AI failure.
+      }
+    }
+
+    async function startAuto() {
+      if (autoRunning || !selectedId) return;
+      if (!autoConsentGranted()) {
+        const accepted = await askAutoConsent();
+        if (!accepted) return;
+        storeAutoConsent();
+      }
+      clearAutoError();
+      autoButton.disabled = true;
+      autoButton.textContent = t('ai.auto.starting');
+      try {
+        const status = await api.post('/api/ai/auto/run', {
+          sessionId: selectedId,
+          locale,
+          consent: true
+        });
+        renderAutoStatus(status);
+        if (status.running) {
+          autoTimer = window.setTimeout(refreshAutoStatus, 800);
+        }
+        ctx.toast(t('ai.auto.started'), {tone: 'info'});
+      } catch (error) {
+        autoRunning = false;
+        autoButton.disabled = false;
+        autoButton.textContent = t('ai.auto.button');
+        showAutoError(error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', ctx.describeError(error));
+      }
+    }
+
+    async function cancelAuto() {
+      if (!selectedId) return;
+      autoCancelButton.disabled = true;
+      try {
+        const status = await api.post('/api/ai/auto/cancel', {sessionId: selectedId});
+        renderAutoStatus(status);
+        ctx.toast(t('ai.auto.cancelRequested'), {tone: 'info'});
+      } catch (error) {
+        autoCancelButton.disabled = false;
+        showAutoError(error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', ctx.describeError(error));
+      }
+    }
+
     /* ------------------------------------------------------------- events */
 
     createButton.addEventListener('click', createTask);
     validateButton.addEventListener('click', validateInput);
+    autoButton.addEventListener('click', startAuto);
+    autoCancelButton.addEventListener('click', cancelAuto);
     sessionSelect.addEventListener('change', async () => {
       selectedId = sessionSelect.value;
       syncUrl();
@@ -816,11 +1059,17 @@ export const aiPage = {
       fileInfo.textContent = '';
       clear(previewHost);
       clear(createResult);
+      autoStatus = null;
+      autoRunning = false;
+      autoRefreshedFor = null;
+      clearAutoError();
       await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
+      await refreshAutoStatus();
     });
     languageSelect.addEventListener('change', async () => {
       locale = languageSelect.value;
       if (!activeJob()) await loadPrompt();
+      renderAutoStatus(autoStatus);
     });
     batchSizeInput.addEventListener('change', () => {
       const value = Number(batchSizeInput.value);
@@ -879,6 +1128,7 @@ export const aiPage = {
     syncUrl();
     await refreshJobs();
     await Promise.all([loadPrompt(), refreshReport()]);
+    await refreshAutoStatus();
     renderCreateResult();
 
     if (query?.get('report') === '1') {
@@ -886,6 +1136,8 @@ export const aiPage = {
         document.getElementById('ai-report')?.scrollIntoView({block: 'start'});
       });
     }
-    return undefined;
+    return () => {
+      if (autoTimer) window.clearTimeout(autoTimer);
+    };
   }
 };

@@ -50,6 +50,7 @@ import {
 import {getPackage, listPackages} from '../storage/repositories/ai-packages.mjs';
 import {buildAnalysisPackage, ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
 import {buildAggregatePackage, createAnalysisJob} from '../ai/export/job.mjs';
+import {MAX_AUTO_BATCHES} from '../ai/auto/config.mjs';
 import {buildInstructions, instructionVersion} from '../ai/prompts/instructions.mjs';
 import {
   getJob,
@@ -1179,6 +1180,108 @@ export function buildRoutes() {
           }
           throw error;
         }
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/auto/services',
+      handler: ({res, deps}) => {
+        if (!deps.auto) {
+          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
+        }
+        sendJson(res, 200, {services: deps.auto.services(), maxBatches: MAX_AUTO_BATCHES});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/auto/status',
+      handler: ({res, url, deps}) => {
+        if (!deps.auto) {
+          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
+        }
+        const sessionId = url.searchParams.get('sessionId');
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        sendJson(res, 200, deps.auto.getStatus(sessionId));
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/auto/run',
+      handler: async ({req, res, deps}) => {
+        if (!deps.auto) {
+          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const requested = body.locale ? normalizeLocale(body.locale) : null;
+        const locale = requested && requested !== 'system'
+          ? requested
+          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        try {
+          const status = await deps.auto.start({
+            sessionId,
+            locale,
+            consent: body.consent === true
+          });
+          deps.logger?.info?.({event: 'ai.auto.run.accepted', sessionId, jobId: status.jobId ?? null});
+          sendJson(res, 202, status);
+        } catch (error) {
+          if (error?.code === 'AUTO_CONSENT_REQUIRED') {
+            throw new AppError('AUTO_CONSENT_REQUIRED', {
+              messageKey: 'errors.aiAutoConsentRequired',
+              httpStatus: 400
+            });
+          }
+          if (error?.code === 'AUTO_ALREADY_RUNNING') {
+            throw new AppError('AUTO_ALREADY_RUNNING', {
+              messageKey: 'errors.aiAutoAlreadyRunning',
+              httpStatus: 409
+            });
+          }
+          if (error?.code === 'AUTO_SESSION_EMPTY') {
+            throw new AppError('AUTO_SESSION_EMPTY', {
+              messageKey: 'errors.sessionEmpty',
+              httpStatus: 409
+            });
+          }
+          if (error?.code === 'AUTO_TOO_MANY_BATCHES') {
+            throw new AppError('AUTO_TOO_MANY_BATCHES', {
+              messageKey: 'errors.aiAutoTooManyBatches',
+              details: {detail: error.detail, limit: MAX_AUTO_BATCHES},
+              httpStatus: 422
+            });
+          }
+          if (error?.code === 'ANALYSIS_TOO_LARGE' || error?.code === 'ANALYSIS_TOO_MANY_VIEWERS') {
+            throw new AppError('AUTO_TOO_MANY_BATCHES', {
+              messageKey: 'errors.aiAutoTooManyBatches',
+              details: {detail: error.code, limit: MAX_AUTO_BATCHES},
+              httpStatus: 422
+            });
+          }
+          throw error;
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/auto/cancel',
+      handler: async ({req, res, deps}) => {
+        if (!deps.auto) {
+          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const status = deps.auto.cancel(sessionId);
+        deps.logger?.info?.({event: 'ai.auto.cancel.requested', sessionId});
+        sendJson(res, 200, status);
       }
     },
     {

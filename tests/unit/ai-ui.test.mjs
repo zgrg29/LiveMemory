@@ -55,6 +55,80 @@ test('the AI centre wires the complete manual round trip', () => {
   }
 });
 
+test('the automatic analysis entry point is wired without replacing manual controls', () => {
+  const source = read('src/web/js/pages/ai.js');
+  assert.ok(source.includes('autoButton'), 'missing automatic button');
+  assert.ok(source.includes('startAuto'), 'missing start handler');
+  assert.ok(source.includes('refreshAutoStatus'), 'missing progress polling');
+  assert.ok(source.includes('cancelAuto'), 'missing cancel handler');
+  assert.ok(source.includes("AUTO_CONSENT_KEY = 'livememory.aiAutoConsent.v1'"), 'missing first-use consent');
+  assert.ok(source.includes('ai.auto.error.summary'), 'missing simple failure message');
+  assert.ok(source.includes('ai.auto.status.'), 'missing real stage labels');
+  assert.doesNotMatch(source, /\bwindow\.alert\s*\(/, 'must not use browser alert()');
+  assert.doesNotMatch(source, /innerHTML\s*=/, 'automatic UI must stay text-only');
+  // The manual create/import controls must remain in the same page.
+  assert.ok(source.includes('ai.setup.create'));
+  assert.ok(source.includes('ai.import.validate'));
+  assert.ok(source.includes('createButton.addEventListener'));
+  assert.ok(source.includes('validateButton.addEventListener'));
+
+  const routes = read('src/server/routes.mjs');
+  for (const path of [
+    "path: '/api/ai/auto/services'",
+    "path: '/api/ai/auto/status'",
+    "path: '/api/ai/auto/run'",
+    "path: '/api/ai/auto/cancel'"
+  ]) {
+    assert.ok(routes.includes(path), `missing automatic route ${path}`);
+  }
+  const server = read('src/server/index.mjs');
+  assert.ok(server.includes('AutoAnalysisRunner'));
+  assert.ok(server.includes('instance.auto?.shutdown()'));
+  const config = read('src/ai/auto/config.mjs');
+  assert.ok(config.includes("id: 'ovh-gpt-oss-20b'"));
+  assert.doesNotMatch(config, /id: '(murakumo|llmfaucet|llm7|pollinations)/i, 'unverified services must not enter the fallback list');
+});
+
+test('automatic analysis exposes the exact simple failure copy in three languages', () => {
+  const expected = {
+    'zh-CN': '目前免费 AI 自动分析暂时不可用，请使用下方的手动 AI 分析功能。',
+    ja: '現在、無料AI自動分析は利用できません。下の手動AI分析機能をご利用ください。',
+    en: 'Free automatic AI analysis is currently unavailable. Please use the manual AI analysis option below.'
+  };
+  for (const [locale, text] of Object.entries(expected)) {
+    const dict = JSON.parse(read(`src/web/i18n/${locale}.json`));
+    assert.equal(dict.ai.auto.error.summary, text);
+    for (const key of [
+      'ai.auto.button',
+      'ai.auto.buttonBusy',
+      'ai.auto.status.preparing',
+      'ai.auto.status.connecting',
+      'ai.auto.status.analyzing',
+      'ai.auto.status.validating',
+      'ai.auto.status.updating',
+      'ai.auto.status.aggregating',
+      'ai.auto.status.complete',
+      'ai.auto.consentBody',
+      'ai.auto.details',
+      'ai.auto.reason.AUTO_PROVIDER_UNAVAILABLE',
+      'ai.auto.reason.AUTO_RATE_LIMITED',
+      'ai.auto.reason.AUTO_INVALID_JSON',
+      'ai.auto.reason.AUTO_TIMEOUT',
+      'ai.auto.reason.AUTO_ALL_PROVIDERS_FAILED',
+      'ai.auto.reason.AUTO_CONTEXT_TOO_LARGE'
+    ]) {
+      const parts = key.split('.');
+      let node = dict;
+      for (const part of parts) {
+        assert.ok(node && typeof node === 'object' && part in node, `${locale} missing ${key}`);
+        node = node[part];
+      }
+      assert.equal(typeof node, 'string');
+      assert.ok(node.trim().length > 0);
+    }
+  }
+});
+
 test('the history detail surfaces the AI report instead of pretending analysis is missing', () => {
   const source = read('src/web/js/pages/history.js');
   assert.ok(source.includes('/api/ai/sessions/'));

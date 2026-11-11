@@ -1,11 +1,14 @@
 # AI 文件往返协议（AI_CONTRACT）
 
-版本：**0.11.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+版本：**0.12.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
 结果 Schema 版本 **1.2.0**（兼容 1.0.0 / 1.1.0） · 提示词版本 **`lm-prompt-m6.2-<locale>`**
 
 ## 1. 原则
 
-- LiveMemory **不调用任何 AI API**，不绑定任何 AI 品牌，不需要登录或 API Key。
+- **手动路径不调用任何 AI API**，不绑定任何 AI 品牌，不需要登录或 API Key。
+- v0.12.0 新增**自动路径**：用户明确同意后，软件直接把当前分析包发送给一个经过实测的匿名免费
+  provider（OVHcloud AI Endpoints `gpt-oss-20b`），再把回答交给同一套 Schema/业务校验与事务导入。
+  自动路径不需要用户 Key、账号或开发者服务器；失败时回退到手动路径。
 - 用户导出分析包，交给任意支持文件上传与结构化输出的 AI 服务（ChatGPT、Claude、Gemini 或其他），
   再把返回的 JSON 导入回软件。
 - 协议版本化；字段名不随界面语言变化；AI 输出不修改本地金额与计数。
@@ -422,7 +425,8 @@ M6/M7 扩展（1.1.0 字段可选；1.2.0 批次必须包含 `viewer_memory_upda
 - 界面统一使用“AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果 / 导入 AI 分析结果”，
   不绑定某个品牌，不集成付费 AI API。
 - 不同 AI 的上传大小、上下文长度、ZIP 支持与文件生成能力不同；用户可以按批下载/导入。
-- LiveMemory 只负责导出、提示词、严格校验、事务保存与报告展示；语义分析由用户选择的 AI 完成。
+- 手动模式：LiveMemory 只负责导出、提示词、严格校验、事务保存与报告展示；语义分析由用户选择的 AI 完成。
+- 自动模式（v0.12.0）：用户同意后，软件直接调用一个已验证的匿名免费 provider；回答仍走同一校验与事务保存路径。
 
 ## 9. 兼容性
 
@@ -540,3 +544,68 @@ coverage.deleted          记忆已删除
 `MEMORY_NO_NEW_FLAG_MISSING`、`MEMORY_OBJECTIVE_ONLY`。
 
 错误码与修复建议通过 `ai.import.reason.*` / `ai.import.fix.*` 三语显示，界面不展示英文原文。
+
+## 11. 自动分析模式（v0.12.0）
+
+自动模式是**同一协议的新入口**，不是新协议：包、结果 Schema、验证器、导入事务、报告与长期记忆全部复用。
+
+### 11.1 服务与授权
+
+- 只使用 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过真实 LiveMemory 包测试的匿名 provider。
+- 当前唯一 provider：OVHcloud AI Endpoints `gpt-oss-20b`，Base URL
+  `https://oai.endpoints.kepler.ai.cloud.ovh.net/v1`，无 `Authorization`/Cookie。
+- 官方匿名限制 **2 请求/分钟/IP/模型**；客户端串行请求，2/60s 滑动窗口，尊重 `Retry-After`。
+- 不在服务端探测 provider；没有后台心跳或提前“预热”。
+- 用户首次点击必须在 UI 明确同意把本场聊天与相关观众记忆发送给第三方；服务端要求 `consent:true`。
+
+### 11.2 批次与提示词
+
+- 自动任务使用更小的批次：`batchSize=250`、每位批次最多 25 位记忆观众、最多 600 条观众摘录，
+  最多 12 批。批次仍由 `createAnalysisJob()` 生成，全部稳定观众分配规则不变。
+- 提示词由包内 `instructions.md` + 自动模式输出契约组成：
+  - 明确 `job_id`/`batch_id`/`task_id`/`session_id`/`broadcaster_id`/`locale`；
+  - 明确 `viewer_memory_updates` 的**精确 viewer_id 列表**；
+  - 列出每位观众在 `viewer_excerpts.jsonl` 中**允许引用的 seq**；
+  - 明确“第一人称兴趣/经历必须 add”“状态变化必须 supersede/update 旧事实”
+    “问题不是兴趣证据”“问候/表情/付费不能单独推断”；
+  - 汇总阶段 `viewer_memory_updates` 必须为 `[]`。
+- 系统提示词 + 包内容的预估 token 超过 90,000 时直接失败（`AUTO_CONTEXT_TOO_LARGE`），
+  不截断观众或证据。
+- 输出预算：批次最低 8,000 tokens（随观众数增长，最高 12,000）；汇总 8,000。
+  实测 3,040 tokens 会截断 gpt-oss 的 JSON，因此不能把预算压得过低。
+
+### 11.3 校验、修复与导入
+
+1. 每个回答先 `extractJsonObject()`，再 `validateAnalysisImport()`；只接受一个 JSON 对象。
+2. 预览不通过时，最多发送一次修复请求（原始包 + 上次回答 + 错误码列表）。
+3. 修复仍不通过则切换下一个已验证 provider；全部失败后停止。
+4. 通过后才调用 `importAnalysisResult({source:'auto'})`；与手动导入同一单事务路径。
+5. 批次失败不删除已成功批次；任务保持 `partial`，重新点击从缺失批次继续。
+6. 全部批次后用 `buildAggregatePackage()` 生成汇总包，导入 `final` 后任务才 `complete`。
+7. 相同内容重复导入仍是 `duplicate`；不同内容不会自动覆盖。
+
+### 11.4 状态与恢复
+
+- `runtime/ai-auto.json` 只保存：`jobId`、`locale`、`status`、`stage`、`batchIndex`、
+  `batchTotal`、`lastProvider`、`error{code,detail}`、时间戳。**不保存聊天、提示词或回答。**
+- 进程重启后，持久化的 `running` 被视为 `interrupted`；再次点击复用同一 job，
+  已导入批次通过 `latestResultForScope()` 跳过，不重复请求、不重复写。
+- 取消只中止后续请求；已导入批次与事务结果保留。
+- 同一 session 同时只允许一个自动运行；不同 session 可由用户另行启动。
+
+### 11.5 错误码
+
+`AUTO_CONSENT_REQUIRED`、`AUTO_ALREADY_RUNNING`、`AUTO_SESSION_EMPTY`、
+`AUTO_TOO_MANY_BATCHES`、`AUTO_CONTEXT_TOO_LARGE`、`AUTO_ALL_PROVIDERS_FAILED`、
+`AUTO_RATE_LIMITED`、`AUTO_TIMEOUT`、`AUTO_INVALID_JSON`、`AUTO_SCHEMA_INVALID`、
+`AUTO_IMPORT_FAILED`、`AUTO_AGGREGATE_FAILED`、`AUTO_CANCELED`、`AUTO_INTERRUPTED`、
+`AUTO_PROVIDER_UNAVAILABLE`、`AUTO_INTERNAL`。
+
+UI 首屏只显示固定红色文案；上述错误码与脱敏 detail 只在「查看详情」中显示，便于排查。
+
+### 11.6 安全边界
+
+- 模型返回内容始终是不可信外部输入；不执行脚本/命令/HTML，不打开其路径。
+- 不把提示词、回答、聊天正文写入日志或状态文件。
+- 不发送数据库文件、Cookie、Token、API Key、系统账户信息或不相关的历史直播。
+- 自动模式不得为了提高成功率而降低 Schema、证据、覆盖率或去重校验。

@@ -1,16 +1,84 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-10（P8 长期记忆一体化 + 观众范围补丁，版本 0.11.1，schema 12）
+最后更新：2026-11-11（P9 自动 AI 分析，版本 0.12.0，schema 12）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0–P8 / M6 / M7 核心完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.11.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**12**（统一分析/记忆覆盖；v11 原地升级）
+- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 核心完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
+- 版本：`0.12.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**12**（本轮未改表结构；自动分析使用现有 `ai_*` 表）
 - 分支：`main`，本地提交，未 Push
-- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（本轮构建结果见 §5）
+- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.12.0 已构建，未能运行验收）
+
+## 1.1 本轮完成（2026-11-11，v0.12.0，P9 自动 AI 分析）
+
+### 1.1.1 真实接口调查（先测试，再集成）
+
+完整报告见 `docs/ANONYMOUS_AI_RESEARCH.md`。结论：
+
+- **OVHcloud AI Endpoints**（官方文档 + 真实请求）是唯一通过完整 LiveMemory 包检验的匿名接口：
+  - Base URL `https://oai.endpoints.kepler.ai.cloud.ovh.net/v1`，模型 `gpt-oss-20b`；
+  - 匿名 **2 请求/分钟/IP/模型**，131k 上下文，JSON Mode；
+  - 真实 3 观众包：`status=complete`、`memoryCoverage.semantic=3`、`source=auto`，证据 seq 正确。
+- **Murakumo**：官方匿名说明存在，但实测 `/ready` 503、`murakumo/free` 502（OpenRouter 429）、`mishima` 180 秒后 `fleet_capacity_unavailable`；未取得有效回答，**不集成**。
+- **llmfaucet**：`llmfaucet.dev` / `api.llmfaucet.dev` 在本地、Google DNS、Cloudflare DoH 均为 NXDOMAIN；**不集成**。
+- **LLM7.io**：无 Key 请求可返回 200，但官方 README 要求 `dash.llm7.io` Token；匿名第三方授权无法确认，**不集成**。
+- **Pollinations**（额外调查）：匿名基础 JSON/多语言通过，但真实 LiveMemory 包 HTTP 400；**不集成**。
+- 没有第二个通过项，因此本轮**没有**生产自动切换列表；请求失败时降级到手动流程。
+
+### 1.1.2 自动分析后端
+
+新增：
+
+| 模块 | 职责 |
+| --- | --- |
+| `src/ai/auto/config.mjs` | 唯一已验证 provider、匿名限流、批次/上下文/输出上限、稳定错误码 |
+| `src/ai/auto/client.mjs` | `fetch` + `AbortSignal` 请求、滑动窗口限流、`Retry-After`、JSON 提取、错误分类 |
+| `src/ai/auto/prompt.mjs` | 读取现有 ZIP 包、内联包内容、精确观众 ID/证据 seq、批次/汇总/修复提示词、上下文预算 |
+| `src/ai/auto/state.mjs` | `runtime/ai-auto.json` 进度（无聊天正文/提示词），重启标记 `interrupted` |
+| `src/ai/auto/runner.mjs` | 创建/恢复任务 → 逐批调用 → 校验 → 导入 → 汇总 → 完成；取消、重试、备用、请求预算 |
+| `src/ai/auto/errors.mjs` | 单一 `AutoAnalysisError` 与脱敏 detail |
+
+关键约束：
+
+- 自动分析**不直接写数据库**：每个回答都先调用现有 `validateAnalysisImport()`，再调用 `importAnalysisResult({source:'auto'})`，与手动导入同一事务路径。
+- Schema 严格程度不变；`viewer_memory_updates` 覆盖、稳定 ID、证据归属、时间窗口、重复导入保护全部沿用现有逻辑。
+- 自动任务使用更小的批次（250 条消息 / 25 位观众 / 600 条摘录），最多 12 批；超出时明确 `AUTO_TOO_MANY_BATCHES`，不静默截断观众。
+- 输出预算最低 8000 tokens（探测到 3040 会截断 gpt-oss 的 JSON）；修复请求最多 1 次。
+- provider 调用串行；每个 provider 2 请求/60 秒滑动窗口；`429` 尊重 `Retry-After`（上限 90 秒）；单次运行有请求预算。
+- 不使用 API Key、Cookie、Token、开发者服务器；首次使用需在 UI 明确同意数据发送。
+
+### 1.1.3 自动分析 API
+
+```text
+GET  /api/ai/auto/services    已验证服务与最大批次数
+GET  /api/ai/auto/status      按 sessionId 返回真实阶段/批次/错误/任务状态
+POST /api/ai/auto/run         {sessionId, locale, consent:true}
+POST /api/ai/auto/cancel      {sessionId}
+```
+
+`AutoAnalysisRunner` 随 `startServer` 的运行时创建/销毁；`shutdown` 会中止任务并把进行中的状态标为 `interrupted`。恢复时复用同一 job id、batch id、观众分配与已导入结果。
+
+### 1.1.4 UI
+
+在现有 AI 分析中心的「创建分析任务」卡内、手动控件上方新增：
+
+- 「自动 AI 分析」主按钮 + 「免费 · 匿名」chip + 简短说明；
+- 真实阶段文案：准备数据 / 连接免费 AI / 第 X/Y 批 / 验证结果 / 更新长期记忆 / 整场汇总 / 完成 / 已取消；
+- 首次使用一次性同意弹窗（明确第三方数据处理）；
+- 失败时按钮正下方显示规定红色文案，技术原因折叠在「查看详情」，不弹 `alert()`，不自动切换/删除手动结果；
+- 手动创建任务、下载包、复制提示词、导入 JSON 全部保留；按钮下方用分隔线标注「或使用手动分析」。
+- 处理中禁用同一任务重复启动；页面切换/刷新从服务端恢复状态；可取消，已导入批次保留。
+
+### 1.1.5 本轮已知限制
+
+- 只有一个已验证 provider；OVH 匿名层 2 请求/分钟，较大场次会更慢或明确拒绝。
+- `gpt-oss` 的输出质量仍有波动；本轮通过“证据 seq 列表 + 必须输出状态变化 + 8000 输出预算 + 一次修复”降低失败率，但不能保证每个回答都完美。
+- 真实长期记忆连续性测试（同一观众先“学画画”、后“改学吉他”）见 `docs/ANONYMOUS_AI_RESEARCH.md` §8：第二场自动完成后旧事实被标记为 `superseded`，新增“吉他”与“最近不怎么画画了”两条事实；这是单次真实样本，不保证所有模型都稳定。
+- v0.12.0 EXE 已构建但**未能运行**（本机拒绝非提升执行）；未在真实数千观众大场执行自动分析。
+- 真实浏览器 UI 仍未验收（本机策略阻止无头浏览器）；只有静态 UI 检查与 HTTP 端到端测试。
 
 ## 2. 本轮完成（2026-11-10，v0.11.0，P8）
 
@@ -78,44 +146,48 @@
 ## 3. 自动化测试（本轮实测）
 
 - 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-  → **495 passed / 0 failed**（约 80 秒）。
-- 新增 `tests/unit/viewer-scope.test.mjs` 与 `tests/integration/viewer-broadcaster-scope.test.mjs`：
-  单主播、双主播、多主播、无关联、跨平台同名、仅礼物互动、无效 scope 安全回退。
-- 新增 `tests/integration/unified-analysis-memory.test.mjs`：
-  - A 同一观众连续五场、每场一句话：5 场互动、累计发言、最近时间、3 条语义事实逐步积累；
-  - B 只说“晚上好”：version 0、无事实、覆盖 `no_semantics`，仍算已处理；
-  - C 只说“我最近在学习国画”：一条消息生成 `stated` 事实与可验证证据；
-  - D 300 位低活跃观众：所有观众进入批次、覆盖 300/300、300 个记忆头；
-  - E 300 观众跨 6 批：每位观众只在一个记忆批次、全部摘录随行、乱序导入、重复导入幂等、
-    部分覆盖状态正确；
-  - 缺少某位观众的更新 → `MEMORY_VIEWER_UPDATE_MISSING` 阻塞导入。
-- 既有 M6/M7 全量回归通过；schema/版本断言已更新到 12 / 1.2.0 / m6.2。
-- 迁移测试：v1→v12、v7→v12、v9→v12、v10→v12、v11→v12，旧数据不变。
+  → **525 passed / 0 failed**（约 93 秒，2026-11-11）。
+- 新增本轮自动分析测试：
+  - `tests/unit/auto-client.test.mjs`：JSON 提取、滑动窗口、匿名请求头、429/5xx/timeout/非 JSON；
+  - `tests/unit/auto-prompt.test.mjs`：观众 ID/证据 seq、汇总契约、上下文预算、修复提示；
+  - `tests/integration/auto-analysis.test.mjs`：成功、多批 + 汇总、备用 provider、全失败、
+    Schema 修复、错误证据、部分成功后恢复、重复点击、取消/恢复、重启中断恢复、
+    汇总失败保留批次、旧记忆不被覆盖、重复导入幂等；
+  - `tests/integration/auto-api.test.mjs`：HTTP 同意、202、409、状态、422 规模上限、取消、
+    手动导入路径仍可用；
+  - `tests/unit/ai-ui.test.mjs`：按钮/阶段/红色文案/三语键/无 `alert()`/无 `innerHTML`。
+- 既有 M6/M7/P8 全量回归通过；schema 仍为 12，无迁移断言变化。
+
 
 ## 4. UI 验证（如实）
 
 - **没有真实浏览器渲染/截图验收**：本机策略仍阻止无头 Edge/Chrome。
 - 已覆盖：三语键一致、页面字面 key、独立记忆页已移除/旧链接到 AI、预览字段、客观历史卡、
   无 innerHTML、CSS tokens、窄屏规则（静态测试）；HTTP/端到端行为由 Node 测试覆盖。
-- 因此不能声称 AI 预览、观众记忆页、暗色、390px 已在真实浏览器验收。
+- v0.12.0 自动分析 UI 额外覆盖（静态）：按钮/免费匿名 chip/首次同意 modal/真实阶段文案/
+  按钮下方红色固定文案/折叠详情/取消/无 `alert()`/手动控件仍在；HTTP 路由与状态由
+  `auto-api.test.mjs` 覆盖。
+- 因此不能声称自动按钮、AI 预览、观众记忆页、暗色、390px 已在真实浏览器验收。
 
-## 5. 构建结果（本轮实测）
+## 5. 构建结果（如实）
 
-- `node scripts/build-windows.mjs` 成功：`dist/LiveMemory.exe`
-  - 大小 **91.1 MB**（95,567,360 bytes），资源 **145 个**，资源哈希 `eebfef0bc14877462667`
-  - SHA-256 `8cbd7209c23d0c6198c4996c5f23577c826ce248351c9fb14cbca6075e7c4b47`
+- `node scripts/build-windows.mjs` 成功：`dist/LiveMemory.exe`（v0.12.0）
+  - 大小 **91.2 MB**，资源 **151 个**，资源哈希 `c5a20ea9c14c707fc659`
+  - SHA-256 `342294c97ebb200fe8796ac783fa841f5e2b6f451fcc996a641db8368d82cebe`
   - PE Manifest **requireAdministrator**（脚本断言通过）
-- **未能执行验收**：本机应用控制/沙箱策略阻止启动新构建的 EXE；没有运行 `--version` 或打包后的
-  schema 11→12 升级实测。
+- **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
+  `--version`、启动服务、验证打包后的自动分析出站请求或 UI。
+- 因此只能声称“已构建”，不能声称“v0.12.0 EXE 已启动/已验收”。
 
 ## 6. 未完成 / 未验证
 
-- 真实 AI 返回统一 `viewer_memory_updates` 的样本（包括遗漏/乱序/证据错误的真实表现）；
-- 数千观众真实大场的包大小、内存、导入耗时；
-- 真实浏览器 UI、截图、暗色、390px；
-- 打包 EXE 运行验收与 schema 11→12 真实升级；
-- 真实平台礼物/SC-only 观众的长期记忆样本；
-- 旧 M7 任务数据在真实用户库中的只读查看；
+- v0.12.0 EXE 启动、出站网络与干净 Windows 环境验收（已构建，未能运行）；
+- 真实浏览器自动分析 UI、暗色、390px、按钮位置截图；
+- 数千观众/数万消息大场的自动批次、耗时、内存与 OVH 2 请求/分钟的实际总时长；
+- 第二个通过完整 LiveMemory 包的匿名 provider（本轮没有）；
+- 自动分析运行中删除场次/清空数据的 UI 守卫与真实交互；
+- 真实 Bilibili/YouTube 大场自动分析样本（当前真实样本为 3 位合成观众）；
+- 真实平台礼物/SC-only 观众的自动分析样本；
 - M5 可移植备份仍未实现。
 
 ## 7. 关键规则（下一轮不要破坏）
@@ -128,21 +200,27 @@
 6. 无新语义 ≠ 未处理；`pending` 才是未处理。
 7. 删除记忆后的旧包不能恢复；重复导入幂等。
 8. 三语键三份一致；前端禁止 `innerHTML`；颜色只用 tokens。
+9. 自动分析必须走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写库，不能降低 Schema。
+10. 自动批次仍覆盖全部可识别观众；超出 12 批或 90k 上下文时明确失败，不得静默裁剪。
+11. 只允许 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过完整 LiveMemory 包的匿名 provider；未验证服务不得进入自动列表。
+12. 自动失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆、不自动切换手动模式；红色文案在按钮正下方。
 
 ## 8. 相关文档
 
 `docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/AI_CONTRACT.md`、
 `docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、
-`docs/ROADMAP.md`、`log/2026-11-10-unified-analysis-memory.md`、
+`docs/ROADMAP.md`、`docs/ANONYMOUS_AI_RESEARCH.md`、
+`log/2026-11-11-anonymous-ai-auto-analysis.md`、`log/2026-11-10-unified-analysis-memory.md`、
 `log/2026-11-10-viewer-scope-fix.md`。
 
 ## 9. 下一步
 
-1. 用真实 AI 跑一组统一结果（至少 3 批、含遗漏/错误证据/无新语义），记录实际覆盖率与错误提示。
-2. 用 1000–5000 观众的真实/合成大会话测包大小、导入耗时与内存。
-3. 在允许浏览器的机器上验收 AI 预览、观众客观历史卡、暗色、390px。
-4. 在无策略限制的 Windows 环境启动已构建 EXE，验证 schema 11→12 与打包 UI。
-5. 决定是否移除旧 `memory_jobs` 表的创建 API（当前仅保留历史数据，不再暴露 UI）。
+1. 在允许浏览器的机器上验收自动按钮、失败红色文案、详情、暗色与 390px；补截图。
+2. 在无策略限制的 Windows 环境运行已构建的 v0.12.0 EXE，验证出站请求、代理/防火墙与打包 UI。
+3. 用 1000–5000 观众/数万消息的大场测自动批次、耗时、内存与 OVH 2 请求/分钟的实际影响。
+4. 寻找并完整测试第二个匿名 provider（必须通过真实 LiveMemory 包），再启用自动切换。
+5. 评估自动运行中删除场次/清空数据的 UI 守卫；当前只依赖服务端失败与红色提示。
+6. 继续观察 OVH 免费通道的稳定性与条款变化；失效时如实降级，不把历史可用写成永久可用。
 
 ## 10. 补丁 0.11.1：观众档案主播范围
 

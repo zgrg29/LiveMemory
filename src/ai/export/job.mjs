@@ -149,7 +149,14 @@ function messageSlices(messages, batchTotal) {
  * (their excerpts still travel with them, so the memory context is never split).
  * Zero-message viewers are placed by load; they are never omitted.
  */
-function assignMemoryViewers({viewers, messagesByViewer, firstBatchByViewer, batchTotal}) {
+function assignMemoryViewers({
+  viewers,
+  messagesByViewer,
+  firstBatchByViewer,
+  batchTotal,
+  viewerCap = MEMORY_VIEWERS_PER_BATCH,
+  excerptCap = MAX_MEMORY_EXCERPT_MESSAGES
+}) {
   const loads = Array.from({length: batchTotal}, () => ({viewers: 0, messages: 0, ids: []}));
   const assignments = new Map();
   const ordered = [...viewers].sort((a, b) => {
@@ -165,8 +172,8 @@ function assignMemoryViewers({viewers, messagesByViewer, firstBatchByViewer, bat
     for (let step = 0; step < batchTotal; step += 1) {
       const index = (preferred + step) % batchTotal;
       const load = loads[index];
-      if (load.viewers < MEMORY_VIEWERS_PER_BATCH
-        && (load.messages + excerptCount <= MAX_MEMORY_EXCERPT_MESSAGES || load.viewers === 0)) {
+      if (load.viewers < viewerCap
+        && (load.messages + excerptCount <= excerptCap || load.viewers === 0)) {
         chosen = index;
         break;
       }
@@ -202,6 +209,8 @@ export async function createAnalysisJob({
   locale = 'en',
   exportsDir,
   batchSize = DEFAULT_BATCH_MESSAGES,
+  memoryViewersPerBatch = MEMORY_VIEWERS_PER_BATCH,
+  maxMemoryExcerptMessages = MAX_MEMORY_EXCERPT_MESSAGES,
   now = Date.now()
 }) {
   const summary = buildSessionSummary(db, sessionId, {now});
@@ -217,6 +226,8 @@ export async function createAnalysisJob({
     });
   }
   const messagesPerBatch = normalizeBatchSize(batchSize);
+  const viewerCap = Math.min(MEMORY_VIEWERS_PER_BATCH, Math.max(1, Math.trunc(Number(memoryViewersPerBatch) || MEMORY_VIEWERS_PER_BATCH)));
+  const excerptCap = Math.min(MAX_MEMORY_EXCERPT_MESSAGES, Math.max(1, Math.trunc(Number(maxMemoryExcerptMessages) || MAX_MEMORY_EXCERPT_MESSAGES)));
   const allMessages = listSessionMessagesAsc(db, {
     sessionId: session.id,
     limit: MAX_ANALYSIS_MESSAGES
@@ -262,8 +273,8 @@ export async function createAnalysisJob({
   // coverage. This guarantees every viewer fits in a batch instead of silently
   // truncating the audience or producing an over-sized memory context.
   const messageBatchTotal = Math.max(1, Math.ceil(totalMessages / messagesPerBatch));
-  const viewerBatchTotal = Math.max(1, Math.ceil(stableViewers.length / MEMORY_VIEWERS_PER_BATCH));
-  const excerptBatchTotal = Math.max(1, Math.ceil(excerptTotal / MAX_MEMORY_EXCERPT_MESSAGES));
+  const viewerBatchTotal = Math.max(1, Math.ceil(stableViewers.length / viewerCap));
+  const excerptBatchTotal = Math.max(1, Math.ceil(excerptTotal / excerptCap));
   const batchTotal = Math.max(messageBatchTotal, viewerBatchTotal, excerptBatchTotal);
   const slices = batchTotal === messageBatchTotal
     ? Array.from({length: batchTotal}, (_, index) => {
@@ -284,7 +295,9 @@ export async function createAnalysisJob({
     viewers: stableViewers,
     messagesByViewer,
     firstBatchByViewer,
-    batchTotal
+    batchTotal,
+    viewerCap,
+    excerptCap
   });
 
   const jobId = createId('aij');
