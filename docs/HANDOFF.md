@@ -16,7 +16,7 @@
 | 三语 UI | **已实现静态键与页面**；无真实浏览器验收。 |
 | 真实 API | **部分**：OpenRouter 模型列表真实；阿里云百炼真实单场+画像通过；其余生成阻塞（无 Key）。 |
 | 全量测试 | **562 passed / 0 failed**（2026-11-11，约 98 秒）。 |
-| EXE | **已构建 v0.13.0（包含 Session/Memory 元数据组装、both 映射、报告画像关联修复）**（91.5 MB / 166 assets / SHA-256 `32f947ad55af5d6662e6fdb740438a8f19f677c36c0a9eaffa4b2b6371d50654` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
+| EXE | **已构建 v0.13.0（包含 Session/Memory 元数据组装、both 映射、报告画像关联、三语错误修复）**（91.5 MB / 166 assets / SHA-256 `d2cecf95b3a410b4fb3c4f479c8f04e225e355227c4f01485861e8c21c1281b9` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 
