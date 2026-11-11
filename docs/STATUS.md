@@ -312,8 +312,8 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 5. 构建结果（如实）
 
 - **v0.13.0 已重新构建 EXE**：`node scripts/build-windows.mjs` 成功。
-  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `d775c1c64f19bbc5ed57`
-  - SHA-256 `5aa56f9d5c7548baaf8d30a2d4319d625b2bee48295d23cc5e01588d151d1156`
+  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `47945a876f4d27c10f4c`
+  - SHA-256 `1825188a64af3ee219a10ba48a808db27a6e2f94f9a14a8a1ee13a0beca3f5f9`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。
