@@ -16,7 +16,7 @@
 | 三语 UI | **已实现静态键与页面**；无真实浏览器验收。 |
 | 真实 API | **部分**：OpenRouter 模型列表真实；生成请求全部阻塞（无 Key）。不得声称 Provider 已通过真实生成测试。 |
 | 全量测试 | **561 passed / 0 failed**（2026-11-11，约 73 秒）。 |
-| EXE | **已构建 v0.13.0（包含入口修复）**（91.5 MB / 166 assets / SHA-256 `3008ddebe0f777f9c8f3120e3752b20c0584770a1cf73adae56bb0c27d8b2325` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
+| EXE | **已构建 v0.13.0（包含入口、状态与模型预设修复）**（91.5 MB / 166 assets / SHA-256 `19eac42ad747393fa0974420533456c3eb833d26a9b8ff814839e88a4d64aae8` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 
