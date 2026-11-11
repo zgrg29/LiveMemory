@@ -367,6 +367,9 @@ export async function renderProviderSettingsCard(ctx) {
     providerSelect.value = config.providerId;
     syncRegions();
     regionSelect.value = config.regionId;
+    // Rebuild the preset list for the saved region without applying the first
+    // preset (that would overwrite the saved model and price).
+    syncPresets({apply: false});
     const provider = selectedProvider();
     const region = provider?.regions?.find((entry) => entry.id === config.regionId);
     baseUrlInput.value = config.baseUrl || region?.baseUrl || '';

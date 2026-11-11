@@ -415,9 +415,9 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 5. 构建结果（如实）
 
 - **v0.13.1 已重新构建 EXE**：`node scripts/build-windows.mjs` 输出 `Built dist/LiveMemory.exe`。
-  - 大小 **95,905,792 bytes（91.5 MB）**
-  - SHA-256 `97bb80cd0c892b09fe3b20248c2bc6b2178f9530de80fc1778988c4f12d100b4`
-  - 资源 **164 个**，资源哈希 `bcf907ee13bdd308de37`
+  - 大小 **95,906,304 bytes（91.5 MB）**
+  - SHA-256 `ba917c52c3b4c3cb322ea449b24a600b4de96b6399877cd9d69aa37c2d37f480`
+  - 资源 **164 个**，资源哈希 `48ade9dbebb817f08a75`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。
