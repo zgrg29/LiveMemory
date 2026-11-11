@@ -38,8 +38,8 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
   await t.test('status reports import support and the current schema', async () => {
     const {payload} = await jsonRequest(`${base}api/status`);
     assert.equal(payload.ai.import, true);
-    assert.equal(payload.ai.schemaVersion, '1.2.0');
-    assert.equal(payload.database.schemaVersion, 12);
+    assert.equal(payload.ai.schemaVersion, '1.3.0');
+    assert.equal(payload.database.schemaVersion, 13);
   });
 
   let job;

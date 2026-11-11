@@ -739,3 +739,34 @@ duration ≈ 25.0s
 - Windows EXE 启动、出站请求、代理/防火墙/UAC。
 - 1000+ 观众真实免费接口的耗时与限流；本轮未做高频压力测试。
 - 新 `session.duration_seconds` 规则的真实汇总效果（未重新跑新包汇总）。
+
+## 26. v0.13.0 单场/画像拆分与多 Provider
+
+### 26.1 权限
+
+- 手动 session：单包无 memory 文件；导入 `viewer_memory_updates` 非空被拒绝。
+- 匿名免费：只接受 `mode=session`；不自动调用付费模型。
+- API 免费：`api_free` 配置的 memory 请求返回 `AI_MEMORY_PERMISSION_DENIED`。
+- 付费：无 `confirmBilling` → 400；无 `optInMemory`/`capabilities.memory` → 403。
+- 单场成功/画像失败：session result 保留，status=partial；已导入画像批次保留。
+- 预算：预计费用超过上限时在请求前停止，`ANALYSIS_BUDGET_EXCEEDED`且请求数=0。
+
+### 26.2 Provider
+
+- `tests/unit/v13-providers.test.mjs`：区域目录、OpenRouter free/paid/unknown、URL 私网/元数据、密钥加密与区域轮换、六层能力检测、OpenAI/Anthropic 协议差异、模型列表规范化。
+- `tests/integration/v13-session-split.test.mjs`：Provider 公开目录、非法 URL/缺 Key、权限门。
+- 真实 OpenRouter `/api/v1/models`：469 models / 15 free / 396 structured（2026-11-11）。
+- 其他真实 Provider 生成：**阻塞，无 Key**。
+
+### 26.3 任务与恢复
+
+- `tests/integration/v13-memory-job.test.mjs`：memory-only 结果更新记忆，报告不显示为单场报告。
+- `tests/integration/v13-memory-batches.test.mjs`：52 观众 / 99 消息 → 6 批；逐批导入 partial → complete，52/52 覆盖。
+- `tests/integration/v13-api-runner.test.mjs`：Mock Provider 单场、付费画像、预算阻断。
+- 既有 v0.12.1 auto 测试继续覆盖错误 JSON、截断、429/超时/5xx、缺观众/未知 ID/重复导入。
+
+### 26.4 UI
+
+- 三语字典键一致、无空值/占位符不一致。
+- AI 页面无 `innerHTML`；Provider 设置卡无明文 Key 回显。
+- 未在真实浏览器验收；EXE 未重建。

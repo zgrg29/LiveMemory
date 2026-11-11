@@ -431,6 +431,7 @@ export function buildInstructions(locale, context = {}) {
   const rules = RULES[locale] ?? RULES.en;
   const labels = rules.labels;
   const {session = null, batch = null, aggregate = null} = context;
+  const schemaVersion = context.schemaVersion ?? '1.2.0';
   const lines = [];
   lines.push(`# ${rules.title}`);
   lines.push('');
@@ -493,7 +494,7 @@ export function buildInstructions(locale, context = {}) {
   lines.push('');
   lines.push('<!-- livememory:shape -->');
   lines.push('```json');
-  lines.push(JSON.stringify(SCHEMA_OUTLINE, null, 2));
+  lines.push(JSON.stringify({...SCHEMA_OUTLINE, schema_version: schemaVersion}, null, 2));
   lines.push('```');
   lines.push('<!-- /livememory:shape -->');
   lines.push('');
@@ -528,7 +529,7 @@ export function buildInstructions(locale, context = {}) {
     lines.push(labels.returnNow);
     lines.push('');
   }
-  return lines.join('\n');
+  return lines.join('\n').replaceAll(RESULT_SCHEMA_VERSION, schemaVersion);
 }
 
 export function instructionLocales() {

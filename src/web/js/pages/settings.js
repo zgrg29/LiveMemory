@@ -2,6 +2,7 @@ import {api} from '../api.js';
 import {createModal} from '../dialog.js';
 import {localeDisplayName} from '../i18n.js';
 import {el, formatBytes, formatInteger, pageHead} from '../ui.js';
+import {renderProviderSettingsCard} from './ai-settings.js';
 
 /**
  * Settings: language, appearance, storage mode, data facts and about.
@@ -269,7 +270,13 @@ export const settingsPage = {
           defRow(t('settings.about.language'), localeDisplayName(ctx.state.locale)),
           defRow(t('settings.about.theme'), `${t(`settings.theme.${ctx.state.settings.theme}`)} · ${document.documentElement.getAttribute('data-theme')}`))));
 
-    grid.append(languageCard, themeCard, storageCard, youtubeCard, dataLocationCard, dangerCard, aboutCard);
+    let providerCard = null;
+    try {
+      providerCard = await renderProviderSettingsCard(ctx);
+    } catch {
+      // Settings must still render if the optional provider service is down.
+    }
+    grid.append(...[languageCard, themeCard, storageCard, providerCard, youtubeCard, dataLocationCard, dangerCard, aboutCard].filter(Boolean));
     return undefined;
   }
 };

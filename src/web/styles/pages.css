@@ -2664,3 +2664,46 @@
     justify-content: flex-start;
   }
 }
+
+/* v0.13 provider configurations */
+.provider-config {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.provider-config:last-child {
+  border-bottom: 0;
+}
+
+.provider-config-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.provider-config-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.provider-config .inline {
+  flex-wrap: wrap;
+}
+
+.auto-panel .choice {
+  margin-top: 8px;
+}
+
+@media (max-width: 700px) {
+  .provider-config-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

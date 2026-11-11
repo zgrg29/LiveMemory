@@ -8,6 +8,15 @@
  * deleted broadcast.
  */
 
+function parseJson(value) {
+  if (typeof value !== 'string' || value === '') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function mapJob(row) {
   if (!row) return null;
   return {
@@ -22,6 +31,16 @@ function mapJob(row) {
     maxMessages: Number(row.max_messages ?? 0),
     totalMessages: Number(row.total_messages ?? 0),
     memoryViewersTotal: Number(row.memory_viewers_total ?? 0),
+    analysisMode: row.analysis_mode ?? 'combined',
+    providerConfigId: row.provider_config_id ?? null,
+    providerId: row.provider_id ?? null,
+    regionId: row.region_id ?? null,
+    modelId: row.model_id ?? null,
+    pricingStatus: row.pricing_status ?? null,
+    budget: parseJson(row.budget_json),
+    costEstimate: parseJson(row.cost_estimate_json),
+    usage: parseJson(row.usage_json),
+    requestedBy: row.requested_by ?? null,
     legacy: row.legacy === 1,
     aggregatePackageId: row.aggregate_package_id ?? null,
     aggregateTaskId: row.aggregate_task_id ?? null,
@@ -63,6 +82,16 @@ export function insertJob(db, {
   maxMessages = 1000,
   totalMessages = 0,
   memoryViewersTotal = 0,
+  analysisMode = 'combined',
+  providerConfigId = null,
+  providerId = null,
+  regionId = null,
+  modelId = null,
+  pricingStatus = null,
+  budget = null,
+  costEstimate = null,
+  usage = null,
+  requestedBy = null,
   legacy = false,
   aggregateTaskId = null,
   createdAt = Date.now()
@@ -71,8 +100,10 @@ export function insertJob(db, {
     INSERT INTO ai_jobs (
       id, session_id, broadcaster_id, kind, locale, prompt_version, protocol_version,
       batch_total, max_messages, total_messages, memory_viewers_total, legacy, aggregate_task_id,
+      analysis_mode, provider_config_id, provider_id, region_id, model_id, pricing_status,
+      budget_json, cost_estimate_json, usage_json, requested_by,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     String(id),
     String(sessionId),
@@ -87,6 +118,16 @@ export function insertJob(db, {
     Number(memoryViewersTotal),
     legacy ? 1 : 0,
     aggregateTaskId === null || aggregateTaskId === undefined ? null : String(aggregateTaskId),
+    String(analysisMode ?? 'combined'),
+    providerConfigId === null || providerConfigId === undefined ? null : String(providerConfigId),
+    providerId === null || providerId === undefined ? null : String(providerId),
+    regionId === null || regionId === undefined ? null : String(regionId),
+    modelId === null || modelId === undefined ? null : String(modelId),
+    pricingStatus === null || pricingStatus === undefined ? null : String(pricingStatus),
+    budget ? JSON.stringify(budget) : null,
+    costEstimate ? JSON.stringify(costEstimate) : null,
+    usage ? JSON.stringify(usage) : null,
+    requestedBy === null || requestedBy === undefined ? null : String(requestedBy),
     Number(createdAt),
     Number(createdAt)
   );
@@ -146,6 +187,26 @@ export function clearJobFailure(db, jobId, {now = Date.now()} = {}) {
        SET last_error_at = NULL, last_error_code = NULL, last_error_json = NULL, updated_at = ?
      WHERE id = ?
   `).run(Number(now), String(jobId));
+}
+
+export function setJobUsage(db, jobId, usage, {costEstimate = null, now = Date.now()} = {}) {
+  db.prepare(`
+    UPDATE ai_jobs
+       SET usage_json = ?, cost_estimate_json = COALESCE(?, cost_estimate_json), updated_at = ?
+     WHERE id = ?
+  `).run(
+    usage ? JSON.stringify(usage) : null,
+    costEstimate ? JSON.stringify(costEstimate) : null,
+    Number(now),
+    String(jobId)
+  );
+  return getJob(db, jobId);
+}
+
+export function setJobAnalysisMode(db, jobId, mode, {now = Date.now()} = {}) {
+  db.prepare('UPDATE ai_jobs SET analysis_mode = ?, updated_at = ? WHERE id = ?')
+    .run(String(mode), Number(now), String(jobId));
+  return getJob(db, jobId);
 }
 
 export function insertJobBatch(db, {

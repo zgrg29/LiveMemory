@@ -1,7 +1,7 @@
 # AI 文件往返协议（AI_CONTRACT）
 
-版本：**0.12.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.2.0**（兼容 1.0.0 / 1.1.0） · 提示词版本 **`lm-prompt-m6.3-<locale>`**
+版本：**0.13.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13-session-<locale>` / `lm-prompt-v13-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`）
 
 ## 1. 原则
 
@@ -667,3 +667,75 @@ UI 首屏只显示固定红色文案；上述错误码与脱敏 detail 只在「
 - 旧分析包仍可导入；旧自动任务因提示词版本不匹配不会被复用（会创建新任务，旧任务保留）。
 - 旧 1.0.0 / 1.1.0 结果仍接受；手动粘贴的完整 Schema 1.2.0 结果仍走原有校验。
 - 自动模式仍只使用 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过真实包验证的 provider。
+
+## 13. v0.13.0 单场 / 长期画像拆分与多 Provider
+
+### 13.1 任务类型
+
+| 任务 | `ai_jobs.analysis_mode` | 结果 `analysis_scope` | 内容 |
+| --- | --- | --- | --- |
+| 单场报告 | `session` | `session` | `session_topics`；不得有 `viewer_memory_updates` |
+| 长期画像 | `memory` | `viewer_memory` | `viewer_memory_updates`；不得有 `viewer_profiles`/单场报告 |
+| 旧合并任务 | `combined` | 缺省（Schema 1.2.0） | 历史兼容；新 UI 不再创建 |
+
+- 单场任务导入不执行任何长期记忆写入。`applyMemorySideEffects()` 在 `analysis_mode=session` 时跳过。
+- 画像任务写入 `ai_results.analysis_mode='memory'`；报告读模型按 `ai_jobs.analysis_mode` 排除，不能覆盖单场报告。
+- `both` = 两个独立 job；单场先导入，画像失败只把运行状态标为 `partial`，已导入批次保留。
+
+### 13.2 Session-only 分析包
+
+`stage=session`，单文件包，包含：
+
+```text
+manifest.json
+session_context.json
+messages.jsonl
+instructions.md
+result.schema.json
+```
+
+不包含 `memory_context.json` / `viewer_excerpts.jsonl` / 全量 `viewer_context.json`；不再要求 `viewer_profiles` 或 `viewer_memory_updates`。
+
+### 13.3 Memory-only 分析包
+
+`stage=memory`，每批包含：
+
+```text
+manifest.json
+session_context.json
+memory_context.json
+viewer_excerpts.jsonl
+instructions.md
+result.schema.json
+```
+
+- 每人只属于一个批次；默认 10–25 位/批（由 Provider 决定），最多 30 批；超出明确失败，不静默裁剪。
+- 模型只返回 `ref`；本地映射稳定 `viewer_id`，再走 `validateAnalysisImport()` + `importAnalysisResult()`。
+- 缺少 ref 时只做一次有界定向补充；仍缺即失败。
+
+### 13.4 Schema 1.3.0
+
+- 新增必填 `schema_version="1.3.0"` 与 `analysis_scope`。
+- `session_topics`、`viewer_profiles`、`viewer_memory_updates` 均为可选字段，由任务类型在业务校验中强制。
+- `session` 任务：必须有 `session_topics`；`viewer_memory_updates` 非空 → `SESSION_MEMORY_FORBIDDEN`。
+- `memory` 任务：必须有 `viewer_memory_updates`；`viewer_profiles` → `MEMORY_PROFILES_FORBIDDEN`。
+- 旧 1.0.0 / 1.1.0 / 1.2.0 继续使用原 Schema/原业务规则；不强制 `analysis_scope`。
+
+### 13.5 Provider API 权限
+
+- 手动和匿名免费只能创建 `session` 任务。
+- `api_free` 配置只能创建 `session` 任务。
+- `memory` / `both` 必须满足：`pricingStatus=paid`、`pricing` 已知、`capabilities.session=true`、`capabilities.memory=true`、`optInMemory=true`、`consent=true`。
+- `paid`/`unknown` 请求前必须 `confirmBilling=true`；未知价格不得当免费。
+- 预算以配置价格币种为准；币种不一致时不声称可估算。
+
+### 13.6 能力检测
+
+分阶段记录：network / auth / text / json / session / memory。`memory` 探针包含 3 位 ref、混合语言、1 位零发言、证据归属；只有全部满足才写入 `capabilities.memory=true`。检测结果附 provider/region/model/time，并在配置变化时失效。
+
+### 13.7 安全
+
+- API Key 仅存加密凭据库；配置 JSON 保存 `credentialReference`。
+- 区域/Base URL 变化轮换 credentialReference。
+- 自定义 URL 拒绝云元数据/私网/localhost（除非显式 allowLocalNetwork），请求前做 DNS 检查。
+- 不记录 prompt/回答/聊天正文到日志或状态文件。

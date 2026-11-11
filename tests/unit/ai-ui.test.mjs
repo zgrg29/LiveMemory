@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const read = (relative) => readFileSync(join(root, relative), 'utf8');
 
 test('AI pages never inject HTML or execute AI content', () => {
-  for (const file of ['src/web/js/pages/ai.js', 'src/web/js/pages/ai-report.js', 'src/web/js/pages/history.js']) {
+  for (const file of ['src/web/js/pages/ai.js', 'src/web/js/pages/ai-report.js', 'src/web/js/pages/history.js', 'src/web/js/pages/ai-settings.js']) {
     const source = read(file);
     assert.doesNotMatch(source, /\.innerHTML\s*=/, `${file} must not assign innerHTML`);
     assert.doesNotMatch(source, /insertAdjacentHTML/, `${file} must not use insertAdjacentHTML`);

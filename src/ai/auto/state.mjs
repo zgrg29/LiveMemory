@@ -10,8 +10,8 @@ import {join} from 'node:path';
  * the console explain what happened and resume the same job after a restart.
  */
 export class AutoAnalysisState {
-  constructor({runtimeDir, now = Date.now}) {
-    this.file = join(runtimeDir, 'ai-auto.json');
+  constructor({runtimeDir, now = Date.now, fileName = 'ai-auto.json'}) {
+    this.file = join(runtimeDir, fileName);
     this.now = now;
     this.data = {version: 1, sessions: {}};
     this.load();

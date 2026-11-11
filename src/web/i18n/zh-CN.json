@@ -918,6 +918,136 @@
       "lowConfidenceShort": "低",
       "sampleSize": "{n} 条样本",
       "clipNoticeTitle": "关于这些候选片段"
+    },
+    "v13": {
+      "method": {
+        "label": "分析方式",
+        "manual": "手动 AI（不需要 API Key）",
+        "anonymous": "免费匿名 AI（实验性）",
+        "api": "已配置的 API 模型",
+        "startAnonymous": "开始免费匿名分析",
+        "startApi": "开始 API 分析"
+      },
+      "scope": {
+        "label": "分析内容",
+        "session": "仅单场直播",
+        "memory": "仅观众长期画像",
+        "both": "单场直播 + 长期画像"
+      },
+      "config": {
+        "label": "API 配置",
+        "openSettings": "前往设置添加 API 配置",
+        "none": "尚未配置 API 模型，请先在设置中添加。"
+      },
+      "budget": {
+        "label": "单任务预算上限",
+        "hint": "留空表示不限制。仅在价格与币种已知时执行保护。",
+        "placeholder": "例如 0.50"
+      },
+      "billing": {
+        "confirm": "我确认此模型可能产生费用",
+        "hint": "费用未知或付费模型必须明确确认后才会发出请求。"
+      },
+      "memory": {
+        "optIn": "我明确开启长期观众画像",
+        "optInHint": "长期画像需要付费模型、价格信息和通过长期画像能力验证；不会自动分析全部历史观众。"
+      },
+      "price": {
+        "unknown": "费用未知",
+        "free": "免费模型",
+        "anonymousFree": "匿名免费",
+        "paid": "付费模型",
+        "manual": "手动模式不调用 API",
+        "paidValue": "输入 {input} / 输出 {output} {currency} 每百万 token",
+        "status": "费用状态"
+      },
+      "run": {
+        "title": "创建分析任务",
+        "body": "手动、匿名免费或使用你配置的 API。单场报告与长期画像分别保存。",
+        "badge": "v0.13",
+        "pause": "暂停",
+        "resume": "继续",
+        "progress": "批次 {done}/{total}",
+        "sessionDone": "单场报告已完成",
+        "memoryDone": "长期画像已完成",
+        "partial": "单场报告已完成，长期画像未完成；已完成的画像批次仍然有效。",
+        "usageCost": "已知费用约 {amount} {currency}",
+        "usageTokens": "已知用量：输入 {input} / 输出 {output} tokens"
+      },
+      "stage": {
+        "preparing": "准备数据",
+        "packagingSession": "生成本场分析包",
+        "sessionAnalyzing": "分析单场直播",
+        "sessionImporting": "验证并保存单场报告",
+        "sessionDone": "单场报告已保存",
+        "packagingMemory": "生成观众画像批次",
+        "memoryAnalyzing": "更新观众画像（批次 {index}/{total}）",
+        "memoryImporting": "验证并保存画像批次",
+        "memoryBatchDone": "画像批次完成",
+        "memoryDone": "长期画像已完成",
+        "resuming": "恢复任务",
+        "paused": "已暂停"
+      },
+      "consent": {
+        "title": "发送数据前确认",
+        "body": "本次分析会把当前场次的聊天、统计和（如选择）相关观众记忆发送给你选择的 AI 服务。数据不经过 LiveMemory 开发者服务器。",
+        "hint": "你可以随时取消；已成功保存的单场报告或画像批次不会被删除。"
+      },
+      "providers": {
+        "title": "AI API 配置",
+        "hint": "密钥加密保存在本机",
+        "desc": "支持 OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter 与自定义 OpenAI-compatible 服务。",
+        "empty": "尚未配置任何 API。",
+        "default": "默认",
+        "makeDefault": "设为默认",
+        "test": "检测能力",
+        "testing": "检测中…",
+        "testDone": "能力检测：{status}",
+        "keyStored": "密钥已保存",
+        "noKey": "无密钥",
+        "delete": "删除",
+        "deleteTitle": "删除此 API 配置？",
+        "addTitle": "添加 API 配置",
+        "provider": "服务商",
+        "region": "区域 / 平台",
+        "baseUrl": "Base URL",
+        "apiKey": "API Key",
+        "keyHint": "密钥只写入加密存储，不会显示在配置 JSON、日志或页面中。",
+        "model": "模型 ID",
+        "modelPlaceholder": "输入 Model ID，或从官方模型列表选择",
+        "loadModels": "从官方接口获取模型列表",
+        "noModels": "该服务未提供模型列表，请手动输入。",
+        "pricingStatus": "费用状态",
+        "currency": "币种",
+        "inputPrice": "输入价格 / 百万 token",
+        "outputPrice": "输出价格 / 百万 token",
+        "localTitle": "允许访问本机/局域网模型服务",
+        "localDesc": "仅在你明确运行本地模型时勾选；这会跳过私网地址拦截。",
+        "security": "API Key 不会写入普通配置 JSON、日志、分析 ZIP、数据库导出或前端 HTML。更换区域或 Base URL 会要求重新输入密钥。",
+        "save": "保存配置",
+        "saved": "配置已保存。",
+        "testStatus": {
+          "untested": "未检测",
+          "running": "检测中",
+          "passed": "已通过",
+          "failed": "失败",
+          "partial": "部分通过"
+        }
+      },
+      "capability": {
+        "memory": "能力：单场 + 长期画像",
+        "session": "能力：单场分析",
+        "failed": "能力检测失败",
+        "untested": "尚未通过能力检测"
+      },
+      "test": {
+        "chargeTitle": "能力检测可能产生费用",
+        "chargeBody": "检测会发送多个小型真实请求，可能产生 API 费用。是否继续？",
+        "chargeContinue": "继续检测"
+      },
+      "manual": {
+        "create": "创建手动分析包"
+      }
     }
   },
   "settings": {
@@ -1172,7 +1302,22 @@
     "monitorTargetRecording": "本场仍在记录，请先停止记录再删除监听目标。",
     "monitorTargetPaused": "监听已暂停，请先恢复监听。",
     "monitoringDisabled": "自动监听当前不可用。",
-    "aiAnalysisTooManyViewers": "本场可识别观众过多，无法在单个分析任务中完整覆盖。上限：{limit}。"
+    "aiAnalysisTooManyViewers": "本场可识别观众过多，无法在单个分析任务中完整覆盖。上限：{limit}。",
+    "aiProviderConfigInvalid": "API 配置无效。",
+    "aiConsentRequired": "需要先确认发送数据。",
+    "aiSpendConfirmationRequired": "请确认该模型可能产生费用。",
+    "aiMemoryPermissionDenied": "长期画像需要付费模型、价格信息和通过长期画像能力验证。",
+    "aiCapabilityRequired": "该模型尚未通过单场分析能力验证。",
+    "aiPaidModelRequired": "长期画像只允许付费模型。",
+    "aiProviderConfigNotFound": "找不到该 API 配置。",
+    "aiProviderModelRequired": "请选择模型 ID。",
+    "aiAlreadyRunning": "该场次已有分析任务在运行。",
+    "aiNothingToResume": "没有可恢复的任务。",
+    "aiBudgetExceeded": "已达到单任务预算上限，后续请求已停止。",
+    "aiAnalysisDenied": "该分析请求未被允许。",
+    "aiProviderUnavailable": "API 配置服务不可用。",
+    "aiProviderModelsFailed": "无法从服务商获取模型列表。",
+    "aiBudgetInvalid": "预算格式无效。"
   },
   "toast": {
     "saved": "已保存",

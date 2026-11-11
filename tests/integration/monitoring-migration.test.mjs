@@ -68,8 +68,8 @@ test('a v10 database upgrades to v11 keeping existing broadcasts unchanged', () 
 
     const result = migrate(db, {now: T0 + 1000});
     assert.equal(result.from, 10);
-    assert.equal(result.to, 12);
-    assert.deepEqual(result.applied, [11, 12]);
+    assert.equal(result.to, 13);
+    assert.deepEqual(result.applied, [11, 12, 13]);
 
     const columns = db.prepare('PRAGMA table_info(sessions)').all().map((row) => row.name);
     assert.ok(columns.includes('monitor_target_id'));
@@ -99,8 +99,8 @@ test('a v10 database upgrades to v11 keeping existing broadcasts unchanged', () 
 
     // Re-running the migration is a no-op (no column/table duplication).
     const again = migrate(db, {now: T0 + 2000});
-    assert.equal(again.from, 12);
-    assert.equal(again.to, 12);
+    assert.equal(again.from, 13);
+    assert.equal(again.to, 13);
     assert.deepEqual(again.applied, []);
     assert.equal(listMonitorTargets(db).length, 1);
   } finally {
@@ -108,12 +108,12 @@ test('a v10 database upgrades to v11 keeping existing broadcasts unchanged', () 
   }
 });
 
-test('a fresh database is created directly at v12', () => {
+test('a fresh database is created directly at v13', () => {
   const db = openDatabase({memory: true});
   try {
     const result = migrate(db, {now: T0});
     assert.equal(result.from, 0);
-    assert.equal(result.to, 12);
+    assert.equal(result.to, 13);
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'monitor_targets'").get());
     assert.ok(db.prepare('PRAGMA table_info(sessions)').all().some((row) => row.name === 'monitor_target_id'));
   } finally {

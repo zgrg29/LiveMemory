@@ -1,4 +1,5 @@
 import {writeFileSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {openDatabase, closeDatabase} from '../storage/database/connection.mjs';
 import {migrate} from '../storage/database/migrations/index.mjs';
 import {createPaths, ensureDirectories, assertWritable} from './paths.mjs';
@@ -9,6 +10,8 @@ import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {AutoAnalysisRunner} from '../ai/auto/runner.mjs';
+import {ProviderConfigStore} from '../ai/providers/store.mjs';
+import {AnalysisRunner} from '../ai/api/runner.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
@@ -126,7 +129,34 @@ export async function startServer({
       now,
       ...(auto ?? {})
     });
-    return {paths, db, settingsStore, sessionManager, bilibili, youtube, monitoring, auto: autoAnalysis, recovered, migration};
+    const providerConfigStore = new ProviderConfigStore({
+      configFile: join(paths.config, 'ai-providers.json'),
+      secretsDir: paths.secrets,
+      now
+    });
+    providerConfigStore.load();
+    const analysisRunner = new AnalysisRunner({
+      db,
+      paths,
+      configStore: providerConfigStore,
+      logger,
+      now,
+      ...(auto ?? {})
+    });
+    return {
+      paths,
+      db,
+      settingsStore,
+      sessionManager,
+      bilibili,
+      youtube,
+      monitoring,
+      auto: autoAnalysis,
+      providerConfigStore,
+      analysisRunner,
+      recovered,
+      migration
+    };
   }
 
   async function stopAdapters(instance) {
@@ -143,6 +173,11 @@ export async function startServer({
       await instance.auto?.shutdown();
     } catch (error) {
       logger?.error({event: 'shutdown.auto.failed', code: error?.code ?? 'unknown'});
+    }
+    try {
+      await instance.analysisRunner?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.analysis.failed', code: error?.code ?? 'unknown'});
     }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
@@ -169,6 +204,8 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
     get auto() { return runtime.auto; },
+    get providerConfigStore() { return runtime.providerConfigStore; },
+    get analysisRunner() { return runtime.analysisRunner; },
     get maintenance() { return state.maintenance; },
     set maintenance(value) { state.maintenance = Boolean(value); },
     hub,
@@ -294,6 +331,8 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
     get auto() { return runtime.auto; },
+    get providerConfigStore() { return runtime.providerConfigStore; },
+    get analysisRunner() { return runtime.analysisRunner; },
     get runtime() { return runtime; },
     get deps() { return deps; },
     hub,

@@ -127,18 +127,21 @@ export function importAnalysisResult({
       resultVersion,
       source,
       resultJson: JSON.stringify(validation.sanitized),
+      analysisMode: job.analysisMode ?? 'combined',
       evidenceTotal: validation.evidenceRows.length,
       evidenceMissing: missingEvidence,
       importedAt: now
     });
     insertEvidence(db, resultId, validation.evidenceRows);
-    applyMemorySideEffects({
-      db,
-      job,
-      validation,
-      resultId,
-      now
-    });
+    if ((job.analysisMode ?? 'combined') !== 'session') {
+      applyMemorySideEffects({
+        db,
+        job,
+        validation,
+        resultId,
+        now
+      });
+    }
     clearJobFailure(db, job.id, {now});
     recomputeSessionAiStatus(db, job.sessionId, {setSessionAiStatus, listJobs, now});
     return {duplicate: false, result: getResult(db, resultId, {includeJson: true})};

@@ -849,6 +849,50 @@ export const MIGRATIONS = Object.freeze([
         -- derived lazily from ai_job_viewers (objective update only).
       `);
     }
+  },
+  {
+    version: 13,
+    name: 'split-session-analysis-and-viewer-memory',
+    up(db) {
+      // v0.13.0 separates the single-session report from long-term viewer
+      // memory. Old jobs keep `combined` so historical reports remain readable.
+      // Provider details are a snapshot on the job: changing the default config
+      // later must not rewrite what an in-flight task is actually using.
+      db.exec("ALTER TABLE ai_jobs ADD COLUMN analysis_mode TEXT NOT NULL DEFAULT 'combined'");
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN provider_config_id TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN provider_id TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN region_id TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN model_id TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN pricing_status TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN budget_json TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN cost_estimate_json TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN usage_json TEXT');
+      db.exec('ALTER TABLE ai_jobs ADD COLUMN requested_by TEXT');
+      db.exec("ALTER TABLE ai_results ADD COLUMN analysis_mode TEXT NOT NULL DEFAULT 'combined'");
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_ai_jobs_mode
+          ON ai_jobs (session_id, analysis_mode, created_at DESC);
+      `);
+      // Capability results are an audit trail. The effective capability set is
+      // also stored on the config, but this table records what was tested,
+      // against which model/region and when, even after a config is deleted.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_provider_tests (
+          id TEXT PRIMARY KEY,
+          config_id TEXT,
+          provider_id TEXT NOT NULL,
+          region_id TEXT NOT NULL,
+          model_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          capabilities_json TEXT NOT NULL,
+          stages_json TEXT NOT NULL,
+          duration_ms INTEGER,
+          tested_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_provider_tests_config
+          ON ai_provider_tests (config_id, tested_at DESC);
+      `);
+    }
   }
 ]);
 

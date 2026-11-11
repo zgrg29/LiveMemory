@@ -42,7 +42,6 @@ import {
   MEMORY_VIEWERS_PER_BATCH,
   MIN_BATCH_MESSAGES,
   RESULT_PROTOCOL,
-  RESULT_SCHEMA_VERSION,
   TASK_KIND,
   aggregateTaskId,
   batchTaskId,
@@ -57,6 +56,9 @@ import {
 import {getMemory} from '../../storage/repositories/viewer-memory.mjs';
 
 const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.schema.json', import.meta.url));
+// The combined job path is retained for backward compatibility (old bookmarks,
+// old jobs). New v0.13 tasks use the split session/memory jobs and schema 1.3.
+const COMBINED_SCHEMA_VERSION = '1.2.0';
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -382,7 +384,7 @@ export async function createAnalysisJob({
           id: jobId,
           prompt_version: promptVersion,
           locale,
-          schema_version: RESULT_SCHEMA_VERSION
+          schema_version: COMBINED_SCHEMA_VERSION
         },
         batch: {
           index,
@@ -427,7 +429,7 @@ export async function createAnalysisJob({
           id: jobId,
           prompt_version: promptVersion,
           locale,
-          schema_version: RESULT_SCHEMA_VERSION
+          schema_version: COMBINED_SCHEMA_VERSION
         },
         batch: {
           index,
@@ -454,7 +456,7 @@ export async function createAnalysisJob({
       const manifest = {
         protocol: ANALYSIS_PROTOCOL,
         result_protocol: RESULT_PROTOCOL,
-        schema_version: RESULT_SCHEMA_VERSION,
+        schema_version: COMBINED_SCHEMA_VERSION,
         created_at: isoFromEpochMs(now),
         app: {name: APP_NAME, version: APP_VERSION},
         locale,
@@ -518,6 +520,7 @@ export async function createAnalysisJob({
         jobId,
         taskId,
         promptVersion,
+        schemaVersion: COMBINED_SCHEMA_VERSION,
         memory: {
           viewerCount: memoryViewerIds.length,
           viewersTotal: stableViewers.length,
@@ -780,7 +783,7 @@ export async function buildAggregatePackage({
     protocol: ANALYSIS_PROTOCOL,
     generated_at: isoFromEpochMs(now),
     ...baseContext,
-    job: {id: jobId, prompt_version: promptVersion, locale, schema_version: RESULT_SCHEMA_VERSION},
+    job: {id: jobId, prompt_version: promptVersion, locale, schema_version: COMBINED_SCHEMA_VERSION},
     stage: 'aggregate',
     coverage,
     counts: {
@@ -810,13 +813,14 @@ export async function buildAggregatePackage({
     jobId,
     taskId,
     promptVersion,
+    schemaVersion: COMBINED_SCHEMA_VERSION,
     aggregate: {batchCount: batches.length}
   });
 
   const manifest = {
     protocol: ANALYSIS_PROTOCOL,
     result_protocol: RESULT_PROTOCOL,
-    schema_version: RESULT_SCHEMA_VERSION,
+    schema_version: COMBINED_SCHEMA_VERSION,
     created_at: isoFromEpochMs(now),
     app: {name: APP_NAME, version: APP_VERSION},
     locale,

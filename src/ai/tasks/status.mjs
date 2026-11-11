@@ -26,14 +26,27 @@ export function computeJobStatus(db, job) {
     .filter((batch) => !latestByBatch.has(batch.batchIndex))
     .map((batch) => batch.batchIndex);
   const importedBatches = batches.length - missingBatches.length;
-  const aggregateRequired = job.batchTotal > 1;
+  const analysisMode = job.analysisMode ?? 'combined';
+  const aggregateRequired = analysisMode === 'combined' && job.batchTotal > 1;
   const aggregateImported = Boolean(finalResult);
   const aggregatePackageReady = Boolean(job.aggregatePackageId);
   const memoryCoverage = jobMemoryCoverage(db, job.id);
-  const memoryReady = memoryCoverage.total === 0 || memoryCoverage.complete;
+  const memoryReady = analysisMode === 'session' || memoryCoverage.total === 0 || memoryCoverage.complete;
 
   let status;
-  if (finalResult && memoryReady) {
+  if (analysisMode !== 'combined') {
+    // Session and memory are independent tasks in v0.13. A session report does
+    // not need a memory aggregate; a memory job never overwrites the report.
+    if (job.batchTotal > 0 && importedBatches === batches.length && batches.length > 0 && memoryReady) {
+      status = 'complete';
+    } else if (importedBatches > 0) {
+      status = 'partial';
+    } else if (job.lastErrorAt) {
+      status = 'invalid';
+    } else {
+      status = 'awaiting_import';
+    }
+  } else if (finalResult && memoryReady) {
     status = 'complete';
   } else if (job.batchTotal === 1 && importedBatches === 1 && memoryReady) {
     status = 'complete';
@@ -68,6 +81,7 @@ export function computeJobStatus(db, job) {
     status,
     labelKey: `ai.job.status.${status}`,
     complete: status === 'complete',
+    analysisMode,
     batchTotal: job.batchTotal,
     batchesImported: importedBatches,
     missingBatches,

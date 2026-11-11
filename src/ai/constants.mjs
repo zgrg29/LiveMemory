@@ -11,10 +11,17 @@ export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
 export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 
 /** Revision of the result schema. 1.0.0 results (no schema_version) still validate. */
-export const RESULT_SCHEMA_VERSION = '1.2.0';
-export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0']);
+export const RESULT_SCHEMA_VERSION = '1.3.0';
+export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0', '1.3.0']);
 
 export const PROMPT_VERSION = 'lm-prompt-m6.3';
+export const PROMPT_VERSION_V13 = 'lm-prompt-v13';
+
+export const ANALYSIS_MODE = Object.freeze({
+  SESSION: 'session',
+  MEMORY: 'memory',
+  COMBINED: 'combined'
+});
 
 /**
  * Unified analysis + memory batching. A viewer is assigned to exactly one
@@ -27,8 +34,11 @@ export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
 
 export const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
 
-export function promptVersionFor(locale) {
-  return `${PROMPT_VERSION}-${SUPPORTED_LOCALES.includes(locale) ? locale : 'en'}`;
+export function promptVersionFor(locale, mode = ANALYSIS_MODE.COMBINED) {
+  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
+  const safeMode = Object.values(ANALYSIS_MODE).includes(mode) ? mode : ANALYSIS_MODE.COMBINED;
+  if (safeMode === ANALYSIS_MODE.COMBINED) return `${PROMPT_VERSION}-${safeLocale}`;
+  return `${PROMPT_VERSION_V13}-${safeMode}-${safeLocale}`;
 }
 
 /** Default and bounds for one analyzable batch. Configurable per job. */
@@ -45,6 +55,7 @@ export const MAX_REPORT_EVIDENCE = 400;
 export const TASK_KIND = Object.freeze({
   SESSION_ANALYSIS: 'session_analysis',
   SESSION_AGGREGATE: 'session_analysis_aggregate',
+  VIEWER_MEMORY: 'viewer_memory_analysis',
   LEGACY_TOPICS: 'session_topics',
   LEGACY_VIEWERS: 'viewer_profile_update'
 });

@@ -174,6 +174,7 @@ function jobSummary(db, job, {now = Date.now()} = {}) {
     batchTotal: job.batchTotal,
     totalMessages: job.totalMessages,
     maxMessages: job.maxMessages,
+    analysisMode: job.analysisMode ?? 'combined',
     legacy: job.legacy,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
@@ -199,11 +200,17 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
   const jobs = listJobs(db, {sessionId, limit: 50});
   const summaries = jobs.map((job) => jobSummary(db, job, {now}));
   const byId = new Map(jobs.map((job, index) => [job.id, summaries[index]]));
+  // Memory-only jobs are an independent task. Their result JSON has no session
+  // report and must never become the primary report (or be mistaken for one).
+  const reportJobs = jobs.filter((job) => (job.analysisMode ?? 'combined') !== 'memory');
+  const reportIds = new Set(reportJobs.map((job) => job.id));
 
-  // Prefer a complete job; otherwise the most recent job that has any result.
-  let primary = summaries.find((summary) => summary.complete) ?? null;
+  // Prefer a complete report job; otherwise the most recent report job that has
+  // any result.
+  let primary = summaries.find((summary) => reportIds.has(summary.id) && summary.complete) ?? null;
   if (!primary) {
     for (const summary of summaries) {
+      if (!reportIds.has(summary.id)) continue;
       const hasResult = summary.batchesImported > 0 || summary.aggregateImported;
       if (hasResult) {
         primary = summary;
@@ -211,7 +218,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
       }
     }
   }
-  if (!primary && summaries.length > 0) primary = summaries[0];
+  if (!primary && reportJobs.length > 0) primary = summaries.find((summary) => summary.id === reportJobs[0].id) ?? null;
   if (!primary) {
     return {
       session: {
@@ -225,11 +232,11 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
         simulated: session.simulated === 1,
         broadcasterIdentity: session.broadcaster_identity ?? 'unresolved'
       },
-      jobs: [],
+      jobs: summaries,
       primaryJob: null,
       mode: 'none',
       complete: false,
-      incompleteReason: 'no_task',
+      incompleteReason: summaries.length > 0 ? 'memory_only' : 'no_task',
       report: null,
       perBatch: [],
       localStats: null,
@@ -268,7 +275,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
   let incompleteReason = null;
   if (mode === 'exported' || mode === 'partial') {
     if (primary.missingBatches.length > 0) incompleteReason = 'missing_batches';
-    else if (job.batchTotal > 1) incompleteReason = 'awaiting_aggregate';
+    else if ((primary.analysisMode ?? 'combined') === 'combined' && job.batchTotal > 1) incompleteReason = 'awaiting_aggregate';
     else incompleteReason = 'no_results';
   }
 

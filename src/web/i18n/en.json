@@ -918,6 +918,136 @@
       "lowConfidenceShort": "low",
       "sampleSize": "{n} samples",
       "clipNoticeTitle": "About these suggestions"
+    },
+    "v13": {
+      "method": {
+        "label": "Analysis method",
+        "manual": "Manual AI (no API key)",
+        "anonymous": "Free anonymous AI (experimental)",
+        "api": "Configured API model",
+        "startAnonymous": "Start free anonymous analysis",
+        "startApi": "Start API analysis"
+      },
+      "scope": {
+        "label": "Analysis content",
+        "session": "Session report only",
+        "memory": "Long-term viewer profiles only",
+        "both": "Session report + long-term profiles"
+      },
+      "config": {
+        "label": "API configuration",
+        "openSettings": "Add an API configuration in Settings",
+        "none": "No API model configured yet. Add one in Settings."
+      },
+      "budget": {
+        "label": "Per-task budget",
+        "hint": "Leave empty for no limit. Protection applies only when price and currency are known.",
+        "placeholder": "e.g. 0.50"
+      },
+      "billing": {
+        "confirm": "I understand this model may charge me",
+        "hint": "Paid or unknown-pricing models require explicit confirmation before any request."
+      },
+      "memory": {
+        "optIn": "Explicitly enable long-term viewer profiles",
+        "optInHint": "Long-term profiles require a paid model with pricing and a passed memory capability test. Historical viewers are never analysed automatically."
+      },
+      "price": {
+        "unknown": "Pricing unknown",
+        "free": "Free model",
+        "anonymousFree": "Anonymous free",
+        "paid": "Paid model",
+        "manual": "Manual mode makes no API request",
+        "paidValue": "Input {input} / output {output} {currency} per million tokens",
+        "status": "Pricing status"
+      },
+      "run": {
+        "title": "Create an analysis task",
+        "body": "Manual, anonymous free, or your own API. The session report and long-term profiles are saved independently.",
+        "badge": "v0.13",
+        "pause": "Pause",
+        "resume": "Resume",
+        "progress": "Batch {done}/{total}",
+        "sessionDone": "Session report saved",
+        "memoryDone": "Long-term profiles complete",
+        "partial": "The session report is saved, but long-term profiles did not finish. Completed profile batches remain valid.",
+        "usageCost": "Known cost ≈ {amount} {currency}",
+        "usageTokens": "Known usage: input {input} / output {output} tokens"
+      },
+      "stage": {
+        "preparing": "Preparing data",
+        "packagingSession": "Building session package",
+        "sessionAnalyzing": "Analysing session",
+        "sessionImporting": "Validating and saving session report",
+        "sessionDone": "Session report saved",
+        "packagingMemory": "Building viewer profile batches",
+        "memoryAnalyzing": "Updating viewer profiles (batch {index}/{total})",
+        "memoryImporting": "Validating and saving profile batch",
+        "memoryBatchDone": "Profile batch complete",
+        "memoryDone": "Long-term profiles complete",
+        "resuming": "Resuming task",
+        "paused": "Paused"
+      },
+      "consent": {
+        "title": "Confirm before sending data",
+        "body": "This analysis sends the selected session chat, statistics and (if chosen) relevant viewer memory to the AI service you selected. Data does not pass through a LiveMemory developer server.",
+        "hint": "You can cancel at any time; already saved session reports or profile batches are not deleted."
+      },
+      "providers": {
+        "title": "AI API configurations",
+        "hint": "Keys are encrypted on this device",
+        "desc": "Supports OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter and custom OpenAI-compatible endpoints.",
+        "empty": "No API is configured yet.",
+        "default": "Default",
+        "makeDefault": "Make default",
+        "test": "Test capabilities",
+        "testing": "Testing…",
+        "testDone": "Capability test: {status}",
+        "keyStored": "Key stored",
+        "noKey": "No key",
+        "delete": "Delete",
+        "deleteTitle": "Delete this API configuration?",
+        "addTitle": "Add an API configuration",
+        "provider": "Provider",
+        "region": "Region / platform",
+        "baseUrl": "Base URL",
+        "apiKey": "API key",
+        "keyHint": "The key is written only to encrypted storage and never shown in config JSON, logs or HTML.",
+        "model": "Model ID",
+        "modelPlaceholder": "Enter a Model ID or load the official list",
+        "loadModels": "Load models from official API",
+        "noModels": "This provider has no model list; enter the ID manually.",
+        "pricingStatus": "Pricing status",
+        "currency": "Currency",
+        "inputPrice": "Input price / million tokens",
+        "outputPrice": "Output price / million tokens",
+        "localTitle": "Allow a local/LAN model service",
+        "localDesc": "Check only if you deliberately run a local model; this bypasses private-address blocking.",
+        "security": "API keys are never written to ordinary config JSON, logs, analysis ZIPs, database exports or frontend HTML. Changing region or Base URL requires a new key.",
+        "save": "Save configuration",
+        "saved": "Configuration saved.",
+        "testStatus": {
+          "untested": "untested",
+          "running": "testing",
+          "passed": "passed",
+          "failed": "failed",
+          "partial": "partial"
+        }
+      },
+      "capability": {
+        "memory": "Capability: session + long-term profiles",
+        "session": "Capability: session analysis",
+        "failed": "Capability test failed",
+        "untested": "No completed capability test"
+      },
+      "test": {
+        "chargeTitle": "Capability test may cost money",
+        "chargeBody": "The test sends several small real requests and may incur API charges. Continue?",
+        "chargeContinue": "Continue test"
+      },
+      "manual": {
+        "create": "Create manual analysis package"
+      }
     }
   },
   "settings": {
@@ -1172,7 +1302,22 @@
     "monitorTargetRecording": "This broadcast is still being recorded. Stop the recording before deleting the target.",
     "monitorTargetPaused": "Monitoring is paused. Resume it first.",
     "monitoringDisabled": "Automatic monitoring is not available.",
-    "aiAnalysisTooManyViewers": "This broadcast has too many identifiable viewers for one analysis task. Limit: {limit}."
+    "aiAnalysisTooManyViewers": "This broadcast has too many identifiable viewers for one analysis task. Limit: {limit}.",
+    "aiProviderConfigInvalid": "The API configuration is invalid.",
+    "aiConsentRequired": "Confirm sending data first.",
+    "aiSpendConfirmationRequired": "Confirm that this model may charge you.",
+    "aiMemoryPermissionDenied": "Long-term profiles require a paid model, known pricing and a passed memory capability test.",
+    "aiCapabilityRequired": "This model has not passed the session-analysis capability test.",
+    "aiPaidModelRequired": "Long-term profiles require a paid model.",
+    "aiProviderConfigNotFound": "API configuration not found.",
+    "aiProviderModelRequired": "Choose a model ID.",
+    "aiAlreadyRunning": "An analysis task is already running for this session.",
+    "aiNothingToResume": "There is no task to resume.",
+    "aiBudgetExceeded": "The per-task budget was reached; further requests were stopped.",
+    "aiAnalysisDenied": "This analysis request was not allowed.",
+    "aiProviderUnavailable": "The API configuration service is unavailable.",
+    "aiProviderModelsFailed": "Could not load the provider model list.",
+    "aiBudgetInvalid": "The budget value is invalid."
   },
   "toast": {
     "saved": "Saved",

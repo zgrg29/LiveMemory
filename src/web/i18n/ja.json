@@ -918,6 +918,136 @@
       "lowConfidenceShort": "低",
       "sampleSize": "{n} 件のサンプル",
       "clipNoticeTitle": "候補について"
+    },
+    "v13": {
+      "method": {
+        "label": "分析方法",
+        "manual": "手動 AI（API キー不要）",
+        "anonymous": "無料匿名 AI（実験的）",
+        "api": "設定済み API モデル",
+        "startAnonymous": "無料匿名分析を開始",
+        "startApi": "API 分析を開始"
+      },
+      "scope": {
+        "label": "分析内容",
+        "session": "単一配信のみ",
+        "memory": "視聴者の長期プロファイルのみ",
+        "both": "単一配信 + 長期プロファイル"
+      },
+      "config": {
+        "label": "API 設定",
+        "openSettings": "設定で API 設定を追加",
+        "none": "API モデルが未設定です。設定で追加してください。"
+      },
+      "budget": {
+        "label": "タスク予算上限",
+        "hint": "空欄は無制限。価格と通貨が判明している場合のみ保護します。",
+        "placeholder": "例 0.50"
+      },
+      "billing": {
+        "confirm": "このモデルで料金が発生する可能性を確認しました",
+        "hint": "有料または価格不明のモデルは、明示確認後のみリクエストします。"
+      },
+      "memory": {
+        "optIn": "視聴者の長期プロファイルを明示的に有効化",
+        "optInHint": "長期プロファイルには有料モデル、価格情報、長期プロファイル能力テストの合格が必要です。過去の視聴者を自動分析しません。"
+      },
+      "price": {
+        "unknown": "価格不明",
+        "free": "無料モデル",
+        "anonymousFree": "匿名無料",
+        "paid": "有料モデル",
+        "manual": "手動モードは API を呼びません",
+        "paidValue": "入力 {input} / 出力 {output} {currency}（100万トークン）",
+        "status": "料金状態"
+      },
+      "run": {
+        "title": "分析タスクを作成",
+        "body": "手動、無料匿名、または設定した API。単一配信レポートと長期プロファイルは別々に保存されます。",
+        "badge": "v0.13",
+        "pause": "一時停止",
+        "resume": "再開",
+        "progress": "バッチ {done}/{total}",
+        "sessionDone": "単一配信レポート保存済み",
+        "memoryDone": "長期プロファイル完了",
+        "partial": "単一配信レポートは保存済みですが、長期プロファイルは未完了です。完了済みバッチは有効です。",
+        "usageCost": "既知の費用 約 {amount} {currency}",
+        "usageTokens": "既知の使用量：入力 {input} / 出力 {output} トークン"
+      },
+      "stage": {
+        "preparing": "データ準備",
+        "packagingSession": "配信パッケージ作成",
+        "sessionAnalyzing": "単一配信を分析",
+        "sessionImporting": "レポートを検証・保存",
+        "sessionDone": "配信レポート保存済み",
+        "packagingMemory": "視聴者プロファイルバッチ作成",
+        "memoryAnalyzing": "視聴者プロファイル更新（バッチ {index}/{total}）",
+        "memoryImporting": "プロファイルバッチを検証・保存",
+        "memoryBatchDone": "プロファイルバッチ完了",
+        "memoryDone": "長期プロファイル完了",
+        "resuming": "タスク再開",
+        "paused": "一時停止中"
+      },
+      "consent": {
+        "title": "送信前の確認",
+        "body": "この分析は、選択した配信のチャット・統計・（選択時）関連する視聴者記憶を、選択した AI サービスへ送信します。LiveMemory 開発者のサーバーは経由しません。",
+        "hint": "いつでもキャンセルできます。保存済みのレポートやプロファイルバッチは削除されません。"
+      },
+      "providers": {
+        "title": "AI API 設定",
+        "hint": "キーは端末内で暗号化",
+        "desc": "OpenAI、Anthropic、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、カスタム OpenAI 互換サービスに対応します。",
+        "empty": "API 設定がありません。",
+        "default": "デフォルト",
+        "makeDefault": "デフォルトにする",
+        "test": "能力テスト",
+        "testing": "テスト中…",
+        "testDone": "能力テスト：{status}",
+        "keyStored": "キー保存済み",
+        "noKey": "キーなし",
+        "delete": "削除",
+        "deleteTitle": "この API 設定を削除しますか？",
+        "addTitle": "API 設定を追加",
+        "provider": "プロバイダー",
+        "region": "リージョン / プラットフォーム",
+        "baseUrl": "Base URL",
+        "apiKey": "API キー",
+        "keyHint": "キーは暗号化ストレージのみに保存され、設定 JSON・ログ・画面には表示されません。",
+        "model": "モデル ID",
+        "modelPlaceholder": "Model ID を入力するか公式一覧から選択",
+        "loadModels": "公式 API からモデル一覧を取得",
+        "noModels": "モデル一覧がないため手動入力してください。",
+        "pricingStatus": "料金状態",
+        "currency": "通貨",
+        "inputPrice": "入力価格 / 100万トークン",
+        "outputPrice": "出力価格 / 100万トークン",
+        "localTitle": "ローカル / LAN のモデルサービスを許可",
+        "localDesc": "ローカルモデルを明示的に運用する場合のみチェックしてください。プライベートアドレスの遮断を解除します。",
+        "security": "API キーは通常の設定 JSON、ログ、分析 ZIP、DB エクスポート、フロントエンド HTML には書き込みません。リージョンや Base URL の変更には新しいキーが必要です。",
+        "save": "設定を保存",
+        "saved": "設定を保存しました。",
+        "testStatus": {
+          "untested": "未テスト",
+          "running": "テスト中",
+          "passed": "合格",
+          "failed": "失敗",
+          "partial": "一部合格"
+        }
+      },
+      "capability": {
+        "memory": "能力：単一配信 + 長期プロファイル",
+        "session": "能力：単一配信分析",
+        "failed": "能力テスト失敗",
+        "untested": "能力テスト未完了"
+      },
+      "test": {
+        "chargeTitle": "能力テストで料金が発生する可能性",
+        "chargeBody": "複数の小さな実リクエストを送信するため、API 料金が発生する場合があります。続行しますか？",
+        "chargeContinue": "テストを続行"
+      },
+      "manual": {
+        "create": "手動分析パッケージを作成"
+      }
     }
   },
   "settings": {
@@ -1172,7 +1302,22 @@
     "monitorTargetRecording": "この配信はまだ記録中です。記録を停止してから監視対象を削除してください。",
     "monitorTargetPaused": "監視は停止中です。先に監視を再開してください。",
     "monitoringDisabled": "自動監視は現在利用できません。",
-    "aiAnalysisTooManyViewers": "この配信の識別可能な視聴者が多すぎます。上限：{limit}。"
+    "aiAnalysisTooManyViewers": "この配信の識別可能な視聴者が多すぎます。上限：{limit}。",
+    "aiProviderConfigInvalid": "API 設定が無効です。",
+    "aiConsentRequired": "データ送信への同意が必要です。",
+    "aiSpendConfirmationRequired": "このモデルで料金が発生する可能性を確認してください。",
+    "aiMemoryPermissionDenied": "長期プロファイルには有料モデル、価格情報、長期プロファイル能力テストの合格が必要です。",
+    "aiCapabilityRequired": "このモデルは単一配信分析の能力テストに合格していません。",
+    "aiPaidModelRequired": "長期プロファイルには有料モデルが必要です。",
+    "aiProviderConfigNotFound": "API 設定が見つかりません。",
+    "aiProviderModelRequired": "モデル ID を選択してください。",
+    "aiAlreadyRunning": "この配信には実行中の分析タスクがあります。",
+    "aiNothingToResume": "再開できるタスクがありません。",
+    "aiBudgetExceeded": "タスク予算上限に達したため、以降のリクエストを停止しました。",
+    "aiAnalysisDenied": "この分析リクエストは許可されていません。",
+    "aiProviderUnavailable": "API 設定サービスを利用できません。",
+    "aiProviderModelsFailed": "プロバイダーのモデル一覧を取得できません。",
+    "aiBudgetInvalid": "予算の形式が無効です。"
   },
   "toast": {
     "saved": "保存しました",

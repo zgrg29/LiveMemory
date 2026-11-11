@@ -1,5 +1,31 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.0 — 2026-11-11（单场/画像解耦 + 多 Provider + 付费画像）
+
+### 新增
+
+- 四种权限模式：手动（无 Key，仅单场）、匿名免费（仅单场）、API 免费模型（仅单场）、付费模型（单场 + 长期画像）。
+- 独立 `session` / `memory` 任务与独立保存；单场失败不影响画像，画像失败不覆盖单场报告。
+- 手动单场单包：无 `memory_context.json` / `viewer_excerpts.jsonl` / 全量 `viewer_context.json`，不要求 `viewer_profiles` / `viewer_memory_updates`。
+- 多 Provider：OpenAI、Anthropic、DeepSeek、MiniMax（cn/intl）、阿里云百炼（4 区域）、OpenRouter、自定义 OpenAI-compatible。
+- Provider 配置存储、加密凭据、区域密钥轮换、URL/私网/DNS 安全检查。
+- 六层能力检测、费用状态（匿名免费/API 免费/付费/未知）、预算保护、usage/成本估算。
+- OpenRouter 官方模型列表：上下文、输入/输出价格、免费状态、structured output 能力。
+- 设置页 Provider 配置卡；AI 分析中心分析方式/内容/配置/预算/opt-in/暂停恢复/三语状态。
+- schema 13：AI 任务模式、Provider 快照、预算/usage、能力检测审计表。
+- 结果 Schema 1.3.0：`analysis_scope`；1.0.0–1.2.0 继续可导入。
+
+### 变更
+
+- 旧 combined 任务仍可读取，固定 Schema 1.2.0；新 UI 不再创建。
+- 报告读模型排除 memory-only 结果；历史长期画像不删除。
+- 匿名免费自动分析限定为单场；不再尝试更新长期记忆。
+
+### 未验证
+
+- 无真实 API Key，OpenAI/Anthropic/DeepSeek/MiniMax/DashScope 生成请求未执行；不得标记为真实通过。
+- 无真实浏览器/EXE 验收。
+
 ## 0.12.1 — 2026-11-11（真实故障修复：自动分析可靠性 + 手动导入诊断）
 
 ### 修复

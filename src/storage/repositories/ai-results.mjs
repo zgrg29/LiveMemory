@@ -22,6 +22,7 @@ function mapResult(row, {includeJson = false} = {}) {
     checksum: row.checksum,
     resultVersion: Number(row.result_version),
     source: row.source,
+    analysisMode: row.analysis_mode ?? 'combined',
     evidenceTotal: Number(row.evidence_total ?? 0),
     evidenceMissing: Number(row.evidence_missing ?? 0),
     importedAt: Number(row.imported_at)
@@ -45,6 +46,7 @@ export function insertResult(db, {
   resultVersion,
   source,
   resultJson,
+  analysisMode = 'combined',
   evidenceTotal = 0,
   evidenceMissing = 0,
   importedAt = Date.now()
@@ -53,8 +55,8 @@ export function insertResult(db, {
     INSERT INTO ai_results (
       id, job_id, session_id, scope_key, batch_index, task_id, task_kind,
       protocol_version, schema_version, locale, checksum, result_version, source,
-      result_json, evidence_total, evidence_missing, imported_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      result_json, analysis_mode, evidence_total, evidence_missing, imported_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     String(id),
     String(jobId),
@@ -70,6 +72,7 @@ export function insertResult(db, {
     Number(resultVersion),
     String(source),
     String(resultJson),
+    String(analysisMode ?? 'combined'),
     Number(evidenceTotal),
     Number(evidenceMissing),
     Number(importedAt)

@@ -30,7 +30,9 @@ LiveMemory.exe (Node SEA)
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
          ├─ src/ai/tasks/               任务状态计算（从数据库事实）
          ├─ src/ai/prompts/             三语提示词与提示词版本
-         └─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
+         ├─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
+         ├─ src/ai/providers/           多 Provider 目录、适配器、加密配置、能力检测、费用
+         └─ src/ai/api/                 配置 Provider 运行器、单场/画像任务、预算与暂停恢复
    └─ src/web/                          浏览器控制台（原生 ES Modules）
 ```
 
@@ -502,3 +504,47 @@ node.exe (官方运行时，含 node:sqlite)
   仅追加版本与差异、本地合并、`livememory-memory-update-v1` 往返、删除与保留）。
   依赖方向仍为 `web → server → memory/analytics/storage → shared`；`src/memory` 复用
   `ai/import` 的解析/校验工具与 `shared/zip.mjs`，不改写 M6 的分析表。
+
+## 1.4 v0.13 单场 / 画像拆分与多 Provider（2026-11-11）
+
+```text
+手动模式
+  POST /api/ai/jobs {analysisMode:session}
+    -> createSessionAnalysisJob()
+       - stage=session 单包：manifest/session_context/messages/instructions/schema
+       - 无 memory_context / viewer_excerpts / 全量 viewer_context
+    -> 用户交给任意 AI -> 导入 -> 只写 ai_results（analysis_mode=session）
+       - applyMemorySideEffects() 直接跳过
+
+匿名免费 / API 免费
+  POST /api/ai/analyze/run {mode:session, configId:null|free}
+    -> AnalysisRunner -> session job -> provider -> validate -> import
+    -> 不允许 mode=memory/both
+
+付费模型
+  POST /api/ai/analyze/run {mode:session|memory|both, configId, optInMemory, confirmBilling, budget}
+    -> 权限门：
+       session 需要 capabilities.session
+       memory 还需要 paid + pricing + capabilities.memory + optInMemory
+       paid/unknown 需要 confirmBilling
+    -> session job 先执行/保存
+    -> memory job：createViewerMemoryJob() 每批：
+       memory_context + viewer_excerpts -> 模型返回 ref -> 本地映射稳定 ID
+       -> validate -> import -> ai_results.analysis_mode=memory
+    -> 报告读模型排除 memory-only 结果
+    -> 暂停/继续/取消；已导入批次跳过；失败保留已保存结果
+
+Provider 配置
+  config/ai-providers.json（无密钥）
+  secrets/ai-keys.json（AES-256-GCM）
+  ProviderConfigStore -> Provider adapter（OpenAI-compatible / Anthropic）
+  capabilities / pricing / usage 快照写入 ai_jobs
+```
+
+关键保证：
+
+- `session` 与 `memory` 永远不共用一次事务写入；单场报告成功不依赖画像。
+- 免费 Provider/模型没有 `memory` 路径；`memoryPermission()` 是唯一入口。
+- 画像结果不进入单场报告读模型；历史 combined 结果仍按旧逻辑读取。
+- Provider 配置/能力/费用全部来自配置快照；切换默认配置不影响运行中任务。
+- API Key 不进入普通配置、日志、ZIP、数据库导出或 HTML。

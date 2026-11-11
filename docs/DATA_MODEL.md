@@ -560,3 +560,23 @@ paused（用户暂停；正在进行的 recording 不受影响）
   仅更新客观历史，不阻断 M6 报告导入。
 - 旧 M7 独立记忆任务表（`memory_jobs` 等）保留，用于已存在数据的查看/删除；
   不再由 UI 创建新的独立记忆任务。
+
+## 13. AI 任务模式与 Provider 快照（schema 13 / v0.13.0）
+
+迁移 13 只增加列/表，不重写历史：
+
+`ai_jobs` 新增：
+
+- `analysis_mode`：`session` / `memory` / `combined`（旧行 default combined）。
+- `provider_config_id`、`provider_id`、`region_id`、`model_id`、`pricing_status`：任务实际使用的配置快照。
+- `budget_json`、`cost_estimate_json`、`usage_json`、`requested_by`。
+
+`ai_results` 新增 `analysis_mode`（default combined），报告读模型据此排除 memory-only 结果。
+
+新表 `ai_provider_tests`：config/provider/region/model、status、capabilities_json、stages_json、duration_ms、tested_at；用于能力检测审计，删除配置后仍可保留。
+
+不变量：
+
+- 旧 `combined` 行继续按旧逻辑读取；不要用迁移把它们改成 session/memory。
+- session 任务结果不触发 `applyMemorySideEffects`；memory 任务结果不能作为单场报告。
+- 删除场次仍级联删除 ai_jobs/ai_results；provider 配置与密钥独立于场次。

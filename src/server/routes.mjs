@@ -50,7 +50,16 @@ import {
 import {getPackage, listPackages} from '../storage/repositories/ai-packages.mjs';
 import {buildAnalysisPackage, ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
 import {buildAggregatePackage, createAnalysisJob} from '../ai/export/job.mjs';
+import {createSessionAnalysisJob} from '../ai/export/split-jobs.mjs';
 import {MAX_AUTO_BATCHES} from '../ai/auto/config.mjs';
+import {publicCatalog, getProvider, getRegion, PRICING_STATUS} from '../ai/providers/catalog.mjs';
+import {listProviderModels} from '../ai/providers/adapters.mjs';
+import {verifyProviderConfig} from '../ai/providers/verify.mjs';
+import {normalizePricing, normalizeBudget} from '../ai/providers/pricing.mjs';
+import {AnalysisPermissionError} from '../ai/api/runner.mjs';
+import {ANALYSIS_MODE} from '../ai/constants.mjs';
+import {readAnalysisPackage, SESSION_FILES, MEMORY_FILES} from '../ai/api/prompts.mjs';
+import {createId} from '../shared/ids.mjs';
 import {buildInstructions, instructionVersion} from '../ai/prompts/instructions.mjs';
 import {
   getJob,
@@ -168,6 +177,63 @@ function effectiveSettings(deps) {
 
 function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
   return new AppError(code, {messageKey, httpStatus: 404});
+}
+
+function providerConfigError(error) {
+  const code = String(error?.code ?? 'AI_PROVIDER_CONFIG_INVALID');
+  const known = {
+    PROVIDER_UNKNOWN: 'AI_PROVIDER_UNKNOWN',
+    REGION_UNKNOWN: 'AI_PROVIDER_REGION_UNKNOWN',
+    BASE_URL_REQUIRED: 'AI_PROVIDER_BASE_URL_REQUIRED',
+    BASE_URL_INVALID: 'AI_PROVIDER_BASE_URL_INVALID',
+    URL_INVALID: 'AI_PROVIDER_BASE_URL_INVALID',
+    URL_SCHEME: 'AI_PROVIDER_BASE_URL_INVALID',
+    URL_PRIVATE: 'AI_PROVIDER_PRIVATE_URL',
+    URL_PRIVATE_DNS: 'AI_PROVIDER_PRIVATE_URL',
+    URL_LOCAL: 'AI_PROVIDER_LOCAL_URL',
+    URL_METADATA: 'AI_PROVIDER_PRIVATE_URL',
+    URL_INSECURE: 'AI_PROVIDER_INSECURE_URL',
+    BASE_URL_NOT_ALLOWED: 'AI_PROVIDER_BASE_URL_NOT_ALLOWED',
+    MODEL_REQUIRED: 'AI_PROVIDER_MODEL_REQUIRED',
+    API_KEY_REQUIRED: 'AI_PROVIDER_KEY_REQUIRED',
+    API_KEY_REQUIRED_FOR_REGION: 'AI_PROVIDER_REGION_KEY_REQUIRED',
+    API_KEY_TOO_LARGE: 'AI_PROVIDER_KEY_INVALID',
+    API_KEY_INVALID: 'AI_PROVIDER_KEY_INVALID',
+    PRICING_REQUIRED: 'AI_PROVIDER_PRICING_REQUIRED',
+    FREE_PRICING_UNVERIFIED: 'AI_PROVIDER_FREE_PRICING_UNVERIFIED'
+  };
+  return new AppError(known[code] ?? 'AI_PROVIDER_CONFIG_INVALID', {
+    messageKey: 'errors.aiProviderConfigInvalid',
+    details: {reason: known[code] ?? code},
+    httpStatus: 400
+  });
+}
+
+function analysisError(error) {
+  const map = {
+    CONSENT_REQUIRED: ['AI_CONSENT_REQUIRED', 'errors.aiConsentRequired', 400],
+    SPEND_CONFIRMATION_REQUIRED: ['AI_SPEND_CONFIRMATION_REQUIRED', 'errors.aiSpendConfirmationRequired', 400],
+    MEMORY_PERMISSION_DENIED: ['AI_MEMORY_PERMISSION_DENIED', 'errors.aiMemoryPermissionDenied', 403],
+    SESSION_CAPABILITY_REQUIRED: ['AI_SESSION_CAPABILITY_REQUIRED', 'errors.aiCapabilityRequired', 409],
+    PAID_MODEL_REQUIRED: ['AI_PAID_MODEL_REQUIRED', 'errors.aiPaidModelRequired', 403],
+    PROVIDER_CONFIG_NOT_FOUND: ['AI_PROVIDER_CONFIG_NOT_FOUND', 'errors.aiProviderConfigNotFound', 404],
+    MODEL_REQUIRED: ['AI_PROVIDER_MODEL_REQUIRED', 'errors.aiProviderModelRequired', 400],
+    ALREADY_RUNNING: ['AI_ALREADY_RUNNING', 'errors.aiAlreadyRunning', 409],
+    NOTHING_TO_RESUME: ['AI_NOTHING_TO_RESUME', 'errors.aiNothingToResume', 409],
+    INVALID_MODE: ['AI_INVALID_MODE', 'errors.badRequest', 400],
+    BUDGET_EXCEEDED: ['AI_BUDGET_EXCEEDED', 'errors.aiBudgetExceeded', 409],
+    ANALYSIS_BUDGET_EXCEEDED: ['AI_BUDGET_EXCEEDED', 'errors.aiBudgetExceeded', 409]
+  };
+  if (error instanceof AnalysisPermissionError || map[error?.code]) {
+    const [code, messageKey, httpStatus] = map[error.code] ?? ['AI_ANALYSIS_DENIED', 'errors.aiAnalysisDenied', 403];
+    return new AppError(code, {
+      messageKey,
+      details: error.details ?? null,
+      httpStatus,
+      cause: error
+    });
+  }
+  return error;
 }
 
 function freeBytesFor(directory) {
@@ -932,6 +998,326 @@ export function buildRoutes() {
     },
     {
       method: 'GET',
+      path: '/api/ai/providers',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, {
+          providers: publicCatalog(),
+          configs: deps.providerConfigStore ? deps.providerConfigStore.list() : [],
+          anonymous: deps.analysisRunner
+            ? deps.analysisRunner.services().anonymous
+            : []
+        });
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/providers/models',
+      handler: async ({res, url, deps}) => {
+        if (!deps.providerConfigStore) {
+          throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const configId = url.searchParams.get('configId');
+        const providerId = url.searchParams.get('providerId');
+        let config = null;
+        let apiKey = null;
+        if (configId) {
+          config = deps.providerConfigStore.get(configId);
+          if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
+          apiKey = deps.providerConfigStore.secret(configId);
+        } else if (providerId) {
+          const provider = getProvider(providerId);
+          if (!provider) {
+            throw new AppError('AI_PROVIDER_UNKNOWN', {messageKey: 'errors.aiProviderConfigInvalid', httpStatus: 400});
+          }
+          const region = getRegion(providerId, url.searchParams.get('regionId') ?? provider.regions[0]?.id);
+          if (!region) {
+            throw new AppError('AI_PROVIDER_REGION_UNKNOWN', {messageKey: 'errors.aiProviderConfigInvalid', httpStatus: 400});
+          }
+          config = {
+            providerId,
+            protocol: provider.protocol,
+            regionId: region.id,
+            baseUrl: region.baseUrl,
+            modelId: '',
+            supportsModelList: provider.supportsModelList
+          };
+        } else {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        try {
+          const models = await listProviderModels({
+            config,
+            apiKey,
+            fetchImpl: deps.analysisRunner?.fetchImpl
+          });
+          sendJson(res, 200, {
+            models: models.map((model) => ({
+              id: model.id,
+              name: model.name,
+              providerId: model.providerId,
+              contextLength: model.contextLength,
+              pricingStatus: model.pricingStatus,
+              pricing: model.pricing,
+              structuredOutputs: model.structuredOutputs,
+              description: model.description
+            }))
+          });
+        } catch (error) {
+          throw new AppError('AI_PROVIDER_MODELS_FAILED', {
+            messageKey: 'errors.aiProviderModelsFailed',
+            details: {code: error?.code ?? 'PROVIDER_ERROR', status: error?.status ?? null},
+            httpStatus: 502
+          });
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/providers/configs',
+      handler: async ({req, res, deps}) => {
+        if (!deps.providerConfigStore) {
+          throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        try {
+          const config = deps.providerConfigStore.create({
+            name: body.name,
+            providerId: body.providerId,
+            regionId: body.regionId,
+            baseUrl: body.baseUrl,
+            modelId: body.modelId,
+            modelLabel: body.modelLabel,
+            pricingStatus: body.pricingStatus,
+            pricing: normalizePricing(body.pricing),
+            apiKey: body.apiKey,
+            allowLocalNetwork: body.allowLocalNetwork === true,
+            contextLength: body.contextLength
+          });
+          deps.logger?.info({event: 'ai.provider.config.created', configId: config.id, provider: config.providerId});
+          sendJson(res, 201, {config});
+        } catch (error) {
+          throw providerConfigError(error);
+        }
+      }
+    },
+    {
+      method: 'PATCH',
+      path: '/api/ai/providers/configs/:id',
+      handler: async ({req, res, params, deps}) => {
+        if (!deps.providerConfigStore) {
+          throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        try {
+          const config = deps.providerConfigStore.update(params.id, {
+            ...body,
+            pricing: body.pricing === null ? null : normalizePricing(body.pricing)
+          });
+          if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
+          deps.logger?.info({event: 'ai.provider.config.updated', configId: config.id});
+          sendJson(res, 200, {config});
+        } catch (error) {
+          throw providerConfigError(error);
+        }
+      }
+    },
+    {
+      method: 'DELETE',
+      path: '/api/ai/providers/configs/:id',
+      handler: ({res, params, deps}) => {
+        if (!deps.providerConfigStore) {
+          throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        if (!deps.providerConfigStore.remove(params.id)) {
+          throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
+        }
+        deps.logger?.info({event: 'ai.provider.config.removed'});
+        sendJson(res, 200, {removed: true});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/providers/configs/:id/default',
+      handler: ({res, params, deps}) => {
+        if (!deps.providerConfigStore?.setDefault(params.id)) {
+          throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
+        }
+        sendJson(res, 200, {config: deps.providerConfigStore.getPublic(params.id)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/providers/configs/:id/test',
+      handler: async ({req, res, params, deps}) => {
+        if (!deps.providerConfigStore || !deps.analysisRunner) {
+          throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req).catch(() => ({}));
+        const config = deps.providerConfigStore.get(params.id);
+        if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
+        const paid = ![PRICING_STATUS.API_FREE, PRICING_STATUS.ANONYMOUS_FREE].includes(config.pricingStatus);
+        if (paid && body.confirmBilling !== true) {
+          throw new AppError('AI_SPEND_CONFIRMATION_REQUIRED', {
+            messageKey: 'errors.aiSpendConfirmationRequired',
+            httpStatus: 400
+          });
+        }
+        const apiKey = deps.providerConfigStore.secret(params.id);
+        const result = await verifyProviderConfig({
+          config: {
+            ...config,
+            supportsModelList: getProvider(config.providerId)?.supportsModelList === true,
+            supportsStructuredOutputs: config.capabilities?.structuredOutputs === true
+          },
+          apiKey,
+          fetchImpl: deps.analysisRunner.fetchImpl,
+          now: Date.now
+        });
+        const updated = deps.providerConfigStore.recordTest(params.id, result);
+        try {
+          deps.db.prepare(`
+            INSERT INTO ai_provider_tests (
+              id, config_id, provider_id, region_id, model_id, status,
+              capabilities_json, stages_json, duration_ms, tested_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            createId('aivt'),
+            config.id,
+            config.providerId,
+            config.regionId,
+            config.modelId,
+            result.status,
+            JSON.stringify(result.capabilities),
+            JSON.stringify(result.stages),
+            Number(result.durationMs ?? 0),
+            Date.parse(result.at)
+          );
+        } catch (error) {
+          deps.logger?.warn?.({event: 'ai.provider.test.audit.failed', code: error?.code ?? 'db'});
+        }
+        deps.logger?.info?.({
+          event: 'ai.provider.tested',
+          configId: config.id,
+          provider: config.providerId,
+          model: config.modelId,
+          status: result.status,
+          capabilities: result.capabilities
+        });
+        sendJson(res, 200, {result, config: updated});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/analyze/status',
+      handler: ({res, url, deps}) => {
+        if (!deps.analysisRunner) {
+          throw new AppError('AI_ANALYSIS_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const sessionId = url.searchParams.get('sessionId');
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        sendJson(res, 200, deps.analysisRunner.getStatus(sessionId));
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/analyze/run',
+      handler: async ({req, res, deps}) => {
+        if (!deps.analysisRunner) {
+          throw new AppError('AI_ANALYSIS_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        const summary = buildSessionSummary(deps.db, sessionId);
+        if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+        if (summary.stats.messages === 0) {
+          throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
+        }
+        const locale = normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        const budget = body.budget ? normalizeBudget(body.budget) : null;
+        if (body.budget && !budget) {
+          throw new AppError('AI_BUDGET_INVALID', {messageKey: 'errors.aiBudgetInvalid', httpStatus: 400});
+        }
+        try {
+          const status = await deps.analysisRunner.start({
+            sessionId,
+            locale,
+            mode: body.mode === ANALYSIS_MODE.MEMORY
+              ? ANALYSIS_MODE.MEMORY
+              : (body.mode === ANALYSIS_MODE.COMBINED ? ANALYSIS_MODE.COMBINED : ANALYSIS_MODE.SESSION),
+            configId: typeof body.configId === 'string' ? body.configId : null,
+            consent: body.consent === true,
+            confirmBilling: body.confirmBilling === true,
+            optInMemory: body.optInMemory === true,
+            budget
+          });
+          deps.logger?.info?.({
+            event: 'ai.analysis.accepted',
+            sessionId,
+            mode: body.mode ?? ANALYSIS_MODE.SESSION,
+            configId: body.configId ?? null
+          });
+          sendJson(res, 202, status);
+        } catch (error) {
+          throw analysisError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/analyze/pause',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId || !deps.analysisRunner) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        sendJson(res, 200, deps.analysisRunner.pause(sessionId));
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/analyze/cancel',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId || !deps.analysisRunner) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        sendJson(res, 200, deps.analysisRunner.cancel(sessionId));
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/analyze/resume',
+      handler: async ({req, res, deps}) => {
+        if (!deps.analysisRunner) {
+          throw new AppError('AI_ANALYSIS_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        const body = await readJsonBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!sessionId) {
+          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
+        }
+        try {
+          const status = await deps.analysisRunner.resume(sessionId, {
+            consent: body.consent === true,
+            confirmBilling: body.confirmBilling === true,
+            optInMemory: body.optInMemory === true,
+            budget: body.budget ? normalizeBudget(body.budget) : null
+          });
+          sendJson(res, 202, status);
+        } catch (error) {
+          throw analysisError(error);
+        }
+      }
+    },
+    {
+      method: 'GET',
       path: '/api/ai/instructions',
       handler: ({res, url, deps}) => {
         const requested = normalizeLocale(url.searchParams.get('locale'));
@@ -939,6 +1325,30 @@ export function buildRoutes() {
         if (jobId) {
           const job = getJob(deps.db, jobId);
           if (!job) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiJobNotFound');
+          if (job.analysisMode === ANALYSIS_MODE.SESSION || job.analysisMode === ANALYSIS_MODE.MEMORY) {
+            const index = Math.max(1, Number(url.searchParams.get('batchIndex')) || 1);
+            const packages = listPackages(deps.db, {jobId: job.id});
+            const pkg = packages.find((row) => (
+              (job.analysisMode === ANALYSIS_MODE.SESSION ? row.stage === 'session' : row.stage === 'memory')
+              && (job.analysisMode === ANALYSIS_MODE.SESSION || Number(row.batch_index) === index)
+            ));
+            if (!pkg) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiBatchNotFound');
+            const files = readAnalysisPackage(
+              join(deps.paths.exports, pkg.file_name),
+              job.analysisMode === ANALYSIS_MODE.SESSION ? SESSION_FILES : MEMORY_FILES
+            );
+            const manifest = JSON.parse(files['manifest.json']);
+            sendJson(res, 200, {
+              locale: job.locale,
+              text: files['instructions.md'],
+              promptVersion: job.promptVersion,
+              schemaVersion: RESULT_SCHEMA_VERSION,
+              taskId: manifest.tasks?.[0]?.task_id ?? null,
+              batch: manifest.batch ?? null,
+              stage: job.analysisMode
+            });
+            return;
+          }
           const summary = buildSessionSummary(deps.db, job.sessionId);
           if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
           const session = summary.session;
@@ -1002,7 +1412,7 @@ export function buildRoutes() {
           locale,
           text: buildInstructions(locale),
           promptVersion: instructionVersion(locale),
-          schemaVersion: RESULT_SCHEMA_VERSION
+          schemaVersion: '1.2.0'
         });
       }
     },
@@ -1068,6 +1478,30 @@ export function buildRoutes() {
           : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
         let result;
         try {
+          if (body.analysisMode === ANALYSIS_MODE.SESSION || body.mode === 'session') {
+            const split = await createSessionAnalysisJob({
+              db: deps.db,
+              sessionId,
+              locale,
+              exportsDir: deps.paths.exports,
+              now: Date.now()
+            });
+            if (!split) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
+            const job = getJob(deps.db, split.job.id);
+            deps.logger?.info({
+              event: 'ai.session.job.created',
+              jobId: job.id,
+              sessionId,
+              messages: job.totalMessages
+            });
+            sendJson(res, 201, {
+              job: serializeJob(job, computeJobStatus(deps.db, job)),
+              packages: split.package.id
+                ? [serializePackage(getPackage(deps.db, split.package.id))]
+                : []
+            });
+            return;
+          }
           result = await createAnalysisJob({
             db: deps.db,
             sessionId,

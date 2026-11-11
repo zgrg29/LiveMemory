@@ -99,7 +99,7 @@ test('prompt versions are explicit, stable per locale and recorded on jobs', asy
   assert.equal(job.job.promptVersion, 'lm-prompt-m6.3-ja');
   const packageData = readBatchPackage(exportsDir, job.packages[0]);
   assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.3-ja');
-  assert.equal(packageData.manifest.schema_version, RESULT_SCHEMA_VERSION);
+  assert.equal(packageData.manifest.schema_version, '1.2.0');
   closeDatabase(db);
   temp.cleanup();
 });

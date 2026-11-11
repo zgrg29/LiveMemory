@@ -106,6 +106,14 @@ export const aiPage = {
     const t = ctx.t;
     const sessionsPayload = await api.get('/api/sessions?limit=100&includeArchived=1');
     const sessions = sessionsPayload.sessions ?? [];
+    let providerData = {providers: [], configs: []};
+    try {
+      providerData = await api.get('/api/ai/providers');
+    } catch {
+      // The manual path works even when provider configuration is unavailable.
+    }
+    const providers = providerData.providers ?? [];
+    const providerConfigs = providerData.configs ?? [];
     const requested = query?.get('session');
     let selectedId = requested && sessions.some((session) => session.id === requested)
       ? requested
@@ -127,6 +135,9 @@ export const aiPage = {
     let autoTimer = null;
     let autoRunning = false;
     let autoRefreshedFor = null;
+    let runMethod = 'manual';
+    let runScope = 'session';
+    let autoPaused = false;
 
     container.append(pageHead({title: t('ai.pageTitle'), subtitle: t('ai.pageSubtitle')}));
 
@@ -166,11 +177,36 @@ export const aiPage = {
       el('option', {value: 'en', text: t('settings.language.en')}));
     languageSelect.value = locale;
 
-    const batchSizeInput = el('input', {
+    const methodSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.method.label')}},
+      el('option', {value: 'manual', text: t('ai.v13.method.manual')}),
+      el('option', {value: 'anonymous', text: t('ai.v13.method.anonymous')}),
+      el('option', {value: 'api', text: t('ai.v13.method.api')}));
+    const scopeSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.scope.label')}});
+    const configSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.config.label')}});
+    const budgetInput = el('input', {
       className: 'input input--compact',
       type: 'number',
-      value: '1000',
-      attrs: {'aria-label': t('ai.setup.batchSize'), min: '100', max: '5000', step: '100'}
+      attrs: {min: '0', step: '0.01', placeholder: t('ai.v13.budget.placeholder')}
+    });
+    const confirmBilling = el('input', {type: 'checkbox'});
+    const optInMemory = el('input', {type: 'checkbox'});
+    const pricingHint = el('div', {className: 'small tertiary'});
+    const configHint = el('div', {className: 'small tertiary'});
+    const billingRow = el('label', {className: 'choice'},
+      confirmBilling,
+      el('div', {className: 'choice-text'},
+        el('div', {className: 'choice-title', text: t('ai.v13.billing.confirm')}),
+        el('div', {className: 'choice-desc', text: t('ai.v13.billing.hint')})));
+    const memoryOptRow = el('label', {className: 'choice'},
+      optInMemory,
+      el('div', {className: 'choice-text'},
+        el('div', {className: 'choice-title', text: t('ai.v13.memory.optIn')}),
+        el('div', {className: 'choice-desc', text: t('ai.v13.memory.optInHint')})));
+    const configLink = el('button', {
+      className: 'button button--ghost button--small',
+      type: 'button',
+      text: t('ai.v13.config.openSettings'),
+      onClick: () => ctx.navigate('/settings')
     });
 
     const createButton = el('button', {
@@ -193,6 +229,12 @@ export const aiPage = {
       text: t('ai.auto.cancel'),
       hidden: true
     });
+    const autoPauseButton = el('button', {
+      className: 'button button--ghost button--small',
+      type: 'button',
+      text: t('ai.v13.run.pause'),
+      hidden: true
+    });
     const autoStatusText = el('div', {
       className: 'auto-status',
       attrs: {role: 'status', 'aria-live': 'polite'}
@@ -206,13 +248,25 @@ export const aiPage = {
     const autoDetails = el('details', {className: 'auto-details', hidden: true},
       el('summary', {text: t('ai.auto.details')}),
       autoDetailsText);
-    const autoPanel = el('section', {className: 'auto-panel', attrs: {'aria-label': t('ai.auto.title')}},
+    const autoPanel = el('section', {className: 'auto-panel', attrs: {'aria-label': t('ai.v13.run.title')}},
       el('div', {className: 'auto-panel-head'},
         el('div', {},
-          el('div', {className: 'auto-panel-title', text: t('ai.auto.title')}),
-          el('div', {className: 'small tertiary', text: t('ai.auto.body')})),
-        chip(t('ai.auto.badge'), 'accent')),
-      el('div', {className: 'auto-actions'}, autoButton, autoCancelButton),
+          el('div', {className: 'auto-panel-title', text: t('ai.v13.run.title')}),
+          el('div', {className: 'small tertiary', text: t('ai.v13.run.body')})),
+        chip(t('ai.v13.run.badge'), 'accent')),
+      el('div', {className: 'grid-2-equal'},
+        field(t('ai.v13.method.label'), methodSelect),
+        field(t('ai.v13.scope.label'), scopeSelect)),
+      field(t('ai.v13.config.label'), configSelect),
+      el('div', {className: 'inline'}, configLink),
+      configHint,
+      pricingHint,
+      el('div', {className: 'grid-2-equal'},
+        field(t('ai.v13.budget.label'), budgetInput, t('ai.v13.budget.hint')),
+        el('div', {className: 'stack stack--tight'},
+          billingRow,
+          memoryOptRow)),
+      el('div', {className: 'auto-actions'}, autoButton, autoPauseButton, autoCancelButton),
       autoError,
       autoStatusText,
       autoDetails);
@@ -226,11 +280,6 @@ export const aiPage = {
         autoPanel,
         el('div', {className: 'auto-divider'},
           el('span', {text: t('ai.auto.manualDivider')})),
-        el('details', {className: 'advanced'},
-          el('summary', {text: t('ai.setup.advanced')}),
-          el('div', {className: 'advanced-body'},
-            field(t('ai.setup.batchSize'), batchSizeInput),
-            el('div', {className: 'small tertiary', text: t('ai.setup.batchSizeHint')}))),
         el('div', {style: {marginTop: '14px'}}, createButton),
         el('div', {className: 'small tertiary', style: {marginTop: '10px'}}, t('ai.setup.note')),
         createResult));
@@ -346,6 +395,101 @@ export const aiPage = {
       return jobs.find((job) => job.id === activeJobId) ?? jobs[0] ?? null;
     }
 
+    function selectedConfig() {
+      return providerConfigs.find((config) => config.id === configSelect.value) ?? null;
+    }
+
+    function priceText(config) {
+      if (!config) return t('ai.v13.price.unknown');
+      if (config.pricingStatus === 'api_free') return t('ai.v13.price.free');
+      if (config.pricingStatus === 'paid' && config.pricing) {
+        return t('ai.v13.price.paidValue', {
+          input: String(config.pricing.inputPerMillion),
+          output: String(config.pricing.outputPerMillion),
+          currency: config.pricing.currency
+        });
+      }
+      return t('ai.v13.price.unknown');
+    }
+
+    function memoryAllowed(config) {
+      return Boolean(config
+        && config.pricingStatus === 'paid'
+        && config.pricing
+        && config.capabilities?.session
+        && config.capabilities?.memory);
+    }
+
+    function renderScopeOptions() {
+      const config = selectedConfig();
+      const previous = runScope;
+      const allowed = runMethod === 'api' && memoryAllowed(config);
+      const options = [['session', t('ai.v13.scope.session')]];
+      if (allowed) {
+        options.push(['memory', t('ai.v13.scope.memory')]);
+        options.push(['both', t('ai.v13.scope.both')]);
+      }
+      scopeSelect.replaceChildren(...options.map(([value, label]) => el('option', {value, text: label})));
+      if (!options.some(([value]) => value === previous)) runScope = 'session';
+      scopeSelect.value = runScope;
+      scopeSelect.disabled = runMethod !== 'api' || !allowed && runMethod === 'api' && options.length === 1;
+      memoryOptRow.hidden = !allowed || runScope === 'session';
+      optInMemory.checked = false;
+    }
+
+    function renderConfigOptions() {
+      configSelect.replaceChildren(...providerConfigs.map((config) => el('option', {
+        value: config.id,
+        text: `${config.name} · ${config.modelId || '—'}`
+      })));
+      const fallback = providerConfigs.find((config) => config.isDefault) ?? providerConfigs[0];
+      if (fallback) configSelect.value = fallback.id;
+      configSelect.hidden = runMethod !== 'api';
+      configLink.hidden = runMethod !== 'api' || providerConfigs.length > 0;
+    }
+
+    function renderRunControls() {
+      autoPanel.hidden = runMethod === 'manual';
+      createButton.hidden = runMethod !== 'manual';
+      createButton.textContent = t('ai.v13.manual.create');
+      autoButton.hidden = runMethod === 'manual';
+      autoButton.textContent = runMethod === 'anonymous'
+        ? t('ai.v13.method.startAnonymous')
+        : t('ai.v13.method.startApi');
+      configSelect.hidden = runMethod !== 'api';
+      renderConfigOptions();
+      renderScopeOptions();
+      const config = selectedConfig();
+      configHint.textContent = runMethod === 'api'
+        ? (config
+          ? `${config.providerId} / ${config.regionId} / ${config.modelId}`
+          : t('ai.v13.config.none'))
+        : '';
+      pricingHint.textContent = runMethod === 'manual'
+        ? t('ai.v13.price.manual')
+        : (runMethod === 'anonymous'
+          ? t('ai.v13.price.anonymousFree')
+          : (config ? `${t('ai.v13.price.status')}: ${priceText(config)}` : ''));
+      const paid = runMethod === 'api' && config && config.pricingStatus !== 'api_free';
+      billingRow.hidden = !paid;
+      confirmBilling.checked = false;
+      optInMemory.checked = false;
+      if (runMethod === 'api' && !config) autoButton.disabled = true;
+      else autoButton.disabled = false;
+      syncRunGate();
+    }
+
+    function syncRunGate() {
+      if (runMethod !== 'api') return;
+      const config = selectedConfig();
+      const paid = config && config.pricingStatus !== 'api_free';
+      const needsMemoryOptIn = runScope !== 'session';
+      autoButton.disabled = !config
+        || (paid && !confirmBilling.checked)
+        || (needsMemoryOptIn && !optInMemory.checked);
+    }
+
+
     function setBusy(node, value, label) {
       node.disabled = value;
       if (label) node.textContent = label;
@@ -457,6 +601,20 @@ export const aiPage = {
               messages: formatInteger(job.totalMessages, ctx.locale),
               promptVersion: job.promptVersion
             })}))));
+      const pkg = (job.packages ?? []).find((entry) => entry.stage === 'session')
+        ?? (job.packages ?? [])[0];
+      if (pkg) {
+        createResult.append(el('div', {className: 'inline', style: {marginTop: '10px'}},
+          el('button', {
+            className: 'button button--primary button--small',
+            type: 'button',
+            text: t('ai.packages.download'),
+            onClick: () => {
+              api.download(`/api/ai/packages/${encodeURIComponent(pkg.id)}/download`);
+              ctx.toast(t('toast.downloadStarted'));
+            }
+          })));
+      }
     }
 
     function renderJobs() {
@@ -853,7 +1011,7 @@ export const aiPage = {
         const payload = await api.post('/api/ai/jobs', {
           sessionId: selectedId,
           locale,
-          batchSize: Number(batchSizeInput.value) || 1000
+          analysisMode: 'session'
         });
         activeJobId = payload.job.id;
         promptChoice = '1';
@@ -924,10 +1082,10 @@ export const aiPage = {
 
     function askAutoConsent() {
       return new Promise((resolve) => {
-        const modal = createModal({title: t('ai.auto.consentTitle'), t: ctx.t});
+        const modal = createModal({title: t('ai.v13.consent.title'), t: ctx.t});
         modal.body.append(
-          el('p', {className: 'modal-desc', text: t('ai.auto.consentBody')}),
-          el('p', {className: 'small tertiary', text: t('ai.auto.consentHint')}));
+          el('p', {className: 'modal-desc', text: t('ai.v13.consent.body')}),
+          el('p', {className: 'small tertiary', text: t('ai.v13.consent.hint')}));
         const cancel = el('button', {
           className: 'button button--ghost',
           type: 'button',
@@ -975,48 +1133,103 @@ export const aiPage = {
     function autoStageLabel(status) {
       const stage = status?.stage ?? 'preparing';
       const index = Math.max(1, Number(status?.batchIndex ?? 1));
-      const total = Math.max(index, Number(status?.batchTotal ?? status?.job?.batchTotal ?? 1));
-      if (stage === 'connecting') return t('ai.auto.status.connecting');
-      if (stage === 'analyzing') return t('ai.auto.status.analyzing', {index, total});
-      if (stage === 'validating') return t('ai.auto.status.validating');
-      if (stage === 'importing') return t('ai.auto.status.updating');
-      if (stage === 'aggregating') return t('ai.auto.status.aggregating');
-      if (stage === 'complete') return t('ai.auto.status.complete');
-      if (stage === 'canceled') return t('ai.auto.status.canceled');
-      return t('ai.auto.status.preparing');
+      const total = Math.max(index, Number(status?.batchTotal ?? 1));
+      const keys = {
+        preparing: 'ai.v13.stage.preparing',
+        packaging_session: 'ai.v13.stage.packagingSession',
+        session_analyzing: 'ai.v13.stage.sessionAnalyzing',
+        session_importing: 'ai.v13.stage.sessionImporting',
+        session_done: 'ai.v13.stage.sessionDone',
+        packaging_memory: 'ai.v13.stage.packagingMemory',
+        memory_analyzing: 'ai.v13.stage.memoryAnalyzing',
+        memory_importing: 'ai.v13.stage.memoryImporting',
+        memory_batch_done: 'ai.v13.stage.memoryBatchDone',
+        memory_done: 'ai.v13.stage.memoryDone',
+        resuming: 'ai.v13.stage.resuming',
+        complete: 'ai.auto.status.complete',
+        canceled: 'ai.auto.status.canceled',
+        paused: 'ai.v13.stage.paused'
+      };
+      const key = keys[stage];
+      if (stage === 'memory_analyzing' || stage === 'memory_importing' || stage === 'memory_batch_done') {
+        return t(key ?? 'ai.v13.stage.preparing', {index, total});
+      }
+      return key ? t(key) : t('ai.v13.stage.preparing');
+    }
+
+    function runSummary(status) {
+      const parts = [];
+      if (status.providerName || status.modelId) {
+        parts.push(`${status.providerName ?? status.providerId ?? ''} · ${status.modelId ?? ''}`);
+      }
+      if (status.pricingStatus) parts.push(t(`ai.v13.price.${status.pricingStatus === 'paid' ? 'paid' : (status.pricingStatus === 'api_free' ? 'free' : 'unknown')}`));
+      if (status.usage?.cost) {
+        parts.push(t('ai.v13.run.usageCost', {
+          amount: Number(status.usage.cost.amount).toFixed(4),
+          currency: status.usage.cost.currency
+        }));
+      } else if (status.usage) {
+        parts.push(t('ai.v13.run.usageTokens', {
+          input: formatInteger(status.usage.inputTokens ?? 0, ctx.locale),
+          output: formatInteger(status.usage.outputTokens ?? 0, ctx.locale)
+        }));
+      }
+      return parts.filter(Boolean).join(' · ');
     }
 
     function renderAutoStatus(status) {
       autoStatus = status;
       autoRunning = Boolean(status?.running);
+      autoPaused = status?.status === 'paused';
       autoCancelButton.hidden = !autoRunning;
       autoCancelButton.disabled = !autoRunning;
+      autoPauseButton.hidden = !autoRunning && !autoPaused;
+      autoPauseButton.disabled = !autoRunning;
+      autoPauseButton.textContent = autoPaused ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
       if (autoRunning) {
         autoButton.disabled = true;
         autoButton.textContent = t('ai.auto.buttonBusy');
         clearAutoError();
         autoStatusText.className = 'auto-status';
-        autoStatusText.textContent = autoStageLabel(status);
+        autoStatusText.textContent = `${autoStageLabel(status)} · ${runSummary(status)}`;
+        const progress = status.batchTotal > 0
+          ? ` · ${t('ai.v13.run.progress', {
+            done: formatInteger(status.batchIndex ?? 0, ctx.locale),
+            total: formatInteger(status.batchTotal ?? 0, ctx.locale)
+          })}`
+          : '';
+        const flags = [
+          status.sessionReportDone ? t('ai.v13.run.sessionDone') : null,
+          status.memoryDone ? t('ai.v13.run.memoryDone') : null
+        ].filter(Boolean).join(' · ');
+        autoStatusText.textContent += progress + (flags ? ` · ${flags}` : '');
         return;
       }
       autoButton.disabled = !selectedId;
-      autoButton.textContent = t('ai.auto.button');
+      autoButton.textContent = runMethod === 'anonymous'
+        ? t('ai.v13.method.startAnonymous')
+        : t('ai.v13.method.startApi');
       if (!status || status.status === 'idle') {
         autoStatusText.textContent = '';
         autoStatusText.className = 'auto-status';
+        autoPauseButton.hidden = true;
         clearAutoError();
         return;
       }
       if (status.status === 'complete') {
         clearAutoError();
-        const coverage = status.job?.memoryCoverage;
+        const coverage = status.memoryJob?.memoryCoverage;
         autoStatusText.className = 'auto-status auto-status--success';
-        autoStatusText.textContent = coverage && Number(coverage.total) > 0
-          ? t('ai.auto.status.completeMemory', {
-            covered: formatInteger(coverage.covered ?? 0, ctx.locale),
-            total: formatInteger(coverage.total ?? 0, ctx.locale)
-          })
-          : t('ai.auto.status.complete');
+        autoStatusText.textContent = [
+          t('ai.auto.status.complete'),
+          status.memoryDone && coverage?.total > 0
+            ? t('ai.auto.status.completeMemory', {
+              covered: formatInteger(coverage.covered ?? 0, ctx.locale),
+              total: formatInteger(coverage.total ?? 0, ctx.locale)
+            })
+            : null,
+          runSummary(status)
+        ].filter(Boolean).join(' · ');
         return;
       }
       if (status.status === 'canceled') {
@@ -1025,10 +1238,18 @@ export const aiPage = {
         autoStatusText.textContent = t('ai.auto.status.canceled');
         return;
       }
-      // failed or interrupted: red sentence below the button, details collapsed.
+      if (status.status === 'paused') {
+        clearAutoError();
+        autoStatusText.className = 'auto-status';
+        autoStatusText.textContent = `${t('ai.v13.stage.paused')}${runSummary(status) ? ` · ${runSummary(status)}` : ''}`;
+        return;
+      }
+      // failed / partial / interrupted: one sentence plus collapsed details.
       autoStatusText.className = 'auto-status';
-      autoStatusText.textContent = '';
-      showAutoError(status.error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', status.error?.detail ?? null);
+      autoStatusText.textContent = status.status === 'partial'
+        ? t('ai.v13.run.partial')
+        : '';
+      showAutoError(status.error?.code ?? 'ANALYSIS_FAILED', status.error?.detail ?? null);
     }
 
     async function refreshAutoStatus() {
@@ -1041,12 +1262,12 @@ export const aiPage = {
         return;
       }
       try {
-        const status = await api.get(`/api/ai/auto/status?sessionId=${encodeURIComponent(selectedId)}`);
+        const status = await api.get(`/api/ai/analyze/status?sessionId=${encodeURIComponent(selectedId)}`);
         renderAutoStatus(status);
         if (status.running) {
           autoTimer = window.setTimeout(refreshAutoStatus, 1500);
-        } else if (status.status === 'complete') {
-          const key = `${selectedId}:${status.jobId ?? ''}`;
+        } else if (status.status === 'complete' || status.status === 'partial') {
+          const key = `${selectedId}:${status.sessionJobId ?? ''}:${status.memoryJobId ?? ''}:${status.status}`;
           if (autoRefreshedFor !== key) {
             autoRefreshedFor = key;
             await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
@@ -1057,8 +1278,19 @@ export const aiPage = {
       }
     }
 
+    function budgetPayload() {
+      const amount = Number(budgetInput.value);
+      if (!budgetInput.value || !Number.isFinite(amount) || amount <= 0) return null;
+      const config = selectedConfig();
+      return {amount, currency: config?.pricing?.currency ?? 'USD'};
+    }
+
     async function startAuto() {
       if (autoRunning || !selectedId) return;
+      if (runMethod === 'api' && !selectedConfig()) {
+        ctx.toast(t('ai.v13.config.none'), {tone: 'error'});
+        return;
+      }
       if (!autoConsentGranted()) {
         const accepted = await askAutoConsent();
         if (!accepted) return;
@@ -1068,11 +1300,19 @@ export const aiPage = {
       autoButton.disabled = true;
       autoButton.textContent = t('ai.auto.starting');
       try {
-        const status = await api.post('/api/ai/auto/run', {
+        const body = {
           sessionId: selectedId,
           locale,
+          mode: runMethod === 'anonymous' ? 'session' : runScope,
           consent: true
-        });
+        };
+        if (runMethod === 'api') {
+          body.configId = selectedConfig()?.id ?? null;
+          body.confirmBilling = confirmBilling.checked;
+          body.optInMemory = optInMemory.checked;
+          body.budget = budgetPayload();
+        }
+        const status = await api.post('/api/ai/analyze/run', body);
         renderAutoStatus(status);
         if (status.running) {
           autoTimer = window.setTimeout(refreshAutoStatus, 800);
@@ -1081,8 +1321,10 @@ export const aiPage = {
       } catch (error) {
         autoRunning = false;
         autoButton.disabled = false;
-        autoButton.textContent = t('ai.auto.button');
-        showAutoError(error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', ctx.describeError(error));
+        autoButton.textContent = runMethod === 'anonymous'
+          ? t('ai.v13.method.startAnonymous')
+          : t('ai.v13.method.startApi');
+        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
       }
     }
 
@@ -1090,12 +1332,42 @@ export const aiPage = {
       if (!selectedId) return;
       autoCancelButton.disabled = true;
       try {
-        const status = await api.post('/api/ai/auto/cancel', {sessionId: selectedId});
+        const status = await api.post('/api/ai/analyze/cancel', {sessionId: selectedId});
         renderAutoStatus(status);
         ctx.toast(t('ai.auto.cancelRequested'), {tone: 'info'});
       } catch (error) {
         autoCancelButton.disabled = false;
-        showAutoError(error?.code ?? 'AUTO_ALL_PROVIDERS_FAILED', ctx.describeError(error));
+        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+      }
+    }
+
+    async function pauseOrResumeAuto() {
+      if (!selectedId) return;
+      if (autoPaused) {
+        if (runMethod === 'api' && !autoConsentGranted() && !await askAutoConsent()) return;
+        try {
+          const status = await api.post('/api/ai/analyze/resume', {
+            sessionId: selectedId,
+            consent: true,
+            confirmBilling: confirmBilling.checked,
+            optInMemory: optInMemory.checked,
+            budget: budgetPayload()
+          });
+          renderAutoStatus(status);
+          if (status.running) autoTimer = window.setTimeout(refreshAutoStatus, 800);
+        } catch (error) {
+          showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+        }
+        return;
+      }
+      autoPauseButton.disabled = true;
+      try {
+        const status = await api.post('/api/ai/analyze/pause', {sessionId: selectedId});
+        renderAutoStatus(status);
+        autoTimer = window.setTimeout(refreshAutoStatus, 600);
+      } catch (error) {
+        autoPauseButton.disabled = false;
+        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
       }
     }
 
@@ -1105,6 +1377,23 @@ export const aiPage = {
     validateButton.addEventListener('click', validateInput);
     autoButton.addEventListener('click', startAuto);
     autoCancelButton.addEventListener('click', cancelAuto);
+    autoPauseButton.addEventListener('click', pauseOrResumeAuto);
+    methodSelect.addEventListener('change', () => {
+      runMethod = methodSelect.value;
+      if (runMethod === 'manual') runScope = 'session';
+      renderRunControls();
+    });
+    configSelect.addEventListener('change', () => {
+      renderScopeOptions();
+      renderRunControls();
+    });
+    scopeSelect.addEventListener('change', () => {
+      runScope = scopeSelect.value;
+      memoryOptRow.hidden = runScope === 'session';
+      syncRunGate();
+    });
+    confirmBilling.addEventListener('change', syncRunGate);
+    optInMemory.addEventListener('change', syncRunGate);
     sessionSelect.addEventListener('change', async () => {
       selectedId = sessionSelect.value;
       syncUrl();
@@ -1128,13 +1417,6 @@ export const aiPage = {
       locale = languageSelect.value;
       if (!activeJob()) await loadPrompt();
       renderAutoStatus(autoStatus);
-    });
-    batchSizeInput.addEventListener('change', () => {
-      const value = Number(batchSizeInput.value);
-      if (!Number.isFinite(value) || value < 100 || value > 5000) {
-        batchSizeInput.value = '1000';
-        ctx.toast(t('errors.settingsInvalid'), {tone: 'error'});
-      }
     });
     promptSelect.addEventListener('change', async () => {
       promptChoice = promptSelect.value;
@@ -1184,6 +1466,7 @@ export const aiPage = {
     /* --------------------------------------------------------------- start */
 
     syncUrl();
+    renderRunControls();
     await refreshJobs();
     await Promise.all([loadPrompt(), refreshReport()]);
     await refreshAutoStatus();

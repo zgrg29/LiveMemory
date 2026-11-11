@@ -347,3 +347,20 @@ M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 →
 ```
 
 M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路径的条款合规评估与长期稳定性。P7 的真实浏览器界面验证与真实平台长时间运行仍需在允许网络与浏览器的环境补验。P8 的统一记忆仍需真实 AI 样本与真实大场覆盖验证；P9 已补上一条真实匿名接口样本，但只有一个 provider、受 2 请求/分钟限制，且未做 EXE/浏览器验收。M6 已完成文件协议与结果 Schema 的兼容性扩展；M5 备份与 M7 画像应继续沿用版本化、可校验的格式。
+
+## P10 AI 权限重构与多 Provider（v0.13.0）✅
+
+- ✅ 单场 Session Analysis 与长期 Viewer Memory Analysis 拆成独立任务/独立保存
+- ✅ 手动 AI 仅单场：单包、无 memory 文件、无 viewer_profiles 要求、导入拒绝长期记忆
+- ✅ 匿名免费 AI 仅单场；失败独立显示，不自动切换付费
+- ✅ 自带 Key 免费模型仅单场；免费状态不因有 Key 而变成付费
+- ✅ 付费模型通过能力验证后可执行长期画像；必须显式 opt-in、价格确认与预算
+- ✅ 多 Provider Adapter：OpenAI、Anthropic、DeepSeek、MiniMax（区域）、阿里云百炼（区域）、OpenRouter、自定义
+- ✅ OpenRouter 官方模型列表/价格/上下文/免费状态/结构化能力
+- ✅ 本地加密凭据、区域密钥隔离、URL/私网/DNS 安全检查
+- ✅ 六层能力检测、费用状态、预算保护、usage 记录
+- ✅ 三语 UI：分析方式/内容/配置/价格/状态/暂停恢复
+- ✅ schema 13、结果 Schema 1.3.0、旧 1.0–1.2 兼容
+- ✅ 自动化测试（Mock）覆盖权限、Provider、单场、画像、52 观众批次、预算
+- ⬜ 真实 Provider 生成（OpenAI/Anthropic/DeepSeek/MiniMax/DashScope）——缺 Key，阻塞
+- ⬜ 真实浏览器 UI / Windows EXE 验收

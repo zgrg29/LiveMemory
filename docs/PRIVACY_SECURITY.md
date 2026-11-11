@@ -325,3 +325,13 @@ AI 结果是**外部输入**，按不可信数据处理：
   JSON/Schema 不合法、规模超限等稳定错误码，便于排查。
 - **未知/限制**：OVH 匿名通道可能限流或下线；没有第二个已验证 provider；真实 EXE 网络行为尚未验收。
   这些必须在状态/交接文档中如实保留，不能把“曾经测通”写成“永久可用”。
+
+## 26. 用户自带 AI API（v0.13.0）
+
+- **凭据存储**：API Key 写入 `<数据目录>/secrets/ai-keys.json`，AES-256-GCM + 每安装随机密钥；普通配置 `<数据目录>/config/ai-providers.json` 只保存 `credentialReference`。这不是 DPAPI：同一 Windows 用户的其他进程仍可能读取密钥与密钥文件；文档与界面都如实说明。
+- **区域隔离**：同一 Provider 的不同区域是独立配置；切换区域/Base URL 会生成新的 credential reference，旧 Key 不再被复用。
+- **发送目的地**：已知 Provider 只允许其官方区域 Base URL；自定义 Base URL 必须显式配置。服务端阻止云元数据、私网地址与 localhost，除非用户显式勾选 `allowLocalNetwork`（本地模型场景）；请求前做 DNS 解析检查。API Key 只发送到该配置确认的 Base URL。
+- **不进入日志/导出**：日志、状态文件、分析 ZIP、数据库导出、错误详情与前端 HTML 均不包含 Key。状态文件只保存 provider/model/job/stage/usage。
+- **数据范围**：单场任务发送本场聊天、统计、时间线与表情；画像任务额外发送本场相关观众摘录与已有长期记忆。不会发送数据库文件、Cookie、无关历史直播或系统账户信息。
+- **付费与预算**：费用状态由实际模型/服务商价格决定；未知价格保持 unknown 并需要显式确认。画像是 opt-in；预算保护只对已知价格/币种生效。估算不是最终账单。
+- **删除**：删除配置会删除对应加密密钥；清空数据会清理 config/secrets。远程服务商是否保留请求数据由该服务商政策决定，LiveMemory 无法撤回。

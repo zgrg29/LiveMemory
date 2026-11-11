@@ -24,6 +24,7 @@ import {
 import {isoFromEpochMs} from '../../shared/time.mjs';
 import {
   ACCEPTED_RESULT_SCHEMA_VERSIONS,
+  ANALYSIS_MODE,
   RESULT_PROTOCOL,
   SUPPORTED_LOCALES,
   TASK_KIND,
@@ -34,11 +35,17 @@ import {validateAgainstSchema} from './schema-validator.mjs';
 import {validateEmbeddedMemoryUpdates} from '../../memory/embedded.mjs';
 
 const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.schema.json', import.meta.url));
-let cachedSchema = null;
+const SCHEMA_FILE_V13 = fileURLToPath(new URL('../schemas/analysis-result-v1.3.schema.json', import.meta.url));
+const cachedSchemas = new Map();
 
-export function loadResultSchema() {
-  if (!cachedSchema) cachedSchema = JSON.parse(readFileSync(SCHEMA_FILE, 'utf8'));
-  return cachedSchema;
+export function loadResultSchema(version = '1.2.0') {
+  if (!cachedSchemas.has(version)) {
+    cachedSchemas.set(
+      version,
+      JSON.parse(readFileSync(version === '1.3.0' ? SCHEMA_FILE_V13 : SCHEMA_FILE, 'utf8'))
+    );
+  }
+  return cachedSchemas.get(version);
 }
 
 /**
@@ -98,7 +105,13 @@ const FIX_GROUPS = Object.freeze({
   LOCALE_MISMATCH: 'none',
   BROADCASTER_UNVERIFIED: 'broadcast',
   LEGACY_PACKAGE: 'none',
-  BATCH_ID_MISSING: 'batch'
+  BATCH_ID_MISSING: 'batch',
+  SESSION_SCHEMA_REQUIRED: 'version',
+  MEMORY_SCHEMA_REQUIRED: 'version',
+  ANALYSIS_SCOPE_MISMATCH: 'version',
+  SESSION_TOPICS_REQUIRED: 'missing',
+  SESSION_MEMORY_FORBIDDEN: 'version',
+  MEMORY_PROFILES_FORBIDDEN: 'version'
 });
 
 function issue(severity, path, code, params = {}) {
@@ -187,6 +200,7 @@ export function sanitizeResult(parsed, {schemaVersion}) {
     task_id: cleanText(parsed.task_id),
     session_id: cleanText(parsed.session_id),
     locale: parsed.locale,
+    ...(typeof parsed.analysis_scope === 'string' ? {analysis_scope: parsed.analysis_scope} : {}),
     session_topics: {
       summary: cleanText(topics.summary ?? ''),
       topics: (topics.topics ?? []).map((topic) => ({
@@ -333,6 +347,8 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
     mode: null,
     protocol: null,
     schemaVersion: null,
+    analysisScope: null,
+    analysisMode: null,
     locale: null,
     taskId: null,
     taskKind: null,
@@ -367,11 +383,13 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
   const schemaVersion = typeof payload.schema_version === 'string' ? payload.schema_version : '1.0.0';
   target.protocol = typeof payload.protocol === 'string' ? payload.protocol : null;
   target.schemaVersion = schemaVersion;
+  target.analysisScope = typeof payload.analysis_scope === 'string' ? payload.analysis_scope : null;
   target.locale = typeof payload.locale === 'string' ? payload.locale : null;
   target.taskId = typeof payload.task_id === 'string' ? payload.task_id : null;
 
   // 1. JSON Schema (structure, types, enums, ranges, ref shapes).
-  for (const schemaError of validateAgainstSchema(loadResultSchema(), payload)) {
+  const schemaToUse = schemaVersion === '1.3.0' ? '1.3.0' : '1.2.0';
+  for (const schemaError of validateAgainstSchema(loadResultSchema(schemaToUse), payload)) {
     issues.push(issue('error', schemaError.path, schemaError.code, schemaError.params));
   }
   if (payload.schema_version !== undefined && !ACCEPTED_RESULT_SCHEMA_VERSIONS.includes(payload.schema_version)) {
@@ -553,7 +571,8 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
       locale: job.locale,
       legacy: job.legacy,
       totalMessages: job.totalMessages,
-      aggregatePackageId: job.aggregatePackageId
+      aggregatePackageId: job.aggregatePackageId,
+      analysisMode: job.analysisMode ?? 'combined'
     }
     : (legacyNeedsCreate
       ? {
@@ -563,9 +582,58 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
         locale: null,
         legacy: true,
         totalMessages: batch?.messageCount ?? 0,
-        aggregatePackageId: null
+        aggregatePackageId: null,
+        analysisMode: 'combined'
       }
       : null);
+  target.analysisMode = job?.analysisMode ?? 'combined';
+  if (job?.analysisMode === ANALYSIS_MODE.MEMORY) {
+    target.taskKind = TASK_KIND.VIEWER_MEMORY;
+  }
+
+  // v0.13 mode boundary. A session-only job must not bring long-term memory
+  // updates, and a memory-only job must not try to replace the session report.
+  if (job) {
+    if (job.analysisMode === ANALYSIS_MODE.SESSION && schemaVersion !== '1.3.0') {
+      issues.push(issue('error', 'schema_version', 'SESSION_SCHEMA_REQUIRED', {expected: '1.3.0'}));
+    }
+    if (job.analysisMode === ANALYSIS_MODE.MEMORY && schemaVersion !== '1.3.0') {
+      issues.push(issue('error', 'schema_version', 'MEMORY_SCHEMA_REQUIRED', {expected: '1.3.0'}));
+    }
+    if (schemaVersion === '1.3.0') {
+      const expectedScope = job.analysisMode === ANALYSIS_MODE.SESSION
+        ? 'session'
+        : (job.analysisMode === ANALYSIS_MODE.MEMORY ? 'viewer_memory' : null);
+      if (!expectedScope) {
+        issues.push(issue('error', 'analysis_scope', 'ANALYSIS_SCOPE_MISMATCH', {
+          actual: String(payload.analysis_scope ?? ''),
+          mode: job.analysisMode
+        }));
+      } else if (payload.analysis_scope !== expectedScope) {
+        issues.push(issue('error', 'analysis_scope', 'ANALYSIS_SCOPE_MISMATCH', {
+          expected: expectedScope,
+          actual: String(payload.analysis_scope ?? '')
+        }));
+      }
+      if (payload.analysis_scope === 'session') {
+        if (!payload.session_topics || typeof payload.session_topics !== 'object') {
+          issues.push(issue('error', 'session_topics', 'SESSION_TOPICS_REQUIRED', {}));
+        }
+        if (Array.isArray(payload.viewer_memory_updates) && payload.viewer_memory_updates.length > 0) {
+          issues.push(issue('error', 'viewer_memory_updates', 'SESSION_MEMORY_FORBIDDEN', {}));
+        }
+      }
+      if (payload.analysis_scope === 'viewer_memory'
+        && !Array.isArray(payload.viewer_memory_updates)) {
+        issues.push(issue('error', 'viewer_memory_updates', 'MEMORY_UPDATES_REQUIRED', {}));
+      }
+      if (payload.analysis_scope === 'viewer_memory'
+        && Array.isArray(payload.viewer_profiles)
+        && payload.viewer_profiles.length > 0) {
+        issues.push(issue('error', 'viewer_profiles', 'MEMORY_PROFILES_FORBIDDEN', {}));
+      }
+    }
+  }
   if (batch) {
     target.batch = {
       index: batch.batchIndex,
@@ -746,9 +814,18 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
   // 6. Viewer profiles must resolve to identities really present in this batch.
   let allowedViewerIds = null;
   if (job) {
-    allowedViewerIds = mode === 'aggregate'
-      ? new Set(listAllJobViewerIds(db, job.id))
-      : new Set(listJobViewerIds(db, job.id, batch.batchIndex));
+    if (job.analysisMode === ANALYSIS_MODE.SESSION) {
+      // A session report is allowed to mention only participants of this session;
+      // it still cannot create or modify long-term memory.
+      allowedViewerIds = new Set(listSessionViewers(db, session.id, {limit: 20000})
+        .map((viewer) => viewer.viewer_id));
+    } else if (job.analysisMode === ANALYSIS_MODE.MEMORY) {
+      allowedViewerIds = null;
+    } else {
+      allowedViewerIds = mode === 'aggregate'
+        ? new Set(listAllJobViewerIds(db, job.id))
+        : new Set(listJobViewerIds(db, job.id, batch.batchIndex));
+    }
   } else if (batch?.viewers) {
     allowedViewerIds = new Set(batch.viewers);
   }
@@ -770,7 +847,7 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
   // 7. Long-term memory updates travel in the same answer. Every viewer
   // assigned to this batch must be covered exactly once; objective history is
   // applied by the importer even when there is no new semantic information.
-  const memory = (mode === 'batch' && batch)
+  const memory = (mode === 'batch' && batch && (job?.analysisMode ?? 'combined') !== ANALYSIS_MODE.SESSION)
     ? validateEmbeddedMemoryUpdates({
       db,
       job,
@@ -802,6 +879,7 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
     || (topics.disputes?.length ?? 0) > 0
     || (topics.highlights?.length ?? 0) > 0
     || (payload.viewer_profiles?.length ?? 0) > 0
+    || (payload.viewer_memory_updates ?? []).some((entry) => (entry?.operations?.length ?? 0) > 0)
     || (topics.summary ?? '').trim() !== '';
   if (!hasContent) {
     warnings.push(issue('warning', '', 'RESULT_EMPTY', {}));

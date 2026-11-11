@@ -478,3 +478,12 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 - 颜色只用 tokens：错误文案 `var(--danger)`，成功状态 `var(--success)`，其余
   `var(--text-secondary)`；明亮/黑暗分别适配。
 - 所有文案在 `src/web/i18n/*.json` 的 `ai.auto.*`；禁止硬编码、禁止 `innerHTML`。
+
+### 7.12 v0.13 AI 分析中心与 Provider 设置
+
+- **创建分析任务**：直播场次、分析语言、分析方式（手动 AI / 免费匿名 AI / 已配置 API）、分析内容（仅单场 / 仅长期画像 / 两者）、API 配置、预算、付费确认、长期画像 opt-in。
+- **动态权限**：只有 `pricingStatus=paid` 且 `capabilities.memory=true` 的配置才显示画像选项；免费配置只显示「仅单场」。
+- **状态**：显示 provider/model/费用状态/阶段/批次/单场报告完成/长期画像完成；失败显示稳定错误码与折叠详情；支持暂停、继续、取消。
+- **手动区**：单包下载、单份三语提示词、JSON 文件/粘贴导入；不再显示多批下载或 aggregate 步骤。
+- **设置页**：Provider 选择、区域选择（含 MiniMax/百炼多区域）、Base URL（自定义）、API Key（不回显）、模型/官方列表、价格/币种、默认配置、能力检测、删除。
+- **三语**：所有新增文案在 `zh-CN` / `ja` / `en` 字典；不使用 innerHTML；窄屏使用现有单列布局。

@@ -1,19 +1,76 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（v0.12.1 真实故障修复：自动分析紧凑格式 + 手动导入诊断）
+最后更新：2026-11-11（v0.13.0：单场分析 / 长期画像解耦、多 Provider API、付费画像权限）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 核心完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.12.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**12**（本轮未改表结构；没有迁移）
-- 分析结果 Schema：**1.2.0**（不变）；提示词：**`lm-prompt-m6.3-<locale>`**
+- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
+- 版本：`0.13.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**13**（迁移 13：AI 任务模式 / Provider 快照 / 能力检测审计）
+- 分析结果 Schema：**1.3.0**（新单场/画像任务）；旧 1.0.0–1.2.0 仍可导入；提示词：`lm-prompt-v13-session-<locale>`、`lm-prompt-v13-memory-<locale>`、旧 `lm-prompt-m6.3-<locale>`
 - 分支：`main`，本地提交，未 Push
-- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.12.0 已构建；本轮未重建）
+- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.13.0 已构建，未运行验收）
 
-## 0. v0.12.1 本轮完成（2026-11-11，真实故障修复）
+## 0. v0.13.0 本轮完成（2026-11-11）
+
+### 0.1 权限与任务拆分
+
+| 模式 | 入口 | 允许内容 | 权限边界 |
+| --- | --- | --- | --- |
+| 手动 AI | 导出单场包 → 任意 AI → 导入 | 单场总结/话题/情绪/互动/精彩片段/建议 | 不需要 Key；禁止 `viewer_memory_updates` |
+| 匿名免费 AI | OVHcloud `gpt-oss-20b` | 单场报告 | 实验性；限流/超时/格式失败独立显示；不自动切换付费 |
+| API Key 免费模型 | 用户配置的 `api_free` 模型 | 单场报告 | 即使有 Key 也不解锁长期画像 |
+| 付费模型 | 已配置且通过能力验证 | 单场 + 长期画像 | 必须付费状态、价格已知、用户明确 opt-in、预算/确认 |
+
+- 新增 `session` 与 `memory` 两种独立任务；`both` 先保存单场报告，再执行画像。单场失败不影响画像，画像失败不覆盖单场报告。
+- 手动单场包不再包含 `memory_context.json`、`viewer_excerpts.jsonl`、全量 `viewer_context.json`，也不要求 `viewer_profiles` / `viewer_memory_updates`。
+- 旧 `combined` 任务/结果保留读取；历史报告仍可打开；旧长期画像不删除。
+
+### 0.2 多 Provider
+
+- 正式 Provider：OpenAI、Anthropic、DeepSeek、MiniMax（cn/intl）、阿里云百炼（cn-beijing/singapore/us/hongkong）、OpenRouter、自定义 OpenAI-compatible。
+- Anthropic 使用独立 `/v1/messages` 适配器（`x-api-key`、`anthropic-version`、system 分离）；其余使用 OpenAI Chat Completions。
+- OpenRouter：官方 `/models` 动态模型列表；已真实请求返回 469 个模型，其中 15 个免费、396 个声明 structured output。价格/上下文来自官方字段，不虚构。
+- 区域独立配置：切换 region/base URL 会生成新 credential reference 并要求重新输入 Key，旧区域 Key 不复用。
+- 自定义 URL 阻止云元数据、私网、localhost（除非显式 `allowLocalNetwork`）；请求前做 DNS 私网解析检查。
+
+### 0.3 能力、费用与预算
+
+- 能力检测层级：network → auth → text → json → session → memory；只有 memory 探针通过（多观众 ref、证据归属、零发言、多语言）才写 `capabilities.memory=true`。
+- OpenRouter 价格按官方 `pricing.prompt/completion` 换算；未知价格保持 unknown，不按 Provider 名称推断。
+- 费用未知/付费模型请求前必须 `confirmBilling`；长期画像另需 `optInMemory`、付费状态、价格与能力验证。
+- 单任务预算：请求前估算、请求后累计 usage；达到上限停止后续请求；不自动切换到更贵模型。
+- 能力检测结果写入配置并追加 `ai_provider_tests` 审计表（provider/region/model/time/type）。
+
+### 0.4 手动单场
+
+- `POST /api/ai/jobs {analysisMode:'session'}` 生成一个 `stage=session` 包，不含长期记忆文件。
+- 导入只接受 `schema_version=1.3.0`、`analysis_scope=session`；`viewer_memory_updates` 非空直接拒绝。
+- `POST /api/ai/import` 仍支持文件与粘贴；单场任务导入不触发任何长期记忆写入。
+
+### 0.5 UI
+
+- AI 分析中心：分析方式（手动/匿名/API）、内容（单场/画像/两者）、配置选择、价格状态、预算、付费确认、长期画像 opt-in。
+- 设置页新增 Provider 配置卡：Provider/区域/Base URL/Key/模型/官方模型列表/价格/默认/能力检测/删除。
+- 运行状态显示 provider/model/pricing/阶段/批次/单场报告状态/长期画像状态；暂停、继续、取消。
+- 三语完整键（zh-CN / ja / en），无新增硬编码可见文案。
+
+### 0.6 真实验证（本轮）
+
+- OpenRouter `/api/v1/models`：真实返回 **469** 个模型，15 个 `pricing=0` 免费模型，396 个声明 structured output（2026-11-11）。
+- 其他 Provider 的真实生成请求：**阻塞**（无可用 API Key，未伪造成功）。
+- 匿名 OVHcloud 生成：本轮未重新发起（v0.12.1 真实 52 观众样本记录保留）。
+- 无真实浏览器渲染/截图验收；本机策略仍阻止无头浏览器。UI 只做静态/HTTP 覆盖。
+- v0.13.0 EXE 已构建（91.5 MB / 166 assets / requireAdministrator），但 **未能运行**（UAC 拒绝）。
+
+### 0.7 测试（本轮实测）
+
+- 全量测试：**561 passed / 0 failed**（约 73 秒，2026-11-11，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 新增覆盖：Provider catalog/price/URL/credential store/Anthropic+OpenAI adapter/OpenRouter model list；单场任务导入；memory-only 任务；52 观众 6 批部分导入恢复；免费/付费权限门；预算阻断；API runner mock 单场与画像。
+
+## 0.1 v0.12.1（历史）真实故障修复（2026-11-11）
 
 ### 0.1 真实故障与确认根因
 
@@ -254,20 +311,23 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 5. 构建结果（如实）
 
-- **v0.12.1 未重新构建 EXE**；以下为 v0.12.0 的历史构建记录。
-- `node scripts/build-windows.mjs` 成功：`dist/LiveMemory.exe`（v0.12.0）
-  - 大小 **91.2 MB**，资源 **151 个**，资源哈希 `c5a20ea9c14c707fc659`
-  - SHA-256 `342294c97ebb200fe8796ac783fa841f5e2b6f451fcc996a641db8368d82cebe`
+- **v0.13.0 已重新构建 EXE**：`node scripts/build-windows.mjs` 成功。
+  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `9233ae400aa2a680bcd3`
+  - SHA-256 `211a0a221e47acb812cecd812c825192433767a1fd473e84120db043455cd1fd`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
-  `--version`、启动服务、验证打包后的自动分析出站请求或 UI。
-- 因此只能声称“已构建”，不能声称“v0.12.0 EXE 已启动/已验收”。
+  `--version`、启动服务、验证打包后的出站请求或 UI。
+- 因此只能声称“已构建”，不能声称“v0.13.0 EXE 已启动/已验收”。
+- 历史：v0.12.0 / v0.12.1 的构建记录不再代表当前产物。
 
 ## 6. 未完成 / 未验证
 
-- v0.12.0 EXE 启动、出站网络与干净 Windows 环境验收（已构建，未能运行）；
-- 真实浏览器自动分析 UI、暗色、390px、按钮位置截图；
-- 数千观众/数万消息大场的自动批次、耗时、内存与 OVH 2 请求/分钟的实际总时长；
+- v0.13.0 EXE 启动、出站网络与干净 Windows 环境验收（已构建，未能运行）；
+- 真实浏览器 AI 分析中心、Provider 设置卡、暗色、390px 截图；
+- 真实 OpenAI/Anthropic/DeepSeek/MiniMax/DashScope 生成与能力检测（缺 Key）；
+- 真实付费 52 观众端到端画像（Mock runner + 包结构测试已通过）；
+- 数千观众/数万消息大场的批次、耗时、内存与 OVH 2 请求/分钟的实际总时长；
+- 自动分析运行中删除场次/清空数据的 UI 守卫与真实交互；
 - 第二个通过完整 LiveMemory 包的匿名 provider（本轮没有）；
 - 自动分析运行中删除场次/清空数据的 UI 守卫与真实交互；
 - 真实 Bilibili/YouTube 大场自动分析样本（当前真实样本为 3 位合成观众）；
@@ -276,22 +336,24 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 7. 关键规则（下一轮不要破坏）
 
-1. 一次分析结果同时承担本场报告与长期记忆；不再创建独立记忆 AI 任务。
-2. 每位可识别观众必须有且仅有一条 `viewer_memory_updates`；缺失即导入错误。
-3. 观众只分配到一个记忆批次，全部可用摘录随行；不得用 Top N 或最低活跃度裁剪。
-4. 客观历史只由真实记录更新；AI 不能写金额/计数/时间/身份。
-5. 语义事实必须有证据或明确推断/待确认；`stated` 必须有本观众的消息。
-6. 无新语义 ≠ 未处理；`pending` 才是未处理。
-7. 删除记忆后的旧包不能恢复；重复导入幂等。
-8. 三语键三份一致；前端禁止 `innerHTML`；颜色只用 tokens。
-9. 自动分析必须走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写库，不能降低 Schema。
-10. 自动批次仍覆盖全部可识别观众；超出 12 批或 90k 上下文时明确失败，不得静默裁剪。
-11. 只允许 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过完整 LiveMemory 包的匿名 provider；未验证服务不得进入自动列表。
-12. 自动失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆、不自动切换手动模式；红色文案在按钮正下方。
-13. 自动批次模型只输出 `ref`，不得输出/猜测 `viewer_id`；ref 必须由 `ai_job_memory_viewers` 精确映射，重复/越界/缺失拒绝。
-14. 自动缺失 ref 只做一次定向补充；仍缺失即失败，不能默认 `no_new_information`。
-15. 自动批次 10 位/30 批 = 300 位容量；修改任一项必须同时检查总容量与免费限流。
-16. 手动导入失败只显示精确 gaps 与修复指令，绝不自动替换、缩写或合并 ID。
+1. `session` 与 `memory` 是独立任务、独立保存；单场报告成功不依赖画像，画像失败不覆盖报告。
+2. 免费 Provider/`api_free` 模型永远不能执行 memory 任务；长期画像必须是付费 + 已知价格 + `capabilities.memory` + 用户 opt-in。
+3. 付费/未知价格请求前必须 `confirmBilling`；未知价格不得当免费；不自动切换到更贵模型。
+4. Provider 配置只保存 credentialReference；Key 只存加密凭据库；区域/Base URL 变化轮换引用。
+5. 自定义 URL 必须通过私网/元数据/DNS 检查；localhost 只在显式 allowLocalNetwork 时允许。
+6. 能力检测不能只看 HTTP 200；memory 必须用多观众 ref、证据归属、零发言与多语言探针。
+7. 每位可识别观众必须有且仅有一条 `viewer_memory_updates`；缺失即导入错误。
+8. 观众只分配到一个记忆批次，全部可用摘录随行；不得用 Top N 或最低活跃度裁剪。
+9. 客观历史只由真实记录更新；AI 不能写金额/计数/时间/身份。
+10. 语义事实必须有证据或明确推断/待确认；`stated` 必须有本观众的消息。
+11. 无新语义 ≠ 未处理；`pending` 才是未处理。
+12. 删除记忆后的旧包不能恢复；重复导入幂等。
+13. 三语键三份一致；前端禁止 `innerHTML`；颜色只用 tokens。
+14. 所有 Provider/模型输出必须走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写库，不能降低 Schema。
+15. 画像批次仍覆盖全部可识别观众；超出安全上限明确失败，不得静默裁剪。
+16. 匿名 Provider 只允许已通过真实 LiveMemory 包验证的服务；未验证服务不得进入自动列表。
+17. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
+18. 手动导入失败只显示精确 gaps 与修复指令，绝不自动替换、缩写或合并 ID。
 
 ## 8. 相关文档
 

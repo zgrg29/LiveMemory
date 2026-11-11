@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -56,7 +56,7 @@ test('local API serves the console, records a session, exports a package and res
     assert.equal(health.port, server.port);
 
     const bootstrap = await (await fetch(`${base}api/bootstrap`)).json();
-    assert.equal(bootstrap.app.version, '0.12.1');
+    assert.equal(bootstrap.app.version, '0.13.0');
     assert.equal(bootstrap.effective.locale, 'en');
     assert.equal(bootstrap.settings.locale, 'system');
     assert.equal(bootstrap.settings.theme, 'system');
