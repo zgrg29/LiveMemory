@@ -93,6 +93,6 @@
 - [x] 手动导出/导入/报告/长期记忆保留
 - [x] STATUS / HANDOFF / ROADMAP / ARCHITECTURE / AI_CONTRACT / PRIVACY_SECURITY / UI_DESIGN / TEST_PLAN / CHANGELOG 已更新
 - [x] 未提交用户数据、凭据、`tests/.tmp`、`dist/`、`build/`
-- [x] 本地 Commit（未 Push）
+- [x] 本地 Commit：`b0a985a feat: add automatic anonymous AI analysis`（未 Push）
 - [x] EXE 已构建（91.2 MB / requireAdministrator / SHA-256 `342294c…`）
 - [ ] EXE 运行验收（本机拒绝非提升执行）

@@ -131,7 +131,8 @@ node tests/.tmp/auto-real.mjs
 
 ## 8. 本轮 Commit
 
-- 待提交：`feat: add automatic anonymous AI analysis`（本地 commit，未 Push；hash 见提交输出）。
+- 功能提交：`b0a985a feat: add automatic anonymous AI analysis`（本地 commit，未 Push）。
+- 本轮文档/测试与功能在同一提交；提交后仅追加本交接记录的 hash 说明。
 
 ## 9. 上一轮（v0.11.1）摘要
 
