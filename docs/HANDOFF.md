@@ -1,6 +1,6 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-11 · v0.13.1 移除匿名免费 / 手动 AI，重写付费请求调度 + 七项实际使用修复 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-11 · v0.13.1 移除匿名免费 / 手动 AI，重写付费请求调度 + 七项实际使用修复 + API 配置编辑 · schema 13 · 结果 Schema 1.3.0
 
 ## 0. 本轮追加：七项实际使用修复
 
@@ -20,6 +20,15 @@
 
 真实 Bilibili 只读验证：房间 `3` → `23058`，未开播，`displayName=3号直播间`、`platformUid=11153765`。真实浏览器/EXE 仍受阻；未伪造。
 
+### Bug 8：已保存 API 配置可编辑
+
+- 设置页配置卡新增「编辑配置」；复用同一表单，预填名称/Provider/区域/Base URL/模型/价格/并发/本地网络。
+- API Key 输入默认留空并显示「已保存」；只有输入新 Key 才发送 `apiKey`，空字符串不覆盖旧 Key。
+- 只改 Model ID：同一 `configId`、默认标记、credentialReference 保留；旧能力/测试状态/价格/contextLength 失效；新任务使用新模型。
+- 改 Provider/区域/Base URL：轮换 credential reference，必须重新输入 Key；不允许静默复用旧密钥。
+- 运行中任务：禁止编辑/删除其配置（409 `AI_PROVIDER_CONFIG_IN_USE`）；旧 job 的模型/区域变化后 `resume` 拒绝（409 `AI_PROVIDER_CONFIG_CHANGED`），新任务用新配置。
+- 测试：`v13-providers`（store 行为/重启持久化）、`v13-provider-edit`（HTTP/运行中/新模型）、`ai-settings-edit`（UI/安全静态）。
+
 ## 1. 上一轮结果（v0.13.1 入口与调度）
 
 | 目标 | 结论 |
@@ -35,10 +44,10 @@
 | 跨场次记忆顺序 | **已实现。** 同一主播记忆 gate；较新场次已导入后拒绝较旧场次（`ANALYSIS_MEMORY_OUT_OF_ORDER`）。 |
 | 性能统计 | **已实现。** 请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA。 |
 | 本地性能修复 | **已实现。** 每批只更新本批观众；DNS 安全检查缓存 5 分钟；精确 `getJobPackage()` 查询。 |
-| 全量测试 | **539 passed / 0 failed**（约 73 秒）。 |
+| 全量测试 | **548 passed / 0 failed**（约 73 秒）。 |
 | Mock 规模测试 | **1,000 观众 / 10,000 消息：100 批、6.5 秒、峰值并发 6、覆盖 1,000/1,000。** |
 | 真实付费 API | **阻塞**：本机没有 Provider 配置/密钥/环境变量。未伪造成功。 |
-| EXE | **已重新构建 v0.13.1**（91.5 MB / 164 assets / SHA-256 `e3c637c8…` / requireAdministrator），包含本轮七项修复；**未能运行**（UAC 拒绝）。 |
+| EXE | **已重新构建 v0.13.1**（91.5 MB / 164 assets / SHA-256 `97bb80cd…` / requireAdministrator），包含七项修复与配置编辑；**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 

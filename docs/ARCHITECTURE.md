@@ -631,3 +631,32 @@ AI 分析中心
 - 重启后从 `monitor_targets.meta_json` 恢复；不使用内存布尔变量。
 - 已结束的 session 永不重新打开；显式恢复创建新 session。
 - Bilibili 主播身份仍是 `bilibili:<anchorUid>`；昵称只用于显示。
+
+## 1.7 v0.13.1 API 配置原地编辑（2026-11-11）
+
+```text
+PATCH /api/ai/providers/configs/:id
+  -> 若 analysisRunner.isConfigInUse(id) -> 409 AI_PROVIDER_CONFIG_IN_USE
+  -> body 未提供 pricing 时不要传入 null（否则会误清空）
+  -> ProviderConfigStore.update(id, patch)
+       - 同一 id，不删除重建
+       - credentialReference 不变（provider/region/baseUrl 未变）
+       - 显式非空 apiKey 才替换；空/缺省保留旧 Key
+       - provider/region/baseUrl 变化：轮换 reference；非自定义 provider 必须有新 Key
+       - modelId 变化：capabilities=空、lastTestStatus=untested、
+         pricing=null/unknown、contextLength=null、modelLabel=新 modelId
+       - name/concurrency/pricing 等非模型字段变化不否定能力
+  -> 返回 public config（不含 Key）
+
+AnalysisRunner
+  - start 的 resumable 要求 provider/region/model 与 state 快照一致
+  - resume 时配置身份变化 -> 409 AI_PROVIDER_CONFIG_CHANGED
+  - 运行中的 config 禁止编辑/删除；新任务读取新配置
+```
+
+安全边界：
+
+- 浏览器只收到 `hasCredential`，不收到 Key。
+- 编辑表单的 Key 输入为空；只有用户输入才随 PATCH 发送。
+- 旧模型能力、价格、上下文不会被新模型继承。
+- 历史分析结果、长期画像、其他 Provider 配置不因编辑而修改。

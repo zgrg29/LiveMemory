@@ -18,6 +18,8 @@
 - 请求统计：总数/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA。
 - 设置页初始并发数；三语 `ai.center.*` 文案。
 - `docs/AI_SCHEDULER_AUDIT.md`、`scripts/benchmark-mock-scale.mjs`。
+- API 配置原地编辑：卡片「编辑配置」、表单复用、只改模型保留 Key、模型变化能力/价格失效、运行中配置保护、resume 配置变化拒绝。
+- 七项实际使用修复：历史场次选择、配置状态、实时进度、无观众画像跳过、报告去重、Bilibili 未开播主播名、手动停止后同周期抑制。
 
 ### 修复
 
@@ -28,10 +30,10 @@
 
 ### 测试
 
-- 全量 **519 passed / 0 failed**。
+- 全量 **548 passed / 0 failed**。
 - Mock：1,000 观众 / 10,000 消息 → 100 批、100 请求、峰值并发 6、6,491ms、15.41 req/s、覆盖 1,000/1,000。
 - 真实付费 API：**阻塞**（本机无 Provider 配置/密钥/环境变量）；未伪造。
-- EXE：已构建 v0.13.1（91.4 MB / 161 assets / requireAdministrator），未运行（UAC 拒绝）。
+- EXE：已构建 v0.13.1（91.5 MB / 164 assets / requireAdministrator），未运行（UAC 拒绝）。
 
 ## 0.13.0 — 2026-11-11（单场/画像解耦 + 多 Provider + 付费画像）
 

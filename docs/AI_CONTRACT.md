@@ -808,3 +808,13 @@ result.schema.json
 - 单场报告成功后，如果本场没有可识别观众（`ANALYSIS_MEMORY_NO_VIEWERS`）或没有主播身份（`ANALYSIS_MEMORY_NO_BROADCASTER`），单场报告保留，画像标记 skipped，任务可 complete。
 - memory-only 任务遇到同样情况返回明确错误，不伪造观众、不伪造记忆。
 - 100% 进度只在 `status=complete` 时出现；失败最多 99%。
+
+## 18. v0.13.1 API 配置编辑与任务配置快照
+
+- `PATCH /api/ai/providers/configs/:id` 原地更新同一 `configId`；不删除重建。
+- 只修改 Model ID 时保留 `credentialReference` 和已保存 Key；客户端不发送 `apiKey` 或发送空字符串均不覆盖。
+- 明确发送非空 `apiKey` 才替换；Provider/区域/Base URL 变化会轮换 credential reference，并要求重新输入 Key。
+- 模型变化使旧 `capabilities` / `lastTestStatus` / 价格 / contextLength 失效，新模型必须重新检测；不会默认新模型支持单场或长期画像。
+- 正在运行的任务使用启动时的 provider/model 快照；该配置在运行期间禁止编辑/删除（409 `AI_PROVIDER_CONFIG_IN_USE`）。
+- 暂停/中断的旧任务若配置身份改变，`resume` 返回 409 `AI_PROVIDER_CONFIG_CHANGED`；新分析使用新配置。
+- 历史报告、长期画像、其他配置与新任务互不影响。状态/日志响应均不包含 Key。

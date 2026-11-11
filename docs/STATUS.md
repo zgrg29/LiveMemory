@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（v0.13.1 七项实际使用修复：场次跳转、配置状态、实时进度、无观众画像、重复报告、Bilibili 主播名、手动停止后自动恢复）
+最后更新：2026-11-11（v0.13.1 第 8 项修复：已保存 API 配置可编辑，改模型保留 Key 并失效旧能力）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -59,7 +59,7 @@
 
 ### 0.6 本轮测试（实测）
 
-- 全量：**539 passed / 0 failed**（2026-11-11，约 73 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 全量：**548 passed / 0 failed**（2026-11-11，约 73 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - 新增：`tests/unit/ai-scheduler.test.mjs`（并发上限、429 隔离、取消、退避）、`tests/integration/v13-scheduler.test.mjs`（429 Retry-After、1,000 观众批次并发、失败恢复、跨场次顺序）、`scripts/benchmark-mock-scale.mjs`。
 - 重写：`tests/unit/ai-ui.test.mjs`（只允许一个 API Key 流程）、`tests/integration/ai-api.test.mjs`（直接测试校验/导入/报告，不再依赖已删除的手动 HTTP 路由）、`v13-session-split`、`api.test`、`youtube-anonymous-session` 的包构建部分。
 - 删除：旧匿名/手动测试文件（`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`）。
@@ -102,6 +102,17 @@
 **真实 Bilibili 验证（只读公开接口）**：房间 `3`（解析为 `23058`，未开播）→ `displayName=3号直播间`、`platformUid=11153765`、`anchorName=3号直播间`；`roomStatus.liveTime` 为 `0000-00-00 00:00:00`，未伪造开播时间。
 
 **未验证**：真实浏览器视觉、真实 EXE、真实付费 API、真实主播“手动停止→重启→仍直播”全流程（用 Mock 可控时钟验证）。
+
+### 0.12 v0.13.1 第 8 项：已保存 API 配置可编辑（2026-11-11）
+
+- **原因**：后端 `ProviderConfigStore.update()` 与 `PATCH /api/ai/providers/configs/:id` 已存在，但设置页卡片只有“检测/删除”，没有编辑入口；表单只能创建。
+- **UI**：每个配置卡新增「编辑配置」；复用现有表单，预填名称/Provider/区域/Base URL/模型/价格/并发/本地网络；API Key 始终留空，显示「已保存」，留空表示保留；「保存修改」「取消」；保存后刷新卡片。
+- **Key 安全**：编辑请求仅在用户输入新 Key 时发送 `apiKey`；空字符串不覆盖；服务端只在显式非空 Key 时替换。切换 Provider/区域/Base URL 会轮换 credential reference，并要求重新输入 Key；不会静默复用旧区域密钥。
+- **模型变更**：服务端在 model 变化时清空 `capabilities`、`lastTestStatus`、旧价格/上下文/模型标签；UI 在模型输入变化时清除旧价格并提示重新检测。旧模型能力不会被当成新模型结果。
+- **保存语义**：PATCH 原地更新同一 `configId`，保留默认标记、创建时间、其他配置；不会删除重建。部分 PATCH 未提供 `pricing` 时不再错误清空价格。
+- **运行中任务**：`isConfigInUse()` 阻止编辑/删除正在运行任务使用的配置（409 `AI_PROVIDER_CONFIG_IN_USE`）；暂停/中断后的旧 job 若模型/区域变化，`resume` 返回 409 `AI_PROVIDER_CONFIG_CHANGED`；新任务使用新配置，旧报告/画像不修改。
+- **测试**：`tests/unit/v13-providers.test.mjs`（模型修改保留 Key、能力失效、默认/多配置、重启持久化）、`tests/integration/v13-provider-edit.test.mjs`（模型-only PATCH、空 Key、改名/并发、区域切换、运行中阻止、resume 拒绝、AI 中心使用新模型）、`tests/unit/ai-settings-edit.test.mjs`（UI/PATCH/安全静态断言）。
+- **限制**：真实浏览器点击验收未执行（本机 headless 被策略阻止）；未用真实百炼 Key 做编辑；代码/HTTP/单元已覆盖。
 
 ## 0.10 v0.13.0（历史）
 
@@ -404,9 +415,9 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 5. 构建结果（如实）
 
 - **v0.13.1 已重新构建 EXE**：`node scripts/build-windows.mjs` 输出 `Built dist/LiveMemory.exe`。
-  - 大小 **95,893,504 bytes（91.5 MB）**
-  - SHA-256 `e3c637c884f3e71d268eaf328b1a966b52c6d895613cbf00738d049b04ce810d`
-  - 资源 **164 个**，资源哈希 `bd4701866c442a9ebfd5`
+  - 大小 **95,905,792 bytes（91.5 MB）**
+  - SHA-256 `97bb80cd0c892b09fe3b20248c2bc6b2178f9530de80fc1778988c4f12d100b4`
+  - 资源 **164 个**，资源哈希 `bcf907ee13bdd308de37`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。

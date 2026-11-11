@@ -598,3 +598,10 @@ paused（用户暂停；正在进行的 recording 不受影响）
 - 同一目标只保留当前直播周期的抑制；确认 offline/upcoming 后清除；新 `live_time`/`videoId` 视为新周期。
 - 不新增列、不迁移；`meta_json` 仍是本地目标快照，不含聊天正文或凭据。
 - `live_stopped` 是目标状态，不改变 `sessions.status`；被停止的 session 仍是 `ended` + `end_reason=user`。
+
+## 16. API 配置原地编辑（v0.13.1，无 schema 变化）
+
+- `config/ai-providers.json` 的配置记录保持同一 `id`；编辑不删除重建。
+- `secrets/ai-keys.json` 的 credential reference 在仅改模型/名称/并发/价格时不变；Provider/区域/Base URL 变化时生成新 reference 并要求新 Key。
+- 模型变化后 `capabilities`、`lastTestStatus`、`modelLabel`、`contextLength`、旧价格都会失效；不把旧模型能力写入新模型。
+- `ai_jobs` 仍保存启动时的 provider/model/pricing 快照；历史 `ai_results` 与 `viewer_memories` 不因配置编辑而改写。

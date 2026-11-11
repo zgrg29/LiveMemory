@@ -188,6 +188,18 @@ export class AnalysisRunner {
     return {configured: this.configStore.list()};
   }
 
+  /**
+   * True while an in-process analysis is actively using this config. Editing or
+   * deleting it now would change the credential/model underneath a running task.
+   */
+  isConfigInUse(configId) {
+    if (!configId) return false;
+    for (const active of this.active.values()) {
+      if (active?.context?.provider?.configId === configId) return true;
+    }
+    return false;
+  }
+
   #schedulerFor(provider) {
     const key = schedulerKey(provider);
     let scheduler = this.schedulers.get(key);
@@ -272,8 +284,14 @@ export class AnalysisRunner {
     if (state?.status === 'running') {
       throw new AnalysisPermissionError('ALREADY_RUNNING');
     }
-    // Resume only when the same config/model and mode are still selected.
-    const resumable = state
+    // Resume only when the same config, provider/region/model and mode are still
+    // selected. Otherwise the old job would mix two models; start a new task
+    // instead and keep the old reports untouched.
+    const sameConfiguration = state
+      && state.providerId === checked.provider.providerId
+      && (state.regionId ?? checked.provider.regionId) === checked.provider.regionId
+      && state.modelId === checked.provider.modelId;
+    const resumable = sameConfiguration
       && state.configId === configId
       && state.mode === mode
       && state.status !== 'complete'
@@ -299,6 +317,7 @@ export class AnalysisRunner {
       providerConfigId: configId,
       providerName: checked.provider.label,
       providerId: checked.provider.providerId,
+      regionId: checked.provider.regionId,
       modelId: checked.provider.modelId,
       pricingStatus: checked.provider.pricingStatus,
       sessionReportDone: false,
@@ -405,6 +424,7 @@ export class AnalysisRunner {
       configId: entry.configId ?? null,
       providerName: entry.providerName ?? null,
       providerId: entry.providerId ?? null,
+      regionId: entry.regionId ?? null,
       modelId: entry.modelId ?? null,
       pricingStatus: entry.pricingStatus ?? null,
       batchIndex: batchesCompleted,
@@ -1100,6 +1120,16 @@ export class AnalysisRunner {
     if (consent !== true) throw new AnalysisPermissionError('CONSENT_REQUIRED');
     const config = entry.configId ? this.configStore.get(entry.configId) : null;
     if (!config) throw new AnalysisPermissionError('PROVIDER_CONFIG_NOT_FOUND');
+    const changed = entry.providerId
+      && (config.providerId !== entry.providerId
+        || config.modelId !== entry.modelId
+        || (entry.regionId && config.regionId !== entry.regionId));
+    if (changed) {
+      throw new AnalysisPermissionError('CONFIG_CHANGED', {
+        previousModelId: entry.modelId ?? null,
+        currentModelId: config.modelId ?? null
+      });
+    }
     if (entry.mode !== ANALYSIS_MODE.SESSION) {
       const permission = memoryPermission({
         pricingStatus: config.pricingStatus,

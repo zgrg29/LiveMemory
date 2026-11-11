@@ -116,6 +116,94 @@ test('configuration store encrypts keys and rotates credentials on region change
   }
 });
 
+test('editing a saved config keeps its id, default state and API key unless replaced', () => {
+  const temp = createTempDir();
+  try {
+    const configFile = join(temp.dir, 'config', 'ai-providers.json');
+    const store = new ProviderConfigStore({
+      configFile,
+      secretsDir: join(temp.dir, 'secrets'),
+      now: () => Date.parse('2026-11-11T10:00:00Z')
+    });
+    const first = store.create({
+      providerId: 'dashscope',
+      regionId: 'cn-beijing',
+      modelId: 'qwen-old',
+      name: 'Bailian',
+      apiKey: 'old-secret',
+      pricingStatus: 'paid',
+      pricing: {inputPerMillion: 1, outputPerMillion: 2, currency: 'CNY'},
+      concurrency: 3
+    });
+    const second = store.create({
+      providerId: 'deepseek',
+      regionId: 'global',
+      modelId: 'deepseek-chat',
+      apiKey: 'other-secret',
+      pricingStatus: 'unknown'
+    });
+    store.recordTest(first.id, {
+      status: 'passed',
+      capabilities: {network: true, auth: true, text: true, json: true, session: true, memory: true},
+      stages: {}
+    });
+    assert.equal(store.list().find((config) => config.id === first.id).capabilities.memory, true);
+
+    // Only the model changes: same configId/default/credential, old capability
+    // and stale price are invalidated, and the key is preserved.
+    const edited = store.update(first.id, {modelId: 'qwen-new'});
+    assert.equal(edited.id, first.id);
+    assert.equal(edited.isDefault, true);
+    assert.equal(edited.credentialReference, first.credentialReference);
+    assert.equal(store.secret(first.id), 'old-secret');
+    assert.equal(edited.modelId, 'qwen-new');
+    assert.equal(edited.modelLabel, 'qwen-new');
+    assert.equal(edited.contextLength, null);
+    assert.equal(edited.capabilities.memory, false);
+    assert.equal(edited.lastTestStatus.status, 'untested');
+    assert.equal(edited.pricingStatus, 'unknown');
+    assert.equal(edited.pricing, null);
+    assert.equal(store.get(second.id).modelId, 'deepseek-chat');
+
+    // A blank key is not a replacement.
+    const blank = store.update(first.id, {apiKey: ''});
+    assert.equal(blank.credentialReference, first.credentialReference);
+    assert.equal(store.secret(first.id), 'old-secret');
+
+    // An explicit new key replaces it without changing the id.
+    const replaced = store.update(first.id, {apiKey: 'new-secret'});
+    assert.equal(replaced.id, first.id);
+    assert.equal(store.secret(first.id), 'new-secret');
+
+    // Name/concurrency edits keep capability results because the model did not change.
+    store.recordTest(first.id, {
+      status: 'passed',
+      capabilities: {network: true, auth: true, text: true, json: true, session: true, memory: true},
+      stages: {}
+    });
+    const cosmetic = store.update(first.id, {name: 'Renamed', concurrency: 5});
+    assert.equal(cosmetic.name, 'Renamed');
+    assert.equal(cosmetic.concurrency, 5);
+    assert.equal(cosmetic.capabilities.memory, true);
+    assert.equal(store.secret(first.id), 'new-secret');
+
+    // A new store instance (program restart) reads the edited model and key.
+    const reloaded = new ProviderConfigStore({
+      configFile,
+      secretsDir: join(temp.dir, 'secrets'),
+      now: () => Date.parse('2026-11-11T11:00:00Z')
+    });
+    reloaded.load();
+    const persisted = reloaded.get(first.id);
+    assert.equal(persisted.modelId, 'qwen-new');
+    assert.equal(persisted.name, 'Renamed');
+    assert.equal(reloaded.secret(first.id), 'new-secret');
+    assert.equal(reloaded.get(second.id).modelId, 'deepseek-chat');
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test('capability verification records session and memory stages separately', async () => {
   const temp = createTempDir();
   try {

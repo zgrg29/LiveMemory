@@ -332,6 +332,7 @@ AI 结果是**外部输入**，按不可信数据处理：
 
 - **凭据存储**：API Key 写入 `<数据目录>/secrets/ai-keys.json`，AES-256-GCM + 每安装随机密钥；普通配置 `<数据目录>/config/ai-providers.json` 只保存 `credentialReference`。这不是 DPAPI：同一 Windows 用户的其他进程仍可能读取密钥与密钥文件；文档与界面都如实说明。
 - **区域隔离**：同一 Provider 的不同区域是独立配置；切换区域/Base URL 会生成新的 credential reference，旧 Key 不再被复用。
+- **编辑配置**：编辑表单从不回显 Key；留空/空字符串不会覆盖已保存 Key，只有显式输入新 Key 才替换。只改模型时保留原 credential reference；改 Provider/区域/Base URL 时必须重新输入 Key。
 - **发送目的地**：已知 Provider 只允许其官方区域 Base URL；自定义 Base URL 必须显式配置。服务端阻止云元数据、私网地址与 localhost，除非用户显式勾选 `allowLocalNetwork`（本地模型场景）；请求前做 DNS 解析检查。API Key 只发送到该配置确认的 Base URL。
 - **不进入日志/导出**：日志、状态文件、分析 ZIP、数据库导出、错误详情与前端 HTML 均不包含 Key。状态文件只保存 provider/model/job/stage/usage。
 - **数据范围**：单场任务发送本场聊天、统计、时间线与表情；画像任务额外发送本场相关观众摘录与已有长期记忆。不会发送数据库文件、Cookie、无关历史直播或系统账户信息。

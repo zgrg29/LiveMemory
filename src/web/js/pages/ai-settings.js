@@ -64,6 +64,8 @@ export async function renderProviderSettingsCard(ctx) {
   }
   const providers = payload.providers ?? [];
   const configs = payload.configs ?? [];
+  let editingId = null;
+  let editingConfig = null;
 
   const card = el('section', {className: 'card card--wide'},
     el('div', {className: 'card-head'},
@@ -103,6 +105,12 @@ export async function renderProviderSettingsCard(ctx) {
             }
           }
         }) : null,
+        el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: t('ai.v13.providers.edit'),
+          onClick: () => beginEdit(config)
+        }),
         el('button', {
           className: 'button button--secondary button--small',
           type: 'button',
@@ -161,6 +169,8 @@ export async function renderProviderSettingsCard(ctx) {
   const regionSelect = el('select', {className: 'select'});
   const baseUrlInput = el('input', {className: 'input', type: 'url', attrs: {placeholder: 'https://…'}});
   const keyInput = el('input', {className: 'input', type: 'password', attrs: {autocomplete: 'off', spellcheck: 'false'}});
+  const keyStatus = el('div', {className: 'small tertiary'});
+  const nameInput = el('input', {className: 'input', type: 'text', attrs: {maxlength: '80'}});
   const modelInput = el('input', {className: 'input', type: 'text', attrs: {placeholder: t('ai.v13.providers.modelPlaceholder')}});
   const presetSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.providers.preset')}});
   const presetNote = el('div', {className: 'small tertiary'});
@@ -180,6 +190,15 @@ export async function renderProviderSettingsCard(ctx) {
   const localCheck = el('input', {type: 'checkbox'});
   const priceFields = el('div', {className: 'grid-2-equal'}, field(t('ai.v13.providers.inputPrice'), inputPrice), field(t('ai.v13.providers.outputPrice'), outputPrice));
   const modelListBox = el('div', {className: 'small tertiary'});
+  const formTitle = el('div', {className: 'choice-title', text: t('ai.v13.providers.addTitle')});
+  const cancelButton = el('button', {
+    className: 'button button--ghost',
+    type: 'button',
+    text: t('common.cancel'),
+    hidden: true,
+    onClick: () => resetForm()
+  });
+  let formBlock = null;
 
   function selectedProvider() {
     return providers.find((entry) => entry.id === providerSelect.value) ?? providers[0];
@@ -196,7 +215,7 @@ export async function renderProviderSettingsCard(ctx) {
     presetNote.textContent = preset.note ?? '';
     syncPricing();
   }
-  function syncPresets() {
+  function syncPresets({apply = true} = {}) {
     const provider = selectedProvider();
     const region = provider?.regions?.find((entry) => entry.id === regionSelect.value);
     const presets = (provider?.presets ?? []).filter((preset) => (
@@ -208,9 +227,11 @@ export async function renderProviderSettingsCard(ctx) {
     );
     presetSelect.hidden = presets.length === 0;
     presetNote.textContent = '';
-    if (presets.length > 0) {
+    if (apply && presets.length > 0) {
       presetSelect.value = presets[0].id;
       applyPreset(presets[0]);
+    } else {
+      presetSelect.value = '';
     }
   }
   function syncRegions() {
@@ -228,8 +249,36 @@ export async function renderProviderSettingsCard(ctx) {
   function syncPricing() {
     priceFields.hidden = pricingSelect.value !== 'paid';
   }
-  providerSelect.addEventListener('change', syncRegions);
-  regionSelect.addEventListener('change', syncPresets);
+  function syncKeyState() {
+    if (!editingConfig) {
+      keyStatus.textContent = '';
+      keyInput.placeholder = '';
+      return;
+    }
+    const provider = selectedProvider();
+    const region = provider?.regions?.find((entry) => entry.id === regionSelect.value);
+    const baseUrl = provider?.custom ? baseUrlInput.value.trim() : region?.baseUrl;
+    const changed = provider?.id !== editingConfig.providerId
+      || region?.id !== editingConfig.regionId
+      || baseUrl !== editingConfig.baseUrl;
+    keyStatus.textContent = changed
+      ? t('ai.v13.providers.keyRequiredForChange')
+      : (editingConfig.hasCredential
+        ? t('ai.v13.providers.keyStoredEdit')
+        : t('ai.v13.providers.noKey'));
+    keyInput.placeholder = editingConfig.hasCredential && !changed
+      ? t('ai.v13.providers.keyKeepHint')
+      : t('ai.v13.providers.keyNewHint');
+  }
+  providerSelect.addEventListener('change', () => {
+    syncRegions();
+    syncKeyState();
+  });
+  regionSelect.addEventListener('change', () => {
+    syncPresets({apply: !editingConfig});
+    syncKeyState();
+  });
+  baseUrlInput.addEventListener('input', syncKeyState);
   pricingSelect.addEventListener('change', syncPricing);
   presetSelect.addEventListener('change', () => {
     const provider = selectedProvider();
@@ -243,6 +292,17 @@ export async function renderProviderSettingsCard(ctx) {
     if (!known) {
       presetSelect.value = '';
       presetNote.textContent = '';
+    }
+    if (editingConfig && modelInput.value.trim() !== editingConfig.modelId) {
+      // A new model must not inherit the previous model's capability test or
+      // price. The server also enforces this; the form makes it visible.
+      presetNote.textContent = t('ai.v13.providers.modelChangedReverify');
+      if (pricingSelect.value !== 'unknown') {
+        pricingSelect.value = 'unknown';
+        inputPrice.value = '';
+        outputPrice.value = '';
+        syncPricing();
+      }
     }
   });
 
@@ -297,6 +357,67 @@ export async function renderProviderSettingsCard(ctx) {
     }
   }
 
+  function beginEdit(config) {
+    editingId = config.id;
+    editingConfig = config;
+    formTitle.textContent = t('ai.v13.providers.editTitle');
+    saveButton.textContent = t('ai.v13.providers.saveChanges');
+    cancelButton.hidden = false;
+    nameInput.value = config.name ?? '';
+    providerSelect.value = config.providerId;
+    syncRegions();
+    regionSelect.value = config.regionId;
+    const provider = selectedProvider();
+    const region = provider?.regions?.find((entry) => entry.id === config.regionId);
+    baseUrlInput.value = config.baseUrl || region?.baseUrl || '';
+    baseUrlInput.disabled = !provider?.custom;
+    localCheck.checked = config.allowLocalNetwork === true;
+    modelInput.value = config.modelId ?? '';
+    pricingSelect.value = config.pricingStatus ?? 'unknown';
+    inputPrice.value = config.pricing ? String(config.pricing.inputPerMillion ?? '') : '';
+    outputPrice.value = config.pricing ? String(config.pricing.outputPerMillion ?? '') : '';
+    currencyInput.value = config.pricing?.currency ?? 'USD';
+    concurrencyInput.value = String(config.concurrency ?? 3);
+    presetSelect.value = '';
+    presetNote.textContent = t('ai.v13.providers.editHint');
+    keyInput.value = '';
+    syncPricing();
+    syncModelPicker();
+    syncKeyState();
+    formBlock?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    modelInput.focus();
+  }
+
+  function resetForm() {
+    editingId = null;
+    editingConfig = null;
+    formTitle.textContent = t('ai.v13.providers.addTitle');
+    saveButton.textContent = t('ai.v13.providers.save');
+    cancelButton.hidden = true;
+    nameInput.value = '';
+    providerSelect.value = providers[0]?.id ?? '';
+    syncRegions();
+    const provider = selectedProvider();
+    const region = provider?.regions?.[0] ?? null;
+    regionSelect.value = region?.id ?? '';
+    baseUrlInput.value = region?.baseUrl ?? '';
+    baseUrlInput.disabled = !provider?.custom;
+    localCheck.checked = false;
+    keyInput.value = '';
+    keyInput.placeholder = '';
+    keyStatus.textContent = '';
+    modelInput.value = '';
+    pricingSelect.value = 'unknown';
+    inputPrice.value = '';
+    outputPrice.value = '';
+    currencyInput.value = 'USD';
+    concurrencyInput.value = '3';
+    presetSelect.value = '';
+    presetNote.textContent = '';
+    syncPricing();
+    syncModelPicker();
+  }
+
   const saveButton = el('button', {
     className: 'button button--primary',
     type: 'button',
@@ -308,6 +429,14 @@ export async function renderProviderSettingsCard(ctx) {
         const region = provider.regions.find((entry) => entry.id === regionSelect.value);
         const pricingStatus = pricingSelect.value;
         const modelId = modelInput.value.trim();
+        const baseUrl = provider.custom ? baseUrlInput.value.trim() : region.baseUrl;
+        const keyProvided = keyInput.value.trim() !== '';
+        const editing = Boolean(editingId && editingConfig);
+        const regionChanged = editing && (
+          provider.id !== editingConfig.providerId
+          || region.id !== editingConfig.regionId
+          || baseUrl !== editingConfig.baseUrl
+        );
         const fail = (key) => {
           ctx.toast(t(key), {tone: 'error'});
           saveButton.disabled = false;
@@ -316,7 +445,14 @@ export async function renderProviderSettingsCard(ctx) {
           fail('ai.v13.providers.modelRequired');
           return;
         }
-        if (!provider.custom && !keyInput.value.trim()) {
+        // A blank key means "keep the saved key" only when the endpoint is
+        // unchanged. Changing provider/region/Base URL invalidates the old key
+        // reference and requires a new key (the store enforces this too).
+        if (regionChanged && !keyProvided && (!provider.custom || editingConfig?.hasCredential)) {
+          fail('ai.v13.providers.keyRequiredForChange');
+          return;
+        }
+        if (!provider.custom && !keyProvided && (!editing || !editingConfig?.hasCredential)) {
           fail('ai.v13.providers.keyRequired');
           return;
         }
@@ -332,11 +468,11 @@ export async function renderProviderSettingsCard(ctx) {
             return;
           }
         }
-        await api.post('/api/ai/providers/configs', {
+        const payload = {
+          name: nameInput.value.trim() || provider.label,
           providerId: provider.id,
           regionId: region.id,
-          baseUrl: provider.custom ? baseUrlInput.value.trim() : region.baseUrl,
-          apiKey: keyInput.value,
+          baseUrl,
           modelId,
           pricingStatus,
           pricing: (pricingStatus === 'paid' || pricingStatus === 'api_free') ? {
@@ -347,9 +483,18 @@ export async function renderProviderSettingsCard(ctx) {
           } : null,
           concurrency: Number(concurrencyInput.value) || 3,
           allowLocalNetwork: localCheck.checked
-        });
+        };
+        if (keyProvided) payload.apiKey = keyInput.value;
+        else if (!editing) payload.apiKey = '';
+        if (editing) {
+          await api.patch(`/api/ai/providers/configs/${encodeURIComponent(editingId)}`, payload);
+          ctx.toast(t('ai.v13.providers.updated'));
+        } else {
+          await api.post('/api/ai/providers/configs', payload);
+          ctx.toast(t('ai.v13.providers.saved'));
+        }
         keyInput.value = '';
-        ctx.toast(t('ai.v13.providers.saved'));
+        resetForm();
         ctx.navigate('/settings');
       } catch (error) {
         ctx.toast(ctx.describeError(error), {tone: 'error'});
@@ -361,13 +506,15 @@ export async function renderProviderSettingsCard(ctx) {
   syncRegions();
   syncPricing();
 
-  body.append(el('div', {className: 'setting-block', style: {marginTop: '18px'}},
-    el('div', {className: 'choice-title', text: t('ai.v13.providers.addTitle')}),
+  formBlock = el('div', {className: 'setting-block', style: {marginTop: '18px'}},
+    formTitle,
     el('div', {className: 'grid-2-equal', style: {marginTop: '10px'}},
+      field(t('ai.v13.providers.name'), nameInput),
       field(t('ai.v13.providers.provider'), providerSelect),
       field(t('ai.v13.providers.region'), regionSelect)),
     field(t('ai.v13.providers.baseUrl'), baseUrlInput),
     field(t('ai.v13.providers.apiKey'), keyInput, t('ai.v13.providers.keyHint')),
+    keyStatus,
     el('div', {className: 'grid-2-equal'},
       field(t('ai.v13.providers.preset'), presetSelect),
       field(t('ai.v13.providers.model'), modelInput)),
@@ -384,7 +531,8 @@ export async function renderProviderSettingsCard(ctx) {
         el('div', {className: 'choice-title', text: t('ai.v13.providers.localTitle')}),
         el('div', {className: 'choice-desc', text: t('ai.v13.providers.localDesc')}))),
     el('div', {className: 'callout callout--neutral', style: {marginTop: '12px'}}, t('ai.v13.providers.security')),
-    el('div', {className: 'inline', style: {marginTop: '12px'}}, saveButton)));
+    el('div', {className: 'inline', style: {marginTop: '12px'}}, saveButton, cancelButton));
+  body.append(formBlock);
 
   return card;
 }

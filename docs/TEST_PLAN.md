@@ -841,5 +841,39 @@ duration ≈ 25.0s
 
 ### 29.3 全量
 
-- **539 passed / 0 failed**（约 73 秒）。
+- **548 passed / 0 failed**（约 73 秒）。
 - 真实浏览器仍被本机策略阻止；EXE 已重建但未运行（UAC）；真实付费 API 无 Key，阻塞。
+
+## 30. v0.13.1 第 8 项：API 配置编辑
+
+### 30.1 单元
+
+- `tests/unit/v13-providers.test.mjs`：
+  - 只改 Model ID：同一 `id`、`isDefault`、`credentialReference`，旧 Key 保留。
+  - `capabilities` 清零、`lastTestStatus=untested`、旧价格/contextLength/modelLabel 失效。
+  - 空 `apiKey` 不覆盖；显式新 Key 替换。
+  - 改名/并发不改变能力结果。
+  - 新 store 实例（重启）读到新模型与 Key。
+- `tests/unit/ai-settings-edit.test.mjs`：
+  - 卡片有「编辑配置」，复用表单；`api.patch` 更新原 id。
+  - 空 Key 不发送；有 keep/required/model-changed 文案。
+  - PATCH 路由缺省 pricing 不清空；运行中配置保护；resume mismatch 映射。
+  - 三语编辑文案齐全。
+
+### 30.2 集成
+
+- `tests/integration/v13-provider-edit.test.mjs`：
+  - 模型-only PATCH：200，id/default/credential 不变，能力/价格失效，Key 仍在。
+  - 空 Key PATCH 保留；新 Key 替换。
+  - 改名/并发更新同一配置；其他 Provider 不受影响；非默认配置编辑不改变默认。
+  - 区域切换无 Key → 400；有 Key → credential 轮换。
+  - 空模型 → 400 且旧配置不变。
+  - 运行中 PATCH/DELETE → 409 `AI_PROVIDER_CONFIG_IN_USE`。
+  - 暂停后改模型，`resume` → 409 `AI_PROVIDER_CONFIG_CHANGED`。
+  - AI 分析中心 `body.model` 使用新模型，报告正常保存。
+
+### 30.3 未验收
+
+- 真实浏览器点击「编辑配置→改 Model ID→保存」视觉流程（本机 headless 被策略阻止）。
+- 真实百炼 Key 的编辑后真实生成；未伪造。
+- EXE 已重建但 UAC 未运行。

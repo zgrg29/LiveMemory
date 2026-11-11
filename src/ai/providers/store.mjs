@@ -96,7 +96,9 @@ function normalizeConfig(raw, {now = Date.now()} = {}) {
     lastTestStatus: normalizeTestStatus(raw.lastTestStatus),
     isDefault: raw.isDefault === true,
     allowLocalNetwork: raw.allowLocalNetwork === true,
-    contextLength: Number.isFinite(Number(raw.contextLength)) ? Number(raw.contextLength) : null,
+    contextLength: raw.contextLength === null || raw.contextLength === undefined
+      ? null
+      : (Number.isFinite(Number(raw.contextLength)) ? Number(raw.contextLength) : null),
     // A safe starting concurrency, not a claimed provider quota. The scheduler
     // lowers it on 429 and slowly restores it; the UI shows the live value.
     concurrency: normalizeConcurrency(raw.concurrency),
@@ -268,11 +270,14 @@ export class ProviderConfigStore {
       throw Object.assign(new Error('BASE_URL_NOT_ALLOWED'), {code: 'BASE_URL_NOT_ALLOWED'});
     }
     const modelId = String(input.modelId ?? existing?.modelId ?? '').trim();
+    const modelChanged = Boolean(existing && modelId !== existing.modelId);
     const pricingStatus = normalizePricingStatus(
       input.pricingStatus ?? existing?.pricingStatus,
       {fallback: PRICING_STATUS.UNKNOWN}
     );
-    const pricing = normalizePricing(input.pricing ?? existing?.pricing);
+    const pricing = Object.prototype.hasOwnProperty.call(input, 'pricing')
+      ? normalizePricing(input.pricing)
+      : normalizePricing(existing?.pricing);
     if (pricingStatus === PRICING_STATUS.PAID && !pricing) {
       throw Object.assign(new Error('PRICING_REQUIRED'), {code: 'PRICING_REQUIRED'});
     }
@@ -301,9 +306,9 @@ export class ProviderConfigStore {
       pricingStatus,
       pricing,
       name: String(input.name ?? existing?.name ?? provider.label).trim().slice(0, 80) || provider.label,
-      modelLabel: String(input.modelLabel ?? existing?.modelLabel ?? modelId).slice(0, 200),
+      modelLabel: String(input.modelLabel ?? (modelChanged ? modelId : existing?.modelLabel) ?? modelId).slice(0, 200),
       contextLength: input.contextLength === undefined
-        ? (existing?.contextLength ?? null)
+        ? (modelChanged ? null : (existing?.contextLength ?? null))
         : (Number.isFinite(Number(input.contextLength)) ? Number(input.contextLength) : null),
       concurrency: normalizeConcurrency(
         input.concurrency === undefined ? existing?.concurrency : input.concurrency,
@@ -362,6 +367,20 @@ export class ProviderConfigStore {
     if (index < 0) return null;
     const existing = this.configs[index];
     const merged = {...existing, ...patch};
+    const requestedModelId = String(patch.modelId ?? existing.modelId ?? '').trim();
+    const modelChanged = requestedModelId !== existing.modelId;
+    if (modelChanged
+      && !Object.prototype.hasOwnProperty.call(patch, 'pricing')) {
+      // A different model must not inherit the previous model's price. Keeping
+      // stale pricing would under- or over-state the budget. The user can enter
+      // the new price, or leave it explicitly unknown.
+      merged.pricingStatus = PRICING_STATUS.UNKNOWN;
+      merged.pricing = null;
+    }
+    if (modelChanged) {
+      if (!Object.prototype.hasOwnProperty.call(patch, 'modelLabel')) delete merged.modelLabel;
+      if (!Object.prototype.hasOwnProperty.call(patch, 'contextLength')) delete merged.contextLength;
+    }
     if ((patch.providerId !== undefined || patch.regionId !== undefined)
       && patch.baseUrl === undefined) {
       // Never carry one region's URL into another region's config. The region's
@@ -369,6 +388,7 @@ export class ProviderConfigStore {
       delete merged.baseUrl;
     }
     const checked = this.#validate(merged, {existing});
+    if (!checked.modelId) throw Object.assign(new Error('MODEL_REQUIRED'), {code: 'MODEL_REQUIRED'});
     const regionChanged = checked.provider.id !== existing.providerId
       || checked.region.id !== existing.regionId
       || checked.baseUrl !== existing.baseUrl;

@@ -171,6 +171,12 @@ function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') 
 
 function providerConfigError(error) {
   const code = String(error?.code ?? 'AI_PROVIDER_CONFIG_INVALID');
+  if (code === 'AI_PROVIDER_CONFIG_IN_USE' || code === 'CONFIG_IN_USE') {
+    return new AppError('AI_PROVIDER_CONFIG_IN_USE', {
+      messageKey: 'errors.aiProviderConfigInUse',
+      httpStatus: 409
+    });
+  }
   const known = {
     PROVIDER_UNKNOWN: 'AI_PROVIDER_UNKNOWN',
     REGION_UNKNOWN: 'AI_PROVIDER_REGION_UNKNOWN',
@@ -211,6 +217,7 @@ function analysisError(error) {
     PROVIDER_CONFIG_REQUIRED: ['AI_PROVIDER_CONFIG_REQUIRED', 'errors.aiProviderConfigRequired', 400],
     MODEL_REQUIRED: ['AI_PROVIDER_MODEL_REQUIRED', 'errors.aiProviderModelRequired', 400],
     ALREADY_RUNNING: ['AI_ALREADY_RUNNING', 'errors.aiAlreadyRunning', 409],
+    CONFIG_CHANGED: ['AI_PROVIDER_CONFIG_CHANGED', 'errors.aiProviderConfigChanged', 409],
     NOTHING_TO_RESUME: ['AI_NOTHING_TO_RESUME', 'errors.aiNothingToResume', 409],
     INVALID_MODE: ['AI_INVALID_MODE', 'errors.badRequest', 400],
     BUDGET_EXCEEDED: ['AI_BUDGET_EXCEEDED', 'errors.aiBudgetExceeded', 409],
@@ -1098,10 +1105,17 @@ export function buildRoutes() {
         }
         const body = await readJsonBody(req);
         try {
-          const config = deps.providerConfigStore.update(params.id, {
-            ...body,
-            pricing: body.pricing === null ? null : normalizePricing(body.pricing)
-          });
+          if (deps.analysisRunner?.isConfigInUse?.(params.id)) {
+            throw new AppError('AI_PROVIDER_CONFIG_IN_USE', {
+              messageKey: 'errors.aiProviderConfigInUse',
+              httpStatus: 409
+            });
+          }
+          const patch = {...body};
+          if (Object.prototype.hasOwnProperty.call(body, 'pricing')) {
+            patch.pricing = body.pricing === null ? null : normalizePricing(body.pricing);
+          }
+          const config = deps.providerConfigStore.update(params.id, patch);
           if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
           deps.logger?.info({event: 'ai.provider.config.updated', configId: config.id});
           sendJson(res, 200, {config});
@@ -1116,6 +1130,12 @@ export function buildRoutes() {
       handler: ({res, params, deps}) => {
         if (!deps.providerConfigStore) {
           throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
+        }
+        if (deps.analysisRunner?.isConfigInUse?.(params.id)) {
+          throw new AppError('AI_PROVIDER_CONFIG_IN_USE', {
+            messageKey: 'errors.aiProviderConfigInUse',
+            httpStatus: 409
+          });
         }
         if (!deps.providerConfigStore.remove(params.id)) {
           throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
