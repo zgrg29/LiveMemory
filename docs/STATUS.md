@@ -392,3 +392,26 @@ POST /api/ai/auto/cancel      {sessionId}
 - **测试**：新增 `tests/unit/viewer-scope.test.mjs`、
   `tests/integration/viewer-broadcaster-scope.test.mjs`；全量 **495 passed / 0 failed**。
 - **构建**：见 §5（0.11.1 重新构建）。
+
+### 0.8 v0.13.0 付费 API Schema 故障修复（2026-11-11）
+
+真实失败状态（隔离复现前，用户数据未修改）：
+
+- `mode=session`，`sessionJobId` 存在，`error.code=AUTO_SCHEMA_INVALID`，detail=`protocol:SCHEMA_REQUIRED, task_id:SCHEMA_REQUIRED, session_id:SCHEMA_REQUIRED`。
+- 配置实际为 DashScope `cn-beijing` / `qwen3.8-omni-flash`，`pricingStatus=paid`，`capabilities.session=true, memory=true`。
+- 根因 1：UI 的 `mode=both` 在 HTTP 路由被映射成 session-only；长期画像任务从未创建。
+- 根因 2：付费 Session 回答被直接交给完整 Schema 1.3.0 校验；模型只返回语义字段，缺少由本地生成的 protocol/task_id/session_id。
+- 根因 3：能力检测只验证简单 JSON 形状，没有经过 Session 组装器、最终 Schema 1.3.0 和 Memory 组装器。
+
+修复：
+
+- `assembleSessionAnswer()` 本地注入 protocol/schema_version/analysis_scope/job_id/batch_id/task_id/session_id/locale/broadcaster_id；忽略模型伪造字段。
+- `mode=both` 在 HTTP 与 Runner 规范化为内部 `combined`。
+- 能力检测的 session/memory 阶段使用同一组装器并执行最终 Schema 1.3.0 校验。
+- 报告页增加长期画像只读展示（`viewer_memories`/`memory_facts`）。
+
+真实隔离端到端（不是 Mock）：
+
+- DashScope `qwen3.8-omni-flash`，一场合成直播，`both`，2 次请求，5,671 输入 / 3,228 输出 tokens，估算 ¥0.0109928。
+- `complete`；单场报告已保存；`viewer_memories=3`、`memory_facts=2`；报告 `longTermProfiles.count=3`（Mika 2 条事实，Ren/GiftOnly 客观记录）。
+- 用户真实数据库未被读取为可写目标，测试使用复制的配置/密钥和独立临时数据目录，结束后删除。
