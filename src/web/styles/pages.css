@@ -2707,3 +2707,17 @@
     flex-direction: column;
   }
 }
+
+.prompt-details summary,
+.report-evidence-block summary {
+  cursor: pointer;
+}
+
+.prompt-details summary {
+  margin-bottom: 8px;
+}
+
+.report-evidence-block summary {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

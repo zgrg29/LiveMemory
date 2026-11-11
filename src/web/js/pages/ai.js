@@ -297,6 +297,9 @@ export const aiPage = {
     const promptSelect = el('select', {className: 'select select--compact', attrs: {'aria-label': t('ai.prompt.title')}});
     const promptMetaEl = el('span', {className: 'small tertiary'});
     const promptBox = el('pre', {className: 'prompt-box', attrs: {tabindex: '0'}}, t('ai.prompt.loading'));
+    const promptDetails = el('details', {className: 'prompt-details'},
+      el('summary', {className: 'link-button', text: t('ai.prompt.showFull')}),
+      promptBox);
     const copyButton = el('button', {
       className: 'button button--secondary button--small',
       type: 'button',
@@ -309,7 +312,7 @@ export const aiPage = {
         el('div', {className: 'inline'}, promptMetaEl, copyButton)),
       el('div', {className: 'card-body'},
         el('div', {className: 'field'}, promptSelect),
-        promptBox,
+        promptDetails,
         el('div', {className: 'small tertiary', style: {marginTop: '8px'}}, t('ai.prompt.hint'))));
 
     /* -------------------------------------------------------------- import */
@@ -480,8 +483,10 @@ export const aiPage = {
         : (runMethod === 'anonymous'
           ? t('ai.v13.price.anonymousFree')
           : (config ? `${t('ai.v13.price.status')}: ${priceText(config)}` : ''));
-      memoryLockedHint.hidden = !(runMethod === 'api' && config && !memoryAllowed(config));
-      memoryLockedHint.textContent = memoryLockedHint.hidden ? '' : t('ai.v13.run.locked');
+      memoryLockedHint.hidden = !(runMethod === 'api' && config);
+      memoryLockedHint.textContent = memoryLockedHint.hidden
+        ? ''
+        : (memoryAllowed(config) ? t('ai.v13.memory.ready') : t('ai.v13.run.locked'));
       const paid = runMethod === 'api' && config && config.pricingStatus !== 'api_free';
       billingRow.hidden = !paid;
       confirmBilling.checked = false;

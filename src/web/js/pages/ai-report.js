@@ -70,21 +70,13 @@ function renderEvidence(ctx, refs) {
       el('span', {className: 'report-evidence-who', text: `${ref.displayName ?? '—'} · b${ref.batchIndex}:${ref.seq}`}),
       body);
   });
-  const wrapper = el('div', {className: 'report-evidence', hidden: true}, rows);
-  const toggle = el('button', {
-    className: 'link-button report-evidence-toggle',
-    type: 'button',
-    text: t('ai.report.showEvidence', {n: formatInteger(refs.length, ctx.locale)}),
-    attrs: {'aria-expanded': 'false'},
-    onClick: () => {
-      wrapper.hidden = !wrapper.hidden;
-      toggle.setAttribute('aria-expanded', String(!wrapper.hidden));
-      toggle.textContent = wrapper.hidden
-        ? t('ai.report.showEvidence', {n: formatInteger(refs.length, ctx.locale)})
-        : t('ai.report.hideEvidence');
-    }
-  });
-  return el('div', {className: 'report-evidence-block'}, toggle, wrapper);
+  const wrapper = el('div', {className: 'report-evidence'}, rows);
+  return el('details', {className: 'report-evidence-block'},
+    el('summary', {
+      className: 'link-button report-evidence-toggle',
+      text: t('ai.report.showEvidence', {n: formatInteger(refs.length, ctx.locale)})
+    }),
+    wrapper);
 }
 
 function evidenceWarnings(ctx, refs) {

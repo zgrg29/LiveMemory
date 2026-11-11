@@ -524,7 +524,8 @@
       "hint": "The same text is inside the package as instructions.md.",
       "copy": "Copy AI analysis instructions",
       "copied": "Instructions copied",
-      "loading": "Loading instructions…"
+      "loading": "Loading instructions…",
+      "showFull": "Show full instructions"
     },
     "import": {
       "title": "Import the AI answer",
@@ -951,7 +952,8 @@
       },
       "memory": {
         "optIn": "Explicitly enable long-term viewer profiles",
-        "optInHint": "Long-term profiles require a paid model with pricing and a passed memory capability test. Historical viewers are never analysed automatically."
+        "optInHint": "Long-term profiles require a paid model with pricing and a passed memory capability test. Historical viewers are never analysed automatically.",
+        "ready": "This configuration passed the memory capability test. One session is enough: choose “Long-term profiles only” or “Session + long-term profiles”, then enable it."
       },
       "price": {
         "unknown": "Pricing unknown",
