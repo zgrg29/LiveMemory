@@ -186,21 +186,19 @@ export async function renderProviderSettingsCard(ctx) {
     baseUrlInput.value = provider?.regions?.[0]?.baseUrl ?? '';
     baseUrlInput.disabled = !provider?.custom;
     localCheck.checked = false;
+    syncModelPicker();
   }
   function syncPricing() {
     priceFields.hidden = pricingSelect.value !== 'paid';
   }
   providerSelect.addEventListener('change', syncRegions);
   pricingSelect.addEventListener('change', syncPricing);
-  syncRegions();
-  syncPricing();
 
   const loadModels = el('button', {
     className: 'button button--ghost button--small',
     type: 'button',
     text: t('ai.v13.providers.loadModels'),
-    onClick: async () => {
-      const provider = selectedProvider();
+    onClick: async () => {      const provider = selectedProvider();
       const region = provider?.regions?.find((entry) => entry.id === regionSelect.value);
       try {
         const result = await api.get(`/api/ai/providers/models?providerId=${encodeURIComponent(provider.id)}&regionId=${encodeURIComponent(region?.id ?? '')}`);
@@ -236,6 +234,17 @@ export async function renderProviderSettingsCard(ctx) {
     }
   });
 
+  function syncModelPicker() {
+    const provider = selectedProvider();
+    const supported = provider?.supportsModelList === true;
+    loadModels.hidden = !supported;
+    if (!supported) {
+      modelListBox.textContent = t('ai.v13.providers.manualModelHint');
+    } else {
+      modelListBox.textContent = '';
+    }
+  }
+
   const saveButton = el('button', {
     className: 'button button--primary',
     type: 'button',
@@ -246,16 +255,41 @@ export async function renderProviderSettingsCard(ctx) {
         const provider = selectedProvider();
         const region = provider.regions.find((entry) => entry.id === regionSelect.value);
         const pricingStatus = pricingSelect.value;
+        const modelId = modelInput.value.trim();
+        const fail = (key) => {
+          ctx.toast(t(key), {tone: 'error'});
+          saveButton.disabled = false;
+        };
+        if (!modelId) {
+          fail('ai.v13.providers.modelRequired');
+          return;
+        }
+        if (!provider.custom && !keyInput.value.trim()) {
+          fail('ai.v13.providers.keyRequired');
+          return;
+        }
+        const input = Number(inputPrice.value);
+        const output = Number(outputPrice.value);
+        if (pricingStatus === 'paid') {
+          if (inputPrice.value.trim() === '' || outputPrice.value.trim() === '') {
+            fail('ai.v13.providers.priceRequired');
+            return;
+          }
+          if (input === 0 && output === 0) {
+            fail('ai.v13.providers.priceRequired');
+            return;
+          }
+        }
         await api.post('/api/ai/providers/configs', {
           providerId: provider.id,
           regionId: region.id,
           baseUrl: provider.custom ? baseUrlInput.value.trim() : region.baseUrl,
           apiKey: keyInput.value,
-          modelId: modelInput.value.trim(),
+          modelId,
           pricingStatus,
           pricing: (pricingStatus === 'paid' || pricingStatus === 'api_free') ? {
-            inputPerMillion: pricingStatus === 'api_free' ? 0 : Number(inputPrice.value),
-            outputPerMillion: pricingStatus === 'api_free' ? 0 : Number(outputPrice.value),
+            inputPerMillion: pricingStatus === 'api_free' ? 0 : input,
+            outputPerMillion: pricingStatus === 'api_free' ? 0 : output,
             currency: currencyInput.value.trim() || 'USD',
             confirmedAt: new Date().toISOString()
           } : null,
@@ -270,6 +304,9 @@ export async function renderProviderSettingsCard(ctx) {
       }
     }
   });
+
+  syncRegions();
+  syncPricing();
 
   body.append(el('div', {className: 'setting-block', style: {marginTop: '18px'}},
     el('div', {className: 'choice-title', text: t('ai.v13.providers.addTitle')}),

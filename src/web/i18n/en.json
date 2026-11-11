@@ -1032,7 +1032,11 @@
           "passed": "passed",
           "failed": "failed",
           "partial": "partial"
-        }
+        },
+        "modelRequired": "Enter a model ID.",
+        "keyRequired": "Enter the API key for this provider.",
+        "priceRequired": "A paid model requires input and output prices; both cannot be zero.",
+        "manualModelHint": "This provider has no model-list endpoint. Copy the exact Model ID from its official docs/console and enter it manually."
       },
       "capability": {
         "memory": "Capability: session + long-term profiles",

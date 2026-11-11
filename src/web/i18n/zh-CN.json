@@ -1032,7 +1032,11 @@
           "passed": "已通过",
           "failed": "失败",
           "partial": "部分通过"
-        }
+        },
+        "modelRequired": "请填写模型 ID。",
+        "keyRequired": "请填写该服务商的 API Key。",
+        "priceRequired": "付费模型必须填写输入和输出价格，且不能同时为 0。",
+        "manualModelHint": "该服务商不提供模型列表，请从官方文档/控制台复制完整 Model ID 后手动填入。"
       },
       "capability": {
         "memory": "能力：单场 + 长期画像",

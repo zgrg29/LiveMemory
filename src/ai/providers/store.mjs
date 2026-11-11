@@ -254,6 +254,15 @@ export class ProviderConfigStore {
     if (pricingStatus === PRICING_STATUS.PAID && !pricing) {
       throw Object.assign(new Error('PRICING_REQUIRED'), {code: 'PRICING_REQUIRED'});
     }
+    if (pricingStatus === PRICING_STATUS.PAID
+      && pricing
+      && pricing.inputPerMillion === 0
+      && pricing.outputPerMillion === 0) {
+      // A "paid" model cannot be priced at zero in both directions. Free models
+      // must be configured as api_free; otherwise the budget/memory gate would
+      // be bypassed by a contradictory price declaration.
+      throw Object.assign(new Error('PRICING_INVALID'), {code: 'PRICING_INVALID'});
+    }
     if (pricingStatus === PRICING_STATUS.API_FREE) {
       const zeroPrice = pricing && pricing.inputPerMillion === 0 && pricing.outputPerMillion === 0;
       const freeSuffix = /:free$/i.test(modelId);

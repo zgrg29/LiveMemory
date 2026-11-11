@@ -1032,7 +1032,11 @@
           "passed": "合格",
           "failed": "失敗",
           "partial": "一部合格"
-        }
+        },
+        "modelRequired": "モデル ID を入力してください。",
+        "keyRequired": "このプロバイダーの API キーを入力してください。",
+        "priceRequired": "有料モデルには入力・出力価格が必要で、両方 0 にはできません。",
+        "manualModelHint": "このプロバイダーはモデル一覧 API を提供していません。公式ドキュメント/コンソールから正確な Model ID をコピーして入力してください。"
       },
       "capability": {
         "memory": "能力：単一配信 + 長期プロファイル",

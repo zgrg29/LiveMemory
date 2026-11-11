@@ -95,6 +95,14 @@ test('configuration store encrypts keys and rotates credentials on region change
     assert.equal(store.secret(config.id), 'test-secret-value');
     assert.equal(store.list()[0].apiKey, undefined);
     assert.equal(existsSync(join(temp.dir, 'secrets', 'ai-keys.json')), true);
+    assert.throws(() => store.create({
+      providerId: 'custom',
+      regionId: 'custom',
+      baseUrl: 'https://example.com/v1',
+      modelId: 'paid-but-zero',
+      pricingStatus: 'paid',
+      pricing: {inputPerMillion: 0, outputPerMillion: 0, currency: 'USD'}
+    }), (error) => error.code === 'PRICING_INVALID');
 
     assert.throws(() => store.update(config.id, {regionId: 'intl'}), (error) => error.code === 'API_KEY_REQUIRED_FOR_REGION');
     const rotated = store.update(config.id, {regionId: 'intl', apiKey: 'test-intl-value'});
