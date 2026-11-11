@@ -399,3 +399,22 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 - 连续失败 4 次进入 `error`，30 分钟后重试；错误码与翻译后的原因显示在目标页。
 
 详细调研、许可证与真实页面实测见 `docs/YOUTUBE_AUTO_DISCOVERY.md`。
+
+## 9. v0.13.1 主播元数据与手动停止采集
+
+### 9.1 Bilibili 未开播主播名
+
+- `BilibiliRoomDetector.resolve()` 先尝试 `getInfoByRoom`（`anchor_info.base_info`），失败或缺少名称时回退到公开的 `live_user/v1/Master/info?uid=<anchorUid>`；`room_init.data.uid` 提供稳定 UID。
+- `detect()` 对旧目标（displayName 仍为 `Bilibili <roomId>`）每 10 分钟最多重试一次元数据；成功后更新 `monitor_targets.display_name`、`platform_uid` 与 `meta.anchorName`。失败只保留房间号，不伪造名称。
+- 真实只读验证（2026-11-11）：房间 `3` 未开播 → 解析 `23058`，`Master/info` 返回 `3号直播间` / `11153765`；房间 `5050` / `21144080` 的 `getInfoByRoom` 被风控拒绝时，`Master/info` 仍返回真实主播名。
+- 主播改名不改变 `bilibili:<uid>` 身份；同名不同 UID 不合并。
+
+### 9.2 手动停止当前直播采集后的抑制
+
+- 新增目标状态 `live_stopped`：主播仍 LIVE，但本场采集由用户停止；Tab 保留，显示「直播中 · 本场已停止采集」。
+- `monitor_targets.meta_json.manualStop` 持久保存 `{sessionId, liveKey, stoppedAt, awaitingOffline}`，跨进程重启有效。
+- `liveKey` 优先使用 Bilibili `live_time`（epoch 秒或平台时间字符串）或 YouTube `videoId`；没有可靠 key 时不解除抑制。
+- 同周期 LIVE + 错误/超时/未知：继续抑制；只有 `detect` 返回 offline/upcoming 才清除；下一次 LIVE 若 key 不同（新 `live_time` / 新 videoId）才创建新 session。
+- 用户明确点击「开始接收弹幕」（`action:resume_capture`）清除抑制并创建新的本地 session；不会重新打开已结束的旧记录。
+- 暂停整个监听（`paused`）与停止当前采集（`live_stopped`）是不同状态；暂停不会删除抑制。
+- 真实平台“停止后仍直播→重启”未执行；Mock + 可控时钟覆盖同周期、重启、错误、离线、新场、主动恢复。

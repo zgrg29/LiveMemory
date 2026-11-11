@@ -516,8 +516,20 @@
       "configLabel": "API 配置",
       "scopeLabel": "分析内容",
       "openSettings": "打开 API 设置",
-      "noConfig": "尚未配置 API Key。请先在设置中添加服务商、区域、模型与密钥；LiveMemory 不再提供匿名免费 AI。",
-      "noConfigShort": "尚未配置 API 模型",
+      "noConfig": "尚未配置 AI 服务。请前往设置添加 Provider、区域、模型与 API Key。",
+      "noConfigShort": "尚未配置 AI 服务",
+      "configLoadFailed": "暂时无法读取本地 API 配置。请刷新页面；如果仍然失败，请检查设置。",
+      "configMissingKey": "已有 API 配置，但缺少可用的 API Key。请前往设置重新填写密钥。",
+      "configTestFailed": "API Key 测试失败：{reason}。请检查 Key、模型与网络后重试。",
+      "configUntested": "API Key 已保存，但尚未完成能力检测。请前往设置点击「检测能力」；这不是“未配置 API Key”。",
+      "configPricingMissing": "已保存 API Key，但付费模型缺少价格信息，无法执行预算保护。请前往设置补充价格。",
+      "configNotUsable": "当前 API 配置还不能开始分析，请按提示前往设置检查。",
+      "progressSession": "单场报告：{done}/{total}",
+      "progressMemory": "长期画像：{done}/{total} 批",
+      "progressViewers": "已处理观众：{done}/{total}",
+      "progressMemorySkipped": "长期画像已跳过：{reason}",
+      "progressIndeterminate": "正在处理当前阶段…",
+      "memorySkipped": "长期画像已跳过：{reason}",
       "scaleTitle": "任务规模",
       "scaleMessages": "聊天消息",
       "scaleViewers": "可识别观众",
@@ -528,6 +540,7 @@
       "starting": "正在启动…",
       "started": "AI 分析已开始。",
       "statusTitle": "分析进度",
+      "running": "AI 分析进行中",
       "complete": "AI 分析完成",
       "completeMemory": "AI 分析完成 · 长期记忆已覆盖 {covered}/{total} 位观众",
       "failed": "AI 分析失败",
@@ -560,6 +573,10 @@
         "ANALYSIS_INTERRUPTED": "分析被中断；可以继续，已完成的批次会跳过。",
         "ANALYSIS_BUDGET_EXCEEDED": "已达到本次任务的预算上限，后续请求已停止。",
         "ANALYSIS_MEMORY_OUT_OF_ORDER": "该主播已有更新场次的长期画像；为避免旧记忆覆盖新记忆，已拒绝按较旧场次更新。",
+        "ANALYSIS_MEMORY_NO_VIEWERS": "本场直播没有可用于建立长期画像的可识别观众。",
+        "ANALYSIS_MEMORY_NO_BROADCASTER": "本场直播没有可确认的主播身份，无法建立长期画像。",
+        "ANALYSIS_MEMORY_EMPTY": "本场直播没有可用于建立长期画像的可识别观众。",
+        "ANALYSIS_TOO_MANY_VIEWERS": "本场可识别观众超过安全上限，无法在单个任务中完整覆盖。",
         "AI_PROVIDER_CONFIG_REQUIRED": "请先选择并配置一个 API 模型。",
         "PROVIDER_RATE_LIMITED": "服务商返回 429 限流；程序已按 Retry-After 或指数退避等待。",
         "PROVIDER_TIMEOUT": "AI 请求超时。",
@@ -1338,7 +1355,7 @@
     "aiSessionChanged": "生成分析包期间直播数据发生变化，请重试。",
     "memoryBroadcasterRequired": "这场直播没有确认的主播，无法确定记忆范围。长期记忆始终按主播隔离。",
     "memoryNoAnalysis": "请先导入这场直播的 AI 分析。一键合并只会复用你已经验证过的结果。",
-    "memoryNoViewers": "这场直播没有可合并的观众发言。",
+    "memoryNoViewers": "本场直播没有可用于建立长期画像的可识别观众。",
     "memoryImportInvalid": "记忆更新无法应用，没有写入任何内容。",
     "memoryVersionRequired": "这一批已经应用过不同结果。请确认要新增版本。",
     "memoryDeleted": "这份更新包生成后，该观众的长期记忆已被删除。如仍想记住对方，请重新创建更新包。",
@@ -1602,6 +1619,7 @@
       "recording": "直播中 · 正在记录",
       "reconnecting": "正在重连",
       "ending": "正在确认关播",
+      "live_stopped": "直播中 · 本场已停止采集",
       "paused": "监听已暂停",
       "error": "需要处理"
     },
@@ -1609,7 +1627,8 @@
       "subtitle": "{platform} · {key}",
       "waitingHint": "软件会在后台检查这个直播间或频道。开播后自动连接并开始记录；关播后保存本场并继续等待。",
       "pausedHint": "自动监听已暂停。已经开始的记录不会被停止；恢复监听只会重新检查下一场开播。",
-      "recordingHint": "本场正在自动记录。停止记录只会结束这一场；监听目标与 Tab 会保留。"
+      "recordingHint": "本场正在自动记录。停止记录只会结束这一场；监听目标与 Tab 会保留。",
+      "liveStoppedHint": "主播仍在直播，但本场弹幕采集已由你停止。监听仍会在后台检查；只有确认本次直播结束并出现下一次开播后，才会重新自动采集。"
     },
     "info": {
       "title": "监听信息",
@@ -1630,6 +1649,8 @@
       "pauseHint": "暂停后不会检查或开始新场次；正在进行的记录会继续。",
       "checkNow": "立即检查",
       "resume": "恢复监听",
+      "resumeCapture": "开始接收弹幕",
+      "resumeCaptureHint": "明确选择重新采集当前这场直播。会创建一条新的本地记录，不会重新打开已经结束的旧记录。",
       "retry": "立即重试",
       "delete": "删除监听目标"
     },
@@ -1661,6 +1682,11 @@
       "title": "自动监听已暂停",
       "body": "恢复监听后会继续等待下一次开播。"
     },
+    "liveStopped": {
+      "title": "本场已停止采集",
+      "body": "主播仍在直播，但这场直播的弹幕、礼物与醒目留言已停止接收。自动监听目标仍然保留。",
+      "hint": "只有主播确认下播并再次开播，或你点击「开始接收弹幕」，才会重新开始采集。"
+    },
     "delete": {
       "title": "删除监听目标",
       "subtitle": "确定停止监听“{name}”吗？",
@@ -1671,6 +1697,7 @@
     "toast": {
       "paused": "已暂停自动监听",
       "resumed": "已恢复自动监听",
+      "resumeCaptureStarted": "已开始接收当前直播的弹幕",
       "retried": "已重新开始检查",
       "deleted": "已删除监听目标",
       "added": "已添加自动监听：{name}"

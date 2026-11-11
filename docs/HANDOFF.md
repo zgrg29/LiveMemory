@@ -1,8 +1,26 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-11 · v0.13.1 移除匿名免费 / 手动 AI，重写付费请求调度 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-11 · v0.13.1 移除匿名免费 / 手动 AI，重写付费请求调度 + 七项实际使用修复 · schema 13 · 结果 Schema 1.3.0
 
-## 1. 本轮结果
+## 0. 本轮追加：七项实际使用修复
+
+| # | 问题 | 结论/修复 | 验证 |
+| --- | --- | --- | --- |
+| 1 | 历史跳转未选中场次 | `query.session` 按稳定 id 选中；不在前 100 行时按 id 加载；手动选择更新 URL | `ai-selection` + 静态 UI |
+| 2 | 已配置 Key 仍显示未配置 | `providerConfigState()` 区分无配置/缺 Key/测试失败/未检测/缺价格；删除历史文案 | `ai-config-state` + Provider 列表 |
+| 3 | 无实时进度 | 批次/观众计数进度条 + 不确定动画 + 1.5s 轮询 + statusEpoch | `ai-progress`、`v13-progress`；真实浏览器未验收 |
+| 4 | `Memory No viewers` | combined 无观众保留单场报告并显式跳过；memory-only 明确错误；状态含 `memorySkipped` | `v13-api-runner` |
+| 5 | 报告重复 | `reportEpoch` 单飞，只有一个挂载点 | 静态 + 报告并发守卫 |
+| 6 | Bilibili 未开播无主播名 | `Master/info` 公共回退；target 持久化并低频重试 | 真实房间 3 未开播 → `3号直播间` |
+| 7 | 手动停止后自动恢复 | `live_stopped` + `meta.manualStop` 持久抑制；确认离线/新 live cycle 才解除；重启保持 | 场景 A–G 测试 |
+
+新增文件：`src/web/js/pages/ai-progress.js`、`ai-config-state.js`、`ai-selection.js`；`tests/unit/ai-progress.test.mjs`、`ai-config-state.test.mjs`、`ai-selection.test.mjs`、`bilibili-master-info.test.mjs`；`tests/integration/v13-progress.test.mjs`、`manual-stop-monitor.test.mjs`。
+
+修改重点：`src/web/js/pages/ai.js`、`src/ai/api/runner.mjs`、`src/monitoring/manager.mjs`、`model.mjs`、`detectors/bilibili.mjs`、`src/platforms/bilibili/api.mjs`、`service.mjs`、`src/server/session-admin.mjs`、`src/web/js/pages/live.js`、三语 i18n。
+
+真实 Bilibili 只读验证：房间 `3` → `23058`，未开播，`displayName=3号直播间`、`platformUid=11153765`。真实浏览器/EXE 仍受阻；未伪造。
+
+## 1. 上一轮结果（v0.13.1 入口与调度）
 
 | 目标 | 结论 |
 | --- | --- |
@@ -17,10 +35,10 @@
 | 跨场次记忆顺序 | **已实现。** 同一主播记忆 gate；较新场次已导入后拒绝较旧场次（`ANALYSIS_MEMORY_OUT_OF_ORDER`）。 |
 | 性能统计 | **已实现。** 请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA。 |
 | 本地性能修复 | **已实现。** 每批只更新本批观众；DNS 安全检查缓存 5 分钟；精确 `getJobPackage()` 查询。 |
-| 全量测试 | **519 passed / 0 failed**（约 77 秒）。 |
+| 全量测试 | **539 passed / 0 failed**（约 73 秒）。 |
 | Mock 规模测试 | **1,000 观众 / 10,000 消息：100 批、6.5 秒、峰值并发 6、覆盖 1,000/1,000。** |
 | 真实付费 API | **阻塞**：本机没有 Provider 配置/密钥/环境变量。未伪造成功。 |
-| EXE | **已构建 v0.13.1**（91.4 MB / 161 assets / SHA-256 `397bc554…` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
+| EXE | **已重新构建 v0.13.1**（91.5 MB / 164 assets / SHA-256 `e3c637c8…` / requireAdministrator），包含本轮七项修复；**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 
@@ -114,7 +132,7 @@ GET/POST /api/ai/auto/services|status|run|cancel
 
 - **真实付费 API 阻塞**：本机没有 `config/ai-providers.json`、`secrets/ai-keys.json` 或环境变量 Key。
 - 真实浏览器 UI、暗色、390px、请求统计、暂停/取消未截图验收。
-- EXE 已构建但 UAC 拒绝运行；未验证打包后的出站请求。
+- EXE 已重新构建但 UAC 拒绝运行；未验证打包后的出站请求。
 - 真实 Provider 的 429/Retry-After、1,000 观众、费用与延迟未测试。
 - 调度器默认 3 并发是安全起点，不是官方额度；过高可能触发 429。
 - 429 冷却上限 300 秒；更长要求会失败而不是无限等待。

@@ -190,6 +190,24 @@ export class BilibiliApi {
     };
   }
 
+  /**
+   * Public anchor profile. Used when getInfoByRoom is unavailable (offline room,
+   * risk control, endpoint change) so the monitor can still show the real
+   * streamer name. Read-only and unauthenticated.
+   */
+  async masterInfo(uid) {
+    const id = Number(uid);
+    if (!Number.isInteger(id) || id <= 0) return {name: null, uid: null};
+    const {data} = await this.request(
+      `${LIVE_API}/live_user/v1/Master/info?uid=${encodeURIComponent(id)}`,
+      {withBuvid: true}
+    );
+    return {
+      name: data?.info?.uname ?? null,
+      uid: Number(data?.info?.uid ?? id) || null
+    };
+  }
+
   async danmuInfo(roomId) {
     await this.ensureBuvid();
     await this.ensureWbi();

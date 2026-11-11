@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（v0.13.1：移除匿名免费 / 手动 AI，重写付费请求调度）
+最后更新：2026-11-11（v0.13.1 七项实际使用修复：场次跳转、配置状态、实时进度、无观众画像、重复报告、Bilibili 主播名、手动停止后自动恢复）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -59,7 +59,7 @@
 
 ### 0.6 本轮测试（实测）
 
-- 全量：**519 passed / 0 failed**（2026-11-11，约 77 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 全量：**539 passed / 0 failed**（2026-11-11，约 73 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - 新增：`tests/unit/ai-scheduler.test.mjs`（并发上限、429 隔离、取消、退避）、`tests/integration/v13-scheduler.test.mjs`（429 Retry-After、1,000 观众批次并发、失败恢复、跨场次顺序）、`scripts/benchmark-mock-scale.mjs`。
 - 重写：`tests/unit/ai-ui.test.mjs`（只允许一个 API Key 流程）、`tests/integration/ai-api.test.mjs`（直接测试校验/导入/报告，不再依赖已删除的手动 HTTP 路由）、`v13-session-split`、`api.test`、`youtube-anonymous-session` 的包构建部分。
 - 删除：旧匿名/手动测试文件（`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`）。
@@ -86,6 +86,22 @@
 - Windows EXE 运行验收（UAC 拒绝）；本轮是否重新构建见 §5。
 - 真实 Provider 的 429/Retry-After、1,000 观众运行、费用与延迟。
 - 真实 Bilibili/YouTube 大场自动画像。
+
+### 0.11 v0.13.1 七项实际使用修复（2026-11-11）
+
+| # | 问题 | 复现/根因 | 修复 | 验证 |
+| --- | --- | --- | --- | --- |
+| 1 | 历史跳转 AI 未选中对应场次 | `ai.js` 忽略路由 `query`，总是取列表第一场 | `chooseInitialSessionId()` 按稳定 `session_id` 选择；目标不在前 100 行时按 id 加载；手动选择后更新 URL，不会被旧参数强制切回 | `ai-selection.test` + 静态 UI 测试 |
+| 2 | 已配置 Key 却显示未配置 | 只用 `configs.length` 二值判断，缺少 key/测试失败/未检测/价格缺失状态 | 新增 `providerConfigState()`；分别显示未配置、缺 Key、测试失败、未检测、缺价格；删除“不再提供匿名免费 AI”历史文案 | `ai-config-state.test` + Provider 列表真实加密引用测试 |
+| 3 | 没有实时进度条 | 只有文字；初始 idle 响应可能覆盖刚启动的任务；没有批次/观众进度 | 新增计数型进度条（批次/观众）、阶段文案、不确定动画；statusEpoch 防止旧响应覆盖；1.5s 轮询；完成自动加载报告 | `ai-progress.test`、`v13-progress.test`；真实浏览器未验收 |
+| 4 | `Memory No viewers` | `ANALYSIS_MEMORY_EMPTY` 未本地化；combined 任务把画像无观众当整体失败 | 新增 `ANALYSIS_MEMORY_NO_VIEWERS` / `NO_BROADCASTER`；combined 保留单场报告并显式跳过画像；memory-only 明确失败；状态返回 `memorySkipped`、覆盖率 | `v13-api-runner` 无观众测试 |
+| 5 | 报告重复显示两次 | 初始 `refreshReport()` 与 `refreshStatus()` 终态刷新并发，两个响应都 append | `reportEpoch` 单飞；只有最新请求可清空/挂载；报告 DOM 只有一个挂载点 | 静态单挂载点断言 + `reportEpoch` 测试；无真实浏览器 |
+| 6 | Bilibili 未开播不显示主播名 | `getInfoByRoom` 在未开播/风控时失败，`anchorName` 为空，target 只剩 `Bilibili <room>` | `BilibiliApi.masterInfo()` 公共主播资料回退；`resolve` 和低频 `detect` 补全；target 持久化 displayName/platformUid；10 分钟失败重试；改名不改 broadcasterId | 真实房间 3（未开播）→ `3号直播间` / UID `11153765`；单元/集成测试 |
+| 7 | 手动停止后可能自动恢复同一场 | `#reconcile` 清除 active 后下一轮 LIVE 检查会创建新 session；无持久抑制 | 新增 `live_stopped` 状态 + `meta.manualStop`（live cycle key、sessionId、awaitingOffline）；用户停止写抑制；同周期 LIVE 不启动；确认离线才清除；新 `live_time`/videoId 才允许新场；重启保持；`resume_capture` 仅用户主动 | 场景 A–G 测试；重启恢复；多目标隔离由现有测试覆盖 |
+
+**真实 Bilibili 验证（只读公开接口）**：房间 `3`（解析为 `23058`，未开播）→ `displayName=3号直播间`、`platformUid=11153765`、`anchorName=3号直播间`；`roomStatus.liveTime` 为 `0000-00-00 00:00:00`，未伪造开播时间。
+
+**未验证**：真实浏览器视觉、真实 EXE、真实付费 API、真实主播“手动停止→重启→仍直播”全流程（用 Mock 可控时钟验证）。
 
 ## 0.10 v0.13.0（历史）
 
@@ -388,9 +404,9 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 5. 构建结果（如实）
 
 - **v0.13.1 已重新构建 EXE**：`node scripts/build-windows.mjs` 输出 `Built dist/LiveMemory.exe`。
-  - 大小 **95,856,128 bytes（91.4 MB）**
-  - SHA-256 `397bc5549d2c6ba8f78c2916851c07ad434d8719b0995ed8e97d1c958c7ddf0b`
-  - 资源 **161 个**，资源哈希 `59f180783926419a0879`
+  - 大小 **95,893,504 bytes（91.5 MB）**
+  - SHA-256 `e3c637c884f3e71d268eaf328b1a966b52c6d895613cbf00738d049b04ce810d`
+  - 资源 **164 个**，资源哈希 `bd4701866c442a9ebfd5`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。

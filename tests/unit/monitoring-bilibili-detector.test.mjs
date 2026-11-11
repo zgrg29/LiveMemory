@@ -12,8 +12,11 @@ function api(overrides = {}) {
     async roomInfo() {
       return {title: 'Room title', areaName: 'Area', parentAreaName: 'Parent', liveStatus: 1, online: 12, anchorName: 'Anchor', anchorUid: 4242};
     },
+    async masterInfo() {
+      return {name: 'Anchor', uid: 4242};
+    },
     async roomStatus() {
-      return {roomId: 987654, liveStatus: 1, title: 'Live title', online: 99, liveTime: null};
+      return {roomId: 987654, liveStatus: 1, title: 'Live title', online: 99, liveTime: 1700000000000};
     },
     ...overrides
   };
@@ -58,6 +61,38 @@ test('detect maps live, offline and carousel without inventing an end', async ()
   const carouselResult = await carousel.detect({target_key: '987654'});
   assert.equal(carouselResult.status, 'offline');
   assert.equal(carouselResult.carousel, true);
+});
+
+test('offline metadata falls back to the public Master endpoint', async () => {
+  const detector = new BilibiliRoomDetector({
+    api: api({
+      roomInfo: async () => {
+        throw Object.assign(new Error('risk controlled'), {code: 'PLATFORM'});
+      },
+      masterInfo: async (uid) => ({name: `Anchor ${uid}`, uid}),
+      roomStatus: async () => ({roomId: 987654, liveStatus: 0, title: null, online: null, liveTime: null})
+    })
+  });
+  const target = await detector.resolve('12345');
+  assert.equal(target.displayName, 'Anchor 4242');
+  assert.equal(target.meta.anchorName, 'Anchor 4242');
+  assert.equal(target.broadcasterId, 'bilibili:4242');
+
+  const observation = await detector.detect({
+    target_key: '987654',
+    display_name: 'Bilibili 987654',
+    platform_uid: '4242',
+    meta_json: JSON.stringify({})
+  });
+  assert.equal(observation.status, 'offline');
+  assert.equal(observation.anchorName, 'Anchor 4242');
+  assert.ok(observation.metadataAttemptedAt > 0);
+});
+
+test('detect exposes the platform live start time as a cycle key input', async () => {
+  const detector = new BilibiliRoomDetector({api: api()});
+  const observation = await detector.detect({target_key: '987654'});
+  assert.equal(observation.liveStartedAt, 1700000000000);
 });
 
 test('Bilibili errors become stable monitor errors', async () => {

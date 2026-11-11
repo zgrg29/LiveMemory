@@ -62,13 +62,14 @@ export function seedSession(db, {
     startedAt
   });
   const ingest = new EventIngest({db});
+  const identifiable = Number(viewerCount) > 0;
   for (let index = 0; index < messageCount; index += 1) {
     ingest.record({
       session_id: session.id,
       platform,
       event_type: 'chat',
-      viewer_uid: `${viewerUidPrefix}_${index % viewerCount}`,
-      display_name: `Viewer ${index % viewerCount}`,
+      viewer_uid: identifiable ? `${viewerUidPrefix}_${index % viewerCount}` : '',
+      display_name: identifiable ? `Viewer ${index % viewerCount}` : 'Anonymous',
       occurred_at: startedAt + 1000 + index * 1000,
       content: index === 0 ? 'Hello <script>alert(1)</script> 😂' : `Message ${index}`,
       external_id: `m6-${session.id}-${index}`,

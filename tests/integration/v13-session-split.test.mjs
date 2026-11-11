@@ -122,6 +122,24 @@ test('v0.13 provider catalogue is public and configuration rejects unsafe base U
   });
   assert.equal(keyless.status, 400);
   assert.equal(keyless.payload.error.code, 'AI_PROVIDER_KEY_REQUIRED');
+
+  const saved = await jsonRequest(`${base}api/ai/providers/configs`, {
+    method: 'POST',
+    body: {
+      providerId: 'custom',
+      regionId: 'custom',
+      baseUrl: 'https://example.com/v1',
+      modelId: 'saved-model',
+      apiKey: 'saved-key',
+      pricingStatus: 'unknown'
+    }
+  });
+  assert.equal(saved.status, 201, JSON.stringify(saved.payload));
+  const withKey = await jsonRequest(`${base}api/ai/providers`);
+  const listed = withKey.payload.configs.find((config) => config.id === saved.payload.config.id);
+  assert.ok(listed);
+  assert.equal(listed.hasCredential, true);
+  assert.equal(JSON.stringify(withKey.payload).includes('saved-key'), false);
 });
 
 test('provider capability test route audits the result and updates the config', async (t) => {

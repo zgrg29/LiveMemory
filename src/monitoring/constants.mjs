@@ -20,6 +20,8 @@ export const MONITOR_STATE = Object.freeze({
   RECORDING: 'recording',
   /** The platform reported an end; the session is being finalised. */
   ENDING: 'ending',
+  /** The platform is still live, but the user stopped capture for this cycle. */
+  LIVE_STOPPED: 'live_stopped',
   /** The user paused automatic checks. An ongoing capture may continue. */
   PAUSED: 'paused',
   /** Repeated failure or an unrecoverable input; the user must act. */

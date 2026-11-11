@@ -24,6 +24,8 @@ import {
   classifyMonitorError,
   initialCheckDelay,
   isRecordingState,
+  liveCycleKey,
+  parseMeta,
   retryDelay,
   serializeMonitorTarget,
   summarizeTargets
@@ -274,6 +276,23 @@ export class MonitoringManager {
     const now = this.now();
     const recording = row.active_session_id && this.sessionManager.getRecording(row.active_session_id);
 
+    if (action === 'resume_capture') {
+      const updated = updateMonitorTarget(this.db, row.id, {
+        enabled: 1,
+        state: MONITOR_STATE.WAITING,
+        paused_at: null,
+        consecutive_failures: 0,
+        last_error_code: null,
+        last_error_at: null,
+        next_check_at: now,
+        meta_json: mergeMeta(row.meta_json, {manualStop: null}),
+        updated_at: now
+      });
+      await this.#runCheck(updated.id);
+      this.#emit();
+      return this.getTarget(updated.id);
+    }
+
     if (action === 'pause' || enabled === false) {
       if (row.enabled === 0) return this.#serialize(row);
       const nextState = recording ? row.state : MONITOR_STATE.PAUSED;
@@ -304,6 +323,82 @@ export class MonitoringManager {
     }
 
     throw monitorError(MONITOR_ERROR.INVALID_INPUT, {httpStatus: 400});
+  }
+
+  /**
+   * Called after a user explicitly stops capture for one session.
+   *
+   * The target stays enabled: monitoring may keep checking the platform. A
+   * persisted suppression record prevents any automatic path from recreating a
+   * capture for the same live cycle, including after a process restart.
+   */
+  noteManualStop(sessionId) {
+    const id = String(sessionId ?? '');
+    const session = getSession(this.db, id);
+    if (!session) return null;
+    const targetId = session.monitor_target_id ?? null;
+    const target = targetId
+      ? getMonitorTarget(this.db, targetId)
+      : listMonitorTargets(this.db).find((row) => row.active_session_id === id || row.last_session_id === id) ?? null;
+    if (!target) return null;
+    if (target.enabled === 0) {
+      // A paused target must not become an active capture target. Keep the
+      // suppression record so resuming the whole monitor does not restart this
+      // same live cycle either.
+      const paused = updateMonitorTarget(this.db, target.id, {
+        active_session_id: null,
+        last_session_id: id,
+        state: MONITOR_STATE.PAUSED,
+        next_check_at: null,
+        meta_json: mergeMeta(target.meta_json, {
+          manualStop: {
+            sessionId: id,
+            liveKey: this.#suppressedLiveKey(target),
+            stoppedAt: this.now(),
+            awaitingOffline: !this.#suppressedLiveKey(target)
+          }
+        }),
+        updated_at: this.now()
+      });
+      this.#emit();
+      return this.#serialize(paused);
+    }
+    const liveKey = this.#suppressedLiveKey(target);
+    const suppression = {
+      sessionId: id,
+      liveKey,
+      stoppedAt: this.now(),
+      awaitingOffline: !liveKey
+    };
+    const updated = updateMonitorTarget(this.db, target.id, {
+      active_session_id: null,
+      last_session_id: id,
+      state: MONITOR_STATE.LIVE_STOPPED,
+      next_check_at: this.now() + Math.round(monitorPolicy(target.platform).baseMs),
+      meta_json: mergeMeta(target.meta_json, {
+        manualStop: suppression,
+        lastCheck: {
+          lastObservation: 'live_stopped',
+          liveStoppedAt: this.now()
+        }
+      }),
+      updated_at: this.now()
+    });
+    this.logger?.info({
+      event: 'monitor.capture.manual_stop',
+      targetId: target.id,
+      sessionId: id,
+      liveKey
+    });
+    this.#emit();
+    return this.#serialize(updated);
+  }
+
+  #suppressedLiveKey(target) {
+    const meta = parseMeta(target?.meta_json) ?? {};
+    return meta?.lastCheck?.lastLiveKey
+      ?? meta?.manualStop?.liveKey
+      ?? null;
   }
 
   async deleteTarget(targetId, {confirm = false} = {}) {
@@ -387,12 +482,17 @@ export class MonitoringManager {
         // The broadcast ended (platform end, adapter end, user stop or startup
         // recovery). The target survives; only its active pointer is cleared.
         const endedId = row.last_session_id ?? row.active_session_id;
+        const suppression = parseMeta(row.meta_json)?.manualStop ?? null;
         updateMonitorTarget(this.db, row.id, {
           active_session_id: null,
           last_session_id: endedId,
-          state: row.enabled ? MONITOR_STATE.WAITING : MONITOR_STATE.PAUSED,
+          state: row.enabled
+            ? (suppression ? MONITOR_STATE.LIVE_STOPPED : MONITOR_STATE.WAITING)
+            : MONITOR_STATE.PAUSED,
           next_check_at: row.enabled
-            ? now + (MONITOR_POLICY[row.platform]?.endCooldownMs ?? 15000)
+            ? now + (suppression
+              ? Math.round(monitorPolicy(row.platform).baseMs)
+              : (MONITOR_POLICY[row.platform]?.endCooldownMs ?? 15000))
             : null,
           consecutive_failures: 0,
           last_error_code: null,
@@ -443,6 +543,20 @@ export class MonitoringManager {
       const current = getMonitorTarget(this.db, id);
       if (!current || !current.enabled) return;
       if (observation?.status === 'live') {
+        const suppression = parseMeta(current.meta_json)?.manualStop ?? null;
+        if (suppression) {
+          const observationKey = liveCycleKey(current.platform, current, observation);
+          const newCycle = Boolean(suppression.liveKey)
+            && Boolean(observationKey)
+            && suppression.liveKey !== observationKey;
+          if (!newCycle) {
+            this.#holdManualStop(current, observation, suppression);
+            return;
+          }
+          // A reliable platform cycle key changed (Bilibili live_time or a new
+          // YouTube video). This is a genuinely new broadcast; clear the old
+          // suppression and start a new session.
+        }
         await this.#beginRecording(current, observation);
       } else {
         this.#afterNotLive(current, observation);
@@ -456,6 +570,50 @@ export class MonitoringManager {
     }
   }
 
+  #holdManualStop(row, observation, suppression) {
+    const now = this.now();
+    const delay = retryDelay({
+      policy: monitorPolicy(row.platform),
+      kind: 'offline',
+      random: this.random
+    });
+    const displayName = observation?.anchorName
+      || observation?.channelTitle
+      || row.display_name;
+    const meta = mergeMeta(row.meta_json, {
+      manualStop: suppression,
+      lastCheck: {
+        lastObservation: 'live_stopped',
+        lastTitle: observation?.title ?? null,
+        lastOnline: observation?.online ?? null,
+        lastLiveKey: this.#suppressedLiveKey(row),
+        observedAt: now
+      }
+    });
+    applyMetadataMeta(meta, observation);
+    const updated = updateMonitorTarget(this.db, row.id, {
+      state: MONITOR_STATE.LIVE_STOPPED,
+      next_check_at: now + delay,
+      consecutive_failures: 0,
+      last_error_code: null,
+      last_error_at: null,
+      display_name: displayName,
+      platform_uid: observation?.anchorUid === null || observation?.anchorUid === undefined
+        ? row.platform_uid
+        : String(observation.anchorUid),
+      meta_json: meta,
+      updated_at: now
+    });
+    this.logger?.info({
+      event: 'monitor.check.live_stopped',
+      targetId: row.id,
+      sessionId: suppression?.sessionId ?? null,
+      nextCheckInMs: delay
+    });
+    this.#emit();
+    return updated;
+  }
+
   #afterNotLive(row, observation = {}) {
     const now = this.now();
     const kind = observation?.status === 'upcoming' ? 'upcoming' : 'offline';
@@ -465,16 +623,28 @@ export class MonitoringManager {
       random: this.random
     });
     const meta = mergeMeta(row.meta_json, {
+      manualStop: null,
       lastObservation: observation?.status ?? 'offline',
       lastVideoId: observation?.videoId ?? null,
+      lastLiveKey: null,
+      metadataAttemptedAt: observation?.metadataAttemptedAt ?? null,
+      anchorName: observation?.anchorName ?? null,
+      anchorUid: observation?.anchorUid === null || observation?.anchorUid === undefined
+        ? null
+        : String(observation.anchorUid),
+      areaName: observation?.areaName ?? null,
+      parentAreaName: observation?.parentAreaName ?? null,
       lastTitle: observation?.title ?? null,
       lastOnline: observation?.online ?? null,
       carousel: observation?.carousel === true,
       observedAt: now
     });
+    applyMetadataMeta(meta, observation);
     const displayName = row.platform === 'youtube' && observation?.channelTitle
       ? observation.channelTitle
-      : row.display_name;
+      : (row.platform === 'bilibili' && observation?.anchorName
+        ? observation.anchorName
+        : row.display_name);
     updateMonitorTarget(this.db, row.id, {
       state: MONITOR_STATE.WAITING,
       next_check_at: now + delay,
@@ -482,6 +652,9 @@ export class MonitoringManager {
       last_error_code: null,
       last_error_at: null,
       display_name: displayName,
+      platform_uid: observation?.anchorUid === null || observation?.anchorUid === undefined
+        ? row.platform_uid
+        : String(observation.anchorUid),
       meta_json: meta,
       updated_at: now
     });
@@ -514,6 +687,24 @@ export class MonitoringManager {
         ?? null;
       if (!sessionId) throw new Error('session id missing');
       const startedAt = this.now();
+      const liveKey = liveCycleKey(row.platform, row, observation);
+      const meta = mergeMeta(row.meta_json, {
+        manualStop: null,
+        lastCheck: {
+          lastLiveAt: startedAt,
+          lastSessionId: sessionId,
+          lastVideoId: observation?.videoId ?? null,
+          lastTitle: observation?.title ?? null,
+          lastLiveKey: liveKey,
+          lastObservation: 'live'
+        }
+      });
+      applyMetadataMeta(meta, observation);
+      const displayName = row.platform === 'youtube' && observation?.channelTitle
+        ? observation.channelTitle
+        : (row.platform === 'bilibili' && observation?.anchorName
+          ? observation.anchorName
+          : row.display_name);
       updateMonitorTarget(this.db, row.id, {
         state: MONITOR_STATE.RECORDING,
         active_session_id: sessionId,
@@ -522,13 +713,11 @@ export class MonitoringManager {
         consecutive_failures: 0,
         last_error_code: null,
         last_error_at: null,
-        meta_json: mergeMeta(row.meta_json, {
-          lastLiveAt: startedAt,
-          lastSessionId: sessionId,
-          lastVideoId: observation?.videoId ?? null,
-          lastTitle: observation?.title ?? null,
-          lastObservation: 'live'
-        }),
+        display_name: displayName,
+        platform_uid: observation?.anchorUid === null || observation?.anchorUid === undefined
+          ? row.platform_uid
+          : String(observation.anchorUid),
+        meta_json: meta,
         updated_at: startedAt
       });
       this.logger?.info({
@@ -551,8 +740,9 @@ export class MonitoringManager {
       return this.bilibili.connectResolved({
         roomId: Number(row.target_key),
         title: observation?.title ?? null,
-        anchorName: row.display_name ?? null,
-        anchorUid: row.platform_uid ?? null
+        anchorName: observation?.anchorName ?? row.display_name ?? null,
+        anchorUid: observation?.anchorUid ?? row.platform_uid ?? null,
+        liveStartedAt: observation?.liveStartedAt ?? null
       }, {monitorTargetId: row.id});
     }
     if (row.platform === 'youtube') {
@@ -630,19 +820,52 @@ export class MonitoringManager {
   }
 }
 
+function applyMetadataMeta(meta, observation) {
+  if (!meta || !observation) return meta;
+  if (observation.anchorName) meta.anchorName = String(observation.anchorName);
+  if (observation.anchorUid !== null && observation.anchorUid !== undefined) {
+    meta.anchorUid = String(observation.anchorUid);
+  }
+  if (observation.areaName) meta.areaName = String(observation.areaName);
+  if (observation.parentAreaName) meta.parentAreaName = String(observation.parentAreaName);
+  if (observation.metadataAttemptedAt) meta.lastMetadataAttemptAt = Number(observation.metadataAttemptedAt);
+  return meta;
+}
+
+const TOP_LEVEL_META_KEYS = new Set([
+  'manualStop',
+  'anchorName',
+  'anchorUid',
+  'areaName',
+  'parentAreaName',
+  'lastMetadataAttemptAt'
+]);
+
 function mergeMeta(raw, patch) {
   let base = {};
   if (raw && typeof raw === 'object') base = {...raw};
   else if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = parsed;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = {...parsed};
     } catch {
       base = {};
     }
   }
-  const lastCheck = {...(base.lastCheck ?? {}), ...patch};
-  return {...base, lastCheck};
+  const patchObject = patch && typeof patch === 'object' && !Array.isArray(patch) ? {...patch} : {};
+  const nested = patchObject.lastCheck && typeof patchObject.lastCheck === 'object'
+    ? {...patchObject.lastCheck}
+    : null;
+  delete patchObject.lastCheck;
+  const top = {};
+  for (const key of TOP_LEVEL_META_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(patchObject, key)) {
+      top[key] = patchObject[key];
+      delete patchObject[key];
+    }
+  }
+  const lastCheck = {...(base.lastCheck ?? {}), ...(nested ?? {}), ...patchObject};
+  return {...base, ...top, lastCheck};
 }
 
 export const __internal = {mergeMeta};

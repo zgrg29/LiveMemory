@@ -40,6 +40,17 @@ test('the AI centre exposes exactly one API-key analysis flow', () => {
   assert.ok(source.includes('ai.center.start'), 'missing single start action');
   assert.ok(source.includes('ai.center.scopeLabel'), 'missing scope selection');
   assert.ok(source.includes('ai.center.scaleTitle'), 'missing task-size / cost review');
+  assert.ok(source.includes("query?.get('session')"), 'missing stable session query selection');
+  assert.ok(source.includes('syncUrl()'), 'missing URL state restore');
+  assert.ok(source.includes('history.replaceState'), 'missing manual-selection URL update');
+  assert.ok(source.includes('statusEpoch'), 'missing stale status response guard');
+  assert.ok(source.includes('reportEpoch'), 'missing stale report response guard');
+  assert.equal((source.match(/reportHost\.append/g) ?? []).length, 1, 'report must be mounted in exactly one place');
+  assert.ok(source.includes('analysis-progress'), 'missing progress bar');
+  assert.ok(source.includes('buildAnalysisProgress'), 'missing counted progress calculation');
+  assert.ok(source.includes('configWarning'), 'missing config-state warning');
+  assert.ok(source.includes("providerConfigState"), 'missing config state helper');
+  assert.ok(source.includes('memorySkipped'), 'missing skipped-memory status');
   assert.ok(source.includes('ai.v13.billing.confirm'), 'missing spend confirmation');
   assert.ok(source.includes('ai.v13.memory.optIn'), 'missing memory opt-in');
   assert.ok(source.includes('requestStats'), 'missing local request statistics');
@@ -105,6 +116,17 @@ test('the unified AI centre has complete Chinese, Japanese and English copy', ()
     'ai.center.scaleBudget',
     'ai.center.start',
     'ai.center.starting',
+    'ai.center.configLoadFailed',
+    'ai.center.configMissingKey',
+    'ai.center.configTestFailed',
+    'ai.center.configUntested',
+    'ai.center.progressSession',
+    'ai.center.progressMemory',
+    'ai.center.progressViewers',
+    'ai.center.progressMemorySkipped',
+    'ai.center.progressIndeterminate',
+    'ai.center.memorySkipped',
+    'ai.center.reason.ANALYSIS_MEMORY_NO_VIEWERS',
     'ai.center.statusTitle',
     'ai.center.complete',
     'ai.center.failed',

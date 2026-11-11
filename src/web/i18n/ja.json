@@ -516,8 +516,20 @@
       "configLabel": "API 設定",
       "scopeLabel": "分析内容",
       "openSettings": "API 設定を開く",
-      "noConfig": "API キーがまだ設定されていません。設定でプロバイダー・リージョン・モデル・キーを追加してください。LiveMemory は匿名の無料 AI を提供しません。",
-      "noConfigShort": "API モデルが未設定です",
+      "noConfig": "AI サービスが未設定です。設定でプロバイダー・リージョン・モデル・API キーを追加してください。",
+      "noConfigShort": "AI サービスが未設定です",
+      "configLoadFailed": "ローカルの API 設定を読み取れません。ページを再読み込みしてください。改善しない場合は設定を確認してください。",
+      "configMissingKey": "API 設定はありますが、有効な API キーがありません。設定でキーを再入力してください。",
+      "configTestFailed": "API キーのテストに失敗しました：{reason}。キー・モデル・ネットワークを確認してください。",
+      "configUntested": "API キーは保存されていますが、能力テストは未完了です。設定の「能力をテスト」を実行してください。これは「API キー未設定」ではありません。",
+      "configPricingMissing": "API キーは保存されていますが、有料モデルの価格情報がないため予算保護を実行できません。設定で価格を補完してください。",
+      "configNotUsable": "現在の API 設定では分析を開始できません。案内に従って設定を確認してください。",
+      "progressSession": "単一配信レポート：{done}/{total}",
+      "progressMemory": "長期プロフィール：{done}/{total} バッチ",
+      "progressViewers": "処理済み視聴者：{done}/{total}",
+      "progressMemorySkipped": "長期プロフィールをスキップ：{reason}",
+      "progressIndeterminate": "現在の段階を処理しています…",
+      "memorySkipped": "長期プロフィールをスキップ：{reason}",
       "scaleTitle": "タスク規模",
       "scaleMessages": "チャットメッセージ",
       "scaleViewers": "識別可能な視聴者",
@@ -528,6 +540,7 @@
       "starting": "開始しています…",
       "started": "AI 分析を開始しました。",
       "statusTitle": "分析の進捗",
+      "running": "AI 分析を実行中",
       "complete": "AI 分析が完了しました",
       "completeMemory": "AI 分析が完了しました · 長期記憶は {covered}/{total} 人の視聴者をカバー",
       "failed": "AI 分析に失敗しました",
@@ -560,6 +573,10 @@
         "ANALYSIS_INTERRUPTED": "分析が中断されました。再開すると完了済みバッチはスキップされます。",
         "ANALYSIS_BUDGET_EXCEEDED": "このタスクの予算上限に達したため、以降のリクエストを停止しました。",
         "ANALYSIS_MEMORY_OUT_OF_ORDER": "この配信者にはより新しい配信の長期プロフィールがあります。古い記憶が新しい記憶を上書きしないよう、古い配信からの更新を拒否しました。",
+        "ANALYSIS_MEMORY_NO_VIEWERS": "この配信には長期プロフィールを作成できる識別可能な視聴者がいません。",
+        "ANALYSIS_MEMORY_NO_BROADCASTER": "この配信には確認できる配信者IDがないため、長期プロフィールを作成できません。",
+        "ANALYSIS_MEMORY_EMPTY": "この配信には長期プロフィールを作成できる識別可能な視聴者がいません。",
+        "ANALYSIS_TOO_MANY_VIEWERS": "この配信の識別可能な視聴者が安全上限を超えているため、1 つのタスクで完全に処理できません。",
         "AI_PROVIDER_CONFIG_REQUIRED": "先に API モデルを選択・設定してください。",
         "PROVIDER_RATE_LIMITED": "プロバイダーが 429 を返しました。Retry-After または指数バックオフで待機しました。",
         "PROVIDER_TIMEOUT": "AI リクエストがタイムアウトしました。",
@@ -1338,7 +1355,7 @@
     "aiSessionChanged": "分析パッケージ作成中に配信データが変わりました。もう一度お試しください。",
     "memoryBroadcasterRequired": "この配信には確定した配信者がなく、メモリの範囲を決められません。長期メモリは常に配信者ごとに分離されます。",
     "memoryNoAnalysis": "先にこの配信の AI 分析を取り込んでください。ワンクリック統合は検証済みの結果だけを再利用します。",
-    "memoryNoViewers": "この配信には統合できる視聴者の発言がありません。",
+    "memoryNoViewers": "この配信には長期プロフィールを作成できる識別可能な視聴者がいません。",
     "memoryImportInvalid": "メモリ更新を適用できませんでした。何も書き込まれていません。",
     "memoryVersionRequired": "このバッチには別の回答が適用済みです。新しいバージョンを追加してよいか確認してください。",
     "memoryDeleted": "このパッケージ作成後に、この視聴者のメモリは削除されました。もう一度覚えたい場合は新しいパッケージを作成してください。",
@@ -1602,6 +1619,7 @@
       "recording": "配信中 · 記録中",
       "reconnecting": "再接続中",
       "ending": "終了を確認中",
+      "live_stopped": "配信中 · この配信の収集を停止",
       "paused": "監視停止中",
       "error": "対応が必要"
     },
@@ -1609,7 +1627,8 @@
       "subtitle": "{platform} · {key}",
       "waitingHint": "バックグラウンドでこのルーム／チャンネルを確認します。配信が始まると自動接続して記録し、終了すると保存して再び待機します。",
       "pausedHint": "自動監視は停止中です。進行中の記録は停止しません。再開すると次回の配信確認だけが有効になります。",
-      "recordingHint": "この配信を自動記録中です。記録を停止しても監視対象とタブは残ります。"
+      "recordingHint": "この配信を自動記録中です。記録を停止しても監視対象とタブは残ります。",
+      "liveStoppedHint": "配信者はまだ配信中ですが、この配信のチャット収集はユーザーが停止しました。監視は続きます。今回の配信が終了し、次の配信が確認された場合だけ自動収集を再開します。"
     },
     "info": {
       "title": "監視情報",
@@ -1630,6 +1649,8 @@
       "pauseHint": "一時停止中は新しい確認や配信の開始を行いません。進行中の記録は続きます。",
       "checkNow": "今すぐ確認",
       "resume": "監視を再開",
+      "resumeCapture": "チャット収集を開始",
+      "resumeCaptureHint": "現在の配信を明示的に再収集します。新しいローカル記録を作成し、終了済みの古い記録は再開しません。",
       "retry": "すぐに再試行",
       "delete": "監視対象を削除"
     },
@@ -1661,6 +1682,11 @@
       "title": "自動監視は停止中です",
       "body": "監視を再開すると、次の配信待ちに戻ります。"
     },
+    "liveStopped": {
+      "title": "この配信の収集は停止しました",
+      "body": "配信者はまだ配信中ですが、この配信のチャット・ギフト・スーパーチャットの受信は停止しました。自動監視対象は残ります。",
+      "hint": "配信者の終了が確認され、次回の配信が始まった場合、または「チャット収集を開始」を押した場合だけ再開します。"
+    },
     "delete": {
       "title": "監視対象を削除",
       "subtitle": "「{name}」の監視を停止しますか？",
@@ -1671,6 +1697,7 @@
     "toast": {
       "paused": "自動監視を一時停止しました",
       "resumed": "自動監視を再開しました",
+      "resumeCaptureStarted": "現在の配信のチャット収集を開始しました",
       "retried": "確認を再開しました",
       "deleted": "監視対象を削除しました",
       "added": "自動監視を追加しました：{name}"

@@ -80,6 +80,32 @@ export function isRecordingState(state) {
 }
 
 /**
+ * Stable key for one platform live cycle.
+ *
+ * Bilibili exposes the real broadcast start time (`live_time`); its change is
+ * reliable evidence of a new broadcast even if an offline check was missed.
+ * YouTube uses the video id. If neither exists, no key is invented: the caller
+ * must keep suppressing until an offline observation is confirmed.
+ */
+export function liveCycleKey(platform, target, observation) {
+  if (observation?.status !== 'live') return null;
+  if (platform === 'bilibili') {
+    const startedAt = Number(observation?.liveStartedAt);
+    const roomId = String(target?.target_key ?? target?.targetKey ?? observation?.roomId ?? '');
+    const cycle = (Number.isFinite(startedAt) && startedAt > 0)
+      ? String(startedAt)
+      : (observation?.liveTimeText ? String(observation.liveTimeText) : null);
+    if (cycle && roomId) return `bilibili:${roomId}:${cycle}`;
+    return null;
+  }
+  if (platform === 'youtube') {
+    const videoId = String(observation?.videoId ?? '');
+    return videoId ? `youtube:${videoId}` : null;
+  }
+  return null;
+}
+
+/**
  * The state shown to the user. Capture reconnection is a property of the
  * adapter, not a new broadcast, so it is derived here and never stored as a
  * monitor lifecycle state.
@@ -159,13 +185,15 @@ export function summarizeTargets(targets) {
     recording: 0,
     waiting: 0,
     error: 0,
-    paused: 0
+    paused: 0,
+    liveStopped: 0
   };
   for (const target of targets) {
     if (target.enabled) summary.enabled += 1;
     if (['recording', 'connecting', 'reconnecting', 'ending'].includes(target.state)) summary.recording += 1;
     else if (target.state === MONITOR_STATE.ERROR) summary.error += 1;
     else if (target.state === MONITOR_STATE.PAUSED) summary.paused += 1;
+    else if (target.state === MONITOR_STATE.LIVE_STOPPED) summary.liveStopped += 1;
     else if (target.state === MONITOR_STATE.WAITING) summary.waiting += 1;
   }
   return summary;

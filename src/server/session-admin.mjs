@@ -53,6 +53,20 @@ export async function stopSessionRecording({deps, sessionId, reason = 'user'}) {
   }
   const result = await deps.sessionManager.stopSession(id, {status: 'ended', reason});
   if (!result?.session) throw sessionNotFound();
+  if (reason === 'user') {
+    try {
+      // Persist a per-target suppression for this live cycle. Monitoring may
+      // continue checking the platform, but it must not recreate this capture
+      // because a heartbeat, reconnect or the next poll still sees LIVE.
+      await deps.monitoring?.noteManualStop?.(id);
+    } catch (error) {
+      deps.logger?.warn?.({
+        event: 'monitor.manual_stop.note.failed',
+        sessionId: id,
+        code: error?.code ?? 'unknown'
+      });
+    }
+  }
   return result;
 }
 

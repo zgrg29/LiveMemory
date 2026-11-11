@@ -516,8 +516,20 @@
       "configLabel": "API config",
       "scopeLabel": "Analysis scope",
       "openSettings": "Open API settings",
-      "noConfig": "No API key is configured. Add a provider, region, model and key in Settings first; LiveMemory no longer offers anonymous free AI.",
-      "noConfigShort": "No API model configured",
+      "noConfig": "No AI service is configured. Add a provider, region, model and API key in Settings.",
+      "noConfigShort": "No AI service configured",
+      "configLoadFailed": "The local API configuration could not be read. Refresh the page; if it still fails, check Settings.",
+      "configMissingKey": "An API configuration exists, but no usable API key is saved. Re-enter the key in Settings.",
+      "configTestFailed": "API key test failed: {reason}. Check the key, model and network, then retry.",
+      "configUntested": "The API key is saved, but the capability test has not completed. Run “Test capability” in Settings; this is not a missing key.",
+      "configPricingMissing": "The API key is saved, but this paid model has no pricing information, so budget protection cannot run. Add the price in Settings.",
+      "configNotUsable": "The current API configuration cannot start analysis yet. Follow the hint and check Settings.",
+      "progressSession": "Session report: {done}/{total}",
+      "progressMemory": "Long-term profiles: {done}/{total} batches",
+      "progressViewers": "Viewers processed: {done}/{total}",
+      "progressMemorySkipped": "Long-term profiles skipped: {reason}",
+      "progressIndeterminate": "Working on the current stage…",
+      "memorySkipped": "Long-term profiles skipped: {reason}",
       "scaleTitle": "Task size",
       "scaleMessages": "Chat messages",
       "scaleViewers": "Identifiable viewers",
@@ -528,6 +540,7 @@
       "starting": "Starting…",
       "started": "AI analysis started.",
       "statusTitle": "Progress",
+      "running": "AI analysis in progress",
       "complete": "AI analysis complete",
       "completeMemory": "AI analysis complete · long-term memory covers {covered}/{total} viewers",
       "failed": "AI analysis failed",
@@ -560,6 +573,10 @@
         "ANALYSIS_INTERRUPTED": "The analysis was interrupted. Resume skips completed batches.",
         "ANALYSIS_BUDGET_EXCEEDED": "The task budget limit was reached; further requests stopped.",
         "ANALYSIS_MEMORY_OUT_OF_ORDER": "A newer broadcast already has long-term profiles for this broadcaster. Updating from an older broadcast was refused so old memory cannot overwrite newer memory.",
+        "ANALYSIS_MEMORY_NO_VIEWERS": "This broadcast has no identifiable viewers available for long-term profiles.",
+        "ANALYSIS_MEMORY_NO_BROADCASTER": "This broadcast has no confirmed broadcaster identity, so long-term profiles cannot be created.",
+        "ANALYSIS_MEMORY_EMPTY": "This broadcast has no identifiable viewers available for long-term profiles.",
+        "ANALYSIS_TOO_MANY_VIEWERS": "This broadcast has more identifiable viewers than the safety limit, so one task cannot cover all of them.",
         "AI_PROVIDER_CONFIG_REQUIRED": "Choose and configure an API model first.",
         "PROVIDER_RATE_LIMITED": "The provider returned 429. The program waited according to Retry-After or exponential backoff.",
         "PROVIDER_TIMEOUT": "The AI request timed out.",
@@ -1338,7 +1355,7 @@
     "aiSessionChanged": "The broadcast changed while the packages were being built. Please try again.",
     "memoryBroadcasterRequired": "This broadcast has no confirmed broadcaster, so memory cannot be scoped. Long-term memory is always per broadcaster.",
     "memoryNoAnalysis": "Import the AI analysis of this broadcast first. The one-click merge only reuses results you already validated.",
-    "memoryNoViewers": "This broadcast has no viewer with messages that could be merged.",
+    "memoryNoViewers": "This broadcast has no identifiable viewers available for long-term profiles.",
     "memoryImportInvalid": "The memory update could not be applied. Nothing was written.",
     "memoryVersionRequired": "This batch already has a different applied answer. Confirm that you want to add a new version.",
     "memoryDeleted": "This viewer's memory was deleted after this package was created. Create a new package if you want to remember them again.",
@@ -1602,6 +1619,7 @@
       "recording": "Live · recording",
       "reconnecting": "Reconnecting",
       "ending": "Confirming end",
+      "live_stopped": "Live · capture stopped for this broadcast",
       "paused": "Monitoring paused",
       "error": "Needs attention"
     },
@@ -1609,7 +1627,8 @@
       "subtitle": "{platform} · {key}",
       "waitingHint": "LiveMemory checks this target in the background. When it goes live it connects and starts recording; when the broadcast ends it saves the session and keeps waiting.",
       "pausedHint": "Monitoring is paused. A capture that is already running is not stopped; resuming only re-enables checks for the next broadcast.",
-      "recordingHint": "This broadcast is being recorded automatically. Stopping the recording ends only this session; the target and its tab stay."
+      "recordingHint": "This broadcast is being recorded automatically. Stopping the recording ends only this session; the target and its tab stay.",
+      "liveStoppedHint": "The streamer is still live, but you stopped capture for this broadcast. Monitoring continues in the background; capture restarts only after this broadcast ends and a genuinely new one begins."
     },
     "info": {
       "title": "Monitoring",
@@ -1630,6 +1649,8 @@
       "pauseHint": "Pausing stops new checks and new sessions; a running recording continues.",
       "checkNow": "Check now",
       "resume": "Resume monitoring",
+      "resumeCapture": "Start capturing chat",
+      "resumeCaptureHint": "Explicitly capture the current broadcast again. This creates a new local recording and never reopens the ended one.",
       "retry": "Retry now",
       "delete": "Delete target"
     },
@@ -1661,6 +1682,11 @@
       "title": "Automatic monitoring is paused",
       "body": "Resume monitoring to wait for the next broadcast again."
     },
+    "liveStopped": {
+      "title": "Capture stopped for this broadcast",
+      "body": "The streamer is still live, but chat, gifts and Super Chats are no longer being received for this broadcast. The monitoring target remains.",
+      "hint": "Capture resumes only after the broadcast is confirmed ended and a new one starts, or when you click “Start capturing chat”."
+    },
     "delete": {
       "title": "Delete monitoring target",
       "subtitle": "Stop monitoring “{name}”?",
@@ -1671,6 +1697,7 @@
     "toast": {
       "paused": "Automatic monitoring paused",
       "resumed": "Automatic monitoring resumed",
+      "resumeCaptureStarted": "Started capturing the current broadcast",
       "retried": "Check restarted",
       "deleted": "Monitoring target deleted",
       "added": "Auto-monitor added: {name}"

@@ -110,6 +110,89 @@ test('paid verified runner can update memory without replacing the session repor
   assert.equal(report.longTermProfiles.items.length, 2);
 });
 
+test('a broadcast with no identifiable viewers keeps its session report and skips memory clearly', async (t) => {
+  const temp = createTempDir();
+  const server = await startServer({
+    dataDir: temp.dir,
+    port: 0,
+    systemLocale: 'en',
+    auto: {
+      fetchImpl: async (url, options) => {
+        const body = JSON.parse(options.body);
+        return Response.json({
+          model: body.model,
+          choices: [{message: {content: sessionAnswer()}, finish_reason: 'stop'}],
+          usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+        });
+      }
+    }
+  });
+  t.after(async () => {
+    await server.close();
+    temp.cleanup();
+  });
+  addBroadcaster(server.db);
+  const session = seedSession(server.db, {
+    id: 'ses_v131_no_viewers',
+    messageCount: 4,
+    viewerCount: 0,
+    startedAt: T0
+  });
+  const config = server.providerConfigStore.create({
+    providerId: 'custom',
+    regionId: 'custom',
+    baseUrl: 'https://example.com/v1',
+    modelId: 'paid-model',
+    apiKey: 'test-key',
+    pricingStatus: 'paid',
+    pricing: {inputPerMillion: 1, outputPerMillion: 2, currency: 'USD'}
+  });
+  server.providerConfigStore.recordTest(config.id, {
+    status: 'passed',
+    capabilities: {network: true, auth: true, text: true, json: true, session: true, memory: true}
+  });
+  await server.analysisRunner.start({
+    sessionId: session.id,
+    locale: 'en',
+    mode: 'both',
+    configId: config.id,
+    consent: true,
+    confirmBilling: true,
+    optInMemory: true
+  });
+  for (let index = 0; index < 200; index += 1) {
+    if (server.analysisRunner.getStatus(session.id).status === 'complete') break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const status = server.analysisRunner.getStatus(session.id);
+  assert.equal(status.status, 'complete', JSON.stringify(status));
+  assert.equal(status.sessionReportDone, true);
+  assert.equal(status.memorySkipped, true);
+  assert.equal(status.memorySkipReason, 'ANALYSIS_MEMORY_NO_VIEWERS');
+  assert.equal(status.memoryJobId, null);
+  const report = await fetch(`${server.url}api/ai/sessions/${encodeURIComponent(session.id)}/report`).then((response) => response.json());
+  assert.equal(report.mode, 'single');
+  assert.equal(report.report.summary, 'API session summary');
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM viewer_memories').get().n, 0);
+
+  await server.analysisRunner.start({
+    sessionId: session.id,
+    locale: 'en',
+    mode: 'memory',
+    configId: config.id,
+    consent: true,
+    confirmBilling: true,
+    optInMemory: true
+  });
+  for (let index = 0; index < 200; index += 1) {
+    if (server.analysisRunner.getStatus(session.id).status === 'failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const failed = server.analysisRunner.getStatus(session.id);
+  assert.equal(failed.status, 'failed', JSON.stringify(failed));
+  assert.equal(failed.error.code, 'ANALYSIS_MEMORY_NO_VIEWERS');
+});
+
 test('the per-task budget stops paid requests before they are sent', async (t) => {
   const temp = createTempDir();
   let calls = 0;

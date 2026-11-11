@@ -11,6 +11,9 @@ import {
 } from '../ui.js';
 import {platformLabel} from './shared.js';
 import {renderAnalysisReport} from './ai-report.js';
+import {buildAnalysisProgress} from './ai-progress.js';
+import {providerConfigState} from './ai-config-state.js';
+import {chooseInitialSessionId} from './ai-selection.js';
 
 /**
  * AI analysis centre (v0.13.1).
@@ -141,15 +144,27 @@ function mmss(ms) {
 export const aiPage = {
   titleKey: 'ai.pageTitle',
 
-  async render(container, ctx) {
+  async render(container, ctx, params, query) {
     const t = ctx.t;
     const sessionsPayload = await api.get('/api/sessions?limit=100&includeArchived=1');
     const sessions = sessionsPayload.sessions ?? [];
+    const requestedId = query?.get('session') ?? null;
+    if (requestedId && !sessions.some((session) => session.id === requestedId)) {
+      // The requested broadcast may be older than the first 100 rows. Resolve it
+      // by stable id instead of relying on the list window or a title match.
+      try {
+        const detail = await api.get(`/api/sessions/${encodeURIComponent(requestedId)}`);
+        if (detail?.session?.id) sessions.unshift(detail.session);
+      } catch {
+        // Deleted or inaccessible: fall back to the normal first session.
+      }
+    }
     let providerData = {providers: [], configs: []};
+    let providerLoadFailed = false;
     try {
       providerData = await api.get('/api/ai/providers');
     } catch {
-      // The page still explains that a provider is required.
+      providerLoadFailed = true;
     }
     const providerConfigs = providerData.configs ?? [];
 
@@ -177,12 +192,14 @@ export const aiPage = {
       stepCard(4, t('ai.center.stepCost'), t('ai.center.stepCostDesc')),
       stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
-    let selectedId = sessions[0]?.id ?? null;
+    let selectedId = chooseInitialSessionId(sessions, requestedId);
     let locale = ctx.locale;
     let runScope = 'session';
     let status = null;
     let timer = null;
     let busy = false;
+    let statusEpoch = 0;
+    let reportEpoch = 0;
 
     const sessionSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.sessionLabel')}},
       sessions.map((session) => el('option', {
@@ -233,8 +250,8 @@ export const aiPage = {
       text: t('ai.center.openSettings'),
       onClick: () => ctx.navigate('/settings')
     });
-    const noConfig = el('div', {className: 'callout callout--warn', hidden: providerConfigs.length > 0},
-      t('ai.center.noConfig'));
+    const configWarning = el('div', {className: 'callout callout--warn', hidden: true});
+    const configNotice = el('div', {className: 'callout callout--neutral', hidden: true});
 
     const startButton = el('button', {
       className: 'button button--primary',
@@ -261,7 +278,8 @@ export const aiPage = {
             }))),
         configSummary,
         pricingSummary,
-        noConfig,
+        configWarning,
+        configNotice,
         field(t('ai.center.scopeLabel'), scopeSelect),
         scopeHint,
         el('div', {className: 'grid-2-equal'},
@@ -286,6 +304,18 @@ export const aiPage = {
           }))),
       el('div', {className: 'card-body'}));
     const statusText = el('div', {className: 'auto-status', attrs: {role: 'status', 'aria-live': 'polite'}});
+    const progressBar = el('div', {
+      className: 'analysis-progress',
+      attrs: {
+        role: 'progressbar',
+        'aria-valuemin': '0',
+        'aria-valuemax': '100',
+        'aria-valuenow': '0'
+      }
+    });
+    const progressFill = el('div', {className: 'analysis-progress-fill'});
+    progressBar.append(progressFill);
+    const progressParts = el('div', {className: 'analysis-progress-parts'});
     const progressText = el('div', {className: 'small tertiary'});
     const statsHost = el('div', {className: 'def-list'});
     const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
@@ -306,8 +336,10 @@ export const aiPage = {
       hidden: true
     });
     statusCard.querySelector('.card-body').append(
-      statusText,
+      progressBar,
       progressText,
+      progressParts,
+      statusText,
       statsHost,
       el('div', {className: 'inline', style: {marginTop: '10px'}}, pauseButton, cancelButton),
       errorText,
@@ -348,14 +380,40 @@ export const aiPage = {
     function renderSummary() {
       const config = selectedConfig();
       const session = selectedSession();
+      const state = providerConfigState(config);
       configSummary.textContent = config
         ? `${config.name} · ${configLine(config)} · ${config.capabilities?.memory
           ? t('ai.v13.capability.memory')
           : (config.capabilities?.session ? t('ai.v13.capability.session') : t('ai.v13.capability.untested'))}`
-        : t('ai.center.noConfigShort');
+        : (providerLoadFailed ? t('ai.center.configLoadFailed') : t('ai.center.noConfigShort'));
       pricingSummary.textContent = config
         ? `${t('ai.v13.price.status')}: ${priceText(ctx, config)}`
         : '';
+      configWarning.hidden = true;
+      configWarning.textContent = '';
+      configNotice.hidden = true;
+      configNotice.textContent = '';
+      if (providerLoadFailed) {
+        configWarning.hidden = false;
+        configWarning.textContent = t('ai.center.configLoadFailed');
+      } else if (!config) {
+        configWarning.hidden = false;
+        configWarning.textContent = t('ai.center.noConfig');
+      } else if (state.kind === 'missing_key') {
+        configWarning.hidden = false;
+        configWarning.textContent = t('ai.center.configMissingKey');
+      } else if (state.kind === 'test_failed') {
+        configWarning.hidden = false;
+        configWarning.textContent = t('ai.center.configTestFailed', {
+          reason: state.detail ? String(state.detail).slice(0, 200) : t('common.unknown')
+        });
+      } else if (state.kind === 'untested') {
+        configNotice.hidden = false;
+        configNotice.textContent = t('ai.center.configUntested');
+      } else if (state.kind === 'pricing_missing') {
+        configWarning.hidden = false;
+        configWarning.textContent = t('ai.center.configPricingMissing');
+      }
       const messages = Number(session?.messageCount ?? 0);
       const viewers = Number(session?.uniqueViewerCount ?? 0);
       const requests = estimatedRequests(config, runScope, session);
@@ -379,12 +437,12 @@ export const aiPage = {
 
     function syncStartGate() {
       const config = selectedConfig();
-      const paidUnknown = config && config.pricingStatus !== 'api_free';
+      const state = providerConfigState(config);
       const needsMemoryOptIn = runScope !== 'session';
       startButton.disabled = Boolean(busy)
-        || !config
-        || config.capabilities?.session !== true
-        || (paidUnknown && !confirmBilling.checked)
+        || status?.running === true
+        || !state.usable
+        || (state.needsBilling && !confirmBilling.checked)
         || (needsMemoryOptIn && !optInMemory.checked);
     }
 
@@ -425,6 +483,52 @@ export const aiPage = {
       const key = `ai.center.reason.${code}`;
       const value = t(key);
       return value === key ? String(code ?? '') : value;
+    }
+
+    function renderProgress(current) {
+      const progress = buildAnalysisProgress(current);
+      progressBar.hidden = false;
+      progressParts.replaceChildren();
+      if (progress.percent === null) {
+        progressBar.dataset.indeterminate = 'true';
+        progressBar.removeAttribute('aria-valuenow');
+        progressBar.setAttribute('aria-valuetext', t('ai.center.progressIndeterminate'));
+        progressFill.style.width = '35%';
+        progressText.textContent = `${stageLabel(current)} · ${t('ai.center.progressIndeterminate')}`;
+      } else {
+        delete progressBar.dataset.indeterminate;
+        progressBar.setAttribute('aria-valuenow', String(progress.percent));
+        progressBar.setAttribute('aria-valuetext', `${progress.percent}%`);
+        progressFill.style.width = `${progress.percent}%`;
+        progressText.textContent = `${stageLabel(current)} · ${progress.percent}%`;
+      }
+      for (const part of progress.parts) {
+        if (part.key === 'session') {
+          progressParts.append(el('div', {className: 'small tertiary'},
+            t('ai.center.progressSession', {
+              done: part.complete ? 1 : 0,
+              total: 1
+            })));
+        } else if (part.skipped) {
+          progressParts.append(el('div', {className: 'small tertiary'},
+            t('ai.center.progressMemorySkipped', {
+              reason: reasonText(part.reason ?? 'ANALYSIS_MEMORY_NO_VIEWERS')
+            })));
+        } else {
+          progressParts.append(el('div', {className: 'small tertiary'},
+            t('ai.center.progressMemory', {
+              done: formatInteger(part.done, ctx.locale),
+              total: formatInteger(part.total, ctx.locale)
+            })));
+          if (part.viewersTotal > 0) {
+            progressParts.append(el('div', {className: 'small tertiary'},
+              t('ai.center.progressViewers', {
+                done: formatInteger(part.viewersDone, ctx.locale),
+                total: formatInteger(part.viewersTotal, ctx.locale)
+              })));
+          }
+        }
+      }
     }
 
     function renderStats(current) {
@@ -476,23 +580,14 @@ export const aiPage = {
       pauseButton.textContent = paused ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
       cancelButton.hidden = !running;
       startButton.disabled = running;
-      const total = Number(current.batchTotal ?? 0);
-      const done = Number(current.batchIndex ?? 0);
-      progressText.textContent = total > 0
-        ? t('ai.v13.run.progress', {
-          done: formatInteger(done, ctx.locale),
-          total: formatInteger(total, ctx.locale)
-        })
-        : '';
+      renderProgress(current);
       errorText.hidden = true;
       errorDetails.hidden = true;
       errorText.textContent = '';
       errorDetailsText.textContent = '';
       statusText.className = 'auto-status';
       if (running) {
-        statusText.textContent = `${stageLabel(current)}${current.estimatedRemainingMs
-          ? ` · ${t('ai.center.eta', {time: mmss(current.estimatedRemainingMs)})}`
-          : ''}`;
+        statusText.textContent = t('ai.center.running');
       } else if (current.status === 'complete') {
         statusText.className = 'auto-status auto-status--success';
         const coverage = current.memoryJob?.memoryCoverage;
@@ -502,6 +597,11 @@ export const aiPage = {
             ? t('ai.center.completeMemory', {
               covered: formatInteger(coverage.covered ?? 0, ctx.locale),
               total: formatInteger(coverage.total ?? 0, ctx.locale)
+            })
+            : null,
+          current.memorySkipped
+            ? t('ai.center.memorySkipped', {
+              reason: reasonText(current.memorySkipReason ?? 'ANALYSIS_MEMORY_NO_VIEWERS')
             })
             : null
         ].filter(Boolean).join(' · ');
@@ -532,31 +632,54 @@ export const aiPage = {
         timer = null;
       }
       if (!selectedId) return;
+      const requestId = ++statusEpoch;
+      const sessionId = selectedId;
       try {
-        const current = await api.get(`/api/ai/analyze/status?sessionId=${encodeURIComponent(selectedId)}`);
+        const current = await api.get(`/api/ai/analyze/status?sessionId=${encodeURIComponent(sessionId)}`);
+        if (requestId !== statusEpoch || sessionId !== selectedId) return;
         renderStatus(current);
         if (current.running) {
           timer = window.setTimeout(refreshStatus, 1500);
         } else if (TERMINAL.has(current.status)) {
-          await Promise.all([refreshReport()]);
+          await refreshReport();
         }
       } catch {
+        if (requestId !== statusEpoch || sessionId !== selectedId) return;
         statusText.textContent = t('ai.v13.run.pollFailed');
         if (status?.running) timer = window.setTimeout(refreshStatus, 2500);
       }
     }
 
     async function refreshReport() {
-      clear(reportHost);
+      if (!selectedId) {
+        reportEpoch += 1;
+        clear(reportHost);
+        return;
+      }
+      const requestId = ++reportEpoch;
+      const sessionId = selectedId;
       let report = null;
       try {
-        report = await api.get(`/api/ai/sessions/${encodeURIComponent(selectedId ?? '')}/report`);
+        report = await api.get(`/api/ai/sessions/${encodeURIComponent(sessionId)}/report`);
       } catch {
         report = null;
       }
+      // A slower, older response must never append a second report after a newer
+      // one (or after the user selected another broadcast).
+      if (requestId !== reportEpoch || sessionId !== selectedId) return;
+      clear(reportHost);
       if (!report) return;
       const node = renderAnalysisReport(ctx, report, {onAggregate: null});
       if (node) reportHost.append(node);
+    }
+
+    function syncUrl() {
+      try {
+        const suffix = selectedId ? `?session=${encodeURIComponent(selectedId)}` : '';
+        window.history.replaceState(null, '', `#/ai${suffix}`);
+      } catch {
+        // History is best effort; the selection still works in memory.
+      }
     }
 
     function renderAll() {
@@ -567,12 +690,13 @@ export const aiPage = {
     async function startAnalysis() {
       if (busy) return;
       const config = selectedConfig();
+      const state = providerConfigState(config);
       if (!config) {
-        ctx.toast(t('ai.center.noConfigShort'), {tone: 'error'});
+        ctx.toast(providerLoadFailed ? t('ai.center.configLoadFailed') : t('ai.center.noConfigShort'), {tone: 'error'});
         return;
       }
-      if (config.capabilities?.session !== true) {
-        ctx.toast(t('ai.v13.config.needCapability'), {tone: 'error'});
+      if (!state.usable) {
+        ctx.toast(t('ai.center.configNotUsable'), {tone: 'error'});
         return;
       }
       if (runScope !== 'session' && !memoryAllowed(config)) {
@@ -586,6 +710,18 @@ export const aiPage = {
       busy = true;
       syncStartGate();
       startButton.textContent = t('ai.center.starting');
+      statusEpoch += 1;
+      reportEpoch += 1;
+      renderStatus({
+        status: 'running',
+        stage: 'preparing',
+        mode: runScope === 'both' ? 'combined' : runScope,
+        batchIndex: 0,
+        batchTotal: 0,
+        sessionReportDone: false,
+        memoryDone: false,
+        requestStats: null
+      });
       try {
         const current = await api.post('/api/ai/analyze/run', {
           sessionId: selectedId,
@@ -597,6 +733,7 @@ export const aiPage = {
           optInMemory: optInMemory.checked,
           budget: budgetPayload()
         });
+        statusEpoch += 1;
         renderStatus(current);
         if (current.running) timer = window.setTimeout(refreshStatus, 800);
         ctx.toast(t('ai.center.started'), {tone: 'info'});
@@ -604,6 +741,7 @@ export const aiPage = {
         renderStatus({
           status: 'failed',
           stage: 'failed',
+          mode: runScope === 'both' ? 'combined' : runScope,
           error: {code: error?.code ?? 'ANALYSIS_FAILED', detail: ctx.describeError(error)},
           requestStats: null
         });
@@ -670,14 +808,24 @@ export const aiPage = {
     sessionSelect.addEventListener('change', async () => {
       selectedId = sessionSelect.value;
       status = null;
+      statusEpoch += 1;
+      reportEpoch += 1;
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      syncUrl();
       renderAll();
       await Promise.all([refreshStatus(), refreshReport()]);
     });
 
+    syncUrl();
     renderAll();
     await Promise.all([refreshStatus(), refreshReport()]);
     return () => {
       if (timer) window.clearTimeout(timer);
+      statusEpoch += 1;
+      reportEpoch += 1;
     };
   }
 };

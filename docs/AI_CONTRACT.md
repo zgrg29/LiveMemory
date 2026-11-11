@@ -792,3 +792,19 @@ result.schema.json
 - 删除的 HTTP 写路由：`POST /api/ai/jobs`、`POST /api/ai/jobs/:id/aggregate`、`POST /api/ai/packages`、`GET /api/ai/packages/:id/download`、`GET /api/ai/instructions`、`POST /api/ai/import/preview`、`POST /api/ai/import`、全部 `/api/ai/auto/*`。
 - 保留只读：`GET /api/ai/jobs`、`GET /api/ai/jobs/:id`、`GET /api/ai/packages`、`GET /api/ai/sessions/:id/report`、`GET /api/ai/results/:id`、`GET /api/ai/results/:id/download`。
 - `src/ai/export/job.mjs`、`export/package.mjs`、`prompts/instructions.mjs` 仅作为历史兼容/测试的内部构建器保留，不暴露给用户。
+
+## 17. v0.13.1 运行状态与无观众跳过
+
+`GET /api/ai/analyze/status` 在原有字段上明确返回：
+
+- `batchIndex` / `batchTotal` / `batchesCompleted` / `activeBatches`：真实完成的画像批次数，不是时间推算。
+- `sessionReportDone` / `memoryDone`：两个独立任务的实际完成状态。
+- `memoryJob.memoryCoverage`：`total / covered / semantic / no_semantics / objective_only / missing_update`。
+- `memorySkipped` / `memorySkipReason`：combined 任务中画像被显式跳过的原因。
+- `requestStats` / `usage` / `estimatedRemainingMs`：本地请求统计、token/费用与有依据时的 ETA。
+
+`schema` 不变（1.3.0）。combined 任务中：
+
+- 单场报告成功后，如果本场没有可识别观众（`ANALYSIS_MEMORY_NO_VIEWERS`）或没有主播身份（`ANALYSIS_MEMORY_NO_BROADCASTER`），单场报告保留，画像标记 skipped，任务可 complete。
+- memory-only 任务遇到同样情况返回明确错误，不伪造观众、不伪造记忆。
+- 100% 进度只在 `status=complete` 时出现；失败最多 99%。

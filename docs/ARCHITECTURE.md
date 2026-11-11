@@ -601,3 +601,33 @@ AnalysisRunner.requestOnce
 - `src/ai/api/compact.mjs`、`src/ai/api/prompts.mjs`、`src/ai/export/split-jobs.mjs`。
 - `src/ai/runtime/json.mjs`、`state.mjs`、`scheduler.mjs`。
 - 历史结果/报告读取与旧 1.0–1.2.0 兼容。
+
+## 1.6 v0.13.1 实际使用修复（2026-11-11）
+
+```text
+AI 分析中心
+  #/ai?session=<stable_id>
+    -> chooseInitialSessionId()：按 id 选择；早期列表没有时 GET /api/sessions/:id
+    -> 手动选择 replaceState 更新 URL
+  statusEpoch/reportEpoch：旧异步响应不得覆盖新任务/新报告
+  buildAnalysisProgress()：批次/观众真实计数；无计数用不确定动画；100% 仅 complete
+  providerConfigState()：none / missing_key / test_failed / untested /
+                          pricing_missing / ready
+  memorySkipped：combined 无观众时保留单场报告，画像显式跳过
+
+监控
+  target.meta.manualStop = {sessionId, liveKey, stoppedAt, awaitingOffline}
+  liveKey = bilibili:<room>:<live_time> 或 youtube:<videoId>
+  用户停止 -> state=live_stopped，active_session_id=null
+  同周期 LIVE -> hold；offline -> clear；新 liveKey -> new session
+  resume_capture -> 仅用户主动清除抑制并创建新 session
+  Bilibili metadata: roomInfo -> masterInfo(uid) 回退
+```
+
+关键不变量：
+
+- 自动监听与当前场次采集分离；`live_stopped` 不是 `paused`，也不是 `ended`。
+- 没有可靠 live cycle key 时，宁可继续抑制，不根据时间猜测新场。
+- 重启后从 `monitor_targets.meta_json` 恢复；不使用内存布尔变量。
+- 已结束的 session 永不重新打开；显式恢复创建新 session。
+- Bilibili 主播身份仍是 `bilibili:<anchorUid>`；昵称只用于显示。

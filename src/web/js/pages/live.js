@@ -53,6 +53,7 @@ const MONITOR_STATE_META = {
   recording: {label: 'monitoring.state.recording', tone: 'live', dot: true},
   reconnecting: {label: 'monitoring.state.reconnecting', tone: 'warn', dot: true},
   ending: {label: 'monitoring.state.ending', tone: 'warn', dot: true},
+  live_stopped: {label: 'monitoring.state.liveStopped', tone: 'warn', dot: false},
   paused: {label: 'monitoring.state.paused', tone: 'neutral', dot: false},
   error: {label: 'monitoring.state.error', tone: 'danger', dot: false}
 };
@@ -962,6 +963,15 @@ export const livePage = {
         }));
       }
       if (target.enabled) {
+        if (target.state === 'live_stopped') {
+          actions.append(el('button', {
+            className: 'button button--primary',
+            type: 'button',
+            text: t('monitoring.action.resumeCapture'),
+            attrs: {title: t('monitoring.action.resumeCaptureHint')},
+            onClick: (event) => changeTarget(target, 'resume_capture', event.currentTarget)
+          }));
+        }
         actions.append(el('button', {
           className: 'button button--secondary',
           type: 'button',
@@ -1033,6 +1043,11 @@ export const livePage = {
         bodyHost.append(el('div', {className: 'callout callout--neutral', style: {marginTop: '16px'}},
           el('div', {className: 'callout-title', text: t('monitoring.paused.title')}),
           el('p', {text: t('monitoring.paused.body')})));
+      } else if (target.state === 'live_stopped') {
+        bodyHost.append(el('div', {className: 'callout callout--warn', style: {marginTop: '16px'}},
+          el('div', {className: 'callout-title', text: t('monitoring.liveStopped.title')}),
+          el('p', {text: t('monitoring.liveStopped.body')}),
+          el('p', {className: 'callout-note', text: t('monitoring.liveStopped.hint')})));
       }
 
       const info = el('section', {className: 'card', style: {marginTop: '16px'}},
@@ -1112,7 +1127,11 @@ export const livePage = {
         else selectNew();
         ctx.toast(t(action === 'pause'
           ? 'monitoring.toast.paused'
-          : action === 'resume' ? 'monitoring.toast.resumed' : 'monitoring.toast.retried'));
+          : action === 'resume'
+            ? 'monitoring.toast.resumed'
+            : action === 'resume_capture'
+              ? 'monitoring.toast.resumeCaptureStarted'
+              : 'monitoring.toast.retried'));
       } catch (error) {
         ctx.toast(ctx.describeError(error), {tone: 'error'});
         if (button) button.disabled = false;

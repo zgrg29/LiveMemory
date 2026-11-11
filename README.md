@@ -25,6 +25,16 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **v0.12.1 可靠性成果保留**：稳定 ID / 证据 seq / 分批 / 定向补充 / 缺失观众检测 / 重复导入保护 / 事务导入 / 历史记忆版本全部保留。
 - **本地优先**：聊天、统计、画像保存在 `%LOCALAPPDATA%\LiveMemory\`；不经过开发者服务器，不发送遥测。
 
+### v0.13.1 实际使用修复
+
+- 从直播历史跳转 AI 分析中心时，按稳定 `session_id` 自动选中对应场次；手动改选后刷新仍保持。
+- 已保存 API Key、未完成能力检测、测试失败、缺价格分别显示真实状态，不再把“未检测”误报成“未配置”。
+- 点击「开始 AI 分析」立即出现真实进度条：单场报告、画像批次、已处理观众、并发、耗时与有依据的剩余时间；100% 只在服务端确认完成后显示。
+- 本场没有可识别观众时，单场报告照常保存，长期画像显式跳过并说明原因；不再出现 `Memory No viewers`。
+- 同一报告只显示一次；多个历史版本仍可读取。
+- Bilibili 未开播也能通过公开主播资料显示真实名称；查询失败保留房间号并低频重试。
+- 手动停止当前直播采集后，自动监听继续检查主播状态，但在同一次直播周期内不会自动重新采集；确认下播并出现新直播后才恢复，或由用户点击「开始接收弹幕」。
+
 ### 旧版本能力（继续保留）
 
 - **真实规模可靠性（v0.12.1）**：自动模式让模型只返回本地 `ref`，由程序映射回稳定观众 ID；使用 JSON Schema structured output、记录截断原因，缺少观众时只做一次定向补充。已用真实 52 位观众 / 99 条消息 / 6 批 + 汇总验证 `complete`、52/52 覆盖。手动导入失败时精确列出缺失/未知观众，并可复制修复指令；绝不自动改 ID。
@@ -203,7 +213,7 @@ Current build (v0.13.1) delivers the Windows administrator-manifest launcher, tr
 
 **v0.12.0–v0.12.1 (historical) added one-click anonymous AI analysis**. That entry point has been removed in v0.13.1; its reliability work survives in the automatic path: the model returns only compact refs, the local program maps them to stable viewer ids, JSON Schema structured output and truncation detection are enforced, missing viewers trigger one bounded targeted supplement, and every answer goes through the same strict validator and transaction importer. See [docs/ANONYMOUS_AI_RESEARCH.md](docs/ANONYMOUS_AI_RESEARCH.md) for the historical anonymous-provider research.
 
-**v0.13.0 separated the session report from long-term viewer profiles**. v0.13.1 keeps that split and removes the manual/anonymous entry points: a paid model that passes the dedicated capability test can opt in to long-term viewer memory; it receives compact refs, never copies stable viewer ids, and every batch is validated and imported independently. Providers include OpenAI, Anthropic, DeepSeek, MiniMax (CN/international), Alibaba Cloud Model Studio (four regions), OpenRouter and custom OpenAI-compatible endpoints. API keys are encrypted locally, region changes rotate credentials, custom URLs are checked for private/metadata targets, and paid/unknown models require explicit billing confirmation plus a per-task budget. Session reports and memory jobs are saved separately; memory batches use bounded concurrency; 429 respects `Retry-After`; retries use exponential backoff with jitter. A real paid-provider run is still blocked on this machine because no key is configured; Mock scale tests and the audit are in [docs/AI_SCHEDULER_AUDIT.md](docs/AI_SCHEDULER_AUDIT.md).
+**v0.13.0 separated the session report from long-term viewer profiles**. v0.13.1 keeps that split and removes the manual/anonymous entry points: a paid model that passes the dedicated capability test can opt in to long-term viewer memory; it receives compact refs, never copies stable viewer ids, and every batch is validated and imported independently. Providers include OpenAI, Anthropic, DeepSeek, MiniMax (CN/international), Alibaba Cloud Model Studio (four regions), OpenRouter and custom OpenAI-compatible endpoints. API keys are encrypted locally, region changes rotate credentials, custom URLs are checked for private/metadata targets, and paid/unknown models require explicit billing confirmation plus a per-task budget. Session reports and memory jobs are saved separately; memory batches use bounded concurrency; 429 respects `Retry-After`; retries use exponential backoff with jitter. A real paid-provider run is still blocked on this machine because no key is configured; Mock scale tests and the audit are in [docs/AI_SCHEDULER_AUDIT.md](docs/AI_SCHEDULER_AUDIT.md). The v0.13.1 usability pass fixes history-to-AI selection by stable session id, distinguishes a saved API key from an untested/failed/missing one, adds counted live progress, keeps the session report when memory has no identifiable viewers, prevents duplicate report mounting, resolves Bilibili anchor names while offline through the public master endpoint, and persistently suppresses automatic re-capture for the same live cycle after a manual stop.
 
 **v0.12.1 fixes the real first-use failures**: automatic batches now ask the model only for a local `ref` plus semantic content; the app maps each ref to the exact stable viewer id, so the model never copies, invents or merges identities. Requests use JSON Schema structured output, record `finish_reason`, and report truncation or repetition separately. Missing viewers trigger one bounded targeted supplement; if they are still missing the run fails instead of pretending they had no information. A real 52-viewer / 99-message / 6-batch run completed with 52/52 coverage. Manual imports now expose `missing` / `unknown` / `duplicate` viewer gaps with nicknames and a copyable repair instruction; ids are never silently rewritten. The manual prompt also lost a self-contradictory "do not output viewer identity" rule that was present in all three languages.
 

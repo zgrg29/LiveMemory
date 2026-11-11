@@ -588,3 +588,13 @@ paused（用户暂停；正在进行的 recording 不受影响）
 - 大 job 的 package 读取改为 `getJobPackage(job_id, stage, batch_index)` 精确查询；`ai_packages` 表结构不变。
 - 画像批次上限不再依赖 `MAX_AUTO_BATCHES=30`；实际安全边界仍是 `MAX_ANALYSIS_VIEWERS=20000`，超出明确失败。
 - 请求统计只保存在 `runtime/ai-v13.json` 与内存，不写入数据库；不包含提示词、聊天正文或模型回答。
+
+## 15. 监听目标的手动停止抑制（v0.13.1，无 schema 变化）
+
+- `monitor_targets.meta_json` 新增可选的 `manualStop` 对象：
+  ```json
+  {"sessionId":"ses_...","liveKey":"bilibili:123:1760000000","stoppedAt":1760000000000,"awaitingOffline":false}
+  ```
+- 同一目标只保留当前直播周期的抑制；确认 offline/upcoming 后清除；新 `live_time`/`videoId` 视为新周期。
+- 不新增列、不迁移；`meta_json` 仍是本地目标快照，不含聊天正文或凭据。
+- `live_stopped` 是目标状态，不改变 `sessions.status`；被停止的 session 仍是 `ended` + `end_reason=user`。

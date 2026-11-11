@@ -92,10 +92,10 @@ export class BilibiliRoomDetector {
     try {
       await this.#pace();
       const room = await this.api.roomInit(parsed.roomId);
-      const info = await this.api.roomInfo(room.roomId).catch(() => null);
-      const anchorName = info?.anchorName ?? null;
-      const anchorUid = info?.anchorUid ?? room.uid ?? null;
-      const displayName = anchorName || info?.title || `Bilibili ${room.roomId}`;
+      const metadata = await this.#metadata(room.roomId, {platformUid: room.uid});
+      const anchorName = metadata.anchorName;
+      const anchorUid = metadata.anchorUid ?? room.uid ?? null;
+      const displayName = anchorName || metadata.title || `Bilibili ${room.roomId}`;
       const identity = resolveBroadcasterIdentity({
         platform: 'bilibili',
         platformRoomId: String(room.roomId),
@@ -114,16 +114,49 @@ export class BilibiliRoomDetector {
           shortId: room.shortId ?? parsed.roomId,
           anchorName,
           anchorUid: anchorUid === null ? null : String(anchorUid),
-          areaName: info?.areaName ?? null,
-          parentAreaName: info?.parentAreaName ?? null,
+          areaName: metadata.areaName,
+          parentAreaName: metadata.parentAreaName,
           liveStatus: room.liveStatus ?? null,
-          title: info?.title ?? null
+          title: metadata.title
         }
       };
     } catch (error) {
       if (isAppError(error)) throw error;
       throw bilibiliMonitorError(error);
     }
+  }
+
+  /**
+   * Optional public metadata. `getInfoByRoom` is the richest source, but it can
+   * fail for an offline room or under risk control. The public Master endpoint
+   * still resolves the streamer name from the stable anchor uid.
+   */
+  async #metadata(roomId, {platformUid = null} = {}) {
+    let info = null;
+    try {
+      info = await this.api.roomInfo(roomId);
+    } catch {
+      info = null;
+    }
+    let anchorUid = info?.anchorUid ?? (Number(platformUid) || null);
+    let anchorName = info?.anchorName ?? null;
+    if (!anchorName && anchorUid && typeof this.api.masterInfo === 'function') {
+      try {
+        const master = await this.api.masterInfo(anchorUid);
+        anchorName = master?.name ?? null;
+        anchorUid = master?.uid ?? anchorUid;
+      } catch {
+        // Metadata is optional; the room id remains usable.
+      }
+    }
+    return {
+      anchorName,
+      anchorUid,
+      areaName: info?.areaName ?? null,
+      parentAreaName: info?.parentAreaName ?? null,
+      title: info?.title ?? null,
+      attemptedAt: this.now()
+    };
   }
 
   /**
@@ -141,18 +174,47 @@ export class BilibiliRoomDetector {
       if (Number(status.roomId) !== roomId) {
         throw monitorError(MONITOR_ERROR.PROTOCOL, {details: {reason: 'room_mismatch'}});
       }
+      const meta = parseTargetMeta(target);
+      const needsMetadata = !meta?.anchorName || !target.platform_uid;
+      const lastAttempt = Number(meta?.lastMetadataAttemptAt ?? 0);
+      const shouldRefresh = needsMetadata && this.now() - lastAttempt >= 10 * 60 * 1000;
+      const metadata = shouldRefresh
+        ? await this.#metadata(roomId, {platformUid: target.platform_uid ?? meta?.anchorUid})
+        : null;
       const live = status.liveStatus === 1;
       return {
         status: live ? 'live' : 'offline',
-        title: status.title ?? null,
+        roomId,
+        title: status.title ?? metadata?.title ?? null,
         online: status.online ?? null,
         carousel: status.liveStatus === 2,
-        liveStartedAt: null
+        liveStartedAt: Number(status.liveTime) > 0 ? Number(status.liveTime) : null,
+        liveTimeText: typeof status.liveTime === 'string' && status.liveTime.trim()
+          ? status.liveTime.trim()
+          : null,
+        anchorName: metadata?.anchorName ?? meta?.anchorName ?? null,
+        anchorUid: metadata?.anchorUid
+          ?? (Number(target.platform_uid) || Number(meta?.anchorUid) || null),
+        areaName: metadata?.areaName ?? meta?.areaName ?? null,
+        parentAreaName: metadata?.parentAreaName ?? meta?.parentAreaName ?? null,
+        metadataAttemptedAt: metadata?.attemptedAt ?? null
       };
     } catch (error) {
       if (isAppError(error)) throw error;
       throw bilibiliMonitorError(error);
     }
+  }
+}
+
+function parseTargetMeta(target) {
+  const raw = target?.meta_json ?? target?.meta;
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
 }
 

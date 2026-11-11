@@ -3,6 +3,7 @@ import {getJob, listJobBatches, setJobUsage} from '../../storage/repositories/ai
 import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
 import {latestResultForScope} from '../../storage/repositories/ai-results.mjs';
 import {getSession} from '../../storage/repositories/sessions.mjs';
+import {listSessionViewers} from '../../storage/repositories/viewers.mjs';
 import {computeJobStatus} from '../tasks/status.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
@@ -302,6 +303,8 @@ export class AnalysisRunner {
       pricingStatus: checked.provider.pricingStatus,
       sessionReportDone: false,
       memoryDone: mode === ANALYSIS_MODE.SESSION,
+      memorySkipped: false,
+      memorySkipReason: null,
       usage: null,
       budget: budget ?? null,
       error: null,
@@ -361,9 +364,12 @@ export class AnalysisRunner {
       error = {code: 'ANALYSIS_INTERRUPTED', detail: null};
     }
     const sessionReportDone = Boolean(sessionStatus?.complete) || entry.sessionReportDone === true;
-    const memoryDone = !entry.memoryJobId
-      ? entry.mode === ANALYSIS_MODE.SESSION
-      : Boolean(memoryStatus?.complete);
+    const memoryCoverage = memoryStatus?.memoryCoverage ?? null;
+    const memoryDone = entry.memorySkipped === true
+      ? true
+      : (!entry.memoryJobId
+        ? entry.mode === ANALYSIS_MODE.SESSION
+        : Boolean(memoryStatus?.complete));
     const scheduler = entry.configId && this.schedulers.get(`config:${entry.configId}`);
     const requestStats = scheduler ? scheduler.stats() : null;
     const batchTotal = Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0);
@@ -410,6 +416,11 @@ export class AnalysisRunner {
       startedAt: entry.startedAt ?? null,
       sessionReportDone,
       memoryDone,
+      memorySkipped: entry.memorySkipped === true,
+      memorySkipReason: entry.memorySkipReason ?? null,
+      memoryCoverage,
+      memoryViewersTotal: Number(memoryCoverage?.total ?? 0),
+      memoryViewersProcessed: Number(memoryCoverage?.covered ?? 0),
       sessionJobId: entry.sessionJobId ?? null,
       memoryJobId: entry.memoryJobId ?? null,
       sessionJob: sessionStatus,
@@ -437,7 +448,26 @@ export class AnalysisRunner {
         await this.runSession(context);
       }
       if (mode === ANALYSIS_MODE.MEMORY || mode === ANALYSIS_MODE.COMBINED) {
-        await this.runMemory(context);
+        try {
+          await this.runMemory(context);
+        } catch (error) {
+          if (mode === ANALYSIS_MODE.COMBINED && this.#isSkippableMemoryError(error)) {
+            this.state.set(sessionId, {
+              stage: 'memory_skipped',
+              memorySkipped: true,
+              memorySkipReason: error.code,
+              memoryDone: true,
+              error: null
+            });
+            this.logger?.info?.({
+              event: 'ai.analysis.memory.skipped',
+              sessionId,
+              reason: error.code
+            });
+          } else {
+            throw error;
+          }
+        }
       }
       const entry = this.state.get(sessionId);
       this.state.set(sessionId, {
@@ -446,7 +476,9 @@ export class AnalysisRunner {
         error: null,
         completedAt: this.now(),
         sessionReportDone: entry?.sessionReportDone === true,
-        memoryDone: entry?.memoryJobId ? true : entry?.mode === ANALYSIS_MODE.SESSION
+        memoryDone: entry?.memorySkipped === true
+          ? true
+          : (entry?.memoryJobId ? true : entry?.mode === ANALYSIS_MODE.SESSION)
       });
       this.logger?.info?.({
         event: 'ai.analysis.complete',
@@ -591,6 +623,18 @@ export class AnalysisRunner {
     return String(broadcasterId ?? '__unscoped__');
   }
 
+  /**
+   * These errors mean long-term profiling cannot be created for this broadcast,
+   * not that the session report failed. In a combined task the report is kept
+   * and the memory half is visibly skipped with a stable reason.
+   */
+  #isSkippableMemoryError(error) {
+    return [
+      'ANALYSIS_MEMORY_NO_VIEWERS',
+      'ANALYSIS_MEMORY_NO_BROADCASTER'
+    ].includes(error?.code);
+  }
+
   #assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt) {
     const newer = this.db.prepare(`
       SELECT s.id, s.started_at
@@ -639,6 +683,25 @@ export class AnalysisRunner {
     if (!session) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
     const broadcasterId = session.broadcaster_id ?? session.broadcasterId ?? null;
     const sessionStartedAt = session.started_at ?? session.startedAt ?? null;
+    if (!broadcasterId) {
+      throw Object.assign(new Error('MEMORY_BROADCASTER_REQUIRED'), {
+        code: 'ANALYSIS_MEMORY_NO_BROADCASTER',
+        detail: 'session has no stable broadcaster id'
+      });
+    }
+    const viewers = listSessionViewers(this.db, sessionId, {limit: MAX_ANALYSIS_VIEWERS + 1});
+    if (viewers.length === 0) {
+      throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {
+        code: 'ANALYSIS_MEMORY_NO_VIEWERS',
+        detail: 'identifiable viewers = 0'
+      });
+    }
+    if (viewers.length > MAX_ANALYSIS_VIEWERS) {
+      throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {
+        code: 'ANALYSIS_TOO_MANY_VIEWERS',
+        detail: `identifiable viewers = ${viewers.length}`
+      });
+    }
     if (broadcasterId && sessionStartedAt !== null) {
       this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
     }
@@ -662,7 +725,10 @@ export class AnalysisRunner {
         costEstimate: null,
         now: this.now()
       });
-      if (!created) throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {code: 'ANALYSIS_MEMORY_EMPTY'});
+      if (!created) throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {
+        code: 'ANALYSIS_MEMORY_NO_VIEWERS',
+        detail: 'memory job creation returned no viewers'
+      });
       job = getJob(this.db, created.job.id);
       this.state.set(sessionId, {
         memoryJobId: job.id,

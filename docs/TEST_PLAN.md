@@ -808,7 +808,7 @@ duration ≈ 25.0s
 ### 27.4 全量结果
 
 - `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`：
-  **519 passed / 0 failed**（约 77 秒，2026-11-11）。
+  **539 passed / 0 failed**（约 73 秒，2026-11-11）。
 - 删除的旧测试：匿名/手动路径（`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`）。
 - 未做：真实付费 API、真实浏览器、EXE 运行；见 §28。
 
@@ -818,3 +818,28 @@ duration ≈ 25.0s
 - 真实浏览器 UI、暗色、390px、请求统计、暂停/取消、五步布局。
 - EXE 运行（已构建 v0.13.1，UAC 拒绝）。
 - 真实 Provider 429/Retry-After、1,000 观众、费用与延迟。
+
+## 29. v0.13.1 七项实际使用修复
+
+### 29.1 新增/更新测试
+
+| 问题 | 测试 |
+| --- | --- |
+| 1 历史跳转选中 | `tests/unit/ai-selection.test.mjs`：请求 id 优先、未知/删除回退；`ai-ui` 断言 `query.session`、URL 恢复 |
+| 2 配置状态 | `tests/unit/ai-config-state.test.mjs`：无配置/缺 Key/测试失败/未检测/缺价格；`v13-session-split` 断言 `hasCredential=true` 且响应不含 Key |
+| 3 实时进度 | `tests/unit/ai-progress.test.mjs`：单场不确定、画像 65%、combined 60%、100% 仅 complete；`tests/integration/v13-progress.test.mjs`：运行中批次/观众数递增 |
+| 4 无观众画像 | `v13-api-runner`：combined 保留单场报告、`memorySkipped`、memory-only 明确错误 |
+| 5 报告重复 | `ai-ui`：`reportHost.append` 只有一处、`reportEpoch` 存在；无真实浏览器 |
+| 6 Bilibili 主播名 | `monitoring-bilibili-detector`：`roomInfo` 失败回退 `masterInfo`；`bilibili-master-info`：请求路径与无 Cookie |
+| 7 手动停止抑制 | `automatic-monitoring`：同周期多次 LIVE/错误不重启、重启保持、离线清除、新 liveTime 重启、`resume_capture`；`manual-stop-monitor`：HTTP 停止路径写入抑制 |
+
+### 29.2 真实只读验证
+
+- Bilibili 房间 `3`（解析 `23058`，未开播）：真实 `Master/info` 返回 `3号直播间` / `11153765`；`detect` 返回 `anchorName=3号直播间`，未伪造开播时间。
+- Bilibili 房间 `5050` / `21144080`（直播中）：`roomInfo` 被平台风控拒绝（`PLATFORM`），`masterInfo` 回退成功返回真实主播名。
+- 未做真实“手动停止→重启→仍直播”全流程；用 Mock + 可控时钟覆盖。
+
+### 29.3 全量
+
+- **539 passed / 0 failed**（约 73 秒）。
+- 真实浏览器仍被本机策略阻止；EXE 已重建但未运行（UAC）；真实付费 API 无 Key，阻塞。

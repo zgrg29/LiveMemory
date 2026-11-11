@@ -98,17 +98,29 @@ export class BilibiliService {
     const parsed = parseRoomId(roomId);
     const room = await this.api.roomInit(parsed);
     const info = await this.api.roomInfo(room.roomId).catch(() => null);
+    let anchorName = info?.anchorName ?? null;
+    let anchorUid = info?.anchorUid ?? room.uid ?? null;
+    if (!anchorName && anchorUid) {
+      try {
+        const master = await this.api.masterInfo(anchorUid);
+        anchorName = master?.name ?? null;
+        anchorUid = master?.uid ?? anchorUid;
+      } catch {
+        // Metadata is optional; a valid room id remains usable.
+      }
+    }
     return {
       roomId: room.roomId,
       inputRoomId: parsed,
       shortId: room.shortId,
       liveStatus: info?.liveStatus ?? room.liveStatus,
       title: info?.title ?? null,
-      anchorName: info?.anchorName ?? null,
-      anchorUid: info?.anchorUid ?? null,
+      anchorName,
+      anchorUid,
       areaName: info?.areaName ?? null,
       parentAreaName: info?.parentAreaName ?? null,
-      online: info?.online ?? null
+      online: info?.online ?? null,
+      liveStartedAt: Number(room.liveTime) > 0 ? Number(room.liveTime) : null
     };
   }
 
@@ -137,6 +149,7 @@ export class BilibiliService {
       sourceQuality,
       simulated: false,
       monitorTargetId,
+      platformStartedAt: Number(room?.liveStartedAt) > 0 ? Number(room.liveStartedAt) : null,
       createAdapter: () => adapter,
       meta: {room: {...room, roomId}}
     });

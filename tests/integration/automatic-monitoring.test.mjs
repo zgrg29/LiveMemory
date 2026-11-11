@@ -134,7 +134,9 @@ function createHarness() {
     db,
     manager,
     sessionManager,
+    bilibili,
     detector,
+    now,
     adapters,
     sessions,
     advance(ms) { clock += ms; },
@@ -235,6 +237,96 @@ test('live check creates one normal session, keeps it on reconnect and ends only
   const sessions = listMonitorTargetSessions(harness.db, target.id, {limit: 10});
   assert.equal(sessions.length, 2);
   assert.deepEqual(new Set(sessions.map((row) => row.status)), new Set(['live', 'ended']));
+});
+
+test('manual stop suppresses only the same live cycle, survives restart and allows a new cycle', async (t) => {
+  const harness = createHarness();
+  t.after(() => harness.dispose());
+  const target = await harness.manager.createTarget({platform: 'bilibili', input: '7007'});
+
+  harness.detector.queue.push({status: 'live', title: 'Live one', liveStartedAt: 1000});
+  harness.advance(10000);
+  await harness.manager.tick();
+  const first = harness.manager.getTarget(target.id);
+  assert.equal(first.state, MONITOR_STATE.RECORDING);
+  const firstSessionId = first.activeSessionId;
+  assert.ok(firstSessionId);
+
+  // User clicks "stop capture": the session ends with end_reason=user and the
+  // monitoring target records a persistent suppression for this live cycle.
+  await harness.sessionManager.stopSession(firstSessionId, {status: 'ended', reason: 'user'});
+  const stopped = harness.manager.noteManualStop(firstSessionId);
+  assert.equal(stopped.state, MONITOR_STATE.LIVE_STOPPED);
+  assert.equal(stopped.activeSessionId, null);
+  assert.equal(getSession(harness.db, firstSessionId).end_reason, 'user');
+  assert.equal(stopped.meta.manualStop.liveKey, 'bilibili:7007:1000');
+
+  // Polls and heartbeats still see LIVE for the same cycle: never restart.
+  harness.detector.queue.push(
+    {status: 'live', title: 'Live one', liveStartedAt: 1000},
+    {status: 'live', title: 'Live one', liveStartedAt: 1000},
+    {status: 'live', title: 'Live one', liveStartedAt: 1000}
+  );
+  for (let index = 0; index < 3; index += 1) {
+    harness.advance(120000);
+    await harness.manager.tick();
+  }
+  assert.equal(harness.sessions.length, 1);
+  assert.equal(harness.manager.getTarget(target.id).state, MONITOR_STATE.LIVE_STOPPED);
+
+  // Restart must not forget the suppression.
+  harness.manager.stop();
+  const restarted = new MonitoringManager({
+    db: harness.db,
+    sessionManager: harness.sessionManager,
+    bilibili: harness.bilibili,
+    youtube: null,
+    now: harness.now,
+    detectors: {bilibili: harness.detector},
+    random: () => 0.5
+  });
+  restarted.recover();
+  harness.detector.queue.push({status: 'live', title: 'Live one', liveStartedAt: 1000});
+  harness.advance(120000);
+  await restarted.tick();
+  assert.equal(harness.sessions.length, 1);
+  assert.equal(restarted.getTarget(target.id).state, MONITOR_STATE.LIVE_STOPPED);
+
+  // A transient error is not evidence of the broadcast ending.
+  harness.detector.queue.push(Object.assign(new Error('timeout'), {code: 'MONITOR_NETWORK'}));
+  harness.advance(120000);
+  await restarted.tick();
+  harness.detector.queue.push({status: 'live', title: 'Live one', liveStartedAt: 1000});
+  harness.advance(120000);
+  await restarted.tick();
+  assert.equal(harness.sessions.length, 1);
+  assert.equal(restarted.getTarget(target.id).state, MONITOR_STATE.LIVE_STOPPED);
+
+  // Confirmed offline releases the old cycle.
+  harness.detector.queue.push({status: 'offline', title: null, liveStartedAt: null});
+  harness.advance(120000);
+  await restarted.tick();
+  assert.equal(restarted.getTarget(target.id).state, MONITOR_STATE.WAITING);
+  assert.equal(restarted.getTarget(target.id).meta.manualStop, null);
+
+  // A genuinely new broadcast (new live_time) may start a new session.
+  harness.detector.queue.push({status: 'live', title: 'Live two', liveStartedAt: 2000});
+  harness.advance(120000);
+  await restarted.tick();
+  const second = restarted.getTarget(target.id);
+  assert.equal(second.state, MONITOR_STATE.RECORDING);
+  assert.equal(harness.sessions.length, 2);
+  assert.notEqual(second.activeSessionId, firstSessionId);
+
+  // Explicit "start capturing chat" is the only way to resume the same cycle.
+  await harness.sessionManager.stopSession(second.activeSessionId, {status: 'ended', reason: 'user'});
+  restarted.noteManualStop(second.activeSessionId);
+  harness.detector.queue.push({status: 'live', title: 'Live two', liveStartedAt: 2000});
+  const resumed = await restarted.updateTarget(target.id, {action: 'resume_capture'});
+  assert.equal(resumed.state, MONITOR_STATE.RECORDING);
+  assert.equal(harness.sessions.length, 3);
+  assert.notEqual(resumed.activeSessionId, second.activeSessionId);
+  restarted.stop();
 });
 
 test('a repeated check failure backs off and becomes a visible error without touching a session', async (t) => {

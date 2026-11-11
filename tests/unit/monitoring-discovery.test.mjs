@@ -254,5 +254,5 @@ test('summary counts recording up even when the underlying connection reconnects
     {enabled: true, state: 'waiting'},
     {enabled: false, state: 'paused'},
     {enabled: true, state: 'error'}
-  ]), {total: 5, enabled: 4, recording: 2, waiting: 1, error: 1, paused: 1});
+  ]), {total: 5, enabled: 4, recording: 2, waiting: 1, error: 1, paused: 1, liveStopped: 0});
 });
