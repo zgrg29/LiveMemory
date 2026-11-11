@@ -660,7 +660,13 @@
         "MEMORY_AGGREGATE_UPDATE": "第二阶段不能再次更新长期记忆。请返回空的 viewer_memory_updates。",
         "MEMORY_NO_NEW_FLAG_MISSING": "operations 为空，但 no_new_information 不是 true。请明确设为 true。",
         "MEMORY_OBJECTIVE_ONLY": "这是旧版结果，没有语义记忆更新；客观互动历史仍会更新。",
-        "MEMORY_PREVIEW_FAILED": "无法预览记忆更新。请检查操作与目标事实。"
+        "MEMORY_PREVIEW_FAILED": "无法预览记忆更新。请检查操作与目标事实。",
+        "SESSION_TOPICS_REQUIRED": "单场结果缺少 session_topics。",
+        "SESSION_MEMORY_FORBIDDEN": "单场任务不能包含 viewer_memory_updates。",
+        "ANALYSIS_SCOPE_MISMATCH": "结果的 analysis_scope 与任务类型不一致。",
+        "SESSION_SCHEMA_REQUIRED": "单场任务必须使用 Schema 1.3.0。",
+        "MEMORY_SCHEMA_REQUIRED": "长期画像任务必须使用 Schema 1.3.0。",
+        "MEMORY_PROFILES_FORBIDDEN": "长期画像任务不能包含 viewer_profiles。"
       },
       "fix": {
         "aggregate": "先导入全部批次结果，再生成并分析汇总包。",

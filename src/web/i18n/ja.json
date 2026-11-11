@@ -660,7 +660,13 @@
         "MEMORY_AGGREGATE_UPDATE": "第 2 段階で長期メモリを再更新できません。viewer_memory_updates は空配列にしてください。",
         "MEMORY_NO_NEW_FLAG_MISSING": "operations が空ですが no_new_information が true ではありません。明確に true にしてください。",
         "MEMORY_OBJECTIVE_ONLY": "古い結果のため意味メモリ更新はありません。客観的な交流履歴は更新されます。",
-        "MEMORY_PREVIEW_FAILED": "メモリ更新をプレビューできませんでした。操作と対象事実を確認してください。"
+        "MEMORY_PREVIEW_FAILED": "メモリ更新をプレビューできませんでした。操作と対象事実を確認してください。",
+        "SESSION_TOPICS_REQUIRED": "単一配信の結果に session_topics がありません。",
+        "SESSION_MEMORY_FORBIDDEN": "単一配信タスクに viewer_memory_updates を含めることはできません。",
+        "ANALYSIS_SCOPE_MISMATCH": "結果の analysis_scope がタスク種別と一致しません。",
+        "SESSION_SCHEMA_REQUIRED": "単一配信タスクは Schema 1.3.0 を使用する必要があります。",
+        "MEMORY_SCHEMA_REQUIRED": "長期プロファイルタスクは Schema 1.3.0 を使用する必要があります。",
+        "MEMORY_PROFILES_FORBIDDEN": "長期プロファイル専用タスクに viewer_profiles を含めることはできません。"
       },
       "fix": {
         "aggregate": "すべてのバッチ結果を取り込んでから、統合パッケージを生成・分析してください。",

@@ -660,7 +660,13 @@
         "MEMORY_AGGREGATE_UPDATE": "Stage 2 must not update long-term memory again. Return an empty viewer_memory_updates array.",
         "MEMORY_NO_NEW_FLAG_MISSING": "operations is empty but no_new_information is not true. Set it to true for clarity.",
         "MEMORY_OBJECTIVE_ONLY": "This older result has no semantic memory update; objective interaction history is still updated.",
-        "MEMORY_PREVIEW_FAILED": "The memory update could not be previewed. Check operations and target facts."
+        "MEMORY_PREVIEW_FAILED": "The memory update could not be previewed. Check operations and target facts.",
+        "SESSION_TOPICS_REQUIRED": "The session result is missing session_topics.",
+        "SESSION_MEMORY_FORBIDDEN": "A session-only task cannot contain viewer_memory_updates.",
+        "ANALYSIS_SCOPE_MISMATCH": "The result analysis_scope does not match the task type.",
+        "SESSION_SCHEMA_REQUIRED": "A session task must use Schema 1.3.0.",
+        "MEMORY_SCHEMA_REQUIRED": "A memory task must use Schema 1.3.0.",
+        "MEMORY_PROFILES_FORBIDDEN": "A memory-only task cannot contain viewer_profiles."
       },
       "fix": {
         "aggregate": "Import every batch result first, then create and analyse the aggregate package.",
