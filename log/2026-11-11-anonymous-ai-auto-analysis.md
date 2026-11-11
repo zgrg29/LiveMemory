@@ -69,11 +69,11 @@
   - `tests/integration/auto-api.test.mjs`
   - `tests/unit/ai-ui.test.mjs` 扩展
 - 全量：**525 passed / 0 failed**（约 93 秒，2026-11-11）。
-- 真实探针（手动执行，不进入自动化）：
-  - `tests/.tmp/auto-real.mjs`
-  - `tests/.tmp/auto-memory-real.mjs`
-  - `tests/.tmp/prompt-probe.mjs`
-  - `tests/.tmp/pollinations-probe.mjs`
+- 真实探针（开发机临时脚本，未提交；避免把外部请求写进自动化）：
+  - 3 位合成观众包：`auto-real`
+  - 跨场次记忆：`auto-memory-real`
+  - 实际生成提示词：`prompt-probe`
+  - Pollinations 对照：`pollinations-probe`
 
 ## 已知限制 / 未验证
 

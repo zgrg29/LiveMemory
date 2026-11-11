@@ -671,14 +671,8 @@ duration ≈ 25.0s
 
 ### 24.2 真实匿名 API 测试（非自动化，需外部网络）
 
-命令（会真实发出请求，勿频繁运行）：
-
-```bat
-node tests/.tmp/auto-real.mjs
-node tests/.tmp/auto-memory-real.mjs
-node tests/.tmp/prompt-probe.mjs
-node tests/.tmp/pollinations-probe.mjs
-```
+本轮在开发机用临时脚本执行（未提交，避免 CI/自动化意外发出公共免费请求）；结果与时间见
+`docs/ANONYMOUS_AI_RESEARCH.md`。
 
 | 场景 | 结果 |
 | --- | --- |

@@ -98,7 +98,7 @@ POST /api/ai/auto/cancel   {sessionId}
   - `tests/integration/auto-analysis.test.mjs`：成功、多批、备用、全失败、修复、错误证据、部分成功后恢复、重复点击、取消/恢复、重启、汇总失败、旧记忆不被覆盖、重复导入幂等。
   - `tests/integration/auto-api.test.mjs`：HTTP 同意、202、409、状态、422 规模限制、取消、手动路径仍可用。
   - `tests/unit/ai-ui.test.mjs`：按钮/状态/错误文案/三语键/无 alert/无 innerHTML。
-- 真实匿名 API 探针（非自动化）：`tests/.tmp/auto-real.mjs`、`auto-memory-real.mjs`、`prompt-probe.mjs`、`pollinations-probe.mjs`。结果写入 `docs/ANONYMOUS_AI_RESEARCH.md`。
+- 真实匿名 API 探针（开发机临时脚本，未提交；避免把真实外部请求写进自动化测试）：按 3 位合成观众包、跨场次记忆两种场景执行，结果写入 `docs/ANONYMOUS_AI_RESEARCH.md`。
 - 构建：`node scripts/build-windows.mjs` 成功（v0.12.0，91.2 MB、151 资源、requireAdministrator、SHA-256 `342294c…`）；**未能运行验收**，直接执行被 Windows 以“请求的操作需要提升”拒绝。
 - 真实浏览器：**未运行**（本机策略）。
 
