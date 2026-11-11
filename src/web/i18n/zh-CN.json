@@ -895,8 +895,8 @@
       "importedAt": "导入于 {date}",
       "promptVersion": "提示词版本 {version}",
       "batchCoverage": "批次 {done}/{total} · {messages} 条消息",
-      "viewerProfilesTitle": "观众画像",
-      "viewerProfilesNone": "没有导入观众画像。",
+      "viewerProfilesTitle": "本场观众画像（AI 报告）",
+      "viewerProfilesNone": "本场报告没有包含观众画像。",
       "viewerProfilesCount": "{count} 个画像 · {low} 个低可信度",
       "viewerProfilesNote": "画像是 AI 仅针对本场直播观众做出的推断，不是经过验证的长期事实，也不会跨主播合并。",
       "partialBatchTitle": "批次 {index} 的结果",
@@ -918,7 +918,16 @@
       "importedFrom": "导入于 {date}",
       "lowConfidenceShort": "低",
       "sampleSize": "{n} 条样本",
-      "clipNoticeTitle": "关于这些候选片段"
+      "clipNoticeTitle": "关于这些候选片段",
+      "viewerProfilesNoneBody": "单场分析不再要求 viewer_profiles；下方的「长期观众画像」来自独立的记忆任务。",
+      "longTermProfilesTitle": "长期观众画像",
+      "longTermNone": "还没有长期观众画像。",
+      "longTermNoneBody": "长期画像是独立任务：需要在 AI 分析中心选择「仅长期画像」或「单场 + 长期画像」，并使用通过画像能力检测的付费模型。",
+      "longTermNoBroadcaster": "这场直播没有可用的主播身份，无法建立长期画像；单场报告不受影响。",
+      "longTermNote": "来自观众长期记忆（独立于单场报告）；仅显示当前主播范围内的画像。",
+      "longTermCount": "{count} 位观众有长期画像",
+      "longTermFacts": "长期事实",
+      "longTermObjectiveOnly": "已记录互动历史，暂无语义事实。"
     },
     "v13": {
       "method": {

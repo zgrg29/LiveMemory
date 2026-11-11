@@ -739,3 +739,33 @@ result.schema.json
 - 区域/Base URL 变化轮换 credentialReference。
 - 自定义 URL 拒绝云元数据/私网/localhost（除非显式 allowLocalNetwork），请求前做 DNS 检查。
 - 不记录 prompt/回答/聊天正文到日志或状态文件。
+
+## 14. 长期画像在报告页的展示（v0.13.0）
+
+报告页分两块，绝不混为同一个 AI 结果：
+
+- **本场观众画像**：来自单场结果的 `viewer_profiles`；v1.3 session-only 任务通常为空。
+- **长期观众画像**：来自 `viewer_memories` / `memory_facts`，是独立 memory 任务写入的数据；只显示当前主播范围，按 `last_update_at` 排序，最多 50 位。
+
+没有长期画像时，报告明确说明「需要在 AI 分析中心选择长期画像任务，并使用通过能力检测的付费模型」，而不是显示成“没有导入观众画像”让用户误以为导入失败。
+
+`GET /api/ai/sessions/:id/report` 新增只读 `longTermProfiles`：
+
+```json
+{
+  "count": 2,
+  "reason": null,
+  "items": [
+    {
+      "viewerId": "youtube:UC_...",
+      "nickname": "...",
+      "version": 1,
+      "summary": "...",
+      "lastUpdateAt": 1760000000000,
+      "facts": [{"kind": "interest", "topic": "吉他", "statement": "...", "certainty": "stated", "status": "active"}]
+    }
+  ]
+}
+```
+
+该字段只读，不改变 AI 结果、金额、计数或身份；没有画像时返回 `count=0` 与原因（`none` / `no_broadcaster`）。

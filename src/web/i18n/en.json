@@ -895,8 +895,8 @@
       "importedAt": "Imported {date}",
       "promptVersion": "Prompt version {version}",
       "batchCoverage": "Batches {done}/{total} · {messages} messages",
-      "viewerProfilesTitle": "Viewer profiles",
-      "viewerProfilesNone": "No viewer profiles were imported.",
+      "viewerProfilesTitle": "Session viewer profiles (AI report)",
+      "viewerProfilesNone": "This session report contains no viewer profiles.",
       "viewerProfilesCount": "{count} profiles · {low} low confidence",
       "viewerProfilesNote": "Profiles are AI inferences about viewers in this broadcast only. They are not verified long-term facts and are never merged across broadcasters.",
       "partialBatchTitle": "Batch {index} result",
@@ -918,7 +918,16 @@
       "importedFrom": "Imported {date}",
       "lowConfidenceShort": "low",
       "sampleSize": "{n} samples",
-      "clipNoticeTitle": "About these suggestions"
+      "clipNoticeTitle": "About these suggestions",
+      "viewerProfilesNoneBody": "Session analysis no longer requires viewer_profiles. “Long-term viewer profiles” below come from the separate memory task.",
+      "longTermProfilesTitle": "Long-term viewer profiles",
+      "longTermNone": "No long-term viewer profiles yet.",
+      "longTermNoneBody": "Long-term profiles are a separate task: choose “Long-term profiles only” or “Session + long-term profiles” in the AI centre, using a paid model that passed the memory capability test.",
+      "longTermNoBroadcaster": "This session has no resolved broadcaster identity, so long-term profiles cannot be created. The session report is unaffected.",
+      "longTermNote": "From long-term viewer memory (independent of the session report); scoped to the current broadcaster only.",
+      "longTermCount": "{count} viewers have a long-term profile",
+      "longTermFacts": "Long-term facts",
+      "longTermObjectiveOnly": "Interaction history recorded; no semantic facts yet."
     },
     "v13": {
       "method": {

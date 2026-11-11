@@ -185,7 +185,11 @@ function renderHighlights(ctx, report) {
 function renderViewerProfiles(ctx, viewerProfiles) {
   const t = ctx.t;
   if (!viewerProfiles || viewerProfiles.count === 0) {
-    return emptyState({title: t('ai.report.viewerProfilesNone'), glyph: '·'});
+    return emptyState({
+      title: t('ai.report.viewerProfilesNone'),
+      body: t('ai.report.viewerProfilesNoneBody'),
+      glyph: '·'
+    });
   }
   return el('div', {className: 'report-profiles'},
     el('div', {className: 'report-note', text: t('ai.report.viewerProfilesNote')}),
@@ -204,6 +208,45 @@ function renderViewerProfiles(ctx, viewerProfiles) {
           `${interest.topic} · ${t(`ai.report.${interest.evidence}`)}`,
           interest.strength === 'stable' ? 'accent' : 'neutral'
         )))
+        : null)));
+}
+
+/**
+ * Long-term memory is not part of the single-session result. It is a separate
+ * job, but when it exists the report must show it; otherwise users reasonably
+ * conclude that the paid memory run wrote nothing.
+ */
+function renderLongTermProfiles(ctx, data) {
+  const t = ctx.t;
+  if (!data || data.count === 0) {
+    return emptyState({
+      title: t('ai.report.longTermNone'),
+      body: data?.reason === 'no_broadcaster'
+        ? t('ai.report.longTermNoBroadcaster')
+        : t('ai.report.longTermNoneBody'),
+      glyph: '◇'
+    });
+  }
+  return el('div', {className: 'report-profiles'},
+    el('div', {className: 'report-note', text: t('ai.report.longTermNote')}),
+    el('div', {className: 'report-note'}, t('ai.report.longTermCount', {
+      count: formatInteger(data.count, ctx.locale)
+    })),
+    data.items.map((profile) => el('div', {className: 'report-profile'},
+      el('div', {className: 'report-topic-head'},
+        el('span', {className: 'report-topic-title', text: profile.nickname || profile.viewerId}),
+        profile.nickname ? el('span', {className: 'small tertiary mono', text: profile.viewerId}) : null,
+        chip(t('memory.versionLabel', {n: formatInteger(profile.version, ctx.locale)}), 'neutral')),
+      profile.summary ? el('p', {className: 'report-text', text: profile.summary}) : null,
+      !profile.summary && profile.facts.length === 0
+        ? el('div', {className: 'small tertiary', text: t('ai.report.longTermObjectiveOnly')})
+        : null,
+      profile.facts.length > 0
+        ? el('div', {className: 'report-points'},
+          el('div', {className: 'report-subhead', text: t('ai.report.longTermFacts')}),
+          el('ul', {className: 'report-list'}, profile.facts.map((fact) => el('li', {
+            text: `${fact.topic ? `${fact.topic}: ` : ''}${fact.statement} · ${t(`memory.certainty${fact.certainty === 'stated' ? 'Stated' : fact.certainty === 'inferred' ? 'Inferred' : 'Uncertain'}`)}`
+          }))))
         : null)));
 }
 
@@ -288,6 +331,11 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
             onClick: () => ctx.navigate(`/ai?session=${encodeURIComponent(payload.session.id)}`)
           })))
     }));
+    if (payload.longTermProfiles?.count > 0) {
+      nodes.push(sectionCard(t('ai.report.longTermProfilesTitle'), {
+        body: renderLongTermProfiles(ctx, payload.longTermProfiles)
+      }));
+    }
     return el('section', {className: 'report', id: 'ai-report'}, nodes);
   }
 
@@ -322,6 +370,9 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
     nodes.push(renderReportBody(ctx, payload.report));
     nodes.push(sectionCard(t('ai.report.viewerProfilesTitle'), {
       body: renderViewerProfiles(ctx, payload.viewerProfiles)
+    }));
+    nodes.push(sectionCard(t('ai.report.longTermProfilesTitle'), {
+      body: renderLongTermProfiles(ctx, payload.longTermProfiles)
     }));
     nodes.push(sectionCard(t('ai.report.provenanceTitle'), {body: renderProvenance(ctx, payload)}));
   }

@@ -895,8 +895,8 @@
       "importedAt": "取り込み日時 {date}",
       "promptVersion": "プロンプト版 {version}",
       "batchCoverage": "バッチ {done}/{total} · {messages} 件",
-      "viewerProfilesTitle": "視聴者プロフィール",
-      "viewerProfilesNone": "視聴者プロフィールは取り込まれていません。",
+      "viewerProfilesTitle": "この配信の視聴者プロファイル（AI レポート）",
+      "viewerProfilesNone": "この配信レポートには視聴者プロファイルが含まれていません。",
       "viewerProfilesCount": "{count} 件 · 低信頼 {low} 件",
       "viewerProfilesNote": "プロフィールはこの配信の視聴者について AI が推論したもので、検証済みの長期的事実ではありません。配信者をまたいで統合されることもありません。",
       "partialBatchTitle": "バッチ {index} の結果",
@@ -918,7 +918,16 @@
       "importedFrom": "取り込み {date}",
       "lowConfidenceShort": "低",
       "sampleSize": "{n} 件のサンプル",
-      "clipNoticeTitle": "候補について"
+      "clipNoticeTitle": "候補について",
+      "viewerProfilesNoneBody": "単一配信分析は viewer_profiles を要求しなくなりました。下の「長期的な視聴者プロファイル」は別タスクの記憶から表示されます。",
+      "longTermProfilesTitle": "長期的な視聴者プロファイル",
+      "longTermNone": "長期的な視聴者プロファイルはまだありません。",
+      "longTermNoneBody": "長期プロファイルは別タスクです。AI 分析センターで「長期プロファイルのみ」または「配信 + 長期プロファイル」を選び、画像能力テストに合格した有料モデルを使用してください。",
+      "longTermNoBroadcaster": "この配信には有効な配信者 ID がないため、長期プロファイルを作成できません。単一配信レポートには影響しません。",
+      "longTermNote": "視聴者の長期記憶から表示（単一配信レポートとは独立）。現在の配信者の範囲のみです。",
+      "longTermCount": "{count} 人の視聴者に長期プロファイルがあります",
+      "longTermFacts": "長期的な事実",
+      "longTermObjectiveOnly": "インタラクション履歴は記録済みですが、意味的な事実はまだありません。"
     },
     "v13": {
       "method": {

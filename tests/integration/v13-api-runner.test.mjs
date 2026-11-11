@@ -128,6 +128,8 @@ test('paid verified runner can update memory without replacing the session repor
   const report = await fetch(`${server.url}api/ai/sessions/${encodeURIComponent(session.id)}/report`).then((response) => response.json());
   assert.equal(report.mode, 'single');
   assert.equal(report.report.summary, 'API session summary');
+  assert.equal(report.longTermProfiles.count, 2);
+  assert.equal(report.longTermProfiles.items.length, 2);
 });
 
 test('the per-task budget stops paid requests before they are sent', async (t) => {

@@ -9,6 +9,7 @@ import {
 } from '../../storage/repositories/ai-results.mjs';
 import {computeJobStatus} from '../../ai/tasks/status.mjs';
 import {MAX_REPORT_EVIDENCE} from '../../ai/constants.mjs';
+import {listFacts} from '../../storage/repositories/viewer-memory.mjs';
 
 /**
  * Read model for the AI analysis report.
@@ -163,6 +164,56 @@ function summarizeViewerProfiles(result, db, limit = 50) {
   };
 }
 
+/**
+ * Long-term memory is a separate task from the session report. The report page
+ * must still surface it when it exists, otherwise a user who ran both tasks sees
+ * an empty "viewer profiles" card and concludes that memory was never written.
+ */
+function summarizeLongTermProfiles(db, session, {limit = 50} = {}) {
+  if (!session?.broadcaster_id) {
+    return {count: 0, items: [], reason: 'no_broadcaster'};
+  }
+  const rows = db.prepare(`
+    SELECT vm.*, v.nickname
+      FROM viewer_memories vm
+      JOIN viewer_sessions vs ON vs.viewer_id = vm.viewer_id AND vs.session_id = ?
+      LEFT JOIN viewers v ON v.id = vm.viewer_id
+     WHERE vm.broadcaster_id = ?
+       AND vm.status = 'active'
+     ORDER BY vm.last_update_at DESC
+     LIMIT ?
+  `).all(String(session.id), String(session.broadcaster_id), Math.max(1, Number(limit) || 50));
+  const total = Number(db.prepare(`
+    SELECT COUNT(*) AS count
+      FROM viewer_memories vm
+      JOIN viewer_sessions vs ON vs.viewer_id = vm.viewer_id AND vs.session_id = ?
+     WHERE vm.broadcaster_id = ? AND vm.status = 'active'
+  `).get(String(session.id), String(session.broadcaster_id))?.count ?? 0);
+  return {
+    count: total,
+    reason: total === 0 ? 'none' : null,
+    items: rows.map((row) => {
+      const facts = listFacts(db, row.id, {limit: 8});
+      return {
+        viewerId: row.viewer_id,
+        nickname: row.nickname ?? null,
+        version: Number(row.version ?? 0),
+        summary: row.summary ?? '',
+        lastUpdateAt: Number(row.last_update_at ?? 0),
+        facts: facts.map((fact) => ({
+          id: fact.id,
+          kind: fact.kind,
+          topic: fact.topic ?? null,
+          statement: fact.statement,
+          certainty: fact.certainty,
+          status: fact.status,
+          confidence: fact.confidence
+        }))
+      };
+    })
+  };
+}
+
 function jobSummary(db, job, {now = Date.now()} = {}) {
   const status = computeJobStatus(db, job);
   return {
@@ -240,7 +291,8 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
       report: null,
       perBatch: [],
       localStats: null,
-      viewerProfiles: null
+      viewerProfiles: null,
+      longTermProfiles: summarizeLongTermProfiles(db, session)
     };
   }
 
@@ -301,6 +353,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
     perBatch,
     result: displayed ? resultMeta(displayed) : null,
     viewerProfiles: displayed ? summarizeViewerProfiles(displayed.result, db) : null,
+    longTermProfiles: summarizeLongTermProfiles(db, session),
     evidence: displayed
       ? {
         total: displayed.evidenceTotal,
