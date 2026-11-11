@@ -139,7 +139,9 @@ node src/launcher/launcher.mjs --no-open
 
 ## 8. 本轮 Commit
 
-- 待提交（本地 commit，不 Push）。提交信息见最终报告。
+- 功能/测试/文档提交：`1a2e8d5 fix: repair automatic analysis reliability and manual import diagnostics`
+  （本地 commit，未 Push）。
+- 提交后仅追加本交接记录中的 hash 说明。
 
 ## 9. 上一轮（v0.12.0）摘要
 
