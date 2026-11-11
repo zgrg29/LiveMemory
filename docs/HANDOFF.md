@@ -20,7 +20,7 @@
 | 全量测试 | **519 passed / 0 failed**（约 77 秒）。 |
 | Mock 规模测试 | **1,000 观众 / 10,000 消息：100 批、6.5 秒、峰值并发 6、覆盖 1,000/1,000。** |
 | 真实付费 API | **阻塞**：本机没有 Provider 配置/密钥/环境变量。未伪造成功。 |
-| EXE | **已构建 v0.13.1**（91.4 MB / 161 assets / SHA-256 `a21bd1ae…` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
+| EXE | **已构建 v0.13.1**（91.4 MB / 161 assets / SHA-256 `397bc554…` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 
