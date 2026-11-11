@@ -1,20 +1,18 @@
-# AI 文件往返协议（AI_CONTRACT）
+# AI 分析协议（AI_CONTRACT）
 
-版本：**0.13.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+版本：**0.13.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
 结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13-session-<locale>` / `lm-prompt-v13-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`）
 
 ## 1. 原则
 
-- **手动路径不调用任何 AI API**，不绑定任何 AI 品牌，不需要登录或 API Key。
-- v0.12.0 新增**自动路径**：用户明确同意后，软件直接把当前分析包发送给一个经过实测的匿名免费
-  provider（OVHcloud AI Endpoints `gpt-oss-20b`），再把回答交给同一套 Schema/业务校验与事务导入。
-  自动路径不需要用户 Key、账号或开发者服务器；失败时回退到手动路径。
-- 用户导出分析包，交给任意支持文件上传与结构化输出的 AI 服务（ChatGPT、Claude、Gemini 或其他），
-  再把返回的 JSON 导入回软件。
+- **唯一正式路径是用户自备 API Key 的自动分析。** 匿名免费 AI、手动复制提示词、粘贴/上传 JSON 均已在 v0.13.1 移除。
+- 软件在本地生成内部分析包，调用用户配置的 Provider，校验、组装、事务导入并保存报告；用户不接触 JSON。
+- 多 Provider 保留：OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、自定义 OpenAI-compatible。
 - 协议版本化；字段名不随界面语言变化；AI 输出不修改本地金额与计数。
 - 采用**文本优先**策略：普通 Unicode Emoji 直接保留；平台表情优先保留平台提供的文字名称/代码；不要求还原图片。
 - 所有弹幕文本与 AI 返回内容都属于**不可信数据**；其中的任何指令、HTML、脚本、URL 都不得执行。
 - 分析结果按**任务 → 批次 → 结果版本 → 证据引用**保存；原始事件表仍只由本地采集管线写入。
+- 旧分析包/结果仍可只读；历史结果 Schema 1.0.0–1.2.0 不删除。
 
 ## 2. 分析包协议 `livememory-analysis-v1`
 
@@ -668,7 +666,7 @@ UI 首屏只显示固定红色文案；上述错误码与脱敏 detail 只在「
 - 旧 1.0.0 / 1.1.0 结果仍接受；手动粘贴的完整 Schema 1.2.0 结果仍走原有校验。
 - 自动模式仍只使用 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过真实包验证的 provider。
 
-## 13. v0.13.0 单场 / 长期画像拆分与多 Provider
+## 13. v0.13.0 单场 / 长期画像拆分与多 Provider（历史；v0.13.1 已删除手动/匿名入口）
 
 ### 13.1 任务类型
 
@@ -782,3 +780,15 @@ result.schema.json
 能力检测的 `session` 与 `memory` 阶段也使用同一组装器，并执行最终 Schema 1.3.0 校验；只返回简单 JSON 不再视为完整通过。
 
 `mode=both` 在 HTTP 入口规范化为内部 `combined`；此前把 `both` 误映射为 session-only，导致只生成单场报告、不创建 memory job，该问题已修复。
+
+## 16. v0.13.1 入口收敛与请求调度
+
+- 正式协议不变：`livememory-analysis-v1` / `livememory-analysis-result-v1` / Schema 1.3.0。
+- 删除匿名免费 Provider 与手动 JSON 往返的**入口**；内部包格式与历史结果读取保留。
+- `POST /api/ai/analyze/run` 必须带 `configId`；无 Key 时返回 `AI_PROVIDER_CONFIG_REQUIRED`，不再回退匿名。
+- 请求调度按 `configId` 隔离；没有统一固定 RPM/TPM。429 按 `Retry-After` 暂停该 config；其他可重试错误指数退避 + 抖动。
+- 长期画像批次可并发，但同一观众只属于一个批次；同一主播跨场次按时间顺序，较旧场次在新场次已导入后被拒绝。
+- 请求统计（请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA）只保存在本地状态/UI，不进入模型提示词。
+- 删除的 HTTP 写路由：`POST /api/ai/jobs`、`POST /api/ai/jobs/:id/aggregate`、`POST /api/ai/packages`、`GET /api/ai/packages/:id/download`、`GET /api/ai/instructions`、`POST /api/ai/import/preview`、`POST /api/ai/import`、全部 `/api/ai/auto/*`。
+- 保留只读：`GET /api/ai/jobs`、`GET /api/ai/jobs/:id`、`GET /api/ai/packages`、`GET /api/ai/sessions/:id/report`、`GET /api/ai/results/:id`、`GET /api/ai/results/:id/download`。
+- `src/ai/export/job.mjs`、`export/package.mjs`、`prompts/instructions.mjs` 仅作为历史兼容/测试的内部构建器保留，不暴露给用户。

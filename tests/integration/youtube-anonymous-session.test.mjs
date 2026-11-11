@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 import {readZipEntry, readZipIndex} from '../../src/shared/zip.mjs';
+import {buildAnalysisPackage} from '../../src/ai/export/package.mjs';
 
 /**
  * End-to-end test for the public-web YouTube client (the only YouTube path).
@@ -392,15 +395,13 @@ test('public-web YouTube chat end-to-end (the only YouTube path)', async (t) => 
   });
 
   await t.test('the analysis package carries badges and the displayed amount', async () => {
-    const create = await request(`${base}api/ai/packages`, {
-      method: 'POST',
-      body: {sessionId, locale: 'en'}
+    const record = await buildAnalysisPackage({
+      db: server.db,
+      sessionId,
+      locale: 'en',
+      exportsDir: server.paths.exports
     });
-    assert.equal(create.status, 201);
-    const {package: record} = await create.json();
-    const download = await fetch(`${base}api/ai/packages/${record.id}/download`);
-    assert.equal(download.status, 200);
-    const archive = Buffer.from(await download.arrayBuffer());
+    const archive = readFileSync(join(server.paths.exports, record.fileName));
     const names = readZipIndex(archive).map((entry) => entry.name);
     assert.ok(names.includes('messages.jsonl'));
     const lines = readZipEntry(archive, 'messages.jsonl').toString('utf8').split('\n').filter(Boolean).map(JSON.parse);

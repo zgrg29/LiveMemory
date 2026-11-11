@@ -19,7 +19,6 @@ export const PROVIDER_PROTOCOL = Object.freeze({
 });
 
 export const PRICING_STATUS = Object.freeze({
-  ANONYMOUS_FREE: 'anonymous_free',
   API_FREE: 'api_free',
   PAID: 'paid',
   UNKNOWN: 'unknown'

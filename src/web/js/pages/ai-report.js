@@ -263,7 +263,7 @@ function renderProvenance(ctx, payload) {
       done: formatInteger(job.batchesImported ?? 0, ctx.locale),
       total: formatInteger(job.batchTotal ?? 0, ctx.locale),
       messages: formatInteger(job.totalMessages ?? 0, ctx.locale)
-    }), result?.source === 'auto'
+    }), result?.source === 'api' || result?.source === 'auto'
       ? t('ai.report.sourceAuto')
       : result?.source === 'file'
         ? t('ai.report.sourceFile')

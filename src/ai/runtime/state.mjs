@@ -2,15 +2,15 @@ import {existsSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 /**
- * Small persisted state for automatic runs, scoped to the data directory.
+ * Small persisted state for analysis runs, scoped to the data directory.
  *
  * It deliberately contains no prompts, chat text or model output: only the job
  * id, the current stage, counters and a stable error code. The database remains
  * the source of truth for imported results and coverage; this file only lets
  * the console explain what happened and resume the same job after a restart.
  */
-export class AutoAnalysisState {
-  constructor({runtimeDir, now = Date.now, fileName = 'ai-auto.json'}) {
+export class AnalysisState {
+  constructor({runtimeDir, now = Date.now, fileName = 'ai-v13.json'}) {
     this.file = join(runtimeDir, fileName);
     this.now = now;
     this.data = {version: 1, sessions: {}};
@@ -78,7 +78,7 @@ export class AutoAnalysisState {
         ...entry,
         status: 'interrupted',
         stage: 'interrupted',
-        error: {code: 'AUTO_INTERRUPTED', detail: null},
+        error: {code: 'ANALYSIS_INTERRUPTED', detail: null},
         updatedAt: this.now()
       };
       changed = true;

@@ -9,7 +9,6 @@ import {chip, el} from '../ui.js';
 
 function priceLabel(ctx, config) {
   if (config.pricingStatus === 'api_free') return ctx.t('ai.v13.price.free');
-  if (config.pricingStatus === 'anonymous_free') return ctx.t('ai.v13.price.anonymousFree');
   if (config.pricingStatus === 'paid' && config.pricing) {
     return ctx.t('ai.v13.price.paidValue', {
       input: String(config.pricing.inputPerMillion),
@@ -88,7 +87,7 @@ export async function renderProviderSettingsCard(ctx) {
           config.isDefault ? chip(t('ai.v13.providers.default'), 'accent') : null),
         chip(priceLabel(ctx, config), config.pricingStatus === 'paid' ? 'accent' : 'neutral')),
       el('div', {className: 'small tertiary mono', text: `${config.providerId} / ${config.regionId} / ${config.modelId}`}),
-      el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)}`}),
+      el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)} · ${t('ai.v13.providers.concurrency')}: ${config.concurrency ?? 3}`}),
       el('div', {className: 'inline', style: {marginTop: '8px'}},
         !config.isDefault ? el('button', {
           className: 'button button--secondary button--small',
@@ -109,7 +108,7 @@ export async function renderProviderSettingsCard(ctx) {
           type: 'button',
           text: t('ai.v13.providers.test'),
           onClick: async (event) => {
-            const paid = !['api_free', 'anonymous_free'].includes(config.pricingStatus);
+            const paid = config.pricingStatus !== 'api_free';
             if (paid && !await confirmCharge(ctx)) return;
             event.target.disabled = true;
             event.target.textContent = t('ai.v13.providers.testing');
@@ -172,6 +171,12 @@ export async function renderProviderSettingsCard(ctx) {
   const inputPrice = el('input', {className: 'input input--compact', type: 'number', attrs: {min: '0', step: '0.0001'}});
   const outputPrice = el('input', {className: 'input input--compact', type: 'number', attrs: {min: '0', step: '0.0001'}});
   const currencyInput = el('input', {className: 'input input--compact', type: 'text', value: 'USD', attrs: {maxlength: '8'}});
+  const concurrencyInput = el('input', {
+    className: 'input input--compact',
+    type: 'number',
+    value: '3',
+    attrs: {min: '1', max: '8', step: '1'}
+  });
   const localCheck = el('input', {type: 'checkbox'});
   const priceFields = el('div', {className: 'grid-2-equal'}, field(t('ai.v13.providers.inputPrice'), inputPrice), field(t('ai.v13.providers.outputPrice'), outputPrice));
   const modelListBox = el('div', {className: 'small tertiary'});
@@ -340,6 +345,7 @@ export async function renderProviderSettingsCard(ctx) {
             currency: currencyInput.value.trim() || 'USD',
             confirmedAt: new Date().toISOString()
           } : null,
+          concurrency: Number(concurrencyInput.value) || 3,
           allowLocalNetwork: localCheck.checked
         });
         keyInput.value = '';
@@ -371,6 +377,7 @@ export async function renderProviderSettingsCard(ctx) {
       field(t('ai.v13.providers.pricingStatus'), pricingSelect),
       field(t('ai.v13.providers.currency'), currencyInput)),
     priceFields,
+    field(t('ai.v13.providers.concurrency'), concurrencyInput, t('ai.v13.providers.concurrencyHint')),
     el('label', {className: 'choice', style: {marginTop: '10px'}},
       localCheck,
       el('div', {className: 'choice-text'},

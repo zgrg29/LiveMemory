@@ -1,8 +1,8 @@
 # LiveMemory 直播记忆
 
-本地优先、不要求 AI API Key 的直播记录与长期观众记忆系统：可手动文件往返，也可一键使用已验证的匿名免费 AI。支持 **Bilibili Live** 与 **YouTube Live**（两者均已接入真实直播）。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live** 与 **YouTube Live**（两者均已接入真实直播）。
 
-Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no AI API keys required for the basic workflow, with an optional verified anonymous one-click analysis and optional user-supplied paid APIs for long-term viewer profiles.
+Local-first livestream memory for Bilibili Live and YouTube Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
 
 ---
 
@@ -10,23 +10,25 @@ Local-first livestream memory for Bilibili Live and YouTube Live. No cloud, no A
 
 ### 这是什么
 
-LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。v0.13.0 把 AI 功能拆成三种入口：手动单场分析（不需要 API Key）、实验性匿名免费单场分析，以及用户自己配置的 API 模型；只有价格确认、能力验证通过的付费模型才能开启长期观众画像。手动路径不连接任何 AI 服务；所有路径都不要求开发者服务器或开发者提供的 API Key。
+LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。v0.13.1 起，AI 分析只有一个入口：选择直播、选择你配置的 API 模型、选择分析范围，点击「开始 AI 分析」。不再提供匿名免费 AI，也不再要求复制提示词或粘贴 JSON。
 
-### 现在能做什么（v0.13.0）
+### 现在能做什么（v0.13.1）
 
-- **单场报告与长期画像彻底分开**：单场分析只导出本场聊天、统计与时间线，不再要求 `viewer_profiles`、`viewer_memory_updates` 或每位观众的画像 JSON；手动包显著缩小，用户只导入一个整场报告。长期画像由独立任务执行，失败不会删除已完成的单场报告或已保存的画像批次。
-- **四种权限模式**：手动 AI（不需要 Key，仅单场）、匿名免费 AI（实验性，仅单场）、自带 Key 的免费模型（仅单场）、通过能力验证的付费模型（单场 + 长期画像）。免费模型绝不会因为配置了 Key 就解锁长期画像。
-- **多 Provider API**：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆版 / 国际版）、阿里云百炼（北京 / 新加坡 / 美国 / 中国香港）、OpenRouter、自定义 OpenAI-compatible。Anthropic 使用独立 Messages 适配器；其余使用 OpenAI Chat Completions 适配器。每个配置保存 provider/region/base URL、模型、价格状态、能力检测与默认标记。
-- **OpenRouter 原生接入**：官方 Base URL `https://openrouter.ai/api/v1`，通过官方 `/models` 动态获取模型、上下文长度、输入/输出价格与结构化能力；免费模型按官方 `pricing` 判定，不以是否需要 Key 判定。
-- **API Key 本机加密**：密钥写入现有 AES-256-GCM 本地凭据存储，不进入普通配置 JSON、日志、ZIP、数据库导出或 HTML。切换区域/Base URL 会轮换凭据引用并要求重新输入密钥。
-- **能力与费用保护**：能力检测分网络、认证、文本、JSON、单场分析、长期画像六层；长期画像额外检查身份 ref、证据引用、多观众覆盖、零发言观众与多语言。费用状态区分匿名免费、API 免费、付费、未知；付费/未知模型请求前必须确认，支持单任务预算上限与已知用量记录。长期画像只允许付费、价格已知且通过画像能力验证的模型。
-- **匿名免费 AI 仍保留**：OVHcloud `gpt-oss-20b` 仅做单场分析，定位实验性；不保证持续可用、可能限流/超时/格式错误，失败不会被视为整个分析系统失败，也不会因此自动调用付费模型。
-- **v0.12.1 可靠性成果保留**：稳定 ID / 证据 seq / 分批 / 定向补充 / 缺失观众检测 / 重复导入保护 / 事务导入 / 历史记忆版本 / 手动 gaps 修复指令全部保留；长期画像任务仍使用同一套严格验证器。
+- **单一 AI 分析入口**：五步完成——选择直播 → 选择 API 配置 → 选择内容（单场 / 长期画像 / 两者）→ 费用与预算确认 → 开始分析。单场报告与长期画像独立保存，画像失败不会删除已完成的单场报告。
+- **只保留自备 API Key**：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆版 / 国际版）、阿里云百炼（北京 / 新加坡 / 美国 / 中国香港）、OpenRouter、自定义 OpenAI-compatible。Anthropic 使用独立 Messages 适配器；其余使用 OpenAI Chat Completions。
+- **付费调度按 Provider 隔离**：每个配置独立并发（可配置 1–8，默认 3）；429 按 `Retry-After` 冷却，5xx/超时指数退避 + 抖动；没有虚构的统一 RPM/TPM，也没有匿名免费限速残留。
+- **大规模更快**：画像批次有界并发；1,000 观众 / 10,000 消息 Mock 测试 100 批、6.5 秒、覆盖 1,000/1,000（Mock，不是真实 API 验收）。
+- **API Key 本机加密**：密钥写入 AES-256-GCM 本地凭据存储，不进入普通配置 JSON、日志、ZIP、数据库导出或 HTML。切换区域/Base URL 会轮换凭据引用并要求重新输入密钥。
+- **能力与费用保护**：六层能力检测；长期画像只允许付费、价格已知、通过画像能力验证的模型，并需要显式 opt-in；付费/未知价格请求前必须确认；支持单任务预算上限与已知用量记录。
+- **请求统计**：总请求、完成、失败、当前并发、排队、模型耗时、排队/限流等待、429 次数、p50/p95、token、已知费用；有足够依据时显示预计剩余时间。
+- **旧结果仍可读**：历史分析报告、长期画像、旧 1.0–1.2.0 结果继续可读；手动/匿名入口删除不会删除已有数据。
+- **v0.12.1 可靠性成果保留**：稳定 ID / 证据 seq / 分批 / 定向补充 / 缺失观众检测 / 重复导入保护 / 事务导入 / 历史记忆版本全部保留。
+- **本地优先**：聊天、统计、画像保存在 `%LOCALAPPDATA%\LiveMemory\`；不经过开发者服务器，不发送遥测。
 
 ### 旧版本能力（继续保留）
 
 - **真实规模可靠性（v0.12.1）**：自动模式让模型只返回本地 `ref`，由程序映射回稳定观众 ID；使用 JSON Schema structured output、记录截断原因，缺少观众时只做一次定向补充。已用真实 52 位观众 / 99 条消息 / 6 批 + 汇总验证 `complete`、52/52 覆盖。手动导入失败时精确列出缺失/未知观众，并可复制修复指令；绝不自动改 ID。
-- **一键自动 AI 分析（v0.12.0）**：匿名免费接口的自动批次、校验、事务导入与失败恢复；v0.13 起限定为单场报告。
+- **一键自动 AI 分析（v0.12.0，历史；v0.13.1 已删除匿名入口）**：匿名免费接口的自动批次、校验、事务导入与失败恢复；v0.13.1 起只保留自备 API Key。
 
 - **一次 AI 分析，同时完成本场报告与长期记忆（v0.11.0）**：AI 分析中心导出的同一个任务里，自动包含本场聊天、**全部可识别观众**、每位观众在本场的完整发言摘录、已有长期画像与客观互动统计。用户只导出一次、交给 AI 一次、导入一次；导入时在同一事务里保存本场分析并增量合并长期记忆。**没有最低发言次数、最低活跃度或 Top N 门槛**：每场只说一句话的观众也会持续积累场次、首次/最近出现、累计发言、支持与语义记忆。
 - **客观互动历史与 AI 语义记忆分开**：首次/最近出现、参与场次、累计发言、支持等由软件根据真实记录确定性更新，AI 不能修改；兴趣、经历、状态变化等才由 AI 提供，并且必须有来源或明确标为推断/待确认。只有问候或礼物时，允许没有新语义记忆，但观众仍会被标记为「已处理」，互动历史继续累计。
@@ -53,7 +55,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **Bilibili 直播**：真实 WebSocket 弹幕、礼物、醒目留言、大航海、平台表情；扫码登录可选
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
-- **M6：完整 AI 文件往返**：选择直播 → 创建带提示词版本的分析任务 → 按消息边界自动分批导出 `.zip` → 复制三语提示词 → 交给任意 AI → 上传 JSON 或粘贴文本 → 预检查 → 确认导入 → 查看报告；手动流程不调用任何 AI API（自动流程见上）
+- **M6：AI 文件协议（历史）**：v0.13.1 已删除用户可见的“导出 ZIP / 复制提示词 / 粘贴 JSON”流程；内部包格式、严格 Schema、证据/身份/批次校验、事务导入与历史结果读取保留。
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用
 - **分批与汇总**：长直播拆成多批，乱序/重复/缺失批次可识别；全部分批导入后生成第二阶段汇总包，最终结果导入后任务才完成；部分结果不会被拼接成整场报告
 - **分析报告**：直播摘要、话题时间线、情绪变化、争论热点、值得回看的候选片段、观众画像、提示词/结果版本与来源；明确说明只分析聊天与事件，没有视频/音频
@@ -93,7 +95,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ### 尚未完成
 
-真实 AI 服务的文件往返样本（本轮只验证了符合 Schema 的合成结果）、可迁移备份（`.livememory`）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。统一长期记忆已用 300 位低活跃观众的合成数据验证覆盖，但真实千人大场与真实 AI 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
+真实付费 API 端到端样本（本机没有 Key，阻塞）、真实浏览器 UI 截图、可迁移备份（`.livememory`）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。统一长期记忆已用 300 位低活跃观众与 1,000 观众 Mock 规模验证覆盖，但真实千人大场与真实 Provider 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
 
 ### YouTube 接入说明
 
@@ -153,10 +155,11 @@ node scripts/build-windows.mjs
 
 ## 日本語
 
-LiveMemory は、配信のチャット・ギフト・スーパーチャット・ギャラリーを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。AI 分析は「AI 分析パッケージ出力 → 任意の AI サービスに手動で渡す → 結果を取り込む」方式に加え、確認後にだけ動く「自動 AI 分析」も選べます。クラウドや API キーは不要で、特定の AI ブランドにも依存しません。
+LiveMemory は、配信のチャット・ギフト・スーパーチャット・メンバーシップを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。v0.13.1 以降、AI 分析は**自分で設定した API キー**を使う 1 つの入口だけです。配信・モデル・分析範囲を選び、「AI 分析を開始」を押すと、ローカルプログラムが生成・検証・保存まで行います。匿名無料 AI、プロンプトのコピー、JSON の貼り付けはありません。
 
-- **ワンクリック自動 AI 分析（v0.12.0）**: AI 分析センターで配信を選び「自動 AI 分析」を押すと、タスク作成/復元、批次ごとの送信、JSON の検証、レポートと長期メモリの同一トランザクション取り込み、第 2 段階の統合まで自動で行います。ファイルのダウンロード/アップロードは不要です。現在は OVHcloud AI Endpoints の匿名 `gpt-oss-20b`（公式 2 リクエスト/分/IP/モデル）を使用し、初回は第三者の無料 AI にデータを送ることを明示して同意を求めます。失敗時はボタン直下に赤い案内を表示し、手動フローはそのまま使えます。
-- **実規模の信頼性（v0.12.1）**: 自動モードはモデルにローカル `ref` だけを返させ、安定した視聴者 ID はプログラムが割り当てます。JSON Schema structured output、打ち切りの記録、欠落視聴者への 1 回だけの限定補完を追加しました。実際の 52 視聴者 / 99 メッセージ / 6 批次 + 統合で `complete`、52/52 カバレッジを確認済みです。手動取り込みの失敗時は不足・不明な視聴者を正確に表示し、修正指示をコピーできます。ID を自動で書き換えることはありません。
+- **単一の AI 分析センター（v0.13.1）**: 配信を選択 → API 設定を選択 → 内容（単一配信／長期プロフィール／両方）→ 費用・予算の確認 → 開始。単一配信レポートと長期プロフィールは別々に保存され、プロフィール失敗でレポートは消えません。プロバイダーごとに独立した同時実行（1–8、既定 3）、429 は `Retry-After`、5xx/タイムアウトは指数バックオフ＋ジッター。匿名無料の 2 リクエスト/分制限はありません。
+- **実規模の信頼性（v0.12.1 の成果を継続）**: モデルにはローカル `ref` だけを返させ、安定した視聴者 ID はプログラムが割り当てます。JSON Schema structured output、打ち切りの記録、欠落視聴者への 1 回だけの限定補完を維持します。
+- **履歴（v0.12.0–v0.12.1）**: 匿名無料のワンクリック分析は v0.13.1 で削除しました。当時の調査は `docs/ANONYMOUS_AI_RESEARCH.md` に歴史資料として残しています。
 
 - **自動ライブ監視（v0.10.0）**: Bilibili の配信ルームまたは YouTube チャンネルを一度追加すると、アプリの実行中に配信開始を検出して自動で記録を開始し、終了を検出して保存したあと次の配信を待ちます。**監視タブは 1 回の配信ではなくルーム／チャンネルに対応し、配信が終わっても消えません**。次回は同じタブで新しい独立した記録が始まります。Bilibili は固定ルーム ID と低頻度の公開状態確認、YouTube は公開チャンネルの `/live` ページ（解析失敗時は RSS にフォールバック）を使い、**Google Data API / OAuth / API キー / Cookie は不要**です。待機中は読み取り専用の低頻度確認（Bilibili 約 1 分、YouTube 約 3 分、ジッターと指数バックオフ付き）のみを行い、ネットワーク切断を配信終了とは扱いません。監視の一時停止／再開、今すぐ確認、対象の削除ができ、対象を削除しても過去の配信記録は残ります
 - **1 回の AI 分析で配信レポートと長期メモリを同時更新（v0.11.0）**: AI 分析センターが書き出す 1 つのタスクに、今回のチャット、**識別可能な全視聴者**、各視聴者の今回の発言抜粋、既存の長期メモリと客観的な交流統計を含めます。ユーザーは 1 回書き出し、1 回 AI に渡し、1 回取り込むだけです。取り込み時は同じトランザクションで配信レポートを保存し、長期メモリを差分更新します。最低発言回数・最低活躍度・Top N の条件はなく、1 配信に 1 言だけの視聴者も配信数・初回/最近・発言数・支援・意味メモリを積み重ねます
@@ -188,9 +191,9 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 
 ## English
 
-LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. AI analysis supports a manual round trip (export an AI analysis package, give it to any AI service you choose, import the result) and an optional one-click automatic path that only calls a verified anonymous provider after you confirm. No cloud service, no API key, no vendor account.
+LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. All AI analysis uses **your own API key** and is called directly by the local program. There is no anonymous free AI, no manual prompt/JSON round trip, no cloud account and no developer server.
 
-Current build (v0.13.0) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI-package export. **M6 adds the complete manual AI round trip**: a versioned analysis task, automatic message-boundary batching, localized versioned prompts, JSON file or paste import, strict schema/session/task/batch/broadcaster/viewer/time/evidence validation, duplicate and explicit result versioning, a stage-2 aggregate package for long streams, and a traceable live analysis report. The manual path never calls an AI API; the optional automatic path only calls a verified anonymous provider after the user confirms. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v9). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. The launcher console defaults to English while the web UI keeps all three languages (`--lang` overrides the console only). Real-AI end-to-end samples and portable backup remain future work — see [docs/STATUS.md](docs/STATUS.md).
+Current build (v0.13.1) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a simulated recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI analysis. **v0.13.1 replaces the manual/anonymous AI entry points with one API-key analysis centre**: choose a broadcast, provider/model, scope, review price and budget, then start. Session and long-term memory jobs are saved separately; memory batches run with bounded concurrency; 429 respects `Retry-After`; retries use exponential backoff with jitter; request statistics separate model time from local queue and throttle waits. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v13). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. Real paid-provider verification remains blocked on this machine because no API key is configured; see [docs/STATUS.md](docs/STATUS.md) and [docs/AI_SCHEDULER_AUDIT.md](docs/AI_SCHEDULER_AUDIT.md).
 
 **M7 (v0.9.0) adds long-term viewer memory**: one memory per broadcaster × viewer, holding atomic facts with source session, quoted message, timestamp, certainty (stated / inferred / uncertain) and status (current / possibly outdated / contradicted / superseded / needs confirmation). A state change such as "preparing for an exam" → "the exam is over" is stored as a supersede with history instead of overwriting. Updates can be merged locally from an already-imported session analysis (no AI at all) or through a versioned memory update package (`livememory-memory-update-v1`) that any AI can answer; the app validates viewer ids, quoted messages, target facts and schema before showing the exact per-viewer diff, then applies it as a new version in one transaction. Re-importing the same answer changes nothing, every update can be rolled back, a human can confirm or forget a single fact, and deleting one viewer's memory blocks older packages from restoring it. Viewer profiles now have Overview / Long-term memory / Interaction history / Versions tabs, and a Memory workspace walks through the whole round trip.
 
@@ -198,9 +201,9 @@ Current build (v0.13.0) delivers the Windows administrator-manifest launcher, tr
 
 **v0.11.1 fixes the viewer-detail broadcaster scope**: the picker now lists only the broadcasters that viewer actually interacted with (chat, gifts, SC, memberships and other identifiable events), never the global broadcaster list. Same-name viewers on different platforms or stable IDs stay separate. A single related broadcaster is shown read-only instead of a one-option dropdown, and a viewer with no related broadcaster gets an explicit empty state rather than falling back to all channels.
 
-**v0.12.0 adds one-click automatic AI analysis**: choose a broadcast in the AI analysis centre and press "Automatic AI analysis". The app creates or resumes a normal analysis task, sends each package batch to a verified anonymous provider, validates the answer with the same strict schema/business rules, imports the report and viewer memory in one transaction, builds the stage-2 aggregate, and refreshes the report. No ZIP or JSON handling is required from the user. The first use asks for explicit consent to send the current broadcast's chat and related viewer memory to a third-party free service. The current provider is OVHcloud AI Endpoints `gpt-oss-20b` (anonymous, documented 2 requests/minute/IP/model); there is deliberately no fallback to a provider that has not passed a real LiveMemory package. If it fails, the exact red message appears under the button, the technical reason is collapsed, and the complete manual round trip remains available. See [docs/ANONYMOUS_AI_RESEARCH.md](docs/ANONYMOUS_AI_RESEARCH.md).
+**v0.12.0–v0.12.1 (historical) added one-click anonymous AI analysis**. That entry point has been removed in v0.13.1; its reliability work survives in the automatic path: the model returns only compact refs, the local program maps them to stable viewer ids, JSON Schema structured output and truncation detection are enforced, missing viewers trigger one bounded targeted supplement, and every answer goes through the same strict validator and transaction importer. See [docs/ANONYMOUS_AI_RESEARCH.md](docs/ANONYMOUS_AI_RESEARCH.md) for the historical anonymous-provider research.
 
-**v0.13.0 separates the session report from long-term viewer profiles**. Manual AI is now a single-session package with no viewer-memory blobs and no `viewer_profiles` requirement. Anonymous and API-key free models are limited to session reports. A paid model that passes a dedicated capability test can opt in to long-term viewer memory; it receives compact refs, never copies stable viewer ids, and every batch is validated and imported independently. Providers include OpenAI, Anthropic, DeepSeek, MiniMax (CN/international), Alibaba Cloud Model Studio (four regions), OpenRouter and custom OpenAI-compatible endpoints. API keys are encrypted locally, region changes rotate credentials, custom URLs are checked for private/metadata targets, and paid/unknown models require explicit billing confirmation plus a per-task budget. Session reports and memory jobs are saved separately: a memory failure never invalidates a completed report. OpenRouter model discovery was really exercised (469 models, 15 free, 396 declaring structured output); other paid providers remain unverified without keys.
+**v0.13.0 separated the session report from long-term viewer profiles**. v0.13.1 keeps that split and removes the manual/anonymous entry points: a paid model that passes the dedicated capability test can opt in to long-term viewer memory; it receives compact refs, never copies stable viewer ids, and every batch is validated and imported independently. Providers include OpenAI, Anthropic, DeepSeek, MiniMax (CN/international), Alibaba Cloud Model Studio (four regions), OpenRouter and custom OpenAI-compatible endpoints. API keys are encrypted locally, region changes rotate credentials, custom URLs are checked for private/metadata targets, and paid/unknown models require explicit billing confirmation plus a per-task budget. Session reports and memory jobs are saved separately; memory batches use bounded concurrency; 429 respects `Retry-After`; retries use exponential backoff with jitter. A real paid-provider run is still blocked on this machine because no key is configured; Mock scale tests and the audit are in [docs/AI_SCHEDULER_AUDIT.md](docs/AI_SCHEDULER_AUDIT.md).
 
 **v0.12.1 fixes the real first-use failures**: automatic batches now ask the model only for a local `ref` plus semantic content; the app maps each ref to the exact stable viewer id, so the model never copies, invents or merges identities. Requests use JSON Schema structured output, record `finish_reason`, and report truncation or repetition separately. Missing viewers trigger one bounded targeted supplement; if they are still missing the run fails instead of pretending they had no information. A real 52-viewer / 99-message / 6-batch run completed with 52/52 coverage. Manual imports now expose `missing` / `unknown` / `duplicate` viewer gaps with nicknames and a copyable repair instruction; ids are never silently rewritten. The manual prompt also lost a self-contradictory "do not output viewer identity" rule that was present in all three languages.
 

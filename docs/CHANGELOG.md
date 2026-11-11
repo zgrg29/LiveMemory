@@ -1,5 +1,38 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.1 — 2026-11-11（移除匿名/手动 AI，重写付费调度）
+
+### 删除
+
+- 匿名免费 AI：`src/ai/auto/`、OVH Provider、2 请求/分钟滑动窗口、免费冷却、自动切换、健康探测、`/api/ai/auto/*`、UI 免费入口与价格状态。
+- 手动 AI：创建分析包、复制提示词、下载分析 ZIP、粘贴/上传 JSON、手动导入预览/确认、汇总包按钮、修复指令 UI；对应 HTTP 写路由删除。
+- `PRICING_STATUS.ANONYMOUS_FREE` 与 `MAX_AUTO_BATCHES=30`。
+
+### 新增
+
+- 单一五步 AI 分析中心：选择直播 → API 配置 → 内容 → 费用/预算 → 开始分析。
+- `src/ai/runtime/scheduler.mjs`：按 `configId` 隔离的调度器；可配置初始并发 1–8（默认 3），429 时并发减半并遵守 `Retry-After`（上限 300 秒），成功 6 次后恢复。
+- 指数退避 + 50–100% 抖动；5xx/408/425 可重试；400/401/403/404 不重试。
+- 画像批次有界并发；批次上限改为 `ceil(MAX_ANALYSIS_VIEWERS / 10) + 1`。
+- 同一主播跨场次记忆顺序 gate（`ANALYSIS_MEMORY_OUT_OF_ORDER`）。
+- 请求统计：总数/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA。
+- 设置页初始并发数；三语 `ai.center.*` 文案。
+- `docs/AI_SCHEDULER_AUDIT.md`、`scripts/benchmark-mock-scale.mjs`。
+
+### 修复
+
+- 大 job 的 `ANALYSIS_PACKAGE_MISSING`：`listPackages` 默认 50 条；新增 `getJobPackage()` 精确查询。
+- 每批导入重扫全部 session 观众造成 O(批次×观众) 阻塞：只更新本批观众。
+- 每批重复 DNS 安全检查：按 Base URL 缓存 5 分钟。
+- 付费路径 429 未使用 `Retry-After`、固定 1.2/2.4s 等待、完全串行、30 批上限。
+
+### 测试
+
+- 全量 **519 passed / 0 failed**。
+- Mock：1,000 观众 / 10,000 消息 → 100 批、100 请求、峰值并发 6、6,491ms、15.41 req/s、覆盖 1,000/1,000。
+- 真实付费 API：**阻塞**（本机无 Provider 配置/密钥/环境变量）；未伪造。
+- EXE：已构建 v0.13.1（91.4 MB / 161 assets / requireAdministrator），未运行（UAC 拒绝）。
+
 ## 0.13.0 — 2026-11-11（单场/画像解耦 + 多 Provider + 付费画像）
 
 ### 新增

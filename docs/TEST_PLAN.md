@@ -7,8 +7,8 @@
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 导入/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
-| 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；M6 AI 导出/分批/导入/汇总/报告 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
+| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
+| 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；AI 单入口与报告只读 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
 | 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
 | 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
 
@@ -740,7 +740,9 @@ duration ≈ 25.0s
 - 1000+ 观众真实免费接口的耗时与限流；本轮未做高频压力测试。
 - 新 `session.duration_seconds` 规则的真实汇总效果（未重新跑新包汇总）。
 
-## 26. v0.13.0 单场/画像拆分与多 Provider
+## 26. v0.13.0 单场/画像拆分与多 Provider（历史；v0.13.1 已移除手动/匿名入口）
+
+> v0.13.1 删除匿名免费与手动 JSON 入口；下列 26.1 的“手动/匿名”用例作为历史记录保留，当前实现见 §27。
 
 ### 26.1 权限
 
@@ -770,3 +772,49 @@ duration ≈ 25.0s
 - 三语字典键一致、无空值/占位符不一致。
 - AI 页面无 `innerHTML`；Provider 设置卡无明文 Key 回显。
 - 未在真实浏览器验收；EXE 未重建。
+## 27. v0.13.1 单一 AI 入口与付费调度
+
+### 27.1 审计与调度
+
+- `tests/unit/ai-scheduler.test.mjs`：
+  - 9 个 15ms 任务 / 并发 3：峰值 3，总耗时 <1s（证明没有旧 2 RPM 等待）。
+  - 429：并发从 4 降到 2；另一个 Provider key 不受影响；该 key 等待 Retry-After。
+  - 取消：排队请求与运行中任务都拒绝 `ANALYSIS_CANCELED`。
+  - `retryDelayMs`：Retry-After 优先，指数退避 + 抖动边界。
+- `tests/integration/v13-scheduler.test.mjs`：
+  - 付费 Provider 首次 429 + `Retry-After: 0` → 第二次成功；`rateLimited=1`、请求数=2。
+  - 30 观众 / 3 批 / 并发 3：峰值并发≥2 且≤3，覆盖 30/30。
+  - 失败批次恢复：只重发失败批次，已导入批次不重复；4 次请求完成。
+  - 跨场次顺序：较新场次已写入后，较旧场次失败 `ANALYSIS_MEMORY_OUT_OF_ORDER`。
+- 大 job 包查询：`getJobPackage()` 精确查询，避免 `listPackages` 50 条上限导致 `ANALYSIS_PACKAGE_MISSING`。
+
+### 27.2 Mock 性能
+
+`node scripts/benchmark-mock-scale.mjs 1000 10000 6`：
+
+- 100 批 / 100 请求 / 峰值并发 6；
+- 总耗时 **6,491ms**，吞吐 **15.41 req/s**，覆盖 **1,000/1,000**；
+- 平均模型耗时 254ms、p50 246ms、p95 354ms；排队/限流等待 0ms；堆增长 56.03MB。
+- 对照：100 观众 / 1,000 消息：10 批 / 591ms / 16.92 req/s / 4.83MB。
+
+### 27.3 入口删除
+
+- `tests/unit/ai-ui.test.mjs`：AI 页面只调用 `/api/ai/analyze/*` 与报告；无 file input、textarea、`/api/ai/import`、`/api/ai/instructions`、`/api/ai/auto/*`；无 `methodSelect`；无 `alert()`。
+- `routes.mjs` 断言：保留 analyze/report/result 路由；删除 auto/import/instructions/packages 写路由。
+- `tests/integration/ai-api.test.mjs`：不再通过手动 HTTP 路由创建/导入；直接用 `createAnalysisJob`、`validateAnalysisImport`、`importAnalysisResult` 覆盖校验、版本、汇总、报告、结果下载与删除后失败。
+- `v13-session-split` 改为直接模块调用；匿名 memory 请求现在返回 `AI_PROVIDER_CONFIG_REQUIRED`。
+- `api.test` / `youtube-anonymous-session` 的包构建改为内部 `buildAnalysisPackage`。
+
+### 27.4 全量结果
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`：
+  **519 passed / 0 failed**（约 77 秒，2026-11-11）。
+- 删除的旧测试：匿名/手动路径（`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`）。
+- 未做：真实付费 API、真实浏览器、EXE 运行；见 §28。
+
+## 28. v0.13.1 未验证
+
+- 真实付费 API：本机无 Provider 配置/密钥/环境变量，**阻塞**。
+- 真实浏览器 UI、暗色、390px、请求统计、暂停/取消、五步布局。
+- EXE 运行（已构建 v0.13.1，UAC 拒绝）。
+- 真实 Provider 429/Retry-After、1,000 观众、费用与延迟。

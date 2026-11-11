@@ -580,3 +580,11 @@ paused（用户暂停；正在进行的 recording 不受影响）
 - 旧 `combined` 行继续按旧逻辑读取；不要用迁移把它们改成 session/memory。
 - session 任务结果不触发 `applyMemorySideEffects`；memory 任务结果不能作为单场报告。
 - 删除场次仍级联删除 ai_jobs/ai_results；provider 配置与密钥独立于场次。
+
+## 14. v0.13.1 无 schema 变化
+
+- Schema 仍为 **13**；v0.13.1 不新增迁移。
+- 删除的是匿名/手动入口与调度模块，不删除表、不重写历史结果。
+- 大 job 的 package 读取改为 `getJobPackage(job_id, stage, batch_index)` 精确查询；`ai_packages` 表结构不变。
+- 画像批次上限不再依赖 `MAX_AUTO_BATCHES=30`；实际安全边界仍是 `MAX_ANALYSIS_VIEWERS=20000`，超出明确失败。
+- 请求统计只保存在 `runtime/ai-v13.json` 与内存，不写入数据库；不包含提示词、聊天正文或模型回答。

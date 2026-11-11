@@ -5,65 +5,51 @@ import {
   clear,
   el,
   emptyState,
-  formatBytes,
   formatDateTime,
   formatInteger,
   pageHead
 } from '../ui.js';
 import {platformLabel} from './shared.js';
 import {renderAnalysisReport} from './ai-report.js';
-import {buildRepairInstruction, importGapSummary} from './ai-import-repair.js';
 
 /**
- * AI analysis centre: a manual, provider-neutral file round trip plus the
- * optional automatic free route.
+ * AI analysis centre (v0.13.1).
  *
- * 1. choose a recorded broadcast and create a versioned task;
- * 2. download one package per batch and copy the matching prompt;
- * 3. analyse with any AI service (or let the automatic route call one verified
- *    anonymous provider after explicit consent);
- * 4. paste/select the JSON answer, validate it against the real database, and
- *    import it in one transaction;
- * 5. read the report, which is always labelled as AI output.
+ * One flow only:
+ *   1. choose a recorded broadcast;
+ *   2. choose a configured API provider/model;
+ *   3. choose the analysis scope;
+ *   4. review price, task size and budget;
+ *   5. click "Start AI analysis".
  *
- * The page stays usable with a keyboard and plain HTML: no innerHTML, no JSON
- * executed, and a failed validation is shown as field → reason → fix.
+ * The local program creates the internal packages, calls the provider, validates
+ * the answer, imports it in one transaction and saves the report. There is no
+ * anonymous free route, no prompt copying and no JSON paste/upload UI.
  */
 
-const MAX_IMPORT_MB = 8;
-const STATUS_TONES = {
-  awaiting_import: 'warn',
-  partial: 'warn',
-  awaiting_aggregate: 'warn',
-  invalid: 'warn',
-  complete: 'accent'
-};
+const CONSENT_KEY = 'livememory.aiConsent.v1';
+const TERMINAL = new Set(['complete', 'partial', 'failed', 'canceled', 'interrupted']);
 
-function jobStatusChip(ctx, job) {
-  const state = job.status?.state ?? 'awaiting_import';
-  return chip(ctx.t(`ai.job.status.${state}`), STATUS_TONES[state] ?? 'neutral');
+function field(label, control, hint = null) {
+  return el('div', {className: 'field'},
+    el('label', {className: 'label', text: label}),
+    control,
+    hint ? el('div', {className: 'small tertiary', text: hint}) : null);
 }
 
-function coverageText(ctx, job) {
-  return ctx.t('ai.jobs.batches', {
-    done: formatInteger(job.status?.batchesImported ?? 0, ctx.locale),
-    total: formatInteger(job.batchTotal, ctx.locale)
-  });
+function stepCard(index, title, desc) {
+  return el('div', {className: 'step-card'},
+    el('span', {className: 'step-index', text: String(index)}),
+    el('div', {className: 'step-title', text: title}),
+    el('div', {className: 'step-desc', text: desc}));
 }
 
-function versionsText(versions) {
-  const entries = Object.entries(versions ?? {});
-  if (entries.length === 0) return '—';
-  return entries.map(([scope, list]) => {
-    const label = scope === 'final' ? 'final' : scope.replace('batch:', 'B');
-    return `${label} v${(list ?? []).join(',')}`;
-  }).join(' · ');
-}
-
-async function confirmDialog(ctx, {title, body, confirmLabel}) {
+function consentDialog(ctx) {
   return new Promise((resolve) => {
-    const modal = createModal({title, t: ctx.t});
-    modal.body.append(el('p', {className: 'modal-desc', text: body}));
+    const modal = createModal({title: ctx.t('ai.center.consentTitle'), t: ctx.t});
+    modal.body.append(
+      el('p', {className: 'modal-desc', text: ctx.t('ai.center.consentBody')}),
+      el('p', {className: 'small tertiary', text: ctx.t('ai.center.consentHint')}));
     const cancel = el('button', {
       className: 'button button--ghost',
       type: 'button',
@@ -76,7 +62,7 @@ async function confirmDialog(ctx, {title, body, confirmLabel}) {
     const ok = el('button', {
       className: 'button button--primary',
       type: 'button',
-      text: confirmLabel,
+      text: ctx.t('ai.center.consentContinue'),
       onClick: () => {
         modal.close();
         resolve(true);
@@ -87,22 +73,75 @@ async function confirmDialog(ctx, {title, body, confirmLabel}) {
   });
 }
 
-function field(label, control) {
-  return el('div', {className: 'field'},
-    el('label', {className: 'label', text: label}),
-    control);
+function consentGranted() {
+  try {
+    return window.localStorage.getItem(CONSENT_KEY) === 'granted';
+  } catch {
+    return false;
+  }
 }
 
-function defRow(key, value) {
-  return el('div', {className: 'def-row'},
-    el('span', {className: 'def-key', text: key}),
-    el('span', {className: 'def-value', text: value}));
+function rememberConsent() {
+  try {
+    window.localStorage.setItem(CONSENT_KEY, 'granted');
+  } catch {
+    // Private mode / disabled storage: ask again next time.
+  }
+}
+
+function priceText(ctx, config) {
+  if (!config) return ctx.t('ai.v13.price.unknown');
+  if (config.pricingStatus === 'api_free') return ctx.t('ai.v13.price.free');
+  if (config.pricingStatus === 'paid' && config.pricing) {
+    return ctx.t('ai.v13.price.paidValue', {
+      input: String(config.pricing.inputPerMillion),
+      output: String(config.pricing.outputPerMillion),
+      currency: config.pricing.currency
+    });
+  }
+  return ctx.t('ai.v13.price.unknown');
+}
+
+function configLine(config) {
+  if (!config) return '—';
+  return `${config.providerId} / ${config.regionId} / ${config.modelId || '—'}`;
+}
+
+function memoryAllowed(config) {
+  return Boolean(config
+    && config.pricingStatus === 'paid'
+    && config.pricing
+    && config.capabilities?.session
+    && config.capabilities?.memory);
+}
+
+function viewersPerBatch(config) {
+  const context = Number(config?.contextLength ?? 0);
+  if (context >= 200000) return 20;
+  if (context >= 100000) return 15;
+  return 10;
+}
+
+function estimatedRequests(config, scope, session) {
+  const viewers = Math.max(0, Number(session?.uniqueViewerCount ?? 0));
+  const sessionRequests = scope === 'memory' ? 0 : 1;
+  if (scope === 'session') return sessionRequests;
+  const memoryRequests = Math.max(1, Math.ceil(viewers / viewersPerBatch(config)));
+  return sessionRequests + memoryRequests;
+}
+
+function mmss(ms) {
+  if (!Number.isFinite(Number(ms)) || Number(ms) < 0) return null;
+  const total = Math.round(Number(ms) / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
 }
 
 export const aiPage = {
   titleKey: 'ai.pageTitle',
 
-  async render(container, ctx, params, query) {
+  async render(container, ctx) {
     const t = ctx.t;
     const sessionsPayload = await api.get('/api/sessions?limit=100&includeArchived=1');
     const sessions = sessionsPayload.sessions ?? [];
@@ -110,42 +149,11 @@ export const aiPage = {
     try {
       providerData = await api.get('/api/ai/providers');
     } catch {
-      // The manual path works even when provider configuration is unavailable.
+      // The page still explains that a provider is required.
     }
-    const providers = providerData.providers ?? [];
     const providerConfigs = providerData.configs ?? [];
-    const requested = query?.get('session');
-    let selectedId = requested && sessions.some((session) => session.id === requested)
-      ? requested
-      : (sessions[0]?.id ?? null);
-    let locale = ctx.locale;
-    let jobs = [];
-    let activeJobId = null;
-    let promptChoice = '1';
-    let promptText = '';
-    let promptMeta = null;
-    let report = null;
-    let preview = null;
-    let previewText = '';
-    let previewSource = 'paste';
-    let fileState = null;
-    let busy = false;
-    let justCreated = false;
-    let autoStatus = null;
-    let autoTimer = null;
-    let autoRunning = false;
-    let autoRefreshedFor = null;
-    let runMethod = providerConfigs.length > 0 ? 'api' : 'manual';
-    let runScope = 'session';
-    let autoPaused = false;
 
     container.append(pageHead({title: t('ai.pageTitle'), subtitle: t('ai.pageSubtitle')}));
-
-    const steps = el('div', {className: 'steps'},
-      stepCard('1', t('ai.steps.exportTitle'), t('ai.steps.exportDesc'), 'active'),
-      stepCard('2', t('ai.steps.promptTitle'), t('ai.steps.promptDesc'), 'next'),
-      stepCard('3', t('ai.steps.importTitle'), t('ai.steps.importDesc'), 'next'));
-    container.append(steps);
 
     if (sessions.length === 0) {
       container.append(el('div', {className: 'card card--padded'},
@@ -162,28 +170,42 @@ export const aiPage = {
       return undefined;
     }
 
-    /* --------------------------------------------------------------- setup */
+    container.append(el('div', {className: 'steps'},
+      stepCard(1, t('ai.center.stepSession'), t('ai.center.stepSessionDesc')),
+      stepCard(2, t('ai.center.stepConfig'), t('ai.center.stepConfigDesc')),
+      stepCard(3, t('ai.center.stepScope'), t('ai.center.stepScopeDesc')),
+      stepCard(4, t('ai.center.stepCost'), t('ai.center.stepCostDesc')),
+      stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
-    const sessionSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.setup.sessionLabel')}},
+    let selectedId = sessions[0]?.id ?? null;
+    let locale = ctx.locale;
+    let runScope = 'session';
+    let status = null;
+    let timer = null;
+    let busy = false;
+
+    const sessionSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.sessionLabel')}},
       sessions.map((session) => el('option', {
         value: session.id,
         text: `${session.roomTitle || platformLabel(session.platform, t)} · ${formatDateTime(session.startedAt, ctx.locale)}`
       })));
     sessionSelect.value = selectedId;
 
-    const languageSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.setup.languageLabel')}},
+    const languageSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.languageLabel')}},
       el('option', {value: 'zh-CN', text: t('settings.language.zh')}),
       el('option', {value: 'ja', text: t('settings.language.ja')}),
       el('option', {value: 'en', text: t('settings.language.en')}));
     languageSelect.value = locale;
 
-    const methodSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.method.label')}},
-      el('option', {value: 'manual', text: t('ai.v13.method.manual')}),
-      el('option', {value: 'anonymous', text: t('ai.v13.method.anonymous')}),
-      el('option', {value: 'api', text: t('ai.v13.method.api')}));
-    methodSelect.value = runMethod;
-    const scopeSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.scope.label')}});
-    const configSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.config.label')}});
+    const configSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.configLabel')}},
+      providerConfigs.map((config) => el('option', {
+        value: config.id,
+        text: `${config.name} · ${config.modelId || '—'}`
+      })));
+    const defaultConfig = providerConfigs.find((config) => config.isDefault) ?? providerConfigs[0];
+    if (defaultConfig) configSelect.value = defaultConfig.id;
+
+    const scopeSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.scopeLabel')}});
     const budgetInput = el('input', {
       className: 'input input--compact',
       type: 'number',
@@ -191,9 +213,10 @@ export const aiPage = {
     });
     const confirmBilling = el('input', {type: 'checkbox'});
     const optInMemory = el('input', {type: 'checkbox'});
-    const pricingHint = el('div', {className: 'small tertiary'});
-    const configHint = el('div', {className: 'small tertiary'});
-    const memoryLockedHint = el('div', {className: 'callout callout--neutral', hidden: true});
+    const configSummary = el('div', {className: 'small tertiary'});
+    const pricingSummary = el('div', {className: 'small tertiary'});
+    const scaleSummary = el('div', {className: 'def-list'});
+    const scopeHint = el('div', {className: 'callout callout--neutral', hidden: true});
     const billingRow = el('label', {className: 'choice'},
       confirmBilling,
       el('div', {className: 'choice-text'},
@@ -204,237 +227,107 @@ export const aiPage = {
       el('div', {className: 'choice-text'},
         el('div', {className: 'choice-title', text: t('ai.v13.memory.optIn')}),
         el('div', {className: 'choice-desc', text: t('ai.v13.memory.optInHint')})));
-    const configLink = el('button', {
+    const settingsLink = el('button', {
       className: 'button button--ghost button--small',
       type: 'button',
-      text: t('ai.v13.config.openSettings'),
+      text: t('ai.center.openSettings'),
       onClick: () => ctx.navigate('/settings')
     });
+    const noConfig = el('div', {className: 'callout callout--warn', hidden: providerConfigs.length > 0},
+      t('ai.center.noConfig'));
 
-    const createButton = el('button', {
+    const startButton = el('button', {
       className: 'button button--primary',
       type: 'button',
-      text: t('ai.setup.create')
+      text: t('ai.center.start')
     });
-    const createResult = el('div', {className: 'stack stack--tight'});
 
-    /* ------------------------------------------------------------ automatic */
+    const setupCard = el('section', {className: 'card'},
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('ai.center.setupTitle')}),
+        chip(t('ai.center.badge'), 'accent')),
+      el('div', {className: 'card-body'},
+        el('div', {className: 'grid-2-equal'},
+          field(t('ai.center.sessionLabel'), sessionSelect),
+          field(t('ai.center.languageLabel'), languageSelect)),
+        el('div', {className: 'grid-2-equal'},
+          field(t('ai.center.configLabel'), configSelect),
+          el('div', {className: 'field'},
+            el('button', {
+              className: 'button button--secondary',
+              type: 'button',
+              text: t('ai.center.openSettings'),
+              onClick: () => ctx.navigate('/settings')
+            }))),
+        configSummary,
+        pricingSummary,
+        noConfig,
+        field(t('ai.center.scopeLabel'), scopeSelect),
+        scopeHint,
+        el('div', {className: 'grid-2-equal'},
+          field(t('ai.v13.budget.label'), budgetInput, t('ai.v13.budget.hint')),
+          el('div', {className: 'stack stack--tight'}, billingRow, memoryOptRow)),
+        el('div', {className: 'divider'}),
+        el('div', {className: 'small tertiary', text: t('ai.center.scaleTitle')}),
+        scaleSummary,
+        el('div', {className: 'inline', style: {marginTop: '14px'}},
+          startButton,
+          settingsLink)));
 
-    const autoButton = el('button', {
-      className: 'button button--primary',
-      type: 'button',
-      text: t('ai.auto.button')
-    });
-    const autoCancelButton = el('button', {
-      className: 'button button--ghost button--small',
-      type: 'button',
-      text: t('ai.auto.cancel'),
-      hidden: true
-    });
-    const autoPauseButton = el('button', {
+    const statusCard = el('section', {className: 'card', hidden: true},
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('ai.center.statusTitle')}),
+        el('div', {className: 'inline'},
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('ai.v13.run.refresh'),
+            onClick: () => refreshStatus()
+          }))),
+      el('div', {className: 'card-body'}));
+    const statusText = el('div', {className: 'auto-status', attrs: {role: 'status', 'aria-live': 'polite'}});
+    const progressText = el('div', {className: 'small tertiary'});
+    const statsHost = el('div', {className: 'def-list'});
+    const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
+    const errorDetailsText = el('div', {className: 'small tertiary'});
+    const errorDetails = el('details', {className: 'auto-details', hidden: true},
+      el('summary', {text: t('ai.center.errorDetails')}),
+      errorDetailsText);
+    const pauseButton = el('button', {
       className: 'button button--ghost button--small',
       type: 'button',
       text: t('ai.v13.run.pause'),
       hidden: true
     });
-    const autoRefreshButton = el('button', {
+    const cancelButton = el('button', {
       className: 'button button--ghost button--small',
       type: 'button',
-      text: t('ai.v13.run.refresh')
-    });
-    const autoStatusText = el('div', {
-      className: 'auto-status',
-      attrs: {role: 'status', 'aria-live': 'polite'}
-    });
-    const autoError = el('div', {
-      className: 'auto-error',
-      attrs: {role: 'alert'},
+      text: t('ai.center.cancel'),
       hidden: true
     });
-    const autoDetailsText = el('div', {className: 'small tertiary'});
-    const autoDetails = el('details', {className: 'auto-details', hidden: true},
-      el('summary', {text: t('ai.auto.details')}),
-      autoDetailsText);
-    const autoPanel = el('section', {className: 'auto-panel', attrs: {'aria-label': t('ai.v13.run.title')}},
-      el('div', {className: 'auto-panel-head'},
-        el('div', {},
-          el('div', {className: 'auto-panel-title', text: t('ai.v13.run.title')}),
-          el('div', {className: 'small tertiary', text: t('ai.v13.run.body')})),
-        chip(t('ai.v13.run.badge'), 'accent')),
-      el('div', {className: 'grid-2-equal'},
-        field(t('ai.v13.scope.label'), scopeSelect),
-        field(t('ai.v13.config.label'), configSelect)),
-      el('div', {className: 'inline'}, configLink),
-      configHint,
-      pricingHint,
-      memoryLockedHint,
-      el('div', {className: 'grid-2-equal'},
-        field(t('ai.v13.budget.label'), budgetInput, t('ai.v13.budget.hint')),
-        el('div', {className: 'stack stack--tight'},
-          billingRow,
-          memoryOptRow)),
-      el('div', {className: 'auto-actions'}, autoButton, autoRefreshButton, autoPauseButton, autoCancelButton),
-      autoError,
-      autoStatusText,
-      autoDetails);
-
-    const setupCard = el('section', {className: 'card'},
-      el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('ai.setup.title')})),
-      el('div', {className: 'card-body'},
-        el('div', {className: 'grid-2-equal'},
-          field(t('ai.setup.sessionLabel'), sessionSelect),
-          field(t('ai.setup.languageLabel'), languageSelect)),
-        field(t('ai.v13.method.label'), methodSelect),
-        autoPanel,
-        el('div', {className: 'auto-divider'},
-          el('span', {text: t('ai.auto.manualDivider')})),
-        el('div', {style: {marginTop: '14px'}}, createButton),
-        el('div', {className: 'small tertiary', style: {marginTop: '10px'}}, t('ai.setup.note')),
-        createResult));
-
-    /* -------------------------------------------------------------- prompt */
-
-    const promptSelect = el('select', {className: 'select select--compact', attrs: {'aria-label': t('ai.prompt.title')}});
-    const promptMetaEl = el('span', {className: 'small tertiary'});
-    const promptBox = el('pre', {className: 'prompt-box', attrs: {tabindex: '0'}}, t('ai.prompt.loading'));
-    const promptDetails = el('details', {className: 'prompt-details'},
-      el('summary', {className: 'link-button', text: t('ai.prompt.showFull')}),
-      promptBox);
-    const copyButton = el('button', {
-      className: 'button button--secondary button--small',
-      type: 'button',
-      text: t('ai.prompt.copy'),
-      disabled: true
-    });
-    const promptCard = el('section', {className: 'card'},
-      el('div', {className: 'card-head'},
-        el('div', {className: 'card-title', text: t('ai.prompt.title')}),
-        el('div', {className: 'inline'}, promptMetaEl, copyButton)),
-      el('div', {className: 'card-body'},
-        el('div', {className: 'field'}, promptSelect),
-        promptDetails,
-        el('div', {className: 'small tertiary', style: {marginTop: '8px'}}, t('ai.prompt.hint'))));
-
-    /* -------------------------------------------------------------- import */
-
-    const fileInput = el('input', {
-      type: 'file',
-      accept: '.json,application/json',
-      attrs: {'aria-label': t('ai.import.fileLabel')},
-      style: {display: 'none'}
-    });
-    const fileButton = el('button', {
-      className: 'button button--secondary',
-      type: 'button',
-      text: t('ai.import.chooseFile'),
-      onClick: () => fileInput.click()
-    });
-    const fileInfo = el('div', {className: 'small tertiary'});
-    const importText = el('textarea', {
-      className: 'input import-textarea',
-      attrs: {
-        'aria-label': t('ai.import.pasteLabel'),
-        rows: '8',
-        spellcheck: 'false',
-        placeholder: t('ai.import.pastePlaceholder')
-      }
-    });
-    const validateButton = el('button', {
-      className: 'button button--primary',
-      type: 'button',
-      text: t('ai.import.validate')
-    });
-    const clearImportButton = el('button', {
-      className: 'button button--ghost',
-      type: 'button',
-      text: t('ai.import.clear'),
-      onClick: () => {
-        importText.value = '';
-        fileState = null;
-        preview = null;
-        fileInfo.textContent = '';
-        renderPreview();
-      }
-    });
-    const previewHost = el('div', {className: 'import-preview'});
-    const importCard = el('section', {className: 'card'},
-      el('div', {className: 'card-head'},
-        el('div', {className: 'card-title', text: t('ai.import.title')}),
-        chip(t('ai.report.aiBadge'), 'accent')),
-      el('div', {className: 'card-body'},
-        el('div', {className: 'small tertiary', text: t('ai.import.body')}),
-        el('div', {className: 'import-source-row', style: {marginTop: '12px'}},
-          fileButton,
-          fileInput,
-          fileInfo),
-        el('div', {className: 'field', style: {marginTop: '12px'}},
-          el('label', {className: 'label', text: t('ai.import.pasteLabel')}),
-          importText),
-        el('div', {className: 'inline', style: {marginTop: '12px'}},
-          validateButton,
-          clearImportButton,
-          el('span', {className: 'small tertiary', text: t('ai.import.pasteHint', {limit: MAX_IMPORT_MB})})),
-        previewHost));
-
-    /* ---------------------------------------------------------------- jobs */
-
-    const jobsHost = el('div', {className: 'card-body'});
-    const jobsCard = el('section', {className: 'card'},
-      el('div', {className: 'card-head'},
-        el('div', {className: 'card-title', text: t('ai.jobs.title')}),
-        el('div', {className: 'card-hint', text: 'livememory-analysis-v1'})),
-      jobsHost);
+    statusCard.querySelector('.card-body').append(
+      statusText,
+      progressText,
+      statsHost,
+      el('div', {className: 'inline', style: {marginTop: '10px'}}, pauseButton, cancelButton),
+      errorText,
+      errorDetails);
 
     const reportHost = el('div', {className: 'report-host'});
+    container.append(setupCard, el('div', {style: {marginTop: '16px'}}, statusCard), reportHost);
 
-    container.append(
-      el('div', {className: 'grid-2-equal'}, setupCard, promptCard),
-      el('div', {style: {marginTop: '16px'}}, importCard),
-      el('div', {style: {marginTop: '16px'}}, jobsCard),
-      reportHost);
-
-    /* --------------------------------------------------------------- logic */
-
-    function stepCard(index, title, desc, state) {
-      return el('div', {className: 'step-card', dataset: {state}},
-        el('span', {className: 'step-index', text: index}),
-        el('div', {className: 'step-title', text: title}),
-        el('div', {className: 'step-desc', text: desc}));
-    }
-
-    function activeJob() {
-      return jobs.find((job) => job.id === activeJobId) ?? jobs[0] ?? null;
+    function selectedSession() {
+      return sessions.find((session) => session.id === selectedId) ?? null;
     }
 
     function selectedConfig() {
       return providerConfigs.find((config) => config.id === configSelect.value) ?? null;
     }
 
-    function priceText(config) {
-      if (!config) return t('ai.v13.price.unknown');
-      if (config.pricingStatus === 'api_free') return t('ai.v13.price.free');
-      if (config.pricingStatus === 'paid' && config.pricing) {
-        return t('ai.v13.price.paidValue', {
-          input: String(config.pricing.inputPerMillion),
-          output: String(config.pricing.outputPerMillion),
-          currency: config.pricing.currency
-        });
-      }
-      return t('ai.v13.price.unknown');
-    }
-
-    function memoryAllowed(config) {
-      return Boolean(config
-        && config.pricingStatus === 'paid'
-        && config.pricing
-        && config.capabilities?.session
-        && config.capabilities?.memory);
-    }
-
     function renderScopeOptions() {
       const config = selectedConfig();
       const previous = runScope;
-      const allowed = runMethod === 'api' && memoryAllowed(config);
+      const allowed = memoryAllowed(config);
       const options = [['session', t('ai.v13.scope.session')]];
       if (allowed) {
         options.push(['memory', t('ai.v13.scope.memory')]);
@@ -443,715 +336,68 @@ export const aiPage = {
       scopeSelect.replaceChildren(...options.map(([value, label]) => el('option', {value, text: label})));
       if (!options.some(([value]) => value === previous)) runScope = 'session';
       scopeSelect.value = runScope;
-      scopeSelect.disabled = runMethod !== 'api' || !allowed && runMethod === 'api' && options.length === 1;
+      scopeSelect.disabled = !allowed;
+      scopeHint.hidden = allowed;
+      scopeHint.textContent = allowed ? '' : t('ai.v13.run.locked');
       memoryOptRow.hidden = !allowed || runScope === 'session';
-      optInMemory.checked = false;
+      billingRow.hidden = !config || config.pricingStatus === 'api_free';
+      if (!billingRow.hidden) confirmBilling.checked = false;
+      if (memoryOptRow.hidden) optInMemory.checked = false;
     }
 
-    function renderConfigOptions() {
-      configSelect.replaceChildren(...providerConfigs.map((config) => el('option', {
-        value: config.id,
-        text: `${config.name} · ${config.modelId || '—'}`
-      })));
-      const fallback = providerConfigs.find((config) => config.isDefault) ?? providerConfigs[0];
-      if (fallback) configSelect.value = fallback.id;
-      configSelect.hidden = runMethod !== 'api';
-      configLink.hidden = runMethod !== 'api' || providerConfigs.length > 0;
-    }
-
-    function renderRunControls() {
-      autoPanel.hidden = runMethod === 'manual';
-      createButton.hidden = runMethod !== 'manual';
-      createButton.textContent = t('ai.v13.manual.create');
-      autoButton.hidden = runMethod === 'manual';
-      autoButton.textContent = runMethod === 'anonymous'
-        ? t('ai.v13.method.startAnonymous')
-        : t('ai.v13.method.startApi');
-      configSelect.hidden = runMethod !== 'api';
-      renderConfigOptions();
-      renderScopeOptions();
+    function renderSummary() {
       const config = selectedConfig();
-      configHint.textContent = runMethod === 'api'
-        ? (config
-          ? `${config.providerId} / ${config.regionId} / ${config.modelId} · ${config.capabilities?.session
-            ? t('ai.v13.capability.session')
-            : t('ai.v13.config.needCapability')}`
-          : t('ai.v13.config.none'))
+      const session = selectedSession();
+      configSummary.textContent = config
+        ? `${config.name} · ${configLine(config)} · ${config.capabilities?.memory
+          ? t('ai.v13.capability.memory')
+          : (config.capabilities?.session ? t('ai.v13.capability.session') : t('ai.v13.capability.untested'))}`
+        : t('ai.center.noConfigShort');
+      pricingSummary.textContent = config
+        ? `${t('ai.v13.price.status')}: ${priceText(ctx, config)}`
         : '';
-      pricingHint.textContent = runMethod === 'manual'
-        ? t('ai.v13.price.manual')
-        : (runMethod === 'anonymous'
-          ? t('ai.v13.price.anonymousFree')
-          : (config ? `${t('ai.v13.price.status')}: ${priceText(config)}` : ''));
-      memoryLockedHint.hidden = !(runMethod === 'api' && config);
-      memoryLockedHint.textContent = memoryLockedHint.hidden
-        ? ''
-        : (memoryAllowed(config) ? t('ai.v13.memory.ready') : t('ai.v13.run.locked'));
-      const paid = runMethod === 'api' && config && config.pricingStatus !== 'api_free';
-      billingRow.hidden = !paid;
-      confirmBilling.checked = false;
-      optInMemory.checked = false;
-      if (runMethod === 'api' && !config) autoButton.disabled = true;
-      else autoButton.disabled = false;
-      syncRunGate();
+      const messages = Number(session?.messageCount ?? 0);
+      const viewers = Number(session?.uniqueViewerCount ?? 0);
+      const requests = estimatedRequests(config, runScope, session);
+      scaleSummary.replaceChildren(
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.center.scaleMessages')}),
+          el('span', {className: 'def-value', text: formatInteger(messages, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.center.scaleViewers')}),
+          el('span', {className: 'def-value', text: formatInteger(viewers, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.center.scaleRequests')}),
+          el('span', {className: 'def-value', text: formatInteger(requests, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.center.scaleBudget')}),
+          el('span', {className: 'def-value', text: budgetInput.value
+            ? `${budgetInput.value} ${config?.pricing?.currency ?? ''}`
+            : t('ai.center.scaleNoBudget')})));
+      syncStartGate();
     }
 
-    function syncRunGate() {
-      if (runMethod !== 'api') return;
+    function syncStartGate() {
       const config = selectedConfig();
-      const paid = config && config.pricingStatus !== 'api_free';
+      const paidUnknown = config && config.pricingStatus !== 'api_free';
       const needsMemoryOptIn = runScope !== 'session';
-      autoButton.disabled = !config
+      startButton.disabled = Boolean(busy)
+        || !config
         || config.capabilities?.session !== true
-        || (paid && !confirmBilling.checked)
+        || (paidUnknown && !confirmBilling.checked)
         || (needsMemoryOptIn && !optInMemory.checked);
     }
 
-
-    function setBusy(node, value, label) {
-      node.disabled = value;
-      if (label) node.textContent = label;
+    function budgetPayload() {
+      const amount = Number(budgetInput.value);
+      if (!budgetInput.value || !Number.isFinite(amount) || amount <= 0) return null;
+      return {amount, currency: selectedConfig()?.pricing?.currency ?? 'USD'};
     }
 
-    function syncUrl() {
-      try {
-        window.history.replaceState(null, '', `#/ai?session=${encodeURIComponent(selectedId ?? '')}`);
-      } catch {
-        /* history is best effort */
-      }
-    }
-
-    async function refreshJobs() {
-      const payload = await api.get(`/api/ai/jobs?sessionId=${encodeURIComponent(selectedId ?? '')}`);
-      jobs = payload.jobs ?? [];
-      if (!jobs.some((job) => job.id === activeJobId)) activeJobId = jobs[0]?.id ?? null;
-      const job = activeJob();
-      if (job) {
-        // The visible "analysis language" follows the task that owns the
-        // displayed prompt; changing it only affects the next task.
-        locale = job.locale;
-        languageSelect.value = locale;
-      } else {
-        locale = ctx.locale;
-        languageSelect.value = locale;
-      }
-      renderJobs();
-      renderPromptSelect();
-    }
-
-    async function refreshReport() {
-      clear(reportHost);
-      try {
-        report = await api.get(`/api/ai/sessions/${encodeURIComponent(selectedId ?? '')}/report`);
-      } catch {
-        report = null;
-      }
-      if (!report) return;
-      const node = renderAnalysisReport(ctx, report, {
-        onAggregate: report.mode === 'partial' || report.incompleteReason === 'awaiting_aggregate'
-          ? () => createAggregate(report.primaryJob?.id)
-          : null
-      });
-      if (node) reportHost.append(node);
-    }
-
-    function renderPromptSelect() {
-      clear(promptSelect);
-      const job = activeJob();
-      if (!job) {
-        promptSelect.append(el('option', {value: 'generic', text: `${t('ai.prompt.title')} · ${locale}`}));
-        promptSelect.value = 'generic';
-        promptSelect.disabled = true;
-        return;
-      }
-      const options = [];
-      for (let index = 1; index <= job.batchTotal; index += 1) {
-        options.push(el('option', {
-          value: String(index),
-          text: t('ai.jobs.batch', {index, total: job.batchTotal})
-        }));
-      }
-      if (job.aggregatePackageId) {
-        options.push(el('option', {value: 'aggregate', text: t('ai.jobs.aggregatePackage')}));
-      }
-      promptSelect.append(...options);
-      if (!options.some((option) => option.value === promptChoice)) promptChoice = '1';
-      promptSelect.value = promptChoice;
-      promptSelect.disabled = false;
-    }
-
-    async function loadPrompt() {
-      const job = activeJob();
-      promptMetaEl.textContent = '';
-      try {
-        let payload;
-        if (!job) {
-          payload = await api.get(`/api/ai/instructions?locale=${encodeURIComponent(locale)}`);
-        } else if (promptChoice === 'aggregate') {
-          payload = await api.get(`/api/ai/instructions?jobId=${encodeURIComponent(job.id)}&stage=aggregate`);
-        } else {
-          payload = await api.get(`/api/ai/instructions?jobId=${encodeURIComponent(job.id)}&batchIndex=${encodeURIComponent(promptChoice)}`);
-        }
-        promptText = payload.text ?? '';
-        promptBox.textContent = promptText;
-        promptMeta = payload;
-        promptMetaEl.textContent = payload.promptVersion
-          ? t('ai.packages.promptVersion', {version: payload.promptVersion})
-          : '';
-        copyButton.disabled = false;
-      } catch (error) {
-        promptText = '';
-        promptBox.textContent = ctx.describeError(error);
-        copyButton.disabled = true;
-      }
-    }
-
-    function renderCreateResult() {
-      clear(createResult);
-      const job = activeJob();
-      if (!justCreated || !job || job.sessionId !== selectedId) return;
-      createResult.append(
-        el('div', {className: 'callout', style: {marginTop: '14px'}},
-          el('div', {},
-            el('div', {className: 'callout-title', text: t('ai.setup.created')}),
-            el('div', {text: t('ai.setup.jobSummary', {
-              batches: formatInteger(job.batchTotal, ctx.locale),
-              messages: formatInteger(job.totalMessages, ctx.locale),
-              promptVersion: job.promptVersion
-            })}))));
-      const pkg = (job.packages ?? []).find((entry) => entry.stage === 'session')
-        ?? (job.packages ?? [])[0];
-      if (pkg) {
-        createResult.append(el('div', {className: 'inline', style: {marginTop: '10px'}},
-          el('button', {
-            className: 'button button--primary button--small',
-            type: 'button',
-            text: t('ai.packages.download'),
-            onClick: () => {
-              api.download(`/api/ai/packages/${encodeURIComponent(pkg.id)}/download`);
-              ctx.toast(t('toast.downloadStarted'));
-            }
-          })));
-      }
-    }
-
-    function renderJobs() {
-      clear(jobsHost);
-      if (jobs.length === 0) {
-        jobsHost.append(emptyState({title: t('ai.jobs.empty'), glyph: '·'}));
-        return;
-      }
-      for (const job of jobs) {
-        const status = job.status ?? {};
-        const packages = job.packages ?? [];
-        const actions = el('div', {className: 'inline job-actions'},
-          job.aggregatePackageId
-            ? el('button', {
-              className: 'button button--secondary button--small',
-              type: 'button',
-              text: t('ai.jobs.aggregatePackage'),
-              onClick: () => {
-                api.download(`/api/ai/packages/${encodeURIComponent(job.aggregatePackageId)}/download`);
-                ctx.toast(t('toast.downloadStarted'));
-              }
-            })
-            : null,
-          status.state === 'awaiting_aggregate'
-            ? el('button', {
-              className: 'button button--primary button--small',
-              type: 'button',
-              text: t('ai.jobs.aggregate'),
-              onClick: () => createAggregate(job.id)
-            })
-            : null,
-          el('button', {
-            className: 'button button--secondary button--small',
-            type: 'button',
-            text: t('ai.jobs.viewReport'),
-            onClick: () => {
-              document.getElementById('ai-report')?.scrollIntoView({block: 'start'});
-            }
-          }),
-          el('button', {
-            className: 'button button--ghost button--small',
-            type: 'button',
-            text: t('ai.jobs.reanalyze'),
-            onClick: () => reanalyze()
-          }));
-        const packagesHost = el('div', {className: 'job-packages'},
-          packages.length === 0
-            ? el('div', {className: 'small tertiary', text: t('ai.jobs.noPackages')})
-            : packages.map((item) => el('div', {className: 'package-row'},
-              el('span', {className: 'package-name', text: item.fileName}),
-              el('span', {className: 'small tertiary', text: item.stage === 'aggregate'
-                ? t('ai.packages.stageAggregate')
-                : `${t('ai.jobs.batch', {index: item.batchIndex ?? 1, total: job.batchTotal})} · ${t('live.top.messages', {n: formatInteger(item.messageCount, ctx.locale)})}`}),
-              el('span', {className: 'small tertiary', text: `${formatInteger(item.messageCount, ctx.locale)} · ${formatBytes(item.bytes ?? 0, ctx.locale)}`}),
-              el('button', {
-                className: 'button button--secondary button--small',
-                type: 'button',
-                text: t('ai.packages.download'),
-                onClick: () => {
-                  api.download(`/api/ai/packages/${encodeURIComponent(item.id)}/download`);
-                  ctx.toast(t('toast.downloadStarted'));
-                }
-              }))));
-
-        const errorDetail = job.status?.latestError?.errors?.[0];
-        jobsHost.append(el('div', {className: `job-row${job.id === activeJobId ? ' job-row--active' : ''}`},
-          el('div', {className: 'job-head'},
-            el('div', {className: 'job-head-text'},
-              el('div', {className: 'job-line'},
-                jobStatusChip(ctx, job),
-                el('span', {className: 'job-created', text: t('ai.jobs.created', {
-                  date: formatDateTime(job.createdAt, ctx.locale)
-                })}),
-                job.legacy ? chip(t('ai.jobs.legacy'), 'neutral') : null),
-              el('div', {className: 'job-meta'},
-                el('span', {text: coverageText(ctx, job)}),
-                status.memoryCoverage?.total > 0
-                  ? el('span', {
-                    className: status.memoryCoverage.complete ? '' : 'tertiary',
-                    text: t('ai.jobs.memoryCoverage', {
-                      covered: formatInteger(status.memoryCoverage.covered ?? 0, ctx.locale),
-                      total: formatInteger(status.memoryCoverage.total ?? 0, ctx.locale)
-                    })
-                  })
-                  : null,
-                el('span', {text: t('ai.jobs.prompt', {version: job.promptVersion})}),
-                el('span', {text: t('ai.jobs.versions', {versions: versionsText(status.versions)})}),
-                job.aggregateImported ? chip(t('ai.jobs.aggregateDone'), 'accent') : null)),
-            actions),
-          status.missingBatches?.length > 0
-            ? el('div', {className: 'small tertiary', text: t('ai.jobs.missing', {
-              list: status.missingBatches.join(', ')
-            })})
-            : null,
-          status.state === 'awaiting_aggregate' && !job.aggregatePackageId
-            ? el('div', {className: 'small tertiary', text: t('ai.jobs.aggregateHint')})
-            : null,
-          status.latestError
-            ? el('div', {className: 'callout callout--warn', style: {marginTop: '10px'}},
-              el('div', {},
-                el('div', {className: 'callout-title', text: t('ai.jobs.latestError')}),
-                el('div', {
-                  className: 'small',
-                  text: errorDetail
-                    ? `${errorDetail.path || '—'} · ${t(`ai.import.reason.${errorDetail.code}`, errorDetail.params ?? {})}`
-                    : t('errors.aiImportInvalid')
-                })))
-            : null,
-          packagesHost));
-      }
-    }
-
-    function renderPreview() {
-      clear(previewHost);
-      if (!preview) return;
-      const payload = preview;
-      const target = payload.target ?? {};
-      const result = payload.result ?? {};
-      const session = target.session;
-      const job = target.job;
-      const batch = target.batch;
-      const errors = payload.errors ?? [];
-      const warnings = payload.warnings ?? [];
-      const action = payload.action;
-
-      const targetRows = el('div', {className: 'def-list import-target'});
-      targetRows.append(
-        defRow(t('ai.import.targetSession'), session
-          ? `${session.roomTitle || platformLabel(session.platform, t)} · ${formatDateTime(session.startedAt, ctx.locale)}`
-          : t('ai.import.noTarget')),
-        defRow(t('ai.import.targetTask'), target.taskId ?? '—'),
-        defRow(t('ai.import.targetBatch'), target.mode === 'aggregate'
-          ? t('ai.report.aggregateMode')
-          : (batch
-            ? `${t('ai.jobs.batch', {index: batch.index, total: job?.batchTotal ?? batch.index})} · ${t('ai.import.coverageValue', {
-              from: batch.fromSeq,
-              to: batch.toSeq,
-              total: job?.totalMessages ?? batch.messageCount
-            })}`
-            : '—')),
-        defRow(t('ai.import.schemaVersion'), target.schemaVersion ?? '—'),
-        defRow(t('ai.report.scope'), job
-          ? t('ai.report.batchCoverage', {
-            done: formatInteger(payload.action === 'duplicate' ? (job.batchesImported ?? 0) : (job.batchesImported ?? 0), ctx.locale),
-            total: formatInteger(job.batchTotal ?? 1, ctx.locale),
-            messages: formatInteger(job.totalMessages ?? 0, ctx.locale)
-          })
-          : '—'));
-
-      const nodes = [
-        el('div', {className: 'preview-head'},
-          el('div', {className: 'card-title', text: t('ai.import.previewTitle')}),
-          payload.ok ? chip(t(`ai.job.status.${action === 'duplicate' ? 'complete' : 'awaiting_import'}`), action === 'duplicate' ? 'accent' : 'warn') : chip(t('ai.job.status.invalid'), 'warn')),
-        targetRows
-      ];
-
-      if (payload.memory) {
-        const memory = payload.memory;
-        const coverage = memory.coverage ?? {};
-        const gaps = importGapSummary(memory);
-        const memoryRows = el('div', {className: 'def-list import-target'});
-        memoryRows.append(
-          defRow(t('ai.import.memoryViewers'), t('ai.import.memoryCoverageValue', {
-            covered: formatInteger(coverage.semantic + coverage.no_semantics, ctx.locale),
-            total: formatInteger(coverage.total ?? memory.viewerCount ?? 0, ctx.locale)
-          })),
-          defRow(t('ai.import.memorySemantic'), formatInteger(coverage.semantic ?? 0, ctx.locale)),
-          defRow(t('ai.import.memoryNoSemantic'), formatInteger(coverage.no_semantics ?? 0, ctx.locale)),
-          defRow(t('ai.import.memoryObjective'), formatInteger(coverage.objective_only ?? 0, ctx.locale)),
-          defRow(t('ai.import.memoryMissing'), formatInteger(coverage.missing_update ?? 0, ctx.locale)),
-          defRow(t('ai.import.memoryFacts'), formatInteger(memory.totals?.operations ?? 0, ctx.locale))
-        );
-        if (!gaps.empty) {
-          const gapBlock = el('div', {style: {marginTop: '10px'}});
-          gapBlock.append(el('div', {className: 'label', text: t('ai.import.memoryGapsTitle')}));
-          const addGapRows = (entries) => {
-            for (const entry of entries.slice(0, 50)) {
-              gapBlock.append(el('div', {
-                className: 'small mono',
-                text: entry.nickname ? `${entry.nickname} · ${entry.viewerId}` : String(entry.viewerId ?? '')
-              }));
-            }
-            if (entries.length > 50) {
-              gapBlock.append(el('div', {className: 'small tertiary', text: `… +${entries.length - 50}`}));
-            }
-          };
-          addGapRows(gaps.missing);
-          addGapRows(gaps.unknown);
-          addGapRows(gaps.duplicate);
-          memoryRows.append(gapBlock);
-        }
-        nodes.push(el('section', {className: 'card', style: {marginTop: '12px'}},
-          el('div', {className: 'card-head'},
-            el('div', {className: 'card-title', text: t('ai.import.memoryTitle')}),
-            el('div', {className: 'card-hint', text: t('ai.import.memoryHint')})),
-          el('div', {className: 'card-body'},
-            memoryRows,
-            el('p', {className: 'small tertiary', text: t('ai.import.memoryAuto')}))));
-        // A failed import is often an external model's bookkeeping mistake.
-        // Offer the exact gaps back as a paste-ready instruction; never change
-        // an id on the user's behalf.
-        if (!gaps.empty || errors.length > 0) {
-          const repairButton = el('button', {
-            className: 'button button--secondary',
-            type: 'button',
-            text: t('ai.import.repairCopy'),
-            style: {marginTop: '10px'}
-          });
-          repairButton.addEventListener('click', async () => {
-            const instruction = buildRepairInstruction({
-              ...gaps,
-              errors,
-              t
-            });
-            try {
-              await navigator.clipboard.writeText(instruction);
-              ctx.toast(t('ai.import.repairCopied'));
-            } catch {
-              const helper = el('textarea', {style: {position: 'fixed', opacity: '0'}});
-              helper.value = instruction;
-              document.body.append(helper);
-              helper.select();
-              try {
-                document.execCommand('copy');
-                ctx.toast(t('ai.import.repairCopied'));
-              } catch {
-                ctx.toast(t('ai.import.repairCopyFailed'), {tone: 'error'});
-              }
-              helper.remove();
-            }
-          });
-          nodes.push(repairButton);
-        }
-      }
-
-      if (target.legacy) {
-        nodes.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '10px'}}, t('ai.import.legacyNotice')));
-      }
-      if (action === 'duplicate') {
-        nodes.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '10px'}},
-          el('div', {},
-            el('div', {className: 'callout-title', text: t('ai.import.duplicateTitle')}),
-            el('div', {text: t('ai.import.duplicateBody', {
-              version: formatInteger(target.duplicate?.resultVersion ?? 0, ctx.locale)
-            })}))));
-      }
-      if (errors.length > 0) {
-        nodes.push(el('div', {className: 'callout callout--warn', style: {marginTop: '10px'}},
-          el('div', {},
-            el('div', {className: 'callout-title', text: t('ai.import.errorsTitle', {n: errors.length})}),
-            el('div', {text: t('ai.import.errorsHint')}))));
-        nodes.push(el('div', {className: 'import-issue-list'}, errors.map((error) => {
-          const fix = error.fixGroup && error.fixGroup !== 'none'
-            ? t(`ai.import.fix.${error.fixGroup}`)
-            : null;
-          return el('div', {className: 'import-issue'},
-            el('div', {className: 'import-issue-head'},
-              el('span', {className: 'mono import-issue-path', text: error.path || '(root)'}),
-              chip(error.code, 'warn')),
-            el('div', {className: 'import-issue-reason', text: t(`ai.import.reason.${error.code}`, error.params ?? {})}),
-            fix ? el('div', {className: 'import-issue-fix', text: `${t('ai.import.fix')}: ${fix}`}) : null);
-        })));
-      }
-      if (warnings.length > 0) {
-        nodes.push(el('details', {className: 'import-warnings'},
-          el('summary', {text: t('ai.import.warningsTitle', {n: warnings.length})}),
-          el('div', {className: 'small tertiary', text: t('ai.import.warningsHint')}),
-          el('div', {className: 'import-issue-list'}, warnings.map((warning) => el('div', {className: 'import-issue import-issue--warning'},
-            el('div', {className: 'import-issue-head'},
-              el('span', {className: 'mono import-issue-path', text: warning.path || '(root)'}),
-              chip(warning.code, 'neutral')),
-            el('div', {className: 'import-issue-reason', text: t(`ai.import.reason.${warning.code}`, warning.params ?? {})}))))));
-      }
-
-      if (payload.ok && action !== 'duplicate') {
-        const isVersion = action === 'confirm_version';
-        if (isVersion) {
-          nodes.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '10px'}},
-            el('div', {},
-              el('div', {className: 'callout-title', text: t('ai.import.versionTitle')}),
-              el('div', {text: t('ai.import.versionBody', {
-                version: formatInteger(target.latestVersion ?? 0, ctx.locale),
-                next: formatInteger((target.latestVersion ?? 0) + 1, ctx.locale)
-              })}))));
-        }
-        const confirm = el('button', {
-          className: 'button button--primary',
-          type: 'button',
-          text: isVersion ? t('ai.import.confirmVersion') : t('ai.import.confirm')
-        });
-        confirm.addEventListener('click', () => doImport(confirm));
-        nodes.push(el('div', {className: 'inline', style: {marginTop: '12px'}}, confirm));
-      }
-      previewHost.append(el('div', {className: 'import-preview-body'}, nodes));
-    }
-
-    async function doImport(button) {
-      if (busy) return;
-      const source = previewText.trim() ? 'paste' : 'file';
-      busy = true;
-      setBusy(button, true, t('ai.import.importing'));
-      try {
-        const payload = await api.post('/api/ai/import', {
-          json: previewText,
-          source,
-          createVersion: preview?.action === 'confirm_version'
-        });
-        preview = payload.duplicate ? {...preview, action: 'duplicate', target: {...(preview.target ?? {}), duplicate: payload.result}} : null;
-        if (payload.duplicate) {
-          ctx.toast(t('toast.aiDuplicate'), {tone: 'info'});
-        } else {
-          ctx.toast(t('toast.aiImported'));
-        }
-        importText.value = '';
-        fileState = null;
-        fileInfo.textContent = '';
-        previewText = '';
-        preview = null;
-        report = payload.report ?? report;
-        // The report is reloaded from the database once; rendering it twice here
-        // caused a flicker where a transient summary could be observed.
-        await refreshJobs();
-        await refreshReport();
-        if (!payload.duplicate && payload.result) {
-          const memoryCoverage = payload.job?.status?.memoryCoverage;
-          previewHost.replaceChildren(el('div', {className: 'callout', style: {marginTop: '14px'}},
-            el('div', {},
-              el('div', {className: 'callout-title', text: t('ai.import.successTitle')}),
-              el('div', {text: t('ai.import.successBody', {
-                version: formatInteger(payload.result.resultVersion, ctx.locale)
-              })}),
-              memoryCoverage && Number(memoryCoverage.total) > 0
-                ? el('div', {className: 'small', text: t('ai.import.successMemory', {
-                  covered: formatInteger(memoryCoverage.covered ?? 0, ctx.locale),
-                  total: formatInteger(memoryCoverage.total ?? 0, ctx.locale)
-                })})
-                : null)));
-          document.getElementById('ai-report')?.scrollIntoView({block: 'start'});
-        } else {
-          renderPreview();
-        }
-      } catch (error) {
-        if (error?.code === 'AI_IMPORT_INVALID' && error.details?.errors) {
-          preview = {
-            ok: false,
-            action: 'blocked',
-            errors: error.details.errors,
-            warnings: error.details.warnings ?? [],
-            target: error.details.target ?? {}
-          };
-          renderPreview();
-        }
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
-      } finally {
-        busy = false;
-        if (button.isConnected) {
-          setBusy(button, false, preview?.action === 'confirm_version' ? t('ai.import.confirmVersion') : t('ai.import.confirm'));
-        }
-      }
-    }
-
-    async function validateInput() {
-      if (busy) return;
-      previewText = importText.value.trim();
-      previewSource = previewText ? 'paste' : 'file';
-      if (!previewText) {
-        if (!fileState) {
-          ctx.toast(t('ai.import.jsonEmpty'), {tone: 'info'});
-          return;
-        }
-        previewText = fileState.text;
-        previewSource = 'file';
-      }
-      busy = true;
-      setBusy(validateButton, true, t('ai.import.validating'));
-      try {
-        preview = await api.post('/api/ai/import/preview', {json: previewText, source: previewSource});
-        renderPreview();
-      } catch (error) {
-        preview = null;
-        renderPreview();
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
-      } finally {
-        busy = false;
-        setBusy(validateButton, false, t('ai.import.validate'));
-      }
-    }
-
-    async function createTask() {
-      if (busy) return;
-      busy = true;
-      setBusy(createButton, true, t('ai.setup.creating'));
-      try {
-        const payload = await api.post('/api/ai/jobs', {
-          sessionId: selectedId,
-          locale,
-          analysisMode: 'session'
-        });
-        activeJobId = payload.job.id;
-        promptChoice = '1';
-        preview = null;
-        clear(previewHost);
-        justCreated = true;
-        await refreshJobs();
-        await loadPrompt();
-        await refreshReport();
-        renderCreateResult();
-        ctx.toast(t('toast.aiJobCreated'));
-      } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
-      } finally {
-        busy = false;
-        setBusy(createButton, false, t('ai.setup.create'));
-      }
-    }
-
-    async function createAggregate(jobId) {
-      if (!jobId || busy) return;
-      busy = true;
-      try {
-        const payload = await api.post(`/api/ai/jobs/${encodeURIComponent(jobId)}/aggregate`, {});
-        activeJobId = payload.job.id;
-        await refreshJobs();
-        promptChoice = 'aggregate';
-        renderPromptSelect();
-        await loadPrompt();
-        await refreshReport();
-        ctx.toast(t('ai.jobs.aggregateReady'));
-      } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
-      } finally {
-        busy = false;
-      }
-    }
-
-    async function reanalyze() {
-      const job = activeJob();
-      if (job && !await confirmDialog(ctx, {
-        title: t('ai.jobs.reanalyze'),
-        body: t('ai.jobs.reanalyzeHint'),
-        confirmLabel: t('ai.jobs.reanalyze')
-      })) return;
-      await createTask();
-    }
-
-    /* ------------------------------------------------------- automatic flow */
-
-    const AUTO_CONSENT_KEY = 'livememory.aiAutoConsent.v1';
-
-    function autoConsentGranted() {
-      try {
-        return window.localStorage.getItem(AUTO_CONSENT_KEY) === 'granted';
-      } catch {
-        return false;
-      }
-    }
-
-    function storeAutoConsent() {
-      try {
-        window.localStorage.setItem(AUTO_CONSENT_KEY, 'granted');
-      } catch {
-        // Private mode / disabled storage: ask again next time, but do not block.
-      }
-    }
-
-    function askAutoConsent() {
-      return new Promise((resolve) => {
-        const modal = createModal({title: t('ai.v13.consent.title'), t: ctx.t});
-        modal.body.append(
-          el('p', {className: 'modal-desc', text: t('ai.v13.consent.body')}),
-          el('p', {className: 'small tertiary', text: t('ai.v13.consent.hint')}));
-        const cancel = el('button', {
-          className: 'button button--ghost',
-          type: 'button',
-          text: t('common.cancel'),
-          onClick: () => {
-            modal.close();
-            resolve(false);
-          }
-        });
-        const ok = el('button', {
-          className: 'button button--primary',
-          type: 'button',
-          text: t('ai.auto.consentContinue'),
-          onClick: () => {
-            modal.close();
-            resolve(true);
-          }
-        });
-        modal.actions.append(cancel, ok);
-        ok.focus();
-      });
-    }
-
-    function clearAutoError() {
-      autoError.hidden = true;
-      autoError.textContent = '';
-      autoDetails.hidden = true;
-      autoDetailsText.textContent = '';
-    }
-
-    function showAutoError(code, detail) {
-      // One simple sentence is the primary message. Technical information only
-      // lives in the collapsed details, never in an alert() dialog.
-      autoError.hidden = false;
-      autoError.textContent = t('ai.auto.error.summary');
-      const reasonKey = `ai.auto.reason.${code}`;
-      const reason = t(reasonKey);
-      const localizedReason = reason === reasonKey ? String(code ?? '') : reason;
-      autoDetails.hidden = false;
-      autoDetailsText.textContent = detail
-        ? `${localizedReason} · ${detail}`
-        : localizedReason;
-    }
-
-    function autoStageLabel(status) {
-      const stage = status?.stage ?? 'preparing';
-      const index = Math.max(1, Number(status?.batchIndex ?? 1));
-      const total = Math.max(index, Number(status?.batchTotal ?? 1));
+    function stageLabel(current) {
+      const stage = current?.stage ?? 'preparing';
+      const index = Math.max(0, Number(current?.batchIndex ?? 0));
+      const total = Math.max(0, Number(current?.batchTotal ?? 0));
       const keys = {
         preparing: 'ai.v13.stage.preparing',
         packaging_session: 'ai.v13.stage.packagingSession',
@@ -1164,9 +410,9 @@ export const aiPage = {
         memory_batch_done: 'ai.v13.stage.memoryBatchDone',
         memory_done: 'ai.v13.stage.memoryDone',
         resuming: 'ai.v13.stage.resuming',
-        complete: 'ai.auto.status.complete',
-        canceled: 'ai.auto.status.canceled',
-        paused: 'ai.v13.stage.paused'
+        paused: 'ai.v13.stage.paused',
+        complete: 'ai.center.complete',
+        canceled: 'ai.center.canceled'
       };
       const key = keys[stage];
       if (stage === 'memory_analyzing' || stage === 'memory_importing' || stage === 'memory_batch_done') {
@@ -1175,344 +421,263 @@ export const aiPage = {
       return key ? t(key) : t('ai.v13.stage.preparing');
     }
 
-    function runSummary(status) {
-      const parts = [];
-      if (status.providerName || status.modelId) {
-        parts.push(`${status.providerName ?? status.providerId ?? ''} · ${status.modelId ?? ''}`);
-      }
-      if (status.pricingStatus) parts.push(t(`ai.v13.price.${status.pricingStatus === 'paid' ? 'paid' : (status.pricingStatus === 'api_free' ? 'free' : 'unknown')}`));
-      if (status.usage?.cost) {
-        parts.push(t('ai.v13.run.usageCost', {
-          amount: Number(status.usage.cost.amount).toFixed(4),
-          currency: status.usage.cost.currency
-        }));
-      } else if (status.usage) {
-        parts.push(t('ai.v13.run.usageTokens', {
-          input: formatInteger(status.usage.inputTokens ?? 0, ctx.locale),
-          output: formatInteger(status.usage.outputTokens ?? 0, ctx.locale)
-        }));
-      }
-      return parts.filter(Boolean).join(' · ');
+    function reasonText(code) {
+      const key = `ai.center.reason.${code}`;
+      const value = t(key);
+      return value === key ? String(code ?? '') : value;
     }
 
-    function renderAutoStatus(status) {
-      autoStatus = status;
-      autoRunning = Boolean(status?.running);
-      autoPaused = status?.status === 'paused';
-      autoCancelButton.hidden = !autoRunning;
-      autoCancelButton.disabled = !autoRunning;
-      autoPauseButton.hidden = !autoRunning && !autoPaused;
-      autoPauseButton.disabled = !autoRunning;
-      autoPauseButton.textContent = autoPaused ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
-      if (autoRunning) {
-        autoButton.disabled = true;
-        autoButton.textContent = t('ai.auto.buttonBusy');
-        clearAutoError();
-        autoStatusText.className = 'auto-status';
-        autoStatusText.textContent = `${autoStageLabel(status)} · ${runSummary(status)}`;
-        const progress = status.batchTotal > 0
-          ? ` · ${t('ai.v13.run.progress', {
-            done: formatInteger(status.batchIndex ?? 0, ctx.locale),
-            total: formatInteger(status.batchTotal ?? 0, ctx.locale)
-          })}`
-          : '';
-        const flags = [
-          status.sessionReportDone ? t('ai.v13.run.sessionDone') : null,
-          status.memoryDone ? t('ai.v13.run.memoryDone') : null
-        ].filter(Boolean).join(' · ');
-        const elapsed = status.startedAt
-          ? t('ai.v13.run.elapsed', {seconds: Math.max(1, Math.round((Date.now() - status.startedAt) / 1000))})
-          : '';
-        autoStatusText.textContent += progress + (flags ? ` · ${flags}` : '') + (elapsed ? ` · ${elapsed}` : '');
-        return;
+    function renderStats(current) {
+      clear(statsHost);
+      const requests = current?.requestStats;
+      if (!requests) return;
+      const rows = [
+        [t('ai.center.stats.total'), formatInteger(requests.total ?? 0, ctx.locale)],
+        [t('ai.center.stats.done'), formatInteger(requests.completed ?? 0, ctx.locale)],
+        [t('ai.center.stats.failed'), formatInteger(requests.failed ?? 0, ctx.locale)],
+        [t('ai.center.stats.active'), `${formatInteger(requests.active ?? 0, ctx.locale)} / ${formatInteger(requests.concurrency ?? 0, ctx.locale)}`],
+        [t('ai.center.stats.queued'), formatInteger(requests.waiting ?? 0, ctx.locale)],
+        [t('ai.center.stats.modelTime'), requests.averageModelMs === null
+          ? '—'
+          : t('ai.center.stats.msValue', {ms: formatInteger(requests.averageModelMs, ctx.locale)})],
+        [t('ai.center.stats.queueWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.queueWaitMs ?? 0, ctx.locale)})],
+        [t('ai.center.stats.throttleWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.throttleWaitMs ?? 0, ctx.locale)})],
+        [t('ai.center.stats.rateLimited'), formatInteger(requests.rateLimited ?? 0, ctx.locale)]
+      ];
+      if (current.usage) {
+        rows.push([t('ai.center.stats.tokens'), t('ai.v13.run.usageTokens', {
+          input: formatInteger(current.usage.inputTokens ?? 0, ctx.locale),
+          output: formatInteger(current.usage.outputTokens ?? 0, ctx.locale)
+        })]);
+        if (current.usage.cost) {
+          rows.push([t('ai.center.stats.cost'), t('ai.v13.run.usageCost', {
+            amount: Number(current.usage.cost.amount).toFixed(4),
+            currency: current.usage.cost.currency
+          })]);
+        }
       }
-      autoButton.disabled = !selectedId;
-      autoButton.textContent = runMethod === 'anonymous'
-        ? t('ai.v13.method.startAnonymous')
-        : t('ai.v13.method.startApi');
-      if (!status || status.status === 'idle') {
-        autoStatusText.textContent = '';
-        autoStatusText.className = 'auto-status';
-        autoPauseButton.hidden = true;
-        clearAutoError();
-        return;
+      if (Number.isFinite(Number(current.estimatedRemainingMs))) {
+        rows.push([t('ai.center.stats.eta'), mmss(current.estimatedRemainingMs) ?? '—']);
       }
-      if (status.status === 'complete') {
-        clearAutoError();
-        const coverage = status.memoryJob?.memoryCoverage;
-        autoStatusText.className = 'auto-status auto-status--success';
-        autoStatusText.textContent = [
-          t('ai.auto.status.complete'),
-          status.memoryDone && coverage?.total > 0
-            ? t('ai.auto.status.completeMemory', {
+      statsHost.append(...rows.map(([key, value]) => el('div', {className: 'def-row'},
+        el('span', {className: 'def-key', text: key}),
+        el('span', {className: 'def-value', text: value}))));
+    }
+
+    function renderStatus(current) {
+      status = current;
+      const visible = Boolean(current && current.status && current.status !== 'idle');
+      statusCard.hidden = !visible;
+      if (!visible) return;
+      const running = current.status === 'running';
+      const paused = current.status === 'paused';
+      pauseButton.hidden = !running && !paused;
+      pauseButton.disabled = !running && !paused;
+      pauseButton.textContent = paused ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
+      cancelButton.hidden = !running;
+      startButton.disabled = running;
+      const total = Number(current.batchTotal ?? 0);
+      const done = Number(current.batchIndex ?? 0);
+      progressText.textContent = total > 0
+        ? t('ai.v13.run.progress', {
+          done: formatInteger(done, ctx.locale),
+          total: formatInteger(total, ctx.locale)
+        })
+        : '';
+      errorText.hidden = true;
+      errorDetails.hidden = true;
+      errorText.textContent = '';
+      errorDetailsText.textContent = '';
+      statusText.className = 'auto-status';
+      if (running) {
+        statusText.textContent = `${stageLabel(current)}${current.estimatedRemainingMs
+          ? ` · ${t('ai.center.eta', {time: mmss(current.estimatedRemainingMs)})}`
+          : ''}`;
+      } else if (current.status === 'complete') {
+        statusText.className = 'auto-status auto-status--success';
+        const coverage = current.memoryJob?.memoryCoverage;
+        statusText.textContent = [
+          t('ai.center.complete'),
+          current.memoryDone && coverage?.total > 0
+            ? t('ai.center.completeMemory', {
               covered: formatInteger(coverage.covered ?? 0, ctx.locale),
               total: formatInteger(coverage.total ?? 0, ctx.locale)
             })
-            : null,
-          runSummary(status)
+            : null
         ].filter(Boolean).join(' · ');
-        return;
+      } else if (current.status === 'canceled') {
+        statusText.textContent = t('ai.center.canceled');
+      } else if (current.status === 'paused') {
+        statusText.textContent = t('ai.v13.stage.paused');
+      } else if (current.status === 'partial') {
+        statusText.textContent = t('ai.v13.run.partial');
+        errorText.hidden = false;
+        errorText.textContent = reasonText(current.error?.code);
+        errorDetails.hidden = !current.error?.detail;
+        errorDetailsText.textContent = current.error?.detail ?? '';
+      } else {
+        statusText.textContent = t('ai.center.failed');
+        errorText.hidden = false;
+        errorText.textContent = reasonText(current.error?.code);
+        errorDetails.hidden = !current.error?.detail;
+        errorDetailsText.textContent = current.error?.detail ?? '';
       }
-      if (status.status === 'canceled') {
-        clearAutoError();
-        autoStatusText.className = 'auto-status';
-        autoStatusText.textContent = t('ai.auto.status.canceled');
-        return;
-      }
-      if (status.status === 'paused') {
-        clearAutoError();
-        autoStatusText.className = 'auto-status';
-        autoStatusText.textContent = `${t('ai.v13.stage.paused')}${runSummary(status) ? ` · ${runSummary(status)}` : ''}`;
-        return;
-      }
-      // failed / partial / interrupted: one sentence plus collapsed details.
-      autoStatusText.className = 'auto-status';
-      autoStatusText.textContent = status.status === 'partial'
-        ? t('ai.v13.run.partial')
-        : '';
-      showAutoError(status.error?.code ?? 'ANALYSIS_FAILED', status.error?.detail ?? null);
+      renderStats(current);
+      if (!running) syncStartGate();
     }
 
-    async function refreshAutoStatus() {
-      if (autoTimer) {
-        window.clearTimeout(autoTimer);
-        autoTimer = null;
+    async function refreshStatus() {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = null;
       }
-      if (!selectedId) {
-        renderAutoStatus({status: 'idle'});
-        return;
-      }
+      if (!selectedId) return;
       try {
-        const status = await api.get(`/api/ai/analyze/status?sessionId=${encodeURIComponent(selectedId)}`);
-        renderAutoStatus(status);
-        if (status.running) {
-          autoTimer = window.setTimeout(refreshAutoStatus, 1500);
-        } else if (status.status === 'complete' || status.status === 'partial') {
-          const key = `${selectedId}:${status.sessionJobId ?? ''}:${status.memoryJobId ?? ''}:${status.status}`;
-          if (autoRefreshedFor !== key) {
-            autoRefreshedFor = key;
-            await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
-            if (status.status === 'complete') {
-              window.requestAnimationFrame(() => {
-                document.getElementById('ai-report')?.scrollIntoView({block: 'start', behavior: 'smooth'});
-              });
-            }
-          }
+        const current = await api.get(`/api/ai/analyze/status?sessionId=${encodeURIComponent(selectedId)}`);
+        renderStatus(current);
+        if (current.running) {
+          timer = window.setTimeout(refreshStatus, 1500);
+        } else if (TERMINAL.has(current.status)) {
+          await Promise.all([refreshReport()]);
         }
       } catch {
-        // A local status read must not be presented as an AI failure, but it
-        // also must not leave the user staring at a frozen "preparing" label.
-        autoStatusText.className = 'auto-status';
-        autoStatusText.textContent = t('ai.v13.run.pollFailed');
-        autoRefreshButton.disabled = false;
-        if (autoRunning) {
-          autoTimer = window.setTimeout(refreshAutoStatus, 2500);
-        }
+        statusText.textContent = t('ai.v13.run.pollFailed');
+        if (status?.running) timer = window.setTimeout(refreshStatus, 2500);
       }
     }
 
-    function budgetPayload() {
-      const amount = Number(budgetInput.value);
-      if (!budgetInput.value || !Number.isFinite(amount) || amount <= 0) return null;
-      const config = selectedConfig();
-      return {amount, currency: config?.pricing?.currency ?? 'USD'};
+    async function refreshReport() {
+      clear(reportHost);
+      let report = null;
+      try {
+        report = await api.get(`/api/ai/sessions/${encodeURIComponent(selectedId ?? '')}/report`);
+      } catch {
+        report = null;
+      }
+      if (!report) return;
+      const node = renderAnalysisReport(ctx, report, {onAggregate: null});
+      if (node) reportHost.append(node);
     }
 
-    async function startAuto() {
-      if (autoRunning || !selectedId) return;
-      if (runMethod === 'api' && !selectedConfig()) {
-        ctx.toast(t('ai.v13.config.none'), {tone: 'error'});
+    function renderAll() {
+      renderScopeOptions();
+      renderSummary();
+    }
+
+    async function startAnalysis() {
+      if (busy) return;
+      const config = selectedConfig();
+      if (!config) {
+        ctx.toast(t('ai.center.noConfigShort'), {tone: 'error'});
         return;
       }
-      if (!autoConsentGranted()) {
-        const accepted = await askAutoConsent();
-        if (!accepted) return;
-        storeAutoConsent();
+      if (config.capabilities?.session !== true) {
+        ctx.toast(t('ai.v13.config.needCapability'), {tone: 'error'});
+        return;
       }
-      clearAutoError();
-      autoButton.disabled = true;
-      autoButton.textContent = t('ai.auto.starting');
+      if (runScope !== 'session' && !memoryAllowed(config)) {
+        ctx.toast(t('ai.v13.run.locked'), {tone: 'error'});
+        return;
+      }
+      if (!consentGranted()) {
+        if (!await consentDialog(ctx)) return;
+        rememberConsent();
+      }
+      busy = true;
+      syncStartGate();
+      startButton.textContent = t('ai.center.starting');
       try {
-        const body = {
+        const current = await api.post('/api/ai/analyze/run', {
           sessionId: selectedId,
           locale,
-          mode: runMethod === 'anonymous' ? 'session' : runScope,
-          consent: true
-        };
-        if (runMethod === 'api') {
-          body.configId = selectedConfig()?.id ?? null;
-          body.confirmBilling = confirmBilling.checked;
-          body.optInMemory = optInMemory.checked;
-          body.budget = budgetPayload();
-        }
-        const status = await api.post('/api/ai/analyze/run', body);
-        renderAutoStatus(status);
-        if (status.running) {
-          autoTimer = window.setTimeout(refreshAutoStatus, 800);
-        }
-        ctx.toast(t('ai.auto.started'), {tone: 'info'});
+          mode: runScope,
+          configId: config.id,
+          consent: true,
+          confirmBilling: confirmBilling.checked,
+          optInMemory: optInMemory.checked,
+          budget: budgetPayload()
+        });
+        renderStatus(current);
+        if (current.running) timer = window.setTimeout(refreshStatus, 800);
+        ctx.toast(t('ai.center.started'), {tone: 'info'});
       } catch (error) {
-        autoRunning = false;
-        autoButton.disabled = false;
-        autoButton.textContent = runMethod === 'anonymous'
-          ? t('ai.v13.method.startAnonymous')
-          : t('ai.v13.method.startApi');
-        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+        renderStatus({
+          status: 'failed',
+          stage: 'failed',
+          error: {code: error?.code ?? 'ANALYSIS_FAILED', detail: ctx.describeError(error)},
+          requestStats: null
+        });
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        busy = false;
+        startButton.textContent = t('ai.center.start');
+        syncStartGate();
       }
     }
 
-    async function cancelAuto() {
+    async function cancelAnalysis() {
       if (!selectedId) return;
-      autoCancelButton.disabled = true;
       try {
-        const status = await api.post('/api/ai/analyze/cancel', {sessionId: selectedId});
-        renderAutoStatus(status);
-        ctx.toast(t('ai.auto.cancelRequested'), {tone: 'info'});
+        const current = await api.post('/api/ai/analyze/cancel', {sessionId: selectedId});
+        renderStatus(current);
       } catch (error) {
-        autoCancelButton.disabled = false;
-        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
       }
     }
 
-    async function pauseOrResumeAuto() {
+    async function pauseOrResume() {
       if (!selectedId) return;
-      if (autoPaused) {
-        if (runMethod === 'api' && !autoConsentGranted() && !await askAutoConsent()) return;
+      if (status?.status === 'paused') {
         try {
-          const status = await api.post('/api/ai/analyze/resume', {
+          const current = await api.post('/api/ai/analyze/resume', {
             sessionId: selectedId,
             consent: true,
             confirmBilling: confirmBilling.checked,
             optInMemory: optInMemory.checked,
             budget: budgetPayload()
           });
-          renderAutoStatus(status);
-          if (status.running) autoTimer = window.setTimeout(refreshAutoStatus, 800);
+          renderStatus(current);
+          if (current.running) timer = window.setTimeout(refreshStatus, 800);
         } catch (error) {
-          showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+          ctx.toast(ctx.describeError(error), {tone: 'error'});
         }
         return;
       }
-      autoPauseButton.disabled = true;
       try {
-        const status = await api.post('/api/ai/analyze/pause', {sessionId: selectedId});
-        renderAutoStatus(status);
-        autoTimer = window.setTimeout(refreshAutoStatus, 600);
+        const current = await api.post('/api/ai/analyze/pause', {sessionId: selectedId});
+        renderStatus(current);
       } catch (error) {
-        autoPauseButton.disabled = false;
-        showAutoError(error?.code ?? 'ANALYSIS_FAILED', ctx.describeError(error));
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
       }
     }
 
-    /* ------------------------------------------------------------- events */
-
-    createButton.addEventListener('click', createTask);
-    validateButton.addEventListener('click', validateInput);
-    autoButton.addEventListener('click', startAuto);
-    autoRefreshButton.addEventListener('click', () => refreshAutoStatus());
-    autoCancelButton.addEventListener('click', cancelAuto);
-    autoPauseButton.addEventListener('click', pauseOrResumeAuto);
-    methodSelect.addEventListener('change', () => {
-      runMethod = methodSelect.value;
-      if (runMethod === 'manual') runScope = 'session';
-      renderRunControls();
-    });
-    configSelect.addEventListener('change', () => {
-      renderScopeOptions();
-      renderRunControls();
-    });
+    startButton.addEventListener('click', startAnalysis);
+    cancelButton.addEventListener('click', cancelAnalysis);
+    pauseButton.addEventListener('click', pauseOrResume);
+    configSelect.addEventListener('change', renderAll);
     scopeSelect.addEventListener('change', () => {
       runScope = scopeSelect.value;
       memoryOptRow.hidden = runScope === 'session';
-      syncRunGate();
+      optInMemory.checked = false;
+      renderSummary();
     });
-    confirmBilling.addEventListener('change', syncRunGate);
-    optInMemory.addEventListener('change', syncRunGate);
+    confirmBilling.addEventListener('change', syncStartGate);
+    optInMemory.addEventListener('change', syncStartGate);
+    budgetInput.addEventListener('input', () => renderSummary());
+    languageSelect.addEventListener('change', () => {
+      locale = languageSelect.value;
+    });
     sessionSelect.addEventListener('change', async () => {
       selectedId = sessionSelect.value;
-      syncUrl();
-      activeJobId = null;
-      justCreated = false;
-      preview = null;
-      previewText = '';
-      fileState = null;
-      importText.value = '';
-      fileInfo.textContent = '';
-      clear(previewHost);
-      clear(createResult);
-      autoStatus = null;
-      autoRunning = false;
-      autoRefreshedFor = null;
-      clearAutoError();
-      await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
-      await refreshAutoStatus();
-    });
-    languageSelect.addEventListener('change', async () => {
-      locale = languageSelect.value;
-      if (!activeJob()) await loadPrompt();
-      renderAutoStatus(autoStatus);
-    });
-    promptSelect.addEventListener('change', async () => {
-      promptChoice = promptSelect.value;
-      await loadPrompt();
-    });
-    copyButton.addEventListener('click', async () => {
-      if (!promptText) return;
-      try {
-        await navigator.clipboard.writeText(promptText);
-        ctx.toast(t('toast.copied'));
-      } catch {
-        const helper = el('textarea', {style: {position: 'fixed', opacity: '0'}});
-        helper.value = promptText;
-        document.body.append(helper);
-        helper.select();
-        document.execCommand('copy');
-        helper.remove();
-        ctx.toast(t('toast.copied'));
-      }
-    });
-    fileInput.addEventListener('change', async () => {
-      const file = fileInput.files?.[0];
-      fileInput.value = '';
-      if (!file) return;
-      if (file.size > MAX_IMPORT_MB * 1024 * 1024) {
-        ctx.toast(t('ai.import.fileTooLarge', {limit: MAX_IMPORT_MB}), {tone: 'error'});
-        return;
-      }
-      try {
-        const text = await file.text();
-        fileState = {name: file.name, size: file.size, text};
-        fileInfo.textContent = t('ai.import.fileChosen', {
-          name: file.name,
-          size: formatBytes(file.size, ctx.locale)
-        });
-        preview = null;
-        renderPreview();
-      } catch {
-        ctx.toast(t('ai.import.readError'), {tone: 'error'});
-      }
-    });
-    importText.addEventListener('input', () => {
-      preview = null;
-      renderPreview();
+      status = null;
+      renderAll();
+      await Promise.all([refreshStatus(), refreshReport()]);
     });
 
-    /* --------------------------------------------------------------- start */
-
-    syncUrl();
-    renderRunControls();
-    await refreshJobs();
-    await Promise.all([loadPrompt(), refreshReport()]);
-    await refreshAutoStatus();
-    renderCreateResult();
-
-    if (query?.get('report') === '1') {
-      window.requestAnimationFrame(() => {
-        document.getElementById('ai-report')?.scrollIntoView({block: 'start'});
-      });
-    }
+    renderAll();
+    await Promise.all([refreshStatus(), refreshReport()]);
     return () => {
-      if (autoTimer) window.clearTimeout(autoTimer);
+      if (timer) window.clearTimeout(timer);
     };
   }
 };

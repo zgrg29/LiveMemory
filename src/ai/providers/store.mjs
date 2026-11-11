@@ -19,6 +19,22 @@ import {validateBaseUrl} from './url-safety.mjs';
 
 const FILE_VERSION = 1;
 const MAX_API_KEY_BYTES = 8192;
+const DEFAULT_CONCURRENCY = 3;
+const MAX_CONCURRENCY = 8;
+const DEFAULT_TIMEOUT_MS = 180000;
+const MAX_TIMEOUT_MS = 600000;
+
+function normalizeConcurrency(value, {fallback = DEFAULT_CONCURRENCY} = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(1, Math.min(MAX_CONCURRENCY, Math.floor(number)));
+}
+
+function normalizeTimeoutMs(value, {fallback = DEFAULT_TIMEOUT_MS} = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(10000, Math.min(MAX_TIMEOUT_MS, Math.floor(number)));
+}
 
 function normalizeCapabilities(input) {
   const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
@@ -81,6 +97,10 @@ function normalizeConfig(raw, {now = Date.now()} = {}) {
     isDefault: raw.isDefault === true,
     allowLocalNetwork: raw.allowLocalNetwork === true,
     contextLength: Number.isFinite(Number(raw.contextLength)) ? Number(raw.contextLength) : null,
+    // A safe starting concurrency, not a claimed provider quota. The scheduler
+    // lowers it on 429 and slowly restores it; the UI shows the live value.
+    concurrency: normalizeConcurrency(raw.concurrency),
+    timeoutMs: normalizeTimeoutMs(raw.timeoutMs),
     createdAt: Number(raw.createdAt ?? now),
     updatedAt: Number(raw.updatedAt ?? now)
   };
@@ -108,6 +128,8 @@ function publicConfig(config) {
     isDefault: config.isDefault,
     allowLocalNetwork: config.allowLocalNetwork,
     contextLength: config.contextLength,
+    concurrency: config.concurrency,
+    timeoutMs: config.timeoutMs,
     createdAt: config.createdAt,
     updatedAt: config.updatedAt
   };
@@ -283,6 +305,14 @@ export class ProviderConfigStore {
       contextLength: input.contextLength === undefined
         ? (existing?.contextLength ?? null)
         : (Number.isFinite(Number(input.contextLength)) ? Number(input.contextLength) : null),
+      concurrency: normalizeConcurrency(
+        input.concurrency === undefined ? existing?.concurrency : input.concurrency,
+        {fallback: existing?.concurrency ?? DEFAULT_CONCURRENCY}
+      ),
+      timeoutMs: normalizeTimeoutMs(
+        input.timeoutMs === undefined ? existing?.timeoutMs : input.timeoutMs,
+        {fallback: existing?.timeoutMs ?? DEFAULT_TIMEOUT_MS}
+      ),
       // Capabilities are only ever written by recordTest(). A client-supplied
       // capability object is ignored so a config cannot self-certify memory.
       capabilities: normalizeCapabilities(existing?.capabilities)
@@ -311,6 +341,8 @@ export class ProviderConfigStore {
       isDefault: this.configs.length === 0,
       allowLocalNetwork: checked.allowLocalNetwork,
       contextLength: checked.contextLength,
+      concurrency: checked.concurrency,
+      timeoutMs: checked.timeoutMs,
       createdAt: now,
       updatedAt: now
     }, {now});

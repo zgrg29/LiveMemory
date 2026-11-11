@@ -47,23 +47,17 @@ import {
   unassignedOverview,
   unassignedSupportByViewerIds
 } from '../storage/repositories/broadcasters.mjs';
-import {getPackage, listPackages} from '../storage/repositories/ai-packages.mjs';
-import {buildAnalysisPackage, ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
-import {buildAggregatePackage, createAnalysisJob} from '../ai/export/job.mjs';
-import {createSessionAnalysisJob} from '../ai/export/split-jobs.mjs';
-import {MAX_AUTO_BATCHES} from '../ai/auto/config.mjs';
+import {listPackages} from '../storage/repositories/ai-packages.mjs';
+import {ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
 import {publicCatalog, getProvider, getRegion, PRICING_STATUS} from '../ai/providers/catalog.mjs';
 import {listProviderModels} from '../ai/providers/adapters.mjs';
 import {verifyProviderConfig} from '../ai/providers/verify.mjs';
 import {normalizePricing, normalizeBudget} from '../ai/providers/pricing.mjs';
 import {AnalysisPermissionError} from '../ai/api/runner.mjs';
 import {ANALYSIS_MODE} from '../ai/constants.mjs';
-import {readAnalysisPackage, SESSION_FILES, MEMORY_FILES} from '../ai/api/prompts.mjs';
 import {createId} from '../shared/ids.mjs';
-import {buildInstructions, instructionVersion} from '../ai/prompts/instructions.mjs';
 import {
   getJob,
-  getJobBatch,
   listJobBatches,
   listJobs
 } from '../storage/repositories/ai-jobs.mjs';
@@ -99,12 +93,8 @@ import {
   MEMORY_PROMPT_VERSION
 } from '../memory/constants.mjs';
 import {computeJobStatus, recomputeSessionAiStatus} from '../ai/tasks/status.mjs';
-import {validateAnalysisImport} from '../ai/import/validate.mjs';
-import {importAnalysisResult} from '../ai/import/importer.mjs';
 import {buildSessionAnalysisReport} from '../analytics/ai/report.mjs';
 import {
-  DEFAULT_BATCH_MESSAGES,
-  MAX_IMPORT_BYTES,
   RESULT_SCHEMA_VERSION
 } from '../ai/constants.mjs';
 import {currentSchemaVersion} from '../storage/database/migrations/index.mjs';
@@ -143,7 +133,7 @@ function statusPayload(deps) {
     },
     data: {dir: paths.root},
     storage: {mode: settingsStore.get().storageMode},
-    ai: {export: true, import: true, protocol: ANALYSIS_PROTOCOL, schemaVersion: RESULT_SCHEMA_VERSION},
+    ai: {automated: true, export: false, import: false, protocol: ANALYSIS_PROTOCOL, schemaVersion: RESULT_SCHEMA_VERSION},
     memory: {
       enabled: true,
       protocol: MEMORY_PROTOCOL,
@@ -218,6 +208,7 @@ function analysisError(error) {
     SESSION_CAPABILITY_REQUIRED: ['AI_SESSION_CAPABILITY_REQUIRED', 'errors.aiCapabilityRequired', 409],
     PAID_MODEL_REQUIRED: ['AI_PAID_MODEL_REQUIRED', 'errors.aiPaidModelRequired', 403],
     PROVIDER_CONFIG_NOT_FOUND: ['AI_PROVIDER_CONFIG_NOT_FOUND', 'errors.aiProviderConfigNotFound', 404],
+    PROVIDER_CONFIG_REQUIRED: ['AI_PROVIDER_CONFIG_REQUIRED', 'errors.aiProviderConfigRequired', 400],
     MODEL_REQUIRED: ['AI_PROVIDER_MODEL_REQUIRED', 'errors.aiProviderModelRequired', 400],
     ALREADY_RUNNING: ['AI_ALREADY_RUNNING', 'errors.aiAlreadyRunning', 409],
     NOTHING_TO_RESUME: ['AI_NOTHING_TO_RESUME', 'errors.aiNothingToResume', 409],
@@ -453,7 +444,7 @@ export function buildRoutes() {
                 requiresCookie: false
               }
             ],
-            ai: {export: true, import: true, schemaVersion: RESULT_SCHEMA_VERSION},
+            ai: {automated: true, export: false, import: false, schemaVersion: RESULT_SCHEMA_VERSION},
             memory: {
               enabled: true,
               protocol: MEMORY_PROTOCOL,
@@ -1003,10 +994,7 @@ export function buildRoutes() {
       handler: ({res, deps}) => {
         sendJson(res, 200, {
           providers: publicCatalog(),
-          configs: deps.providerConfigStore ? deps.providerConfigStore.list() : [],
-          anonymous: deps.analysisRunner
-            ? deps.analysisRunner.services().anonymous
-            : []
+          configs: deps.providerConfigStore ? deps.providerConfigStore.list() : []
         });
       }
     },
@@ -1156,7 +1144,7 @@ export function buildRoutes() {
         const body = await readJsonBody(req).catch(() => ({}));
         const config = deps.providerConfigStore.get(params.id);
         if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
-        const paid = ![PRICING_STATUS.API_FREE, PRICING_STATUS.ANONYMOUS_FREE].includes(config.pricingStatus);
+        const paid = config.pricingStatus !== PRICING_STATUS.API_FREE;
         if (paid && body.confirmBilling !== true) {
           throw new AppError('AI_SPEND_CONFIRMATION_REQUIRED', {
             messageKey: 'errors.aiSpendConfirmationRequired',
@@ -1321,237 +1309,6 @@ export function buildRoutes() {
     },
     {
       method: 'GET',
-      path: '/api/ai/instructions',
-      handler: ({res, url, deps}) => {
-        const requested = normalizeLocale(url.searchParams.get('locale'));
-        const jobId = url.searchParams.get('jobId');
-        if (jobId) {
-          const job = getJob(deps.db, jobId);
-          if (!job) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiJobNotFound');
-          if (job.analysisMode === ANALYSIS_MODE.SESSION || job.analysisMode === ANALYSIS_MODE.MEMORY) {
-            const index = Math.max(1, Number(url.searchParams.get('batchIndex')) || 1);
-            const packages = listPackages(deps.db, {jobId: job.id});
-            const pkg = packages.find((row) => (
-              (job.analysisMode === ANALYSIS_MODE.SESSION ? row.stage === 'session' : row.stage === 'memory')
-              && (job.analysisMode === ANALYSIS_MODE.SESSION || Number(row.batch_index) === index)
-            ));
-            if (!pkg) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiBatchNotFound');
-            const files = readAnalysisPackage(
-              join(deps.paths.exports, pkg.file_name),
-              job.analysisMode === ANALYSIS_MODE.SESSION ? SESSION_FILES : MEMORY_FILES
-            );
-            const manifest = JSON.parse(files['manifest.json']);
-            sendJson(res, 200, {
-              locale: job.locale,
-              text: files['instructions.md'],
-              promptVersion: job.promptVersion,
-              schemaVersion: RESULT_SCHEMA_VERSION,
-              taskId: manifest.tasks?.[0]?.task_id ?? null,
-              batch: manifest.batch ?? null,
-              stage: job.analysisMode
-            });
-            return;
-          }
-          const summary = buildSessionSummary(deps.db, job.sessionId);
-          if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-          const session = summary.session;
-          const stage = url.searchParams.get('stage');
-          const batchIndexRaw = url.searchParams.get('batchIndex');
-          const aggregate = stage === 'aggregate' || (job.batchTotal > 1 && (batchIndexRaw === null || batchIndexRaw === '') && stage !== 'batch');
-          let batch = null;
-          let taskId = job.aggregateTaskId ?? `${job.sessionId}-analysis-final`;
-          if (!aggregate) {
-            const index = Math.max(1, Number(batchIndexRaw) || 1);
-            const row = getJobBatch(deps.db, job.id, index);
-            if (!row) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiBatchNotFound');
-            batch = {
-              index: row.batchIndex,
-              total: job.batchTotal,
-              batchId: row.batchId,
-              fromSeq: row.fromSeq,
-              toSeq: row.toSeq,
-              messageCount: row.messageCount,
-              fromAt: row.fromAt,
-              toAt: row.toAt
-            };
-            taskId = row.taskId;
-          }
-          const text = buildInstructions(job.locale, {
-            session: {
-              id: session.id,
-              platform: session.platform,
-              simulated: session.simulated,
-              started_at: session.startedAt,
-              ended_at: session.endedAt
-            },
-            broadcaster: {
-              id: session.broadcasterId ?? null,
-              name: session.broadcasterName ?? null,
-              identity: session.broadcasterIdentity ?? 'unresolved'
-            },
-            messageCount: batch ? batch.messageCount : job.totalMessages,
-            support: summary.support,
-            jobId: job.id,
-            taskId,
-            promptVersion: job.promptVersion,
-            batch,
-            aggregate: aggregate ? {batchCount: job.batchTotal} : null
-          });
-          sendJson(res, 200, {
-            locale: job.locale,
-            text,
-            promptVersion: job.promptVersion,
-            schemaVersion: RESULT_SCHEMA_VERSION,
-            taskId,
-            batch: batch ? {index: batch.index, batchId: batch.batchId} : null,
-            stage: aggregate ? 'aggregate' : 'batch'
-          });
-          return;
-        }
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        sendJson(res, 200, {
-          locale,
-          text: buildInstructions(locale),
-          promptVersion: instructionVersion(locale),
-          schemaVersion: '1.2.0'
-        });
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/packages',
-      handler: async ({req, res, deps}) => {
-        const body = await readJsonBody(req);
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
-        if (!sessionId) {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
-        }
-        const summary = buildSessionSummary(deps.db, sessionId);
-        if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-        if (summary.stats.messages === 0) {
-          throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
-        }
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        const result = await buildAnalysisPackage({
-          db: deps.db,
-          sessionId,
-          locale,
-          exportsDir: deps.paths.exports,
-          now: Date.now()
-        });
-        deps.logger?.info({event: 'ai.package.created', packageId: result.id, sessionId, messages: result.messageCount});
-        sendJson(res, 201, {
-          package: {
-            id: result.id,
-            sessionId: result.sessionId,
-            fileName: result.fileName,
-            bytes: result.bytes,
-            checksum: result.checksum,
-            messageCount: result.messageCount,
-            viewerCount: result.viewerCount,
-            locale: result.locale,
-            protocol: result.protocol,
-            createdAt: result.createdAt
-          }
-        });
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/jobs',
-      handler: async ({req, res, deps}) => {
-        const body = await readJsonBody(req);
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
-        if (!sessionId) {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
-        }
-        const summary = buildSessionSummary(deps.db, sessionId);
-        if (!summary) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-        if (summary.stats.messages === 0) {
-          throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
-        }
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        let result;
-        try {
-          if (body.analysisMode === ANALYSIS_MODE.SESSION || body.mode === 'session') {
-            const split = await createSessionAnalysisJob({
-              db: deps.db,
-              sessionId,
-              locale,
-              exportsDir: deps.paths.exports,
-              now: Date.now()
-            });
-            if (!split) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-            const job = getJob(deps.db, split.job.id);
-            deps.logger?.info({
-              event: 'ai.session.job.created',
-              jobId: job.id,
-              sessionId,
-              messages: job.totalMessages
-            });
-            sendJson(res, 201, {
-              job: serializeJob(job, computeJobStatus(deps.db, job)),
-              packages: split.package.id
-                ? [serializePackage(getPackage(deps.db, split.package.id))]
-                : []
-            });
-            return;
-          }
-          result = await createAnalysisJob({
-            db: deps.db,
-            sessionId,
-            locale,
-            exportsDir: deps.paths.exports,
-            batchSize: body.batchSize ?? DEFAULT_BATCH_MESSAGES,
-            now: Date.now()
-          });
-        } catch (error) {
-          if (error?.code === 'ANALYSIS_TOO_LARGE') {
-            throw new AppError('AI_ANALYSIS_TOO_LARGE', {
-              messageKey: 'errors.aiAnalysisTooLarge',
-              details: {totalMessages: error.totalMessages, limit: error.limit},
-              httpStatus: 413
-            });
-          }
-          if (error?.code === 'ANALYSIS_TOO_MANY_VIEWERS') {
-            throw new AppError('AI_ANALYSIS_TOO_MANY_VIEWERS', {
-              messageKey: 'errors.aiAnalysisTooManyViewers',
-              details: {totalViewers: error.totalViewers, limit: error.limit},
-              httpStatus: 413
-            });
-          }
-          if (error?.code === 'ANALYSIS_SESSION_CHANGED') {
-            throw new AppError('AI_SESSION_CHANGED', {
-              messageKey: 'errors.aiSessionChanged',
-              httpStatus: 409
-            });
-          }
-          throw error;
-        }
-        if (!result) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
-        deps.logger?.info({
-          event: 'ai.job.created',
-          jobId: result.job.id,
-          sessionId,
-          batches: result.job.batchTotal,
-          messages: result.job.totalMessages
-        });
-        sendJson(res, 201, {
-          job: serializeJob(result.job, computeJobStatus(deps.db, getJob(deps.db, result.job.id))),
-          packages: result.packages.map((entry) => serializePackage(getPackage(deps.db, entry.id)))
-        });
-      }
-    },
-    {
-      method: 'GET',
       path: '/api/ai/jobs',
       handler: ({res, url, deps}) => {
         const sessionId = url.searchParams.get('sessionId');
@@ -1583,145 +1340,6 @@ export function buildRoutes() {
       }
     },
     {
-      method: 'POST',
-      path: '/api/ai/jobs/:id/aggregate',
-      handler: async ({req, res, params, deps}) => {
-        await readOptionalJson(req);
-        const job = getJob(deps.db, params.id);
-        if (!job) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiJobNotFound');
-        try {
-          const built = await buildAggregatePackage({
-            db: deps.db,
-            jobId: job.id,
-            exportsDir: deps.paths.exports,
-            now: Date.now()
-          });
-          deps.logger?.info({event: 'ai.aggregate.created', jobId: job.id, batches: built.batchCount});
-          sendJson(res, 201, {
-            package: serializePackage(getPackage(deps.db, built.id)),
-            job: serializeJob(getJob(deps.db, job.id), computeJobStatus(deps.db, getJob(deps.db, job.id)))
-          });
-        } catch (error) {
-          if (error?.code === 'AGGREGATE_BATCHES_MISSING') {
-            throw new AppError('AI_AGGREGATE_NOT_READY', {
-              messageKey: 'errors.aiAggregateNotReady',
-              details: {missing: error.missing},
-              httpStatus: 409
-            });
-          }
-          if (error?.code === 'AGGREGATE_NOT_REQUIRED') {
-            throw new AppError('AI_AGGREGATE_NOT_REQUIRED', {
-              messageKey: 'errors.aiAggregateNotRequired',
-              httpStatus: 409
-            });
-          }
-          throw error;
-        }
-      }
-    },
-    {
-      method: 'GET',
-      path: '/api/ai/auto/services',
-      handler: ({res, deps}) => {
-        if (!deps.auto) {
-          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
-        }
-        sendJson(res, 200, {services: deps.auto.services(), maxBatches: MAX_AUTO_BATCHES});
-      }
-    },
-    {
-      method: 'GET',
-      path: '/api/ai/auto/status',
-      handler: ({res, url, deps}) => {
-        if (!deps.auto) {
-          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
-        }
-        const sessionId = url.searchParams.get('sessionId');
-        if (!sessionId) {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
-        }
-        sendJson(res, 200, deps.auto.getStatus(sessionId));
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/auto/run',
-      handler: async ({req, res, deps}) => {
-        if (!deps.auto) {
-          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
-        }
-        const body = await readJsonBody(req);
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
-        if (!sessionId) {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
-        }
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        try {
-          const status = await deps.auto.start({
-            sessionId,
-            locale,
-            consent: body.consent === true
-          });
-          deps.logger?.info?.({event: 'ai.auto.run.accepted', sessionId, jobId: status.jobId ?? null});
-          sendJson(res, 202, status);
-        } catch (error) {
-          if (error?.code === 'AUTO_CONSENT_REQUIRED') {
-            throw new AppError('AUTO_CONSENT_REQUIRED', {
-              messageKey: 'errors.aiAutoConsentRequired',
-              httpStatus: 400
-            });
-          }
-          if (error?.code === 'AUTO_ALREADY_RUNNING') {
-            throw new AppError('AUTO_ALREADY_RUNNING', {
-              messageKey: 'errors.aiAutoAlreadyRunning',
-              httpStatus: 409
-            });
-          }
-          if (error?.code === 'AUTO_SESSION_EMPTY') {
-            throw new AppError('AUTO_SESSION_EMPTY', {
-              messageKey: 'errors.sessionEmpty',
-              httpStatus: 409
-            });
-          }
-          if (error?.code === 'AUTO_TOO_MANY_BATCHES') {
-            throw new AppError('AUTO_TOO_MANY_BATCHES', {
-              messageKey: 'errors.aiAutoTooManyBatches',
-              details: {detail: error.detail, limit: MAX_AUTO_BATCHES},
-              httpStatus: 422
-            });
-          }
-          if (error?.code === 'ANALYSIS_TOO_LARGE' || error?.code === 'ANALYSIS_TOO_MANY_VIEWERS') {
-            throw new AppError('AUTO_TOO_MANY_BATCHES', {
-              messageKey: 'errors.aiAutoTooManyBatches',
-              details: {detail: error.code, limit: MAX_AUTO_BATCHES},
-              httpStatus: 422
-            });
-          }
-          throw error;
-        }
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/auto/cancel',
-      handler: async ({req, res, deps}) => {
-        if (!deps.auto) {
-          throw new AppError('AUTO_UNAVAILABLE', {messageKey: 'errors.aiAutoUnavailable', httpStatus: 503});
-        }
-        const body = await readJsonBody(req);
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : null;
-        if (!sessionId) {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
-        }
-        const status = deps.auto.cancel(sessionId);
-        deps.logger?.info?.({event: 'ai.auto.cancel.requested', sessionId});
-        sendJson(res, 200, status);
-      }
-    },
-    {
       method: 'GET',
       path: '/api/ai/packages',
       handler: ({res, url, deps}) => {
@@ -1729,99 +1347,6 @@ export function buildRoutes() {
         const jobId = url.searchParams.get('jobId');
         const rows = listPackages(deps.db, {sessionId, jobId});
         sendJson(res, 200, {packages: rows.map(serializePackage)});
-      }
-    },
-    {
-      method: 'GET',
-      path: '/api/ai/packages/:id/download',
-      handler: ({res, params, deps}) => {
-        const record = getPackage(deps.db, params.id);
-        if (!record) throw notFound();
-        const absolute = join(deps.paths.exports, record.relative_path);
-        if (!existsSync(absolute)) throw notFound();
-        const stat = statSync(absolute);
-        res.writeHead(200, {
-          'Content-Type': 'application/zip',
-          'Content-Length': stat.size,
-          'Content-Disposition': `attachment; filename="${record.file_name.replace(/"/g, '')}"`,
-          'Cache-Control': 'no-store',
-          'X-Content-Type-Options': 'nosniff'
-        });
-        createReadStream(absolute).pipe(res);
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/import/preview',
-      handler: async ({req, res, deps}) => {
-        const body = await readJsonBody(req, {limit: MAX_IMPORT_BYTES + 64 * 1024});
-        if (typeof body.json !== 'string') {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.aiImportTextRequired', httpStatus: 400});
-        }
-        const preview = validateAnalysisImport({
-          db: deps.db,
-          text: body.json,
-          source: body.source === 'file' ? 'file' : 'paste',
-          now: Date.now()
-        });
-        sendJson(res, 200, {
-          ok: preview.ok,
-          action: preview.action,
-          errors: preview.errors,
-          warnings: preview.warnings,
-          target: preview.target,
-          duplicate: preview.target?.duplicate ?? null,
-          requiresVersionConfirm: Boolean(preview.target?.requiresVersionConfirm),
-          evidence: preview.evidenceRows
-            ? {
-              total: preview.evidenceRows.length,
-              missing: preview.evidenceRows.filter((row) => !row.available).length
-            }
-            : null,
-          viewerProfiles: preview.sanitized?.viewer_profiles?.length ?? 0,
-          memory: preview.memory
-            ? {
-              coverage: preview.memory.coverage,
-              totals: preview.memory.totals,
-              viewerCount: preview.memory.viewers.length,
-              legacy: preview.memory.legacy,
-              plan: preview.memory.plan,
-              gaps: preview.memory.gaps ?? {missing: [], unknown: [], duplicate: []}
-            }
-            : null,
-          schemaVersion: RESULT_SCHEMA_VERSION
-        });
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/ai/import',
-      handler: async ({req, res, deps}) => {
-        const body = await readJsonBody(req, {limit: MAX_IMPORT_BYTES + 64 * 1024});
-        if (typeof body.json !== 'string') {
-          throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.aiImportTextRequired', httpStatus: 400});
-        }
-        const outcome = importAnalysisResult({
-          db: deps.db,
-          text: body.json,
-          source: body.source === 'file' ? 'file' : 'paste',
-          createVersion: body.createVersion === true,
-          now: Date.now()
-        });
-        const report = buildSessionAnalysisReport(deps.db, outcome.job.sessionId);
-        deps.logger?.info({
-          event: 'ai.result.imported',
-          jobId: outcome.job.id,
-          resultId: outcome.result.id,
-          duplicate: outcome.duplicate,
-          version: outcome.result.resultVersion
-        });
-        sendJson(res, outcome.duplicate ? 200 : 201, {
-          duplicate: outcome.duplicate,
-          result: serializeResult(outcome.result),
-          job: serializeJob(outcome.job, outcome.status),
-          report
-        });
       }
     },
     {

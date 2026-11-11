@@ -1,4 +1,9 @@
 /**
+ * HISTORICAL (v0.13.0) real packaged-EXE verification for the M6 manual AI file
+ * round trip. v0.13.1 removed the manual import/prompt UI and HTTP routes; this
+ * script must be rewritten for the five-step API-key flow before it can pass.
+ * It is kept for the historical fixture only.
+ *
  * Real packaged-EXE verification for the M6 AI file round trip.
  *
  *   1. creates a real schema-v7 data folder with a seeded broadcast, so the

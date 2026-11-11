@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -7,6 +7,7 @@ import {request as httpRequest} from 'node:http';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 import {readZipEntry, readZipIndex} from '../../src/shared/zip.mjs';
+import {buildAnalysisPackage} from '../../src/ai/export/package.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -56,12 +57,13 @@ test('local API serves the console, records a session, exports a package and res
     assert.equal(health.port, server.port);
 
     const bootstrap = await (await fetch(`${base}api/bootstrap`)).json();
-    assert.equal(bootstrap.app.version, '0.13.0');
+    assert.equal(bootstrap.app.version, '0.13.1');
     assert.equal(bootstrap.effective.locale, 'en');
     assert.equal(bootstrap.settings.locale, 'system');
     assert.equal(bootstrap.settings.theme, 'system');
-    assert.equal(bootstrap.capabilities.ai.export, true);
-    assert.equal(bootstrap.capabilities.ai.import, true);
+    assert.equal(bootstrap.capabilities.ai.automated, true);
+    assert.equal(bootstrap.capabilities.ai.export, false);
+    assert.equal(bootstrap.capabilities.ai.import, false);
     assert.equal(bootstrap.capabilities.backup.export, false);
   });
 
@@ -135,17 +137,18 @@ test('local API serves the console, records a session, exports a package and res
     assert.ok(detail.timeline.buckets.length >= 1);
     assert.ok(Array.isArray(detail.top.speakers));
 
-    // The exported package contains checksummed files and validates offline.
-    const created = await jsonRequest(`${base}api/ai/packages`, {method: 'POST', body: {sessionId: session.id, locale: 'ja'}});
-    assert.equal(created.status, 201);
-    const {package: analysisPackage} = await created.json();
+    // The manual package HTTP entry point was removed in v0.13.1; the internal
+    // builder still produces the historical package format for compatibility.
+    const analysisPackage = await buildAnalysisPackage({
+      db: server.db,
+      sessionId: session.id,
+      locale: 'ja',
+      exportsDir: server.paths.exports
+    });
     assert.match(analysisPackage.fileName, /\.zip$/);
     assert.equal(analysisPackage.protocol, 'livememory-analysis-v1');
 
-    const download = await fetch(`${base}api/ai/packages/${encodeURIComponent(analysisPackage.id)}/download`);
-    assert.equal(download.status, 200);
-    assert.equal(download.headers.get('content-type'), 'application/zip');
-    const buffer = Buffer.from(await download.arrayBuffer());
+    const buffer = readFileSync(join(server.paths.exports, analysisPackage.fileName));
     const entries = readZipIndex(buffer).map((entry) => entry.name);
     assert.deepEqual(entries.sort(), [
       'instructions.md', 'manifest.json', 'messages.jsonl', 'result.schema.json', 'session_context.json', 'viewer_context.json'

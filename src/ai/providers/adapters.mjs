@@ -1,6 +1,7 @@
 import {joinUrl, assertSafeResolvedUrl} from './url-safety.mjs';
 import {getProvider} from './catalog.mjs';
 import {perMillionFromTokenPrice, pricingFromOpenRouterModel} from './pricing.mjs';
+import {parseRetryAfter} from '../runtime/json.mjs';
 
 /**
  * Low-level provider transport.
@@ -15,7 +16,14 @@ import {perMillionFromTokenPrice, pricingFromOpenRouterModel} from './pricing.mj
  */
 
 export class ProviderHttpError extends Error {
-  constructor(code, {status = null, detail = null, retryable = false, providerId = null, cause = null} = {}) {
+  constructor(code, {
+    status = null,
+    detail = null,
+    retryable = false,
+    providerId = null,
+    cause = null,
+    retryAfterMs = null
+  } = {}) {
     super(code);
     this.name = 'ProviderHttpError';
     this.code = code;
@@ -24,6 +32,7 @@ export class ProviderHttpError extends Error {
     this.retryable = retryable;
     this.providerId = providerId;
     this.cause = cause;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -80,6 +89,7 @@ function errorFromResponse(response, payload, providerId) {
   const status = response.status;
   const type = payload?.error?.type ?? payload?.error?.code ?? payload?.type ?? null;
   const detail = String(payload?.error?.message ?? payload?.message ?? '').slice(0, 300) || null;
+  const retryAfterMs = parseRetryAfter(response.headers?.get?.('retry-after'));
   if (status === 401 || status === 403) {
     return new ProviderHttpError(PROVIDER_ERROR.AUTH, {status, detail, providerId});
   }
@@ -87,13 +97,20 @@ function errorFromResponse(response, payload, providerId) {
     return new ProviderHttpError(PROVIDER_ERROR.NOT_FOUND, {status, detail, providerId});
   }
   if (status === 429) {
-    return new ProviderHttpError(PROVIDER_ERROR.RATE_LIMIT, {status, detail, retryable: true, providerId});
+    return new ProviderHttpError(PROVIDER_ERROR.RATE_LIMIT, {
+      status,
+      detail,
+      retryable: true,
+      providerId,
+      retryAfterMs
+    });
   }
   return new ProviderHttpError(PROVIDER_ERROR.HTTP, {
     status,
     detail: type && detail ? `${type}: ${detail}` : detail,
-    retryable: status >= 500 || status === 408,
-    providerId
+    retryable: status >= 500 || status === 408 || status === 425,
+    providerId,
+    retryAfterMs
   });
 }
 

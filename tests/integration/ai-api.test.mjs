@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 import {addBroadcaster, seedSession, makeBatchResult, makeAggregateResult, readBatchPackage, readAggregatePackage} from '../helpers/ai-fixtures.mjs';
 import {readZipEntry} from '../../src/shared/zip.mjs';
+import {buildAggregatePackage, createAnalysisJob} from '../../src/ai/export/job.mjs';
+import {validateAnalysisImport} from '../../src/ai/import/validate.mjs';
+import {importAnalysisResult} from '../../src/ai/import/importer.mjs';
 
 async function jsonRequest(url, {method = 'GET', body} = {}) {
   const response = await fetch(url, {
@@ -24,7 +28,12 @@ async function jsonRequest(url, {method = 'GET', body} = {}) {
   return {status: response.status, payload, response};
 }
 
-test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregate and report', async (t) => {
+/**
+ * The manual creation/prompt/import HTTP endpoints were removed in v0.13.1.
+ * This test now exercises the same validation/import/report logic directly and
+ * keeps coverage of the read-only HTTP endpoints that still serve the console.
+ */
+test('analysis jobs validate, import, aggregate and report through shared services', async (t) => {
   const temp = createTempDir();
   const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
@@ -35,24 +44,27 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
   addBroadcaster(server.db);
   const session = seedSession(server.db, {messageCount: 1200});
 
-  await t.test('status reports import support and the current schema', async () => {
+  await t.test('status reports automated analysis, no manual import, and the current schema', async () => {
     const {payload} = await jsonRequest(`${base}api/status`);
-    assert.equal(payload.ai.import, true);
+    assert.equal(payload.ai.automated, true);
+    assert.equal(payload.ai.import, false);
     assert.equal(payload.ai.schemaVersion, '1.3.0');
     assert.equal(payload.database.schemaVersion, 13);
   });
 
   let job;
   let packages = [];
-  let finalResult = null;
-  await t.test('creating a job exports every batch and exposes it for download', async () => {
-    const created = await jsonRequest(`${base}api/ai/jobs`, {
-      method: 'POST',
-      body: {sessionId: session.id, locale: 'en', batchSize: 500}
+  await t.test('a job exports every batch and the read-only job API exposes it', async () => {
+    const created = await createAnalysisJob({
+      db: server.db,
+      sessionId: session.id,
+      locale: 'en',
+      exportsDir: server.paths.exports,
+      batchSize: 500
     });
-    assert.equal(created.status, 201);
-    job = created.payload.job;
-    packages = created.payload.packages;
+    assert.ok(created);
+    job = created.job;
+    packages = created.packages;
     assert.equal(job.batchTotal, 3);
     assert.equal(packages.length, 3);
     assert.ok(packages.every((pkg) => pkg.stage === 'batch'));
@@ -66,22 +78,14 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
     assert.equal(detail.payload.batches.length, 3);
     assert.equal(detail.payload.packages.length, 3);
 
-    const download = await fetch(`${base}api/ai/packages/${encodeURIComponent(packages[0].id)}/download`);
-    assert.equal(download.status, 200);
-    assert.match(download.headers.get('content-type'), /application\/zip/);
-    const buffer = Buffer.from(await download.arrayBuffer());
+    const buffer = readFileSync(join(server.paths.exports, packages[0].fileName));
     assert.equal(buffer.subarray(0, 2).toString('ascii'), 'PK');
     const manifest = JSON.parse(readZipEntry(buffer, 'manifest.json').toString('utf8'));
     assert.equal(manifest.job_id, job.id);
     assert.equal(manifest.batch.index, 1);
-
-    const instructions = await jsonRequest(`${base}api/ai/instructions?jobId=${encodeURIComponent(job.id)}&batchIndex=1`);
-    assert.equal(instructions.payload.promptVersion, 'lm-prompt-m6.3-en');
-    assert.match(instructions.payload.text, /Batch analysis/);
-    assert.match(instructions.payload.text, /schema_version/);
   });
 
-  const exportsDir = join(server.paths.exports);
+  const exportsDir = server.paths.exports;
   const packageData = readBatchPackage(exportsDir, packages[0]);
   const batchOne = makeBatchResult(packageData.manifest, packageData.messages, packageData.viewers);
   const batchTwoData = readBatchPackage(exportsDir, packages[1]);
@@ -89,145 +93,135 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
   const batchThreeData = readBatchPackage(exportsDir, packages[2]);
   const batchThree = makeBatchResult(batchThreeData.manifest, batchThreeData.messages, batchThreeData.viewers);
 
-  await t.test('preview validates without writing and the import writes exactly one result', async () => {
+  await t.test('validation does not write and import writes exactly one result', async () => {
     const before = Number(server.db.prepare('SELECT COUNT(*) AS c FROM ai_results').get().c);
-    const preview = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: JSON.stringify(batchOne), source: 'paste'}
+    const preview = validateAnalysisImport({
+      db: server.db,
+      text: JSON.stringify(batchOne),
+      source: 'paste'
     });
-    assert.equal(preview.status, 200);
-    assert.equal(preview.payload.ok, true);
-    assert.equal(preview.payload.action, 'import');
-    assert.equal(preview.payload.target.session.id, session.id);
-    assert.equal(preview.payload.target.batch.batchIndex, 1);
-    assert.equal(preview.payload.target.schemaVersion, '1.1.0');
+    assert.equal(preview.ok, true);
+    assert.equal(preview.action, 'import');
+    assert.equal(preview.target.session.id, session.id);
+    assert.equal(preview.target.batch.batchIndex, 1);
+    assert.equal(preview.target.schemaVersion, '1.1.0');
     assert.equal(Number(server.db.prepare('SELECT COUNT(*) AS c FROM ai_results').get().c), before);
 
-    const imported = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(batchOne), source: 'paste'}
+    const imported = importAnalysisResult({
+      db: server.db,
+      text: JSON.stringify(batchOne),
+      source: 'api'
     });
-    assert.equal(imported.status, 201);
-    assert.equal(imported.payload.duplicate, false);
-    assert.equal(imported.payload.result.resultVersion, 1);
-    assert.equal(imported.payload.job.status.state, 'partial');
-    assert.equal(imported.payload.report.mode, 'partial');
-    assert.equal(imported.payload.report.perBatch.length, 1);
+    assert.equal(imported.duplicate, false);
+    assert.equal(imported.result.resultVersion, 1);
+    assert.equal(imported.status.status, 'partial');
+    const report = await jsonRequest(`${base}api/ai/sessions/${encodeURIComponent(session.id)}/report`);
+    assert.equal(report.payload.mode, 'partial');
+    assert.equal(report.payload.perBatch.length, 1);
 
-    const duplicate = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(batchOne), source: 'file'}
+    const duplicate = importAnalysisResult({
+      db: server.db,
+      text: JSON.stringify(batchOne),
+      source: 'api'
     });
-    assert.equal(duplicate.status, 200);
-    assert.equal(duplicate.payload.duplicate, true);
+    assert.equal(duplicate.duplicate, true);
 
     const changed = structuredClone(batchOne);
     changed.session_topics.summary = 'Changed summary for version two.';
-    const versionPreview = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: JSON.stringify(changed)}
+    const versionPreview = validateAnalysisImport({
+      db: server.db,
+      text: JSON.stringify(changed),
+      source: 'api'
     });
-    assert.equal(versionPreview.payload.action, 'confirm_version');
-    assert.equal(versionPreview.payload.target.latestVersion, 1);
+    assert.equal(versionPreview.action, 'confirm_version');
+    assert.equal(versionPreview.target.latestVersion, 1);
 
-    const refused = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(changed)}
-    });
-    assert.equal(refused.status, 409);
-    assert.equal(refused.payload.error.code, 'AI_VERSION_REQUIRED');
+    assert.throws(
+      () => importAnalysisResult({db: server.db, text: JSON.stringify(changed), source: 'api'}),
+      (error) => error?.code === 'AI_VERSION_REQUIRED'
+    );
 
-    const accepted = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(changed), createVersion: true}
+    const accepted = importAnalysisResult({
+      db: server.db,
+      text: JSON.stringify(changed),
+      source: 'api',
+      createVersion: true
     });
-    assert.equal(accepted.status, 201);
-    assert.equal(accepted.payload.result.resultVersion, 2);
+    assert.equal(accepted.result.resultVersion, 2);
   });
 
-  await t.test('validation errors travel as structured field/reason/fix data', async () => {
+  await t.test('validation errors carry field, reason and fix data', async () => {
     const broken = structuredClone(batchOne);
     delete broken.session_topics.summary;
     broken.session_topics.topics[0].confidence = 5;
-    const result = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: JSON.stringify(broken)}
+    const result = validateAnalysisImport({
+      db: server.db,
+      text: JSON.stringify(broken),
+      source: 'paste'
     });
-    assert.equal(result.status, 200);
-    assert.equal(result.payload.ok, false);
-    assert.ok(result.payload.errors.length >= 2);
-    for (const error of result.payload.errors) {
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.length >= 2);
+    for (const error of result.errors) {
       assert.equal(typeof error.path, 'string');
       assert.equal(typeof error.code, 'string');
       assert.equal(typeof error.fixGroup, 'string');
     }
-    const missing = result.payload.errors.find((error) => error.code === 'SCHEMA_REQUIRED');
+    const missing = result.errors.find((error) => error.code === 'SCHEMA_REQUIRED');
     assert.equal(missing.path, 'session_topics.summary');
     assert.equal(missing.fixGroup, 'missing');
   });
 
   await t.test('the aggregate package and its final result complete the task', async () => {
     for (const payload of [batchTwo, batchThree]) {
-      const imported = await jsonRequest(`${base}api/ai/import`, {
-        method: 'POST',
-        body: {json: JSON.stringify(payload)}
-      });
-      assert.equal(imported.status, 201);
+      importAnalysisResult({db: server.db, text: JSON.stringify(payload), source: 'api'});
     }
     const waiting = await jsonRequest(`${base}api/ai/sessions/${encodeURIComponent(session.id)}/report`);
     assert.equal(waiting.payload.mode, 'partial');
     assert.equal(waiting.payload.incompleteReason, 'awaiting_aggregate');
 
-    const aggregate = await jsonRequest(`${base}api/ai/jobs/${encodeURIComponent(job.id)}/aggregate`, {
-      method: 'POST',
-      body: {}
+    const aggregate = await buildAggregatePackage({
+      db: server.db,
+      jobId: job.id,
+      exportsDir,
+      now: Date.now()
     });
-    assert.equal(aggregate.status, 201);
-    assert.equal(aggregate.payload.package.stage, 'aggregate');
-    const aggregateData = readAggregatePackage(exportsDir, aggregate.payload.package);
+    assert.ok(aggregate);
+    const aggregateData = readAggregatePackage(exportsDir, {fileName: aggregate.fileName});
     const final = makeAggregateResult(aggregateData.manifest, aggregateData.batchResults);
-    finalResult = final;
-
-    const finalPreview = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: JSON.stringify(final)}
+    const finalPreview = validateAnalysisImport({
+      db: server.db,
+      text: JSON.stringify(final),
+      source: 'api'
     });
-    assert.equal(finalPreview.payload.ok, true);
-    assert.equal(finalPreview.payload.target.mode, 'aggregate');
+    assert.equal(finalPreview.ok, true);
+    assert.equal(finalPreview.target.mode, 'aggregate');
 
-    const finalImport = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(final)}
+    const finalImport = importAnalysisResult({
+      db: server.db,
+      text: JSON.stringify(final),
+      source: 'api'
     });
-    assert.equal(finalImport.status, 201);
-    assert.equal(finalImport.payload.job.status.state, 'complete');
-    assert.equal(finalImport.payload.report.mode, 'final');
-    assert.equal(finalImport.payload.report.complete, true);
-
+    assert.equal(finalImport.status.status, 'complete');
     const report = await jsonRequest(`${base}api/ai/sessions/${encodeURIComponent(session.id)}/report`);
     assert.equal(report.payload.complete, true);
     assert.equal(report.payload.report.summary, 'Synthetic session-wide aggregate.');
     assert.equal(report.payload.report.topics.length, 1);
 
-    const resultDownload = await fetch(`${base}api/ai/results/${encodeURIComponent(finalImport.payload.result.id)}/download`);
+    const resultDownload = await fetch(`${base}api/ai/results/${encodeURIComponent(finalImport.result.id)}/download`);
     assert.equal(resultDownload.status, 200);
     assert.match(resultDownload.headers.get('content-type'), /application\/json/);
     const downloaded = await resultDownload.json();
     assert.equal(downloaded.protocol, 'livememory-analysis-result-v1');
   });
 
-  await t.test('request limits and clean import failures stay structured', async () => {
-    const wrongField = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: 42}
+  await t.test('clean import failures stay structured', async () => {
+    const tooLarge = validateAnalysisImport({
+      db: server.db,
+      text: 'x'.repeat(9 * 1024 * 1024),
+      source: 'paste'
     });
-    assert.equal(wrongField.status, 400);
-
-    const tooLarge = await jsonRequest(`${base}api/ai/import/preview`, {
-      method: 'POST',
-      body: {json: 'x'.repeat(9 * 1024 * 1024)}
-    });
-    assert.equal(tooLarge.status, 413);
+    assert.equal(tooLarge.ok, false);
+    assert.ok(tooLarge.errors.some((error) => error.code === 'TOO_LARGE'));
 
     const deleted = await jsonRequest(`${base}api/sessions/${encodeURIComponent(session.id)}`, {
       method: 'DELETE',
@@ -236,12 +230,10 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
     assert.equal(deleted.status, 200);
     const missingReport = await jsonRequest(`${base}api/ai/sessions/${encodeURIComponent(session.id)}/report`);
     assert.equal(missingReport.status, 404);
-    const lateImport = await jsonRequest(`${base}api/ai/import`, {
-      method: 'POST',
-      body: {json: JSON.stringify(finalResult ?? batchOne)}
-    });
-    assert.equal(lateImport.status, 422);
-    assert.equal(lateImport.payload.error.code, 'AI_IMPORT_INVALID');
-    assert.ok(lateImport.payload.error.details.errors.some((error) => error.code === 'SESSION_NOT_FOUND'));
+    assert.throws(
+      () => importAnalysisResult({db: server.db, text: JSON.stringify(batchOne), source: 'api'}),
+      (error) => error?.code === 'AI_IMPORT_INVALID'
+        && error.details?.errors?.some((item) => item.code === 'SESSION_NOT_FOUND')
+    );
   });
 });

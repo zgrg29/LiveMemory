@@ -9,7 +9,6 @@ import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
-import {AutoAnalysisRunner} from '../ai/auto/runner.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
 import {runRetention} from '../storage/retention.mjs';
@@ -122,13 +121,6 @@ export async function startServer({
       days: settingsStore.get().youtubeRawRetentionDays,
       logger
     });
-    const autoAnalysis = new AutoAnalysisRunner({
-      db,
-      paths,
-      logger,
-      now,
-      ...(auto ?? {})
-    });
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
@@ -151,7 +143,6 @@ export async function startServer({
       bilibili,
       youtube,
       monitoring,
-      auto: autoAnalysis,
       providerConfigStore,
       analysisRunner,
       recovered,
@@ -169,11 +160,6 @@ export async function startServer({
     }
     // Automatic analysis is an in-process task that also writes analysis rows;
     // abort it before the database is closed.
-    try {
-      await instance.auto?.shutdown();
-    } catch (error) {
-      logger?.error({event: 'shutdown.auto.failed', code: error?.code ?? 'unknown'});
-    }
     try {
       await instance.analysisRunner?.shutdown();
     } catch (error) {
@@ -203,7 +189,6 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
-    get auto() { return runtime.auto; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
     get maintenance() { return state.maintenance; },
@@ -330,7 +315,6 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get monitoring() { return runtime.monitoring; },
-    get auto() { return runtime.auto; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
     get runtime() { return runtime; },

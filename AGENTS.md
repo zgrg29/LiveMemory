@@ -6,7 +6,7 @@
 
 ## 1. 项目目标
 
-LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、免费、不依赖任何 AI API、不需要开发者维护服务器。观众数据保存在用户自己的电脑上，AI 分析通过手动文件往返完成。
+LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、免费、不需要开发者维护服务器。观众数据保存在用户自己的电脑上；AI 分析只由本地程序使用**用户自己配置的 API Key** 调用 Provider，不经过开发者服务器。
 
 第一版支持 Bilibili Live 与 YouTube Live。当前发布形态为 `LiveMemory.exe`，用户不应需要安装 Python、Node.js、npm 或数据库。
 
@@ -106,7 +106,7 @@ node scripts/build-windows.mjs
 7. **读模型与分析分离**：`analytics/` 只读数据库生成展示数据，不写库。
 8. **AI 不记账**：AI 输出永远不能修改本地金额与计数。
 9. **文本优先**：聊天原文 `content` 永不替换；Unicode Emoji 原样保存。平台表情只在有可靠元数据时写入 `emotes`，保留平台提供的名称/代码；没有名称就保留 id 并标记未知。不要为还原表情图片引入下载/缓存，也不要猜测未知表情的情绪。
-10. **AI 平台无关**：界面与提示词使用「AI 分析中心 / AI 分析包 / AI 分析指令 / AI 分析结果」，不得绑定某个 AI 品牌；不集成需要付费密钥的 AI API。
+10. **AI 平台无关、自备密钥**：界面与提示词使用「AI 分析中心 / AI 分析 / 观众长期画像」，不得绑定某个 AI 品牌。只支持用户自备 API Key 的 Provider（OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、自定义 OpenAI-compatible）；不得重新引入匿名免费 AI、手动复制提示词或粘贴/上传 JSON 的用户入口。API Key 只存本地加密凭据库，不进入配置 JSON、日志、ZIP、数据库导出或 HTML。
 11. **只接直播**：平台 URL/ID 只用于定位正在进行的直播。不得抓取普通视频、视频评论、字幕或历史回放；非直播输入必须明确拒绝。
 12. **平台接入边界（v0.5.0 产品决定）**：Bilibili 继续使用其公开直播接口。YouTube **只保留** `src/platforms/youtube/anonymous/` 的公开网页聊天路径，不再提供官方 Data API/OAuth/API Key 实现。该路径必须同时满足：不发送 Cookie/OAuth/用户 API Key；不绕过登录、验证码、年龄墙、地区限制；失败不静默切换、不伪造成功；界面不反复展示技术模式选择，但在设置/隐私说明中如实告知它不是 YouTube 官方稳定 API、可能失效；不得描述为“官方授权”或“合规”。`liveChatMessages.streamList` 是 gRPC，REST 路径不存在，不得臆造。
 13. **凭据不进仓库**：任何 API Key、OAuth client secret、access/refresh token 都不得提交，也不得默认打进 EXE。凭据由发布者通过环境变量或数据目录私有文件一次性配置；缺少配置时必须明确提示，不得伪造登录或成功。

@@ -1,18 +1,24 @@
 import {join} from 'node:path';
 import {getJob, listJobBatches, setJobUsage} from '../../storage/repositories/ai-jobs.mjs';
-import {listPackages} from '../../storage/repositories/ai-packages.mjs';
+import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
 import {latestResultForScope} from '../../storage/repositories/ai-results.mjs';
+import {getSession} from '../../storage/repositories/sessions.mjs';
 import {computeJobStatus} from '../tasks/status.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
 import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-jobs.mjs';
-import {promptVersionFor, ANALYSIS_MODE} from '../constants.mjs';
-import {callProvider, ProviderHttpError, PROVIDER_ERROR} from '../providers/adapters.mjs';
+import {ANALYSIS_MODE, MAX_ANALYSIS_VIEWERS} from '../constants.mjs';
+import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
 import {memoryPermission, addUsage, estimateCost, budgetRemaining} from '../providers/pricing.mjs';
 import {PRICING_STATUS} from '../providers/catalog.mjs';
-import {AutoAnalysisState} from '../auto/state.mjs';
-import {extractJsonObject, sleepWithSignal} from '../auto/client.mjs';
+import {AnalysisState} from '../runtime/state.mjs';
+import {
+  extractJsonObject,
+  sleepWithSignal,
+  cancellationError
+} from '../runtime/json.mjs';
+import {ProviderRequestScheduler, retryDelayMs} from '../runtime/scheduler.mjs';
 import {
   SESSION_FILES,
   MEMORY_FILES,
@@ -25,36 +31,36 @@ import {
 import {
   assembleMemoryCompact,
   mergeMemorySupplement,
-  buildMemoryRefs,
   assembleSessionAnswer
 } from './compact.mjs';
 
 /**
  * Configured-provider analysis runner.
  *
- * It supports four paths under one permission model:
- *   - anonymous free session analysis (the existing verified OVH route);
- *   - API-key free model session analysis;
- *   - paid model session analysis;
- *   - paid model long-term viewer memory analysis.
+ * The only supported AI path is a user-supplied API key and a user-configured
+ * provider/model. There is no anonymous free route and no manual prompt/JSON
+ * round trip in the product UI. Session and memory are separate jobs:
  *
- * Session and memory are separate jobs. The session report is imported as soon
- * as it succeeds. A memory failure never invalidates it; already imported memory
- * batches remain valid and are skipped on resume.
+ *   - the session report is imported as soon as it succeeds;
+ *   - viewer memory batches are independent and may run with bounded
+ *     concurrency inside one job;
+ *   - a memory failure never invalidates a saved session report, and already
+ *     imported memory batches remain valid and are skipped on resume.
+ *
+ * Every answer still goes through the existing schema/business validator and
+ * the single transactional importer. The runner never writes analysis tables
+ * directly.
  */
 
-const ANONYMOUS_PROVIDER = Object.freeze({
-  id: 'anonymous-ovh',
-  label: 'OVHcloud AI Endpoints',
-  providerId: 'anonymous',
-  protocol: 'openai',
-  baseUrl: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
-  modelId: 'gpt-oss-20b',
-  supportsStructuredOutputs: true,
-  timeoutMs: 300000,
-  pricingStatus: PRICING_STATUS.ANONYMOUS_FREE,
-  pricing: null
-});
+const DEFAULT_TIMEOUT_MS = 180000;
+const MAX_CONCURRENCY = 8;
+/**
+ * Paid providers are not limited by the old anonymous 30-batch ceiling. The
+ * real safety bound is MAX_ANALYSIS_VIEWERS; at the smallest tested viewer batch
+ * (10) this allows every allowed viewer to be assigned. The count is explicit,
+ * never silently truncated.
+ */
+const MAX_MEMORY_BATCHES = Math.ceil(MAX_ANALYSIS_VIEWERS / 10) + 1;
 
 export class AnalysisPermissionError extends Error {
   constructor(code, details = {}) {
@@ -66,9 +72,7 @@ export class AnalysisPermissionError extends Error {
 }
 
 function abortError() {
-  const error = new Error('ANALYSIS_CANCELED');
-  error.code = 'ANALYSIS_CANCELED';
-  return error;
+  return cancellationError();
 }
 
 function providerFromConfig(config) {
@@ -81,11 +85,12 @@ function providerFromConfig(config) {
     baseUrl: config.baseUrl,
     modelId: config.modelId,
     supportsStructuredOutputs: config.capabilities?.structuredOutputs === true && config.supportsStructuredOutputs !== false,
-    timeoutMs: 180000,
+    timeoutMs: Math.max(10000, Math.min(600000, Number(config.timeoutMs) || DEFAULT_TIMEOUT_MS)),
     pricingStatus: config.pricingStatus,
     pricing: config.pricing,
     allowLocalNetwork: config.allowLocalNetwork === true,
     contextLength: config.contextLength ?? null,
+    concurrency: Math.max(1, Math.min(MAX_CONCURRENCY, Number(config.concurrency) || 3)),
     configId: config.id
   };
 }
@@ -102,6 +107,50 @@ function memoryViewersPerBatch(provider) {
   return 10;
 }
 
+function schedulerKey(provider) {
+  if (provider.configId) return `config:${provider.configId}`;
+  return `${provider.providerId}:${provider.regionId ?? 'default'}:${provider.modelId}`;
+}
+
+function isRetryable(error) {
+  return error instanceof ProviderHttpError && error.retryable === true;
+}
+
+/**
+ * Run a worker pool over independent batches. The first failure aborts the
+ * remaining in-flight requests through `poolController` and is re-thrown after
+ * every worker settles, so a partially failed job is reported precisely instead
+ * of hanging on sibling requests.
+ */
+async function runPool(items, limit, worker, signal) {
+  const poolController = new AbortController();
+  const poolSignal = signal
+    ? AbortSignal.any([signal, poolController.signal])
+    : poolController.signal;
+  let nextIndex = 0;
+  let firstError = null;
+  const maxWorkers = Math.max(1, Math.min(Number(limit) || 1, items.length));
+  const workers = Array.from({length: maxWorkers}, async () => {
+    for (;;) {
+      if (poolSignal.aborted) return;
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      try {
+        await worker(items[index], index, poolSignal);
+      } catch (error) {
+        if (!firstError) {
+          firstError = signal?.aborted ? abortError() : error;
+          poolController.abort();
+        }
+        return;
+      }
+    }
+  });
+  await Promise.allSettled(workers);
+  if (firstError) throw firstError;
+}
+
 export class AnalysisRunner {
   constructor({
     db,
@@ -110,8 +159,8 @@ export class AnalysisRunner {
     logger = null,
     now = Date.now,
     fetchImpl = globalThis.fetch,
-    anonymousProvider = ANONYMOUS_PROVIDER,
-    maxRetries = 1
+    maxRetries = 2,
+    random = Math.random
   }) {
     this.db = db;
     this.paths = paths;
@@ -119,34 +168,62 @@ export class AnalysisRunner {
     this.logger = logger;
     this.now = now;
     this.fetchImpl = fetchImpl;
-    this.anonymousProvider = anonymousProvider;
-    this.maxRetries = maxRetries;
+    this.maxRetries = Math.max(0, Math.min(5, Number(maxRetries) || 0));
+    this.random = random;
     this.active = new Map();
+    this.schedulers = new Map();
+    this.memoryGates = new Map();
+    // Base URL safety is checked once per origin per short TTL. Re-resolving DNS
+    // for every batch would add seconds of local latency to large jobs while
+    // providing no additional protection within one run.
+    this.urlChecks = new Map();
+    this.urlCheckTtlMs = 5 * 60 * 1000;
     const runtimeDir = paths.runtime ?? join(paths.root, 'runtime');
-    this.state = new AutoAnalysisState({runtimeDir, now, fileName: 'ai-v13.json'});
+    this.state = new AnalysisState({runtimeDir, now, fileName: 'ai-v13.json'});
     this.state.recoverInterrupted();
   }
 
   services() {
-    return {
-      anonymous: [{
-        id: this.anonymousProvider.id,
-        label: this.anonymousProvider.label,
-        model: this.anonymousProvider.modelId,
-        pricingStatus: PRICING_STATUS.ANONYMOUS_FREE
-      }],
-      configured: this.configStore.list()
-    };
+    return {configured: this.configStore.list()};
+  }
+
+  #schedulerFor(provider) {
+    const key = schedulerKey(provider);
+    let scheduler = this.schedulers.get(key);
+    if (!scheduler) {
+      scheduler = new ProviderRequestScheduler({
+        key,
+        initialConcurrency: provider.concurrency ?? 3,
+        maxConcurrency: provider.concurrency ?? 3,
+        minConcurrency: 1,
+        now: this.now,
+        random: this.random
+      });
+      this.schedulers.set(key, scheduler);
+    }
+    return scheduler;
+  }
+
+  async #ensureSafeProviderUrl(provider) {
+    const key = `${provider.baseUrl}|${provider.allowLocalNetwork === true ? 'local' : 'public'}`;
+    const cached = this.urlChecks.get(key);
+    if (cached && this.now() - cached.at < this.urlCheckTtlMs) return;
+    try {
+      await assertSafeResolvedUrl(provider.baseUrl, {
+        allowLocalNetwork: provider.allowLocalNetwork === true
+      });
+      this.urlChecks.set(key, {at: this.now()});
+    } catch (error) {
+      throw Object.assign(new Error(error?.code ?? 'PROVIDER_URL_BLOCKED'), {
+        code: error?.code ?? 'PROVIDER_URL_BLOCKED',
+        detail: 'base-url-rejected'
+      });
+    }
   }
 
   #checkProvider({mode, configId, consent, confirmBilling, optInMemory}) {
     if (consent !== true) throw new AnalysisPermissionError('CONSENT_REQUIRED');
-    if (!configId) {
-      if (mode !== ANALYSIS_MODE.SESSION) {
-        throw new AnalysisPermissionError('PAID_MODEL_REQUIRED');
-      }
-      return {provider: this.anonymousProvider, config: null, anonymous: true};
-    }
+    if (!configId) throw new AnalysisPermissionError('PROVIDER_CONFIG_REQUIRED');
     const config = this.configStore.get(configId);
     if (!config) throw new AnalysisPermissionError('PROVIDER_CONFIG_NOT_FOUND');
     if (!config.modelId) throw new AnalysisPermissionError('MODEL_REQUIRED');
@@ -164,12 +241,11 @@ export class AnalysisRunner {
         throw new AnalysisPermissionError('MEMORY_PERMISSION_DENIED', {reasons: permission.reasons});
       }
     }
-    if (config.pricingStatus !== PRICING_STATUS.ANONYMOUS_FREE
-      && config.pricingStatus !== PRICING_STATUS.API_FREE
+    if (config.pricingStatus !== PRICING_STATUS.API_FREE
       && confirmBilling !== true) {
       throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
     }
-    return {provider: providerFromConfig(config), config, anonymous: false};
+    return {provider: providerFromConfig(config), config};
   }
 
   async start({
@@ -229,6 +305,10 @@ export class AnalysisRunner {
       usage: null,
       budget: budget ?? null,
       error: null,
+      batchesCompleted: 0,
+      activeBatches: 0,
+      batchDurationMsTotal: 0,
+      batchSamples: 0,
       startedAt: this.now()
     });
     return this.launch({sessionId, provider: checked.provider, mode, budget, resume: false});
@@ -264,8 +344,7 @@ export class AnalysisRunner {
         running: false,
         canPause: false,
         canResume: false,
-        canCancel: false,
-        services: this.services()
+        canCancel: false
       };
     }
     const active = this.active.get(sessionId) ?? null;
@@ -285,16 +364,36 @@ export class AnalysisRunner {
     const memoryDone = !entry.memoryJobId
       ? entry.mode === ANALYSIS_MODE.SESSION
       : Boolean(memoryStatus?.complete);
-    if (status === 'running' && sessionReportDone && (memoryDone || !entry.memoryJobId)) {
-      // Do not mark complete while a memory job exists but is not ready.
-    }
+    const scheduler = entry.configId && this.schedulers.get(`config:${entry.configId}`);
+    const requestStats = scheduler ? scheduler.stats() : null;
+    const batchTotal = Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0);
+    const batchesCompleted = Number(
+      entry.batchesCompleted
+        ?? memoryStatus?.batchesImported
+        ?? (memoryDone ? batchTotal : 0)
+    );
+    const averageBatchMs = Number(entry.batchSamples ?? 0) > 0
+      ? Number(entry.batchDurationMsTotal ?? 0) / Number(entry.batchSamples)
+      : null;
+    const remainingBatches = Math.max(0, batchTotal - batchesCompleted);
+    const estimatedRemainingMs = (
+      status === 'running'
+      && averageBatchMs !== null
+      && remainingBatches > 0
+      && requestStats
+    )
+      ? Math.round((averageBatchMs * remainingBatches)
+        / Math.max(1, requestStats.concurrency))
+      : null;
     return {
       sessionId,
       status,
       stage,
       running: status === 'running',
       canPause: status === 'running' && Boolean(active),
-      canResume: status !== 'complete' && Boolean(sessionJob || memoryJob),
+      canResume: status !== 'complete'
+        && Boolean(sessionJob || memoryJob)
+        && error?.code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER',
       canCancel: status === 'running' && Boolean(active),
       mode: entry.mode ?? ANALYSIS_MODE.SESSION,
       configId: entry.configId ?? null,
@@ -302,8 +401,12 @@ export class AnalysisRunner {
       providerId: entry.providerId ?? null,
       modelId: entry.modelId ?? null,
       pricingStatus: entry.pricingStatus ?? null,
-      batchIndex: Number(entry.batchIndex ?? 0),
-      batchTotal: Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0),
+      batchIndex: batchesCompleted,
+      batchTotal,
+      batchesCompleted,
+      activeBatches: Number(entry.activeBatches ?? 0),
+      averageBatchMs: averageBatchMs === null ? null : Math.round(averageBatchMs),
+      estimatedRemainingMs,
       startedAt: entry.startedAt ?? null,
       sessionReportDone,
       memoryDone,
@@ -314,11 +417,11 @@ export class AnalysisRunner {
       usage: entry.usage ?? null,
       budget: entry.budget ?? null,
       estimatedCost: entry.estimatedCost ?? null,
+      requestStats,
       lastProvider: entry.lastProvider ?? null,
       lastModel: entry.lastModel ?? null,
       updatedAt: entry.updatedAt ?? null,
-      error,
-      services: this.services()
+      error
     };
   }
 
@@ -394,13 +497,14 @@ export class AnalysisRunner {
       provider: context.provider?.providerId ?? null,
       model: context.provider?.modelId ?? null,
       code,
+      retryAfterMs: error?.retryAfterMs ?? null,
       httpStatus: error?.status ?? null
     });
   }
 
   async runSession(context) {
     const {sessionId, provider} = context;
-    let entry = this.state.get(sessionId);
+    const entry = this.state.get(sessionId);
     let job = entry?.sessionJobId ? getJob(this.db, entry.sessionJobId) : null;
     if (!job) {
       this.#setRunning(sessionId, {stage: 'packaging_session'});
@@ -427,7 +531,7 @@ export class AnalysisRunner {
       this.state.set(sessionId, {sessionReportDone: true});
       return;
     }
-    const pkg = listPackages(this.db, {jobId: job.id}).find((row) => row.stage === 'session');
+    const pkg = getJobPackage(this.db, {jobId: job.id, stage: 'session'});
     if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
     const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), SESSION_FILES);
     const prompt = buildSessionPrompt(files);
@@ -438,7 +542,7 @@ export class AnalysisRunner {
     });
     this.state.set(sessionId, {
       stage: 'session_analyzing',
-      batchIndex: 1,
+      batchIndex: 0,
       batchTotal: 1,
       estimatedCost: estimate
     });
@@ -447,21 +551,29 @@ export class AnalysisRunner {
       && estimate.amount > context.budget.amount) {
       throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
     }
+    const startedAt = this.now();
     const generated = await this.requestWithRepair({
       context,
       prompt,
       kind: 'session'
     });
-    this.state.set(sessionId, {stage: 'session_importing'});
+    this.state.set(sessionId, {
+      stage: 'session_importing',
+      batchDurationMsTotal: this.now() - startedAt,
+      batchSamples: 1
+    });
     const outcome = importAnalysisResult({
       db: this.db,
       text: generated.text,
-      source: generated.anonymous ? 'auto' : 'api',
+      source: 'api',
       now: this.now()
     });
     this.state.set(sessionId, {
       sessionReportDone: true,
       stage: 'session_done',
+      batchIndex: 1,
+      batchTotal: 1,
+      batchesCompleted: 1,
       lastProvider: generated.providerId,
       lastModel: generated.model
     });
@@ -475,9 +587,61 @@ export class AnalysisRunner {
     });
   }
 
+  #broadcasterGateKey(broadcasterId) {
+    return String(broadcasterId ?? '__unscoped__');
+  }
+
+  #assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt) {
+    const newer = this.db.prepare(`
+      SELECT s.id, s.started_at
+        FROM sessions s
+        JOIN ai_jobs j ON j.session_id = s.id
+       WHERE s.broadcaster_id = ?
+         AND s.id <> ?
+         AND s.started_at > ?
+         AND j.analysis_mode IN ('memory', 'combined')
+         AND EXISTS (SELECT 1 FROM ai_results r WHERE r.job_id = j.id)
+       ORDER BY s.started_at DESC
+       LIMIT 1
+    `).get(String(broadcasterId), String(sessionId), Number(sessionStartedAt));
+    if (newer) {
+      throw Object.assign(new Error('MEMORY_OUT_OF_ORDER'), {
+        code: 'ANALYSIS_MEMORY_OUT_OF_ORDER',
+        detail: `newer session ${newer.id} already has imported memory`
+      });
+    }
+  }
+
+  /**
+   * Serialise memory work for the same broadcaster. Memory batches inside one
+   * job cover disjoint viewers and may run concurrently, but two sessions for
+   * the same broadcaster must not apply memory snapshots in an unpredictable
+   * order. An older session is refused after a newer session's memory has
+   * already been imported, instead of silently writing older facts last.
+   */
+  async #withBroadcasterMemoryGate(broadcasterId, sessionId, sessionStartedAt, task) {
+    const key = this.#broadcasterGateKey(broadcasterId);
+    const canOrder = broadcasterId && Number.isFinite(Number(sessionStartedAt));
+    if (canOrder) this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
+    const previous = this.memoryGates.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => {}).then(async () => {
+      if (canOrder) this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
+      return task();
+    });
+    this.memoryGates.set(key, current.catch(() => {}));
+    return current;
+  }
+
   async runMemory(context) {
     const {sessionId, provider, signal} = context;
-    let entry = this.state.get(sessionId);
+    const entry = this.state.get(sessionId);
+    const session = getSession(this.db, sessionId);
+    if (!session) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
+    const broadcasterId = session.broadcaster_id ?? session.broadcasterId ?? null;
+    const sessionStartedAt = session.started_at ?? session.startedAt ?? null;
+    if (broadcasterId && sessionStartedAt !== null) {
+      this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
+    }
     let job = entry?.memoryJobId ? getJob(this.db, entry.memoryJobId) : null;
     if (!job) {
       this.#setRunning(sessionId, {stage: 'packaging_memory'});
@@ -488,7 +652,7 @@ export class AnalysisRunner {
         exportsDir: this.paths.exports,
         viewersPerBatch: memoryViewersPerBatch(provider),
         excerptCap: 600,
-        maxBatches: 30,
+        maxBatches: MAX_MEMORY_BATCHES,
         providerConfigId: provider.configId ?? null,
         providerId: provider.providerId,
         regionId: provider.regionId ?? null,
@@ -503,59 +667,118 @@ export class AnalysisRunner {
       this.state.set(sessionId, {
         memoryJobId: job.id,
         batchTotal: job.batchTotal,
+        batchesCompleted: 0,
         stage: 'memory_ready'
       });
     }
-    const batches = listJobBatches(this.db, job.id);
-    for (const batch of batches) {
-      if (signal.aborted) throw abortError();
-      const existing = latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`);
-      if (existing) continue;
-      const pkg = listPackages(this.db, {jobId: job.id}).find((row) => (
-        row.stage === 'memory' && Number(row.batch_index) === batch.batchIndex
-      ));
-      if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
-      const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), MEMORY_FILES);
-      const prompt = buildMemoryPrompt(files);
-      prompt.files = files;
-      this.#setRunning(sessionId, {
-        stage: 'memory_analyzing',
-        batchIndex: batch.batchIndex,
-        batchTotal: job.batchTotal
-      });
-      const generated = await this.generateMemoryAnswer({context, prompt, kind: 'memory'});
-      this.state.set(sessionId, {
-        stage: 'memory_importing',
-        batchIndex: batch.batchIndex,
-        batchTotal: job.batchTotal,
-        lastProvider: generated.providerId,
-        lastModel: generated.model
-      });
-      const outcome = importAnalysisResult({
-        db: this.db,
-        text: generated.text,
-        source: generated.anonymous ? 'auto' : 'api',
-        now: this.now()
-      });
-      const updated = getJob(this.db, job.id);
-      this.state.set(sessionId, {
-        stage: 'memory_batch_done',
-        batchIndex: batch.batchIndex,
-        batchTotal: job.batchTotal,
-        usage: updated?.usage ?? null,
-        memoryDone: computeJobStatus(this.db, updated).complete
-      });
-      this.logger?.info?.({
-        event: 'ai.analysis.memory.batch',
-        sessionId,
-        jobId: job.id,
-        batchIndex: batch.batchIndex,
-        provider: generated.providerId,
-        model: generated.model,
-        duplicate: outcome.duplicate
-      });
-    }
-    this.state.set(sessionId, {memoryDone: true, stage: 'memory_done'});
+    const sessionForGate = getSession(this.db, sessionId);
+    if (!sessionForGate) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
+    await this.#withBroadcasterMemoryGate(
+      job.broadcasterId ?? sessionForGate.broadcaster_id ?? sessionForGate.broadcasterId,
+      sessionId,
+      sessionForGate.started_at ?? sessionForGate.startedAt,
+      async () => {
+        const batches = listJobBatches(this.db, job.id);
+        const pending = batches.filter((batch) => (
+          !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
+        ));
+        const total = job.batchTotal;
+        let completed = total - pending.length;
+        let active = 0;
+        this.#setRunning(sessionId, {
+          stage: 'memory_analyzing',
+          batchIndex: completed,
+          batchTotal: total,
+          batchesCompleted: completed,
+          activeBatches: 0
+        });
+        await runPool(
+          pending,
+          Math.max(1, Math.min(provider.concurrency ?? 3, pending.length)),
+          async (batch, _index, workerSignal) => {
+            if (workerSignal.aborted) throw abortError();
+            const pkg = getJobPackage(this.db, {
+              jobId: job.id,
+              stage: 'memory',
+              batchIndex: batch.batchIndex
+            });
+            if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
+            const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), MEMORY_FILES);
+            const prompt = buildMemoryPrompt(files);
+            prompt.files = files;
+            active += 1;
+            this.#setRunning(sessionId, {
+              stage: 'memory_analyzing',
+              batchIndex: completed,
+              batchTotal: total,
+              batchesCompleted: completed,
+              activeBatches: active
+            });
+            const batchStartedAt = this.now();
+            try {
+              const generated = await this.generateMemoryAnswer({
+                context: {...context, signal: workerSignal},
+                prompt,
+                kind: 'memory'
+              });
+              this.state.set(sessionId, {
+                stage: 'memory_importing',
+                batchIndex: completed,
+                batchTotal: total,
+                batchesCompleted: completed,
+                activeBatches: active,
+                lastProvider: generated.providerId,
+                lastModel: generated.model
+              });
+              const outcome = importAnalysisResult({
+                db: this.db,
+                text: generated.text,
+                source: 'api',
+                now: this.now()
+              });
+              completed += 1;
+              const batchMs = this.now() - batchStartedAt;
+              const current = this.state.get(sessionId);
+              const updated = getJob(this.db, job.id);
+              this.state.set(sessionId, {
+                stage: 'memory_batch_done',
+                batchIndex: completed,
+                batchTotal: total,
+                batchesCompleted: completed,
+                activeBatches: active,
+                batchDurationMsTotal: Number(current?.batchDurationMsTotal ?? 0) + batchMs,
+                batchSamples: Number(current?.batchSamples ?? 0) + 1,
+                usage: updated?.usage ?? null,
+                memoryDone: computeJobStatus(this.db, updated).complete
+              });
+              this.logger?.info?.({
+                event: 'ai.analysis.memory.batch',
+                sessionId,
+                jobId: job.id,
+                batchIndex: batch.batchIndex,
+                provider: generated.providerId,
+                model: generated.model,
+                durationMs: batchMs,
+                duplicate: outcome.duplicate
+              });
+            } finally {
+              active = Math.max(0, active - 1);
+              const current = this.state.get(sessionId);
+              if (current?.status === 'running') {
+                this.state.set(sessionId, {
+                  activeBatches: active,
+                  batchIndex: completed,
+                  batchTotal: total,
+                  batchesCompleted: completed
+                });
+              }
+            }
+          },
+          signal
+        );
+        this.state.set(sessionId, {memoryDone: true, stage: 'memory_done'});
+      }
+    );
   }
 
   async generateMemoryAnswer({context, prompt, kind}) {
@@ -702,22 +925,15 @@ export class AnalysisRunner {
 
   async requestOnce({context, prompt, kind}) {
     const {provider, signal} = context;
-    const startedAt = this.now();
+    const scheduler = this.#schedulerFor(provider);
+    await this.#ensureSafeProviderUrl(provider);
+
     let lastError = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       if (signal.aborted) throw abortError();
+      const startedAt = this.now();
       try {
-        await assertSafeResolvedUrl(provider.baseUrl, {
-          allowLocalNetwork: provider.allowLocalNetwork === true
-        });
-      } catch (error) {
-        throw Object.assign(new Error(error?.code ?? 'PROVIDER_URL_BLOCKED'), {
-          code: error?.code ?? 'PROVIDER_URL_BLOCKED',
-          detail: 'base-url-rejected'
-        });
-      }
-      try {
-        const result = await callProvider(provider, {
+        const result = await scheduler.run(() => callProvider(provider, {
           apiKey: provider.configId ? this.configStore.secret(provider.configId) : null,
           messages: prompt.messages,
           maxTokens: kind.startsWith('session') ? 8000 : 6000,
@@ -725,8 +941,8 @@ export class AnalysisRunner {
           responseFormat: prompt.answerSchema ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object') : 'none',
           fetchImpl: this.fetchImpl,
           signal,
-          timeoutMs: provider.timeoutMs ?? 180000
-        });
+          timeoutMs: provider.timeoutMs ?? DEFAULT_TIMEOUT_MS
+        }), {signal});
         const usage = result.usage ?? {inputTokens: 0, outputTokens: 0};
         const entry = this.state.get(context.sessionId);
         const nextUsage = addUsage(entry?.usage, usage, provider.pricing);
@@ -752,20 +968,31 @@ export class AnalysisRunner {
           model: result.model,
           usage,
           finishReason: result.finishReason,
-          durationMs: this.now() - startedAt,
-          anonymous: !provider.configId
+          durationMs: this.now() - startedAt
         };
       } catch (error) {
         lastError = error;
         if (error?.code === 'ANALYSIS_BUDGET_EXCEEDED') throw error;
-        if (attempt >= this.maxRetries || !(error instanceof ProviderHttpError) || !error.retryable) {
+        if (attempt >= this.maxRetries || !isRetryable(error)) {
           throw Object.assign(new Error(error?.code ?? 'PROVIDER_FAILED'), {
             code: error?.code ?? 'PROVIDER_FAILED',
             detail: error?.detail ?? error?.message,
-            status: error?.status ?? null
+            status: error?.status ?? null,
+            retryAfterMs: error?.retryAfterMs ?? null
           });
         }
-        await sleepWithSignal(Math.min(4000, 1200 * (attempt + 1)), signal);
+        // A 429 already paused the provider scheduler for Retry-After. Sleeping
+        // the same value again would double the wait for every retry.
+        if (error.status === 429) {
+          continue;
+        }
+        const delay = retryDelayMs(attempt, {
+          baseMs: 1000,
+          maxMs: 30000,
+          random: this.random,
+          retryAfterMs: error.retryAfterMs
+        });
+        await sleepWithSignal(delay, signal);
       }
     }
     throw lastError;
@@ -806,8 +1033,8 @@ export class AnalysisRunner {
     if (this.active.has(sessionId)) throw new AnalysisPermissionError('ALREADY_RUNNING');
     if (consent !== true) throw new AnalysisPermissionError('CONSENT_REQUIRED');
     const config = entry.configId ? this.configStore.get(entry.configId) : null;
-    if (entry.configId && !config) throw new AnalysisPermissionError('PROVIDER_CONFIG_NOT_FOUND');
-    if (config && entry.mode !== ANALYSIS_MODE.SESSION) {
+    if (!config) throw new AnalysisPermissionError('PROVIDER_CONFIG_NOT_FOUND');
+    if (entry.mode !== ANALYSIS_MODE.SESSION) {
       const permission = memoryPermission({
         pricingStatus: config.pricingStatus,
         pricing: config.pricing,
@@ -818,10 +1045,10 @@ export class AnalysisRunner {
         throw new AnalysisPermissionError('MEMORY_PERMISSION_DENIED', {reasons: permission.reasons});
       }
     }
-    if (config && config.pricingStatus !== PRICING_STATUS.API_FREE && confirmBilling !== true) {
+    if (config.pricingStatus !== PRICING_STATUS.API_FREE && confirmBilling !== true) {
       throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
     }
-    const provider = config ? providerFromConfig(config) : this.anonymousProvider;
+    const provider = providerFromConfig(config);
     this.state.set(sessionId, {status: 'running', stage: 'resuming', error: null});
     return this.launch({sessionId, provider, mode: entry.mode, budget: budget ?? entry.budget, resume: true});
   }
@@ -844,5 +1071,3 @@ export class AnalysisRunner {
     }
   }
 }
-
-export {ANONYMOUS_PROVIDER, PROVIDER_ERROR};

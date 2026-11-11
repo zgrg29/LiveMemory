@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 import {addBroadcaster, seedSession, T0} from '../helpers/ai-fixtures.mjs';
+import {createSessionAnalysisJob} from '../../src/ai/export/split-jobs.mjs';
+import {validateAnalysisImport} from '../../src/ai/import/validate.mjs';
+import {importAnalysisResult} from '../../src/ai/import/importer.mjs';
 
 async function jsonRequest(url, {method = 'GET', body} = {}) {
   const response = await fetch(url, {
@@ -27,19 +30,20 @@ test('v0.13 session-only job imports without memory and reports complete', async
   const session = seedSession(server.db, {id: 'ses_v13_session', messageCount: 5, viewerCount: 2, startedAt: T0});
   const base = server.url;
 
-  const created = await jsonRequest(`${base}api/ai/jobs`, {
-    method: 'POST',
-    body: {sessionId: session.id, locale: 'en', analysisMode: 'session'}
+  const created = await createSessionAnalysisJob({
+    db: server.db,
+    sessionId: session.id,
+    locale: 'en',
+    exportsDir: server.paths.exports
   });
-  assert.equal(created.status, 201, JSON.stringify(created.payload));
-  assert.equal(created.payload.job.analysisMode, 'session');
-  assert.equal(created.payload.job.batchTotal, 1);
-  assert.equal(created.payload.packages.length, 1);
-  assert.equal(created.payload.packages[0].stage, 'session');
+  assert.ok(created, 'session job should be created');
+  assert.equal(created.job.analysisMode, 'session');
+  assert.equal(created.job.batchTotal, 1);
+  assert.equal(created.package.stage, 'session');
 
   const manifest = {
-    job_id: created.payload.job.id,
-    batch_id: `${created.payload.job.id}-b01`,
+    job_id: created.job.id,
+    batch_id: `${created.job.id}-b01`,
     task_id: `${session.id}-analysis`,
     session_id: session.id,
     locale: 'en'
@@ -57,35 +61,32 @@ test('v0.13 session-only job imports without memory and reports complete', async
       highlights: []
     }
   };
-  const preview = await jsonRequest(`${base}api/ai/import/preview`, {
-    method: 'POST',
-    body: {json: JSON.stringify(result), source: 'paste'}
+  const preview = validateAnalysisImport({
+    db: server.db,
+    text: JSON.stringify(result),
+    source: 'paste'
   });
-  assert.equal(preview.status, 200, JSON.stringify(preview.payload));
-  assert.equal(preview.payload.ok, true, JSON.stringify(preview.payload));
-  assert.equal(preview.payload.memory, null);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  assert.equal(preview.memory, null);
 
-  const forbidden = await jsonRequest(`${base}api/ai/import/preview`, {
-    method: 'POST',
-    body: {
-      json: JSON.stringify({
-        ...result,
-        viewer_memory_updates: [{viewer_id: 'youtube:UC_VIEWER_0', no_new_information: true, operations: []}]
-      }),
-      source: 'paste'
-    }
+  const forbidden = validateAnalysisImport({
+    db: server.db,
+    text: JSON.stringify({
+      ...result,
+      viewer_memory_updates: [{viewer_id: 'youtube:UC_VIEWER_0', no_new_information: true, operations: []}]
+    }),
+    source: 'paste'
   });
-  assert.equal(forbidden.status, 200);
-  assert.equal(forbidden.payload.ok, false);
-  assert.ok(forbidden.payload.errors.some((error) => error.code === 'SESSION_MEMORY_FORBIDDEN'));
+  assert.equal(forbidden.ok, false);
+  assert.ok(forbidden.errors.some((error) => error.code === 'SESSION_MEMORY_FORBIDDEN'));
 
-  const imported = await jsonRequest(`${base}api/ai/import`, {
-    method: 'POST',
-    body: {json: JSON.stringify(result), source: 'paste'}
+  const imported = importAnalysisResult({
+    db: server.db,
+    text: JSON.stringify(result),
+    source: 'api'
   });
-  assert.equal(imported.status, 201, JSON.stringify(imported.payload));
-  assert.equal(imported.payload.job.status.state, 'complete');
-  assert.equal(imported.payload.result.analysisMode, 'session');
+  assert.equal(imported.status.status, 'complete');
+  assert.equal(imported.result.analysisMode, 'session');
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM viewer_memories').get().n, 0);
 });
 
@@ -199,8 +200,8 @@ test('v0.13 permission gates keep free models session-only and require a paid me
     method: 'POST',
     body: {sessionId: session.id, mode: 'memory', locale: 'en', consent: true, optInMemory: true}
   });
-  assert.equal(anonymousMemory.status, 403);
-  assert.equal(anonymousMemory.payload.error.code, 'AI_PAID_MODEL_REQUIRED');
+  assert.equal(anonymousMemory.status, 400);
+  assert.equal(anonymousMemory.payload.error.code, 'AI_PROVIDER_CONFIG_REQUIRED');
   assert.equal(freeMemory.status, 403);
   assert.equal(freeMemory.payload.error.code, 'AI_MEMORY_PERMISSION_DENIED');
 

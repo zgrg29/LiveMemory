@@ -1,19 +1,94 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（v0.13.0：单场分析 / 长期画像解耦、多 Provider API、付费画像权限）
+最后更新：2026-11-11（v0.13.1：移除匿名免费 / 手动 AI，重写付费请求调度）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.13.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**13**（迁移 13：AI 任务模式 / Provider 快照 / 能力检测审计）
-- 分析结果 Schema：**1.3.0**（新单场/画像任务）；旧 1.0.0–1.2.0 仍可导入；提示词：`lm-prompt-v13-session-<locale>`、`lm-prompt-v13-memory-<locale>`、旧 `lm-prompt-m6.3-<locale>`
+- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；M3 真实接入继续验证；M4 部分完成；M5 未完成
+- 版本：`0.13.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**13**（本轮无迁移）
+- 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本不变
 - 分支：`main`，本地提交，未 Push
-- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.13.0 已构建，未运行验收）
+- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
 
-## 0. v0.13.0 本轮完成（2026-11-11）
+## 0. v0.13.1 本轮完成（2026-11-11）
+
+### 0.1 付费 API 限速审计结论
+
+完整报告：`docs/AI_SCHEDULER_AUDIT.md`。
+
+- **付费 API 没有复用 OVH 匿名免费限速器。** v0.13.0 的 `src/ai/api/runner.mjs` 未导入/构造 `SlidingWindowLimiter`；该 limiter 只存在于 `src/ai/auto/runner.mjs` + `src/ai/auto/config.mjs:93` 的匿名路径。
+- 固定 `2 requests/minute` 只存在于匿名路径；没有 30 秒固定等待。旧付费路径只有失败重试的 1.2s / 2.4s 固定等待。
+- 旧付费路径的真实问题是：**所有画像批次完全串行**、30 批上限、`Retry-After` 未使用、每次请求重复 DNS 检查、每批导入重扫全部 session 观众、`listPackages` 默认 50 条导致大 job 找不到批次。
+- 已删除 `src/ai/auto/` 与 `/api/ai/auto/*`；新增 Provider 隔离调度器与有界并发。
+
+### 0.2 删除的入口
+
+- 匿名免费 AI：UI 按钮、免费标识、免费服务状态、匿名 Provider 配置、自动切换、2 RPM、免费冷却、健康探测、`/api/ai/auto/*` 路由。
+- 手动 AI：创建分析包、复制提示词、下载 ZIP、粘贴/上传 JSON、手动导入预览/确认、汇总包按钮、旧任务列表与修复指令 UI。
+- HTTP 删除路由：`/api/ai/jobs` POST、`/api/ai/jobs/:id/aggregate`、`/api/ai/packages` POST、`/api/ai/packages/:id/download`、`/api/ai/instructions`、`/api/ai/import/preview`、`/api/ai/import`、全部 `/api/ai/auto/*`。
+- 保留只读：`/api/ai/jobs` GET、`/api/ai/jobs/:id` GET、`/api/ai/packages` GET、`/api/ai/sessions/:id/report`、`/api/ai/results/:id`、`/api/ai/results/:id/download`。
+
+### 0.3 保留的底层公共模块
+
+- `src/ai/import/validate.mjs`、`src/ai/import/importer.mjs`、`src/ai/import/schema-validator.mjs`：严格 Schema、证据/身份/批次校验、事务导入、幂等与重复导入保护。
+- `src/ai/api/compact.mjs`、`src/ai/api/prompts.mjs`、`src/ai/export/split-jobs.mjs`：ref→viewer_id 映射、单场/画像组装、内部包生成。
+- `src/analytics/ai/report.mjs` 与 `src/web/js/pages/ai-report.js`：历史报告、长期画像只读展示。
+- `src/ai/export/job.mjs`、`src/ai/export/package.mjs`、`src/ai/prompts/instructions.mjs`：旧 combined/手动包格式的内部构建器，保留用于历史兼容与回归测试；**不再有 UI/HTTP 入口**。
+- 新增 `src/ai/runtime/json.mjs`、`state.mjs`、`scheduler.mjs`；删除 `src/ai/auto/`。
+
+### 0.4 新请求调度
+
+- 每个 `configId` 独立调度器；不同 Provider/区域/模型/密钥不共享限流状态。
+- 初始并发可配置（1–8，默认 3），没有虚构的官方 RPM/TPM；429 时并发减半并遵守 `Retry-After`（上限 300 秒），成功 6 次后逐级恢复。
+- memory 批次有界并发（默认按配置并发，最多 8）；同一观众只属于一个批次；同一主播跨场次记忆按时间顺序 gate，较旧场次在新场次已导入后被拒绝（`ANALYSIS_MEMORY_OUT_OF_ORDER`）。
+- 失败重试：最多 3 次尝试，指数退避 + 50–100% 抖动，5xx/408/425 可重试，400/401/403/404 不重试。
+- 状态新增：总请求、完成、失败、当前并发、排队、模型耗时、排队/限流等待、429 次数、p50/p95、token、已知费用、有依据时的 ETA。
+- 画像批次上限从 30 改为 `ceil(MAX_ANALYSIS_VIEWERS / 10) + 1`（2,001），不再人为限制 1,000 观众。
+- 本地性能修复：按批观众更新客观记忆、DNS 安全缓存 5 分钟、`getJobPackage()` 精确查询。
+
+### 0.5 UI
+
+- AI 分析中心只保留五步：选择直播 → 选择 API 配置 → 选择内容（单场/画像/两者）→ 费用与预算确认 → 「开始 AI 分析」。
+- 无 API Key 时只显示设置入口，不再提供匿名免费或手动 JSON 入口。
+- 保留暂停/继续/取消、真实阶段、失败原因、请求统计、报告与长期画像只读展示。
+- 设置页新增「初始并发数」；匿名/免费价格分支删除。
+- 三语键全部补齐；无 `innerHTML`、无 `alert()`。
+
+### 0.6 本轮测试（实测）
+
+- 全量：**519 passed / 0 failed**（2026-11-11，约 77 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 新增：`tests/unit/ai-scheduler.test.mjs`（并发上限、429 隔离、取消、退避）、`tests/integration/v13-scheduler.test.mjs`（429 Retry-After、1,000 观众批次并发、失败恢复、跨场次顺序）、`scripts/benchmark-mock-scale.mjs`。
+- 重写：`tests/unit/ai-ui.test.mjs`（只允许一个 API Key 流程）、`tests/integration/ai-api.test.mjs`（直接测试校验/导入/报告，不再依赖已删除的手动 HTTP 路由）、`v13-session-split`、`api.test`、`youtube-anonymous-session` 的包构建部分。
+- 删除：旧匿名/手动测试文件（`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`）。
+
+### 0.7 Mock 性能
+
+详见 `docs/AI_SCHEDULER_AUDIT.md` §4。
+
+| 场景 | 批次/请求 | 峰值并发 | 总耗时 | 吞吐 | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| 100 观众 / 1,000 消息 | 10 / 10 | 6 | 591ms | 16.92 req/s | complete，100/100 |
+| 1,000 观众 / 10,000 消息 | 100 / 100 | 6 | 6,491ms | 15.41 req/s | complete，1,000/1,000 |
+
+### 0.8 真实付费 API
+
+- **阻塞。** 本机用户数据目录没有 `config/ai-providers.json`，`secrets/` 没有 `ai-keys.json`，环境变量也没有 DashScope/OpenAI/OpenRouter Key。
+- v0.13.0 的阿里云百炼真实样本使用临时目录，结束后已删除；不能把历史记录当作本轮真实测试。
+- 唯一真实网络请求：`GET https://openrouter.ai/api/v1/models` → HTTP 200、469 个模型、375ms（只读，无 token）。不是生成验收。
+- 没有伪造真实 API 成功；也没有为测试速度消耗 token。
+
+### 0.9 未验证
+
+- 真实浏览器渲染/截图（本机策略仍阻止无头浏览器）。
+- Windows EXE 运行验收（UAC 拒绝）；本轮是否重新构建见 §5。
+- 真实 Provider 的 429/Retry-After、1,000 观众运行、费用与延迟。
+- 真实 Bilibili/YouTube 大场自动画像。
+
+## 0.10 v0.13.0（历史）
+
 
 ### 0.1 权限与任务拆分
 
@@ -312,66 +387,67 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 5. 构建结果（如实）
 
-- **v0.13.0 已重新构建 EXE**：`node scripts/build-windows.mjs` 成功。
-  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `c8c6d78e6764a0128318`
-  - SHA-256 `d2cecf95b3a410b4fb3c4f479c8f04e225e355227c4f01485861e8c21c1281b9`
+- **v0.13.1 已重新构建 EXE**：`node scripts/build-windows.mjs` 输出 `Built dist/LiveMemory.exe`。
+  - 大小 **95,856,128 bytes（91.4 MB）**
+  - SHA-256 `a21bd1aeaa14904a9fe663fb990303c7f0c301294c093670c2b24e176e07a955`
+  - 资源 **161 个**，资源哈希 `c810aa5974fcb8583178`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。
-- 因此只能声称“已构建”，不能声称“v0.13.0 EXE 已启动/已验收”。
-- 历史：v0.12.0 / v0.12.1 的构建记录不再代表当前产物。
+- 因此只能声称“已构建”，不能声称“v0.13.1 EXE 已启动/已验收”。
+- 历史：v0.13.0 的构建记录不再代表当前产物。
 
 ## 6. 未完成 / 未验证
 
-- v0.13.0 EXE 启动、出站网络与干净 Windows 环境验收（已构建，未能运行）；
-- 真实浏览器 AI 分析中心、Provider 设置卡、暗色、390px 截图；
-- 真实 OpenAI/Anthropic/DeepSeek/MiniMax/DashScope 生成与能力检测（缺 Key）；
-- 真实付费 52 观众端到端画像（Mock runner + 包结构测试已通过）；
-- 数千观众/数万消息大场的批次、耗时、内存与 OVH 2 请求/分钟的实际总时长；
-- 自动分析运行中删除场次/清空数据的 UI 守卫与真实交互；
-- 第二个通过完整 LiveMemory 包的匿名 provider（本轮没有）；
-- 自动分析运行中删除场次/清空数据的 UI 守卫与真实交互；
-- 真实 Bilibili/YouTube 大场自动分析样本（当前真实样本为 3 位合成观众）；
-- 真实平台礼物/SC-only 观众的自动分析样本；
+- v0.13.1 EXE 运行验收（UAC 拒绝）；如已构建见 §5。
+- 真实浏览器 AI 分析中心、Provider 设置卡、暗色、390px 截图。
+- **真实付费 API 生成**：本机没有 `config/ai-providers.json` / `ai-keys.json` / 环境变量 Key，阻塞；不得用 Mock 或历史样本冒充。
+- 真实 Provider 的 429、`Retry-After`、并发与 1,000 观众运行。
+- 真实 DashScope/OpenAI/Anthropic/DeepSeek/MiniMax 生成与能力检测。
+- 真实 Bilibili/YouTube 大场自动画像；礼物/SC-only 真实样本。
+- 真实运行中删除场次/清空数据的 UI 守卫与交互。
 - M5 可移植备份仍未实现。
 
 ## 7. 关键规则（下一轮不要破坏）
 
 1. `session` 与 `memory` 是独立任务、独立保存；单场报告成功不依赖画像，画像失败不覆盖报告。
-2. 免费 Provider/`api_free` 模型永远不能执行 memory 任务；长期画像必须是付费 + 已知价格 + `capabilities.memory` + 用户 opt-in。
-3. 付费/未知价格请求前必须 `confirmBilling`；未知价格不得当免费；不自动切换到更贵模型。
-4. Provider 配置只保存 credentialReference；Key 只存加密凭据库；区域/Base URL 变化轮换引用。
-5. 自定义 URL 必须通过私网/元数据/DNS 检查；localhost 只在显式 allowLocalNetwork 时允许。
-6. 能力检测不能只看 HTTP 200；memory 必须用多观众 ref、证据归属、零发言与多语言探针。
-7. 每位可识别观众必须有且仅有一条 `viewer_memory_updates`；缺失即导入错误。
-8. 观众只分配到一个记忆批次，全部可用摘录随行；不得用 Top N 或最低活跃度裁剪。
-9. 客观历史只由真实记录更新；AI 不能写金额/计数/时间/身份。
-10. 语义事实必须有证据或明确推断/待确认；`stated` 必须有本观众的消息。
-11. 无新语义 ≠ 未处理；`pending` 才是未处理。
-12. 删除记忆后的旧包不能恢复；重复导入幂等。
-13. 三语键三份一致；前端禁止 `innerHTML`；颜色只用 tokens。
-14. 所有 Provider/模型输出必须走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写库，不能降低 Schema。
-15. 画像批次仍覆盖全部可识别观众；超出安全上限明确失败，不得静默裁剪。
-16. 匿名 Provider 只允许已通过真实 LiveMemory 包验证的服务；未验证服务不得进入自动列表。
-17. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
-18. 手动导入失败只显示精确 gaps 与修复指令，绝不自动替换、缩写或合并 ID。
+2. **匿名免费 AI 已移除；手动提示词/JSON 导入入口已移除。** 只允许用户配置的 API Key + Provider。
+3. `api_free` 模型永远不能执行 memory 任务；长期画像必须是付费 + 已知价格 + `capabilities.memory` + 用户 opt-in。
+4. 付费/未知价格请求前必须 `confirmBilling`；未知价格不得当免费；不自动切换到更贵模型。
+5. Provider 配置只保存 credentialReference；Key 只存加密凭据库；区域/Base URL 变化轮换引用。
+6. 自定义 URL 必须通过私网/元数据/DNS 检查；localhost 只在显式 allowLocalNetwork 时允许。DNS 安全缓存最多 5 分钟。
+7. 能力检测不能只看 HTTP 200；memory 必须用多观众 ref、证据归属、零发言与多语言探针。
+8. 每位可识别观众必须有且仅有一条 `viewer_memory_updates`；缺失即导入错误。
+9. 观众只分配到一个记忆批次，全部可用摘录随行；不得用 Top N 或最低活跃度裁剪。
+10. 客观历史只由真实记录更新；AI 不能写金额/计数/时间/身份。导入一个 memory 批次时只更新本批分配的观众。
+11. 语义事实必须有证据或明确推断/待确认；`stated` 必须有本观众的消息。
+12. 无新语义 ≠ 未处理；`pending` 才是未处理。
+13. 删除记忆后的旧包不能恢复；重复导入幂等。
+14. 三语键三份一致；前端禁止 `innerHTML`；颜色只用 tokens。
+15. 所有 Provider/模型输出必须走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写库，不能降低 Schema。
+16. 画像批次仍覆盖全部可识别观众；超出 `MAX_ANALYSIS_VIEWERS` 明确失败，不得静默裁剪。
+17. **不得重新引入固定 2 RPM、匿名冷却、免费 Provider 自动切换或“手动复制 JSON”入口。**
+18. 付费调度按 `configId` 隔离；没有虚构的统一 RPM/TPM。429 按 `Retry-After`，其他可重试错误指数退避 + 抖动。
+19. 同一主播跨场次记忆必须按时间顺序；较旧场次不得覆盖较新场次。批次内并发只能发生在观众互不重叠的批次之间。
+20. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
+21. 手动导入失败不再由 UI 修复；历史结果仍可只读，重复导入仍幂等。
 
 ## 8. 相关文档
 
-`docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/AI_CONTRACT.md`、
-`docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、
-`docs/ROADMAP.md`、`docs/ANONYMOUS_AI_RESEARCH.md`、
-`log/2026-11-11-anonymous-ai-auto-analysis.md`、`log/2026-11-10-unified-analysis-memory.md`、
-`log/2026-11-10-viewer-scope-fix.md`。
+`docs/AI_SCHEDULER_AUDIT.md`、`docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、
+`docs/AI_CONTRACT.md`、`docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、
+`docs/CHANGELOG.md`、`docs/ROADMAP.md`、历史 `docs/ANONYMOUS_AI_RESEARCH.md`、
+`log/2026-11-11-ai-scheduler-v0131.md`、`log/2026-11-11-anonymous-ai-auto-analysis.md`。
 
 ## 9. 下一步
 
-1. 在允许浏览器的机器上验收自动按钮、失败红色文案、详情、暗色与 390px；补截图。
-2. 在无策略限制的 Windows 环境运行已构建的 v0.12.0 EXE，验证出站请求、代理/防火墙与打包 UI。
-3. 用 1000–5000 观众/数万消息的大场测自动批次、耗时、内存与 OVH 2 请求/分钟的实际影响。
-4. 寻找并完整测试第二个匿名 provider（必须通过真实 LiveMemory 包），再启用自动切换。
-5. 评估自动运行中删除场次/清空数据的 UI 守卫；当前只依赖服务端失败与红色提示。
-6. 继续观察 OVH 免费通道的稳定性与条款变化；失效时如实降级，不把历史可用写成永久可用。
+1. 配置一个真实付费 API Key，按 `docs/AI_SCHEDULER_AUDIT.md` §5 的预算/授权流程完成小规模真实测试，记录 429、延迟与费用。
+2. 在允许浏览器的机器上验收五步 AI 分析中心、请求统计、暂停/取消、暗色与 390px；补截图。
+3. 在无策略限制的 Windows 环境运行 EXE，验证出站请求、代理/防火墙与打包 UI。
+4. 用真实 Provider 跑 1,000 观众/10,000 消息，校准初始并发与批次大小。
+5. 观察真实 429 后的并发恢复；如 Provider 明确公布 RPM/TPM，再增加可选官方限额配置，不预设统一值。
+6. 评估自动运行中删除场次/清空数据的 UI 守卫。
+7. M5 可移植备份仍未实现。
 
 ## 10. 补丁 0.11.1：观众档案主播范围
 

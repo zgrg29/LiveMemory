@@ -548,3 +548,56 @@ Provider 配置
 - 画像结果不进入单场报告读模型；历史 combined 结果仍按旧逻辑读取。
 - Provider 配置/能力/费用全部来自配置快照；切换默认配置不影响运行中任务。
 - API Key 不进入普通配置、日志、ZIP、数据库导出或 HTML。
+
+## 1.5 v0.13.1 单一 AI 入口与付费请求调度（2026-11-11）
+
+```text
+唯一入口
+  AI 分析中心（五步）
+    1 选择直播
+    2 选择 API 配置（Provider / 区域 / 模型 / Key）
+    3 选择内容 session | memory | both
+    4 费用 / 预算确认（付费或未知价格）
+    5 开始 AI 分析
+  -> POST /api/ai/analyze/run
+     -> AnalysisRunner（只接受 configId；无匿名 fallback）
+     -> createSessionAnalysisJob / createViewerMemoryJob（内部包，不暴露下载）
+     -> ProviderRequestScheduler（按 configId 隔离）
+     -> Provider adapter -> validate -> import -> 报告
+
+  UI 读取
+    GET /api/ai/analyze/status -> 阶段 / 批次 / 请求统计 / usage / error
+    GET /api/ai/sessions/:id/report -> 单场报告 + 长期画像只读
+    GET /api/ai/results/:id(/download) -> 历史结果
+```
+
+调度层：
+
+```text
+ProviderRequestScheduler(configId)
+  - 初始并发：配置 1–8（默认 3），不是官方 RPM 声明
+  - 429：并发减半 + Retry-After 冷却（仅此 config）
+  - 5xx/408/425：短冷却
+  - 连续成功：逐级恢复到配置上限
+  - 统计：请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95
+  - 无固定 RPM/TPM；Provider 官方额度需等真实文档/响应，不虚构
+
+AnalysisRunner.requestOnce
+  - 最多 3 次尝试；429 交给调度器；其他可重试错误指数退避 + 抖动
+  - 取消/超时/预算/URL 安全检查保留
+  - 同一主播 memory gate：较旧场次不得覆盖较新场次
+  - memory 批次：有界 worker pool；观众互不重叠
+```
+
+已删除：
+
+- `src/ai/auto/`（匿名 OVH 2 RPM、冷却、自动切换、免费状态）。
+- `/api/ai/auto/*`、`/api/ai/instructions`、`/api/ai/import*`、手动 job/package 写路由。
+- UI 的手动包/提示词/JSON paste/upload/修复。
+
+保留的公共层：
+
+- `src/ai/import/`（Schema、证据/身份/批次验证、事务导入、幂等）。
+- `src/ai/api/compact.mjs`、`src/ai/api/prompts.mjs`、`src/ai/export/split-jobs.mjs`。
+- `src/ai/runtime/json.mjs`、`state.mjs`、`scheduler.mjs`。
+- 历史结果/报告读取与旧 1.0–1.2.0 兼容。

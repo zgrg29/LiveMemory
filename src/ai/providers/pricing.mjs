@@ -4,10 +4,9 @@ import {PRICING_STATUS, PRICING_STATUSES} from './catalog.mjs';
  * Cost status and estimates.
  *
  * A provider name is never enough to call a model "free". The status is one of:
- *   anonymous_free — keyless, verified anonymous route;
- *   api_free       — the provider/model metadata explicitly reports zero price;
- *   paid           — verified pricing is stored for the exact model/region;
- *   unknown        — no reliable pricing information.
+ *   api_free  — the provider/model metadata explicitly reports zero price;
+ *   paid      — verified pricing is stored for the exact model/region;
+ *   unknown   — no reliable pricing information.
  *
  * Unknown is not silently treated as free. The UI asks for explicit confirmation
  * before sending a request that may cost money, and long-term viewer profiling

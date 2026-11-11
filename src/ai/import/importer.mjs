@@ -210,12 +210,23 @@ function applyMemorySideEffects({db, job, validation, resultId, now}) {
   // Objective history exists independently of AI. It covers gift-only viewers
   // and viewers whose messages were in another batch; it never touches the
   // semantic version.
-  for (const viewer of listSessionViewers(db, session.id, {limit: 20000})) {
-    if (!viewer.viewer_id) continue;
+  //
+  // For a memory job, every session viewer is assigned to exactly one batch.
+  // Re-scanning the whole session for every imported batch would be O(batches ×
+  // viewers) and blocked the event loop on large paid jobs. Only this batch's
+  // assigned viewers need the objective update.
+  const assignedViewers = Array.isArray(validation.memory?.memoryViewers)
+    ? validation.memory.memoryViewers
+    : [];
+  const objectiveViewers = assignedViewers.length > 0
+    ? assignedViewers.map((entry) => entry.viewerId).filter(Boolean)
+    : listSessionViewers(db, session.id, {limit: 20000}).map((viewer) => viewer.viewer_id);
+  for (const viewerId of objectiveViewers) {
+    if (!viewerId) continue;
     ensureObjectiveMemory({
       db,
       broadcasterId,
-      viewerId: viewer.viewer_id,
+      viewerId,
       sessionId: session.id,
       jobId: job.id,
       now

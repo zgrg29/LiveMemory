@@ -60,6 +60,30 @@ export function listPackages(db, {sessionId = null, jobId = null, limit = 50} = 
   return db.prepare('SELECT * FROM ai_packages ORDER BY created_at DESC LIMIT ?').all(safeLimit);
 }
 
+/**
+ * Fetch exactly one package for a job/stage/batch. `listPackages()` has a
+ * display-oriented limit; large paid memory jobs can have hundreds of batches,
+ * so the runner must not depend on that list containing the requested batch.
+ */
+export function getJobPackage(db, {jobId, stage = null, batchIndex = null}) {
+  const clauses = ['job_id = ?'];
+  const params = [String(jobId)];
+  if (stage) {
+    clauses.push('stage = ?');
+    params.push(String(stage));
+  }
+  if (batchIndex !== null && batchIndex !== undefined) {
+    clauses.push('batch_index = ?');
+    params.push(Number(batchIndex));
+  }
+  return db.prepare(`
+    SELECT * FROM ai_packages
+     WHERE ${clauses.join(' AND ')}
+     ORDER BY batch_index ASC
+     LIMIT 1
+  `).get(...params) ?? null;
+}
+
 export function deletePackageIndex(db, packageId) {
   const result = db.prepare('DELETE FROM ai_packages WHERE id = ?').run(String(packageId));
   return result.changes > 0;

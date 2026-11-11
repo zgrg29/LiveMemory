@@ -1,4 +1,9 @@
 /**
+ * HISTORICAL (v0.13.0) development-only UI verification for the M6 manual AI
+ * file round trip. v0.13.1 removed the manual import/prompt UI and its HTTP
+ * routes, so this script no longer matches the current console. It is kept for
+ * the historical fixture only; rewrite it before using it again.
+ *
  * Development-only UI verification for the M6 AI file round trip.
  *
  * Requires:
