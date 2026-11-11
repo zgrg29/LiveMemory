@@ -97,10 +97,13 @@ const RULES = {
       '`evidence` 只能引用本包 viewer_excerpts.jsonl 中、且属于同一 `viewer_id` 的 `seq`。`certainty: "stated"` 必须有至少一条证据；没有证据的推断会自动降级为 `uncertain` 并需要确认。',
       '一条包含有效信息的消息足以支持一条事实；不要设置最低发言次数。普通问候、表情、刷屏或付费事件不能推断性格、兴趣、经济能力或忠诚度。',
       '已有 `memory.facts` 时，优先使用 `confirm` / `update` / `supersede` 指向已有 `id`，而不是重复 `add` 同一话题；`summary` 可选，只有你确实在更新整体摘要时才输出。',
-      '不要输出金额、计数、时间戳或观众身份字段；这些由本地程序维护。不要编造未出现在聊天中的生活经历、健康、宗教、政治、性取向或财务状况。'
+      '`memory_context.viewers[].evidence_seqs` 列出该观众允许引用的 seq。`zero_excerpt: true` 表示该观众在本批次没有任何聊天发言（例如只有礼物或 SC），仍必须输出一条 `no_new_information: true`、`operations: []` 的记录。',
+      '`viewer_context.json` 可能包含被分配到其他记忆批次的观众（`in_memory_batch: false`）。只有 `memory_context.viewers` 是本次记忆更新的目标；不要给其他观众添加 `viewer_memory_updates`。',
+      '不要输出金额、计数或时间戳；这些由本地程序维护。`viewer_id` 必须从 `memory_context.viewers[].viewer_id` 原样复制，不能缩写、翻译、改写或用昵称代替，也不能编造不存在的观众。不要编造未出现在聊天中的生活经历、健康、宗教、政治、性取向或财务状况。'
     ],
     aggregateRules: [
       '本包是第二阶段：没有原始弹幕全文，只有 session_context、viewer_context 与已经通过 LiveMemory 校验的各批结果 batch_results.json。',
+      '场次记录时长以 `session.duration_seconds` 为准。消息时间可能早于开始录制（平台聊天回溯），不要用首尾消息时间推断直播总时长。',
       '生成一个整场直播的最终结果：合并同一话题、同一争论与重复的切片建议，不要简单拼接各批 topics，也不要产生重复统计。',
       '跨批次的变化要结合各批的覆盖时间判断。若各批结论冲突、某批缺失或证据不足，明确说明不确定性并降低 confidence，不要假装完整。',
       '证据引用写成对象 `{"batch": <批次号>, "seq": <该批 messages.jsonl 中的 seq>}`；只能引用 batch_results 中真实出现过的 seq，不要自己发明。',
@@ -200,10 +203,13 @@ const RULES = {
       '`evidence` は viewer_excerpts.jsonl の、同じ `viewer_id` の発言の `seq` のみ引用できます。`certainty: "stated"` には最低 1 件の根拠が必要です。根拠のない推論は自動的に `uncertain` に下げられ確認待ちになります。',
       '意味のある 1 件の発言だけで 1 つの事実を支持できます。最低発言回数を設けないでください。挨拶・絵文字・連投・課金イベントから性格・興味・経済力・忠誠心を推測しないでください。',
       '`memory.facts` がある場合は、同じ話題の `add` を繰り返すより、既存 `id` への `confirm` / `update` / `supersede` を優先してください。`summary` は全体要約を実際に更新するときだけ出力します。',
-      '金額・件数・タイムスタンプ・視聴者 ID を出力しないでください。チャットにない生活歴・健康・宗教・政治・性的指向・経済状況を創作しないでください。'
+      '`memory_context.viewers[].evidence_seqs` はその視聴者が引用できる seq の一覧です。`zero_excerpt: true` はこのバッチにチャット発言がない（ギフトや SC のみなど）ことを示しますが、その場合も `no_new_information: true` と `operations: []` の記録を 1 件出力してください。',
+      '`viewer_context.json` には別のメモリバッチに割り当てられた視聴者（`in_memory_batch: false`）が含まれる場合があります。今回の記憶更新対象は `memory_context.viewers` だけです。それ以外の視聴者に `viewer_memory_updates` を追加しないでください。',
+      '金額・件数・タイムスタンプは出力しないでください（ローカルが管理します）。`viewer_id` は `memory_context.viewers[].viewer_id` からそのままコピーし、短縮・翻訳・書き換え・ニックネームでの代用・存在しない ID の創作をしないでください。チャットにない生活歴・健康・宗教・政治・性的指向・経済状況を創作しないでください。'
     ],
     aggregateRules: [
       'このパッケージは第 2 段階です。生のチャット全文はなく、session_context、viewer_context、LiveMemory で検証済みの各バッチ結果 batch_results.json のみを含みます。',
+      '配信の記録時間は `session.duration_seconds` を正とします。メッセージ時刻が録画開始より前になる場合（プラットフォームのチャット履歴）があるため、最初と最後のメッセージから配信時間を推定しないでください。',
       '配信全体の最終結果を 1 つ作成します。同じ話題・論争・重複する見返し提案を統合し、各バッチの topics を単純に連結しないでください。重複した統計も作らないでください。',
       'バッチ間の変化は各バッチの対象時間を踏まえて判断してください。結論が衝突する場合、バッチが欠けている場合、根拠が不足する場合は、不確実性を明記し confidence を下げ、完全であるかのように書かないでください。',
       '根拠は `{"batch": <バッチ番号>, "seq": <そのバッチの messages.jsonl の seq>}` の形で示し、batch_results に実際に存在する seq だけを引用してください。',
@@ -303,10 +309,13 @@ const RULES = {
       '`evidence` may only cite `seq` values from viewer_excerpts.jsonl that belong to the same `viewer_id`. `certainty: "stated"` requires at least one evidence reference; an inference without evidence is downgraded to `uncertain` and needs confirmation.',
       'One informative message is enough to support one fact; never impose a minimum message count. A greeting, emoji, spam or payment event cannot prove personality, interests, financial ability or loyalty.',
       'When `memory.facts` already contains the topic, prefer `confirm` / `update` / `supersede` with the existing `id` over repeating `add`. `summary` is optional and should be emitted only when you are actually updating the overall summary.',
-      'Never output money, counts, timestamps or viewer identity fields; the local app owns them. Never invent life history, health, religion, politics, sexual orientation or finances that are absent from the chat.'
+      '`memory_context.viewers[].evidence_seqs` lists the seq numbers that viewer may cite. `zero_excerpt: true` means the viewer wrote no chat message in this batch (for example a gift or Super Sticker only); still emit one entry with `no_new_information: true` and `operations: []`.',
+      '`viewer_context.json` may contain viewers assigned to another memory batch (`in_memory_batch: false`). Only `memory_context.viewers` are memory targets; never add a `viewer_memory_updates` entry for any other viewer.',
+      'Never output money, counts or timestamps; the local app owns them. Copy `viewer_id` exactly from `memory_context.viewers[].viewer_id`; never shorten, translate, rewrite or replace it with a nickname, and never invent a viewer. Never invent life history, health, religion, politics, sexual orientation or finances that are absent from the chat.'
     ],
     aggregateRules: [
       'This package is stage 2. It contains no raw chat log: only session_context, viewer_context and the batch_results.json that LiveMemory already validated.',
+      'Use `session.duration_seconds` for the recorded duration. Message timestamps may predate the recorder (platform chat backlog); never infer the broadcast length from the first and last message.',
       'Produce one final session-wide result. Merge the same topic, dispute and duplicate clip suggestion; never simply concatenate per-batch topics, and never produce duplicate statistics.',
       'Judge changes across batches using each batch\'s covered time window. If batches disagree, a batch is missing, or evidence is thin, state the uncertainty and lower the confidence instead of pretending the picture is complete.',
       'Cite evidence as an object `{"batch": <batch number>, "seq": <seq in that batch\'s messages.jsonl>}`. Only cite seqs that really appear in batch_results; never invent them.',
@@ -482,9 +491,11 @@ export function buildInstructions(locale, context = {}) {
   lines.push('');
   lines.push(labels.shape);
   lines.push('');
+  lines.push('<!-- livememory:shape -->');
   lines.push('```json');
   lines.push(JSON.stringify(SCHEMA_OUTLINE, null, 2));
   lines.push('```');
+  lines.push('<!-- /livememory:shape -->');
   lines.push('');
   lines.push(labels.provenance);
   lines.push('');

@@ -185,6 +185,12 @@ export function buildSessionContextBlock(summary) {
       started_at: isoFromEpochMs(session.startedAt),
       broadcast_started_at: session.platformStartedAt ? isoFromEpochMs(session.platformStartedAt) : null,
       ended_at: session.endedAt ? isoFromEpochMs(session.endedAt) : null,
+      // Recorded window, not the chat backlog. Platform chat can contain
+      // messages from before the recorder attached; the model must not turn
+      // that backlog into a longer "broadcast duration".
+      duration_seconds: session.endedAt
+        ? Math.max(0, Math.round((session.endedAt - session.startedAt) / 1000))
+        : null,
       storage_mode: session.storageMode,
       source_quality: session.sourceQuality
     },

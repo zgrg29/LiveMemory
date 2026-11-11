@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   callProvider,
   extractJsonObject,
+  looksDegenerate,
   SlidingWindowLimiter
 } from '../../src/ai/auto/client.mjs';
 import {AutoAnalysisError} from '../../src/ai/auto/errors.mjs';
@@ -81,8 +82,59 @@ test('callProvider is anonymous and sends a JSON-mode request', async () => {
   assert.equal(body.temperature, 0);
 });
 
-test('callProvider classifies 429 with Retry-After', async () => {
-  const fetchImpl = async () => new Response('{}', {
+test('callProvider uses JSON Schema structured output when a schema is supplied', async () => {
+  let captured = null;
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['viewers'],
+    properties: {viewers: {type: 'array', items: {type: 'object'}}}
+  };
+  const fetchImpl = async (url, options) => {
+    captured = {url, options};
+    return jsonResponse({
+      model: 'test-model',
+      choices: [{message: {content: '{"viewers":[]}'}, finish_reason: 'stop'}],
+      usage: {prompt_tokens: 10, completion_tokens: 2, completion_tokens_details: {reasoning_tokens: 1}}
+    });
+  };
+  const result = await callProvider({
+    provider: {...provider, supportsStructuredOutputs: true},
+    messages: [{role: 'user', content: 'hi'}],
+    maxTokens: 100,
+    responseSchema: schema,
+    fetchImpl
+  });
+  const body = JSON.parse(captured.options.body);
+  assert.equal(body.response_format.type, 'json_schema');
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+  assert.equal(result.finishReason, 'stop');
+  assert.equal(result.reasoningTokens, 1);
+  assert.equal(result.usage.completion_tokens, 2);
+});
+
+test('a length finish reason with no content is reported as truncation', async () => {
+  const fetchImpl = async () => jsonResponse({
+    choices: [{message: {content: ''}, finish_reason: 'length'}],
+    usage: {prompt_tokens: 10, completion_tokens: 100}
+  });
+  await assert.rejects(
+    () => callProvider({provider, messages: [], maxTokens: 100, fetchImpl}),
+    (error) => error.code === 'AUTO_OUTPUT_TRUNCATED' && error.retryable === false
+  );
+});
+
+test('looksDegenerate detects a repeated field-name loop', () => {
+  const healthy = JSON.stringify({
+    session_topics: {summary: 'ok', topics: [], sentiment: [], disputes: [], highlights: []},
+    viewers: [{ref: 1, memory: {no_new_information: true, operations: []}}]
+  });
+  assert.equal(looksDegenerate(healthy), false);
+  const loop = '{"cs" , "viewer_profiles" , "viewer_memory_updates" , "session_topics" , '.repeat(120);
+  assert.equal(looksDegenerate(loop), true);
+});
+
+test('callProvider classifies 429 with Retry-After', async () => {  const fetchImpl = async () => new Response('{}', {
     status: 429,
     headers: {'retry-after': '3'}
   });

@@ -71,7 +71,7 @@ test('automatic analysis HTTP routes require consent, stream status and keep the
 
   const services = await jsonRequest(`${base}api/ai/auto/services`);
   assert.equal(services.status, 200);
-  assert.equal(services.payload.maxBatches, 12);
+  assert.equal(services.payload.maxBatches, 30);
   assert.deepEqual(services.payload.services.map((entry) => entry.id), ['mock']);
 
   assert.equal((await jsonRequest(`${base}api/ai/auto/status`)).status, 400);
@@ -171,8 +171,9 @@ test('a broadcast that needs too many free batches is refused before creating a 
   addBroadcaster(server.db);
   const session = seedSession(server.db, {
     id: 'ses_auto_too_big',
-    messageCount: 3250,
-    viewerCount: 1,
+    messageCount: 310,
+    viewerCount: 310,
+    viewerUidPrefix: 'UC_TOO_BIG',
     startedAt: T0
   });
   const response = await jsonRequest(`${server.url}api/ai/auto/run`, {

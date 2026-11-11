@@ -793,7 +793,8 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
       coverage: memory.coverage,
       totals: memory.totals,
       viewerCount: memory.viewers.length,
-      plan: memory.plan
+      plan: memory.plan,
+      gaps: memory.gaps ?? {missing: [], unknown: [], duplicate: []}
     };
   }
 

@@ -1,16 +1,90 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（P9 自动 AI 分析，版本 0.12.0，schema 12）
+最后更新：2026-11-11（v0.12.1 真实故障修复：自动分析紧凑格式 + 手动导入诊断）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
 ## 1. 当前阶段
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 核心完成**；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.12.0`（`package.json` 与 `src/shared/app-info.mjs` 一致）
-- 数据库 schema：**12**（本轮未改表结构；自动分析使用现有 `ai_*` 表）
+- 版本：`0.12.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 数据库 schema：**12**（本轮未改表结构；没有迁移）
+- 分析结果 Schema：**1.2.0**（不变）；提示词：**`lm-prompt-m6.3-<locale>`**
 - 分支：`main`，本地提交，未 Push
-- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.12.0 已构建，未能运行验收）
+- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**（v0.12.0 已构建；本轮未重建）
+
+## 0. v0.12.1 本轮完成（2026-11-11，真实故障修复）
+
+### 0.1 真实故障与确认根因
+
+真实样本：YouTube 日语直播 `ses_01M747HW1DH5GT9R308A`，99 条聊天 + 1 条 Super Sticker，
+52 位稳定观众，录制约 51 秒，初始长期记忆为空。真实数据包和数据库从用户数据目录复制到
+`tests/.tmp` 后离线分析（未修改用户数据库）。
+
+**故障 A（自动分析）已确认根因：**
+
+1. `response_format=json_object` + 约 44.7k 提示词 + 9,250 输出预算，在真实 25 观众批次上
+   触发 gpt-oss-20b 的字段名重复退化：`finish_reason=length`、`completion_tokens=9250`、
+   内容末尾反复出现 `"viewer_profiles","viewer_memory_updates","session_topics"`，JSON 不完整。
+   一次“修复”请求再次发送同样的巨大提示词和退化内容，仍然失败。
+2. 自动批次 `viewer_context.json` 包含属于其他记忆批次的观众（实测 batch 1：32 位 context，
+   只有 25 位 memory target；batch 3：23 vs 5）。真实 structured-output 复现中，模型正确
+   输出了 25 条，却把 2 位**其他批次**的观众写进 `viewer_memory_updates`，同时漏掉 2 位
+   本批观众 → `MEMORY_VIEWER_UNKNOWN` ×2 + `MEMORY_VIEWER_UPDATE_MISSING` ×2。
+3. 原来的客户端不读取 `finish_reason`/usage，无法区分截断、退化与普通 Schema 错误。
+
+**故障 B（手动导入）已确认根因：**
+
+1. 三语提示词都包含矛盾句“不要输出观众身份字段”，而同一份说明又要求每位观众必须有一条
+   带 `viewer_id` 的 `viewer_memory_updates`；日语版更直接写成“視聴者 ID を出力しないでください”。
+2. 52 位观众的包要求模型机械复制 52 个不透明 `youtube:UC...` ID；`memory_context.json`
+   （67.6 KB）与 `viewer_context.json`（62.2 KB）大量重复；只有 Super Sticker、没有聊天
+   发言的观众没有明确规则。
+3. 真实 52 观众包用 OVH gpt-oss-20b 复测：新提示词下返回 49/52 条更新（3 位缺失），
+   证明“模型会漏观众”是可复现的模型行为；正确覆盖 52 位的 JSON 可以正常导入。
+   手动使用的具体模型仍未确认，不能把 OVH 结果等同于用户当时的模型。
+
+### 0.2 修复内容
+
+- 自动模式改为**紧凑回答 + 本地组装**：模型只返回 `session_topics` 和 `viewers[].ref`，
+  不输出、也不能提供 `viewer_id`；本地按批次分配表把 ref 映射回稳定 ID，组装成完整
+  Schema 1.2.0 结果，再走原有 `validateAnalysisImport()` + `importAnalysisResult()`。
+- 自动请求改用 `json_schema` structured output；记录 `finish_reason` / usage / 退化检测；
+  `length` → `AUTO_OUTPUT_TRUNCATED`。
+- 缺少 ref 时执行一次**有界定向补充**（只发送缺失观众及其摘录）；仍缺失则
+  `AUTO_VIEWER_COVERAGE_INCOMPLETE`，不写入任何结果。不会由程序替模型认定“无新信息”。
+- 自动批次 25→**10 位/批**，批次上限 12→**30**（仍支持原 300 位观众）；汇总阶段也用
+  structured output，并强制 `viewer_memory_updates: []`；汇总输出预算 12,000。
+- `memory_context.viewers[]` 新增 `evidence_seqs`、`zero_excerpt`，去掉与 `viewer_context`
+  重复的累计字段；手动提示词删除矛盾句，明确“原样复制 viewer_id”、零发言观众、
+  `viewer_context` 中非本批观众不得写入。
+- 导入预览新增 `target.memory.gaps`（missing/unknown/duplicate，含昵称）；界面显示缺失
+  观众并新增「复制修复指令」，绝不自动改 ID。
+
+### 0.3 真实验证（本轮实测）
+
+- 自动、真实 OVH：52 位观众 / 99 条消息 / 6 批 + 汇总 → **complete**，
+  `memoryCoverage.total=52`、`no_semantics=52`、`missing_update=0`、`complete=true`，
+  7 条结果（batch:1–6 + final），52 个 `viewer_memories` 头。
+- 单批真实对照：10 位观众 10/10、14.4 秒、489 completion tokens；25 位观众 25/25、
+  20.4 秒、751 completion tokens（证明 25 位在紧凑格式下也可用；选择 10 位是为输出预算
+  与语义质量留余量，代价是请求数增加）。
+- 手动、真实 OVH 52 观众：49/52 + 3 位缺失，错误定位到具体观众；正确 52/52 JSON
+  通过导入（见 `tests/integration/manual-52-viewers.test.mjs`）。
+- 定向补充真实单次请求：只发 ref 3，2.9 秒返回仅含 `viewers` 的 1 条记录，
+  无 `session_topics`、无其他 ref。
+- 全量测试：**见 §3 的本轮结果**（`node --test --test-isolation=none ...`）。
+
+### 0.4 本轮未验证 / 残余风险
+
+- 用户手动分析时实际使用的模型/服务未知；OVH gpt-oss-20b 在 52 观众单包下仍会漏 3 位。
+  现在界面会精确列出缺失观众并可复制修复指令，但不能保证任意模型一次覆盖 52 位。
+- 自动 25 位单批只做了单次真实样本；10 位/批的完整 52 位真实运行已通过。
+- 100 位低活跃观众、空档案、已有记忆更新、多批隔离、错误 ID、截断、429/超时/5xx
+  已有 Mock/本地测试；未对免费接口做高频压力测试。
+- 真实浏览器 UI（复制修复按钮、gaps 列表、暗色、390px）未在本机无头浏览器验收。
+- 本轮未重新构建/运行 Windows EXE；v0.12.0 的 EXE 仍未运行验收。
+
 
 ## 1.1 本轮完成（2026-11-11，v0.12.0，P9 自动 AI 分析）
 
@@ -145,18 +219,24 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 3. 自动化测试（本轮实测）
 
-- 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-  → **525 passed / 0 failed**（约 93 秒，2026-11-11）。
-- 新增本轮自动分析测试：
-  - `tests/unit/auto-client.test.mjs`：JSON 提取、滑动窗口、匿名请求头、429/5xx/timeout/非 JSON；
-  - `tests/unit/auto-prompt.test.mjs`：观众 ID/证据 seq、汇总契约、上下文预算、修复提示；
-  - `tests/integration/auto-analysis.test.mjs`：成功、多批 + 汇总、备用 provider、全失败、
-    Schema 修复、错误证据、部分成功后恢复、重复点击、取消/恢复、重启中断恢复、
-    汇总失败保留批次、旧记忆不被覆盖、重复导入幂等；
-  - `tests/integration/auto-api.test.mjs`：HTTP 同意、202、409、状态、422 规模上限、取消、
-    手动导入路径仍可用；
-  - `tests/unit/ai-ui.test.mjs`：按钮/阶段/红色文案/三语键/无 `alert()`/无 `innerHTML`。
+- 全量（v0.12.1）：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+  → **545 passed / 0 failed**（约 77 秒，2026-11-11）。
+- 本轮新增/更新：
+  - `tests/unit/auto-assemble.test.mjs`：ref 校验、ref→稳定 ID 组装、定向补充合并、
+    定向提示词只含缺失观众；
+  - `tests/unit/auto-client.test.mjs`：structured output 请求、`finish_reason`/usage、
+    截断错误、退化检测；
+  - `tests/unit/auto-prompt.test.mjs`：紧凑契约、refs、证据 seq、去重 messages/excerpts、
+    上下文预算、修复提示；
+  - `tests/integration/auto-compact.test.mjs`：52 人/99 消息 6 批、100 位低活跃 10 批、
+    缺失 ref 定向补充、补充失败、截断、零摘录观众；
+  - `tests/integration/manual-52-viewers.test.mjs`：52 人单批、2 未知 + 2 缺失精确 gaps、
+    修正后 52/52 事务导入；
+  - `tests/unit/ai-import-repair.test.mjs`：修复指令不改 ID；
+  - `auto-api`：maxBatches=30、310 观众 → 31 批 422；
+  - `ai-prompts`/`ai-api`/`ai-import`：提示词版本 m6.3。
 - 既有 M6/M7/P8 全量回归通过；schema 仍为 12，无迁移断言变化。
+- v0.12.0 的历史全量结果：525 passed / 0 failed（保留为历史记录）。
 
 
 ## 4. UI 验证（如实）
@@ -167,10 +247,14 @@ POST /api/ai/auto/cancel      {sessionId}
 - v0.12.0 自动分析 UI 额外覆盖（静态）：按钮/免费匿名 chip/首次同意 modal/真实阶段文案/
   按钮下方红色固定文案/折叠详情/取消/无 `alert()`/手动控件仍在；HTTP 路由与状态由
   `auto-api.test.mjs` 覆盖。
-- 因此不能声称自动按钮、AI 预览、观众记忆页、暗色、390px 已在真实浏览器验收。
+- v0.12.1 新增静态覆盖：`memory.gaps` 渲染、缺失观众列表、复制修复指令按钮；
+  `ai-import-repair.test.mjs` 验证复制文本包含精确 ID/错误路径且不修改 ID。
+- 因此不能声称自动按钮、gaps 列表、复制按钮、AI 预览、观众记忆页、暗色、390px
+  已在真实浏览器验收。
 
 ## 5. 构建结果（如实）
 
+- **v0.12.1 未重新构建 EXE**；以下为 v0.12.0 的历史构建记录。
 - `node scripts/build-windows.mjs` 成功：`dist/LiveMemory.exe`（v0.12.0）
   - 大小 **91.2 MB**，资源 **151 个**，资源哈希 `c5a20ea9c14c707fc659`
   - SHA-256 `342294c97ebb200fe8796ac783fa841f5e2b6f451fcc996a641db8368d82cebe`
@@ -204,6 +288,10 @@ POST /api/ai/auto/cancel      {sessionId}
 10. 自动批次仍覆盖全部可识别观众；超出 12 批或 90k 上下文时明确失败，不得静默裁剪。
 11. 只允许 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过完整 LiveMemory 包的匿名 provider；未验证服务不得进入自动列表。
 12. 自动失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆、不自动切换手动模式；红色文案在按钮正下方。
+13. 自动批次模型只输出 `ref`，不得输出/猜测 `viewer_id`；ref 必须由 `ai_job_memory_viewers` 精确映射，重复/越界/缺失拒绝。
+14. 自动缺失 ref 只做一次定向补充；仍缺失即失败，不能默认 `no_new_information`。
+15. 自动批次 10 位/30 批 = 300 位容量；修改任一项必须同时检查总容量与免费限流。
+16. 手动导入失败只显示精确 gaps 与修复指令，绝不自动替换、缩写或合并 ID。
 
 ## 8. 相关文档
 

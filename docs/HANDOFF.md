@@ -1,139 +1,148 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-11 · P9 匿名免费 AI 自动分析 · v0.12.0（schema 12）
+本轮：2026-11-11 · v0.12.1 真实故障修复（自动紧凑格式 / 手动导入诊断） · schema 12 · 结果 Schema 1.2.0
 
 ## 1. 本轮结果
 
 | 目标 | 结论 |
 | --- | --- |
-| 先真实测试匿名接口 | **已完成**。OVHcloud AI Endpoints 的 `gpt-oss-20b` 匿名接口通过真实 LiveMemory 包校验；Murakumo / llmfaucet / LLM7 / Pollinations 均未通过，详见 `docs/ANONYMOUS_AI_RESEARCH.md`。 |
-| 一键自动创建任务、分析、校验、导入 | **已完成**。`AutoAnalysisRunner` 使用现有 `createAnalysisJob` / `validateAnalysisImport` / `importAnalysisResult` / `buildAggregatePackage`。 |
-| 多批次与第二阶段汇总 | **已完成**。自动批次更小（250 消息 / 25 观众 / 600 摘录），最多 12 批；每批导入后自动生成汇总包并导入 final。 |
-| 观众长期记忆 | **已完成**。真实 3 观众包得到 3 条语义事实、正确证据；真实跨场次“学画画 → 改学吉他”测试中旧事实被 `superseded`，新事实新增。 |
-| 失败降级 | **已完成**。按钮正下方固定红色文案；详情折叠显示稳定错误码/HTTP 状态；手动导出/导入完全保留；不弹 `alert()`。 |
-| 首次使用隐私确认 | **已完成**。`localStorage` 记录一次同意；服务端要求 `consent:true`；文案明确第三方处理。 |
-| 重复点击 / 页面切换 / 重启 | **已完成**。服务端按 session 去重；状态来自服务端；`runtime/ai-auto.json` 记录 jobId/阶段/错误，重启标记 `interrupted`，可恢复同一任务。 |
-| 取消 | **已完成**。取消仅停止后续请求；已导入批次保留。 |
-| 测试 | **全量 525 passed / 0 failed**（约 93 秒）；真实匿名 API 测试单独执行，不混入 mock。 |
-| 真实浏览器 UI | **仍未完成**。本机策略阻止无头浏览器；只有静态 UI 测试 + HTTP 端到端测试。 |
-| 打包 EXE | **已构建、未能运行**：`dist/LiveMemory.exe` 91.2 MB / 151 资源 / requireAdministrator / SHA-256 `342294c…`；本机直接运行被“需要提升”拒绝。 |
+| 复现自动失败 | **已复现**。真实 25 观众批次在 `json_object` 模式下退化，`finish_reason=length`、9,250 completion tokens、重复字段名，JSON 不完整；修复请求同样失败。 |
+| 复现手动 4 项错误 | **已定位**。提示词自相矛盾（“不要输出观众身份字段”）、52 个不透明 ID 的机械复制、`memory_context`/`viewer_context` 重复、零发言观众无规则；真实 52 观众探针复现了“漏观众”的同类失败。 |
+| 自动模式可靠完成 52 位观众 | **已通过真实 OVH**。6 批 + 汇总，`complete`，52/52 覆盖，`missing_update=0`，7 条结果。 |
+| 手动模式导入 | 修正后的 52/52 JSON 可在一个事务导入（测试）；真实 OVH 52 人单包返回 49/52，界面现在精确列出缺失观众并可复制修复指令。用户实际模型未知，不能宣称任意模型一次成功。 |
+| 全量测试 | **545 passed / 0 failed**（约 77 秒，2026-11-11）。 |
+| 真实浏览器 UI | **仍未验收**（本机策略）。 |
+| EXE | 本轮**未重建/未运行**；v0.12.0 EXE 仍未运行验收。 |
 
-## 2. 真实接口结论
+## 2. 真实根因（证据）
 
-| 服务 | 匿名 | 实测 | 结论 |
-| --- | --- | --- | --- |
-| OVHcloud AI Endpoints `gpt-oss-20b` | ✅ 官方 2 req/min | 真实包通过；Runner `complete`、`semantic=3` | **唯一采用** |
-| Murakumo | 文档允许 | `/ready` 503、`murakumo/free` 502、`mishima` 180s 后无容量 | 不集成 |
-| llmfaucet | — | 域名 NXDOMAIN | 不集成 |
-| LLM7.io | 未确认 | 无 Key 可 200，但官方要求 Token | 不集成 |
-| Pollinations | 匿名层存在 | 基础 JSON 通过；真实包 HTTP 400 | 不集成 |
+### 2.1 自动故障 A
 
-## 3. 后端变化
+- 真实包：`aij_01M747M6H2DGBWKPERAG`，6 批中的 batch 1，25 位记忆观众、33 条消息，
+  `estimatedTokens=41981`，`max_tokens=9250`。
+- 真实请求：HTTP 200，169.5 秒，`prompt_tokens=44682`，`completion_tokens=9250`，
+  `finish_reason=length`，内容尾部为重复的
+  `"viewer_profiles","viewer_memory_updates","session_topics"`。
+- 同一包换 `response_format=json_schema`：HTTP 200，72 秒，`finish_reason=stop`，
+  `completion_tokens=2014`，JSON 有效；但因 `viewer_context.json` 含 7 位其他批次观众，
+  模型输出 25 条时把其中 2 位写入、漏掉 2 位本批观众，产生
+  `MEMORY_VIEWER_UNKNOWN` + `MEMORY_VIEWER_UPDATE_MISSING`。
+- 原客户端只返回 `content`，不记录 `finish_reason`、usage 或退化特征。
 
-### 3.1 新模块
+### 2.2 手动故障 B
+
+- 真实包：`aij_01M747QHVKRK8HNNPC0H`，1 批，99 条消息，52 位观众，日语，
+  `memory_context.json` 67.6 KB，`viewer_context.json` 62.2 KB，提示词约 75k tokens。
+- 三语 `instructions.md` 的 `memoryRules` 最后一句都禁止输出“观众身份字段”，与必须输出
+  `viewer_memory_updates[].viewer_id` 冲突；日语版最严重。
+- 52 人中有 1 位只有 Super Sticker、没有聊天发言（`youtube:UCkNUYsGPULqxk7Y90kdqS-Q`），
+  包内没有针对零摘录观众的明确规则。
+- 真实 OVH 52 人单包（新提示词）返回 49/52，缺 3 位，说明“漏观众”是模型行为，
+  不是验证器误判；验证器正确拒绝。
+
+## 3. 代码变化
+
+### 3.1 新增
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/ai/auto/config.mjs` | 已验证 provider、模型、匿名限流、批次/上下文/输出预算、稳定错误码 |
-| `src/ai/auto/client.mjs` | `fetch` + `AbortSignal`、滑动窗口限流、`Retry-After`、JSON 提取、错误分类 |
-| `src/ai/auto/prompt.mjs` | 读取现有 ZIP 包、内联批次/汇总内容、精确观众 ID 与证据 seq、修复提示词、上下文预算 |
-| `src/ai/auto/state.mjs` | `runtime/ai-auto.json`：jobId、阶段、批次、错误码；不含聊天/提示词 |
-| `src/ai/auto/runner.mjs` | 创建/恢复任务、逐批调用、校验、导入、汇总、取消、重试、恢复、请求预算 |
-| `src/ai/auto/errors.mjs` | `AutoAnalysisError` 与脱敏 detail |
+| `src/ai/auto/assemble.mjs` | 紧凑回答 Schema、ref 结构检查、ref→稳定 ID 组装、定向补充合并、汇总回答 Schema |
+| `src/web/js/pages/ai-import-repair.js` | 纯函数：把 missing/unknown/duplicate/errors 生成可复制的修复指令 |
 
 ### 3.2 修改
 
-- `src/ai/export/job.mjs`：`createAnalysisJob()` 新增可选 `memoryViewersPerBatch` / `maxMemoryExcerptMessages`，默认值保持原行为；自动模式传入更小上限。批次计算、观众分配、证据映射均复用。
-- `src/server/index.mjs`：运行时创建 `AutoAnalysisRunner`；`deps.auto`；`stopAdapters` 先 `auto.shutdown()`。
-- `src/server/routes.mjs`：4 个 `/api/ai/auto/*` 路由；错误映射；`AUTO_TOO_MANY_BATCHES` 422。
-- `package.json` / `src/shared/app-info.mjs`：0.12.0。
-- 数据库 schema **不变（12）**；没有新表、没有迁移。
+- `src/ai/auto/config.mjs`：10 位/批、30 批上限、300 秒超时、structured output 标记、
+  `AUTO_OUTPUT_TRUNCATED` / `AUTO_OUTPUT_DEGENERATED` / `AUTO_VIEWER_COVERAGE_INCOMPLETE`。
+- `src/ai/auto/client.mjs`：`responseSchema` → `json_schema`；返回 `finishReason`、usage、
+  `reasoningTokens`、`degenerate`；空内容 + `length` → 截断错误；字段名重复检测。
+- `src/ai/auto/prompt.mjs`：紧凑批次契约；slim memory/evidence seqs；去重 messages/excerpts；
+  定向补充提示词；汇总 prompt 附 structured schema；提示词预算不变（90k）。
+- `src/ai/auto/runner.mjs`：紧凑评估、组装、一次定向补充、`source='auto'` 校验、
+  旧提示词任务不复用、错误码优先级、汇总输出预算 12k。
+- `src/ai/export/job.mjs`：`memory_context.viewers[]` 新增 `evidence_seqs` / `zero_excerpt`，
+  去掉重复累计字段。
+- `src/ai/export/context.mjs`：`session.duration_seconds`（避免用聊天回溯推断直播时长）。
+- `src/ai/prompts/instructions.mjs`：删除三语矛盾句；新增精确复制 ID、零摘录、非本批观众、
+  记录时长规则；形状块加标记以便自动 prompt 去掉完整 Schema。
+- `src/ai/import/validate.mjs` + `src/memory/embedded.mjs`：`memory.gaps`（missing/unknown/
+  duplicate，含昵称）。
+- `src/server/routes.mjs`：preview 返回 `memory.gaps`。
+- `src/web/js/pages/ai.js` + 三语 i18n：显示 gaps、复制修复指令。
+- `src/ai/constants.mjs`：提示词版本 `lm-prompt-m6.3`。
+- `package.json` / `src/shared/app-info.mjs`：0.12.1。
 
 ### 3.3 API
 
+HTTP 路由不变：
+
 ```text
-GET  /api/ai/auto/services
+GET  /api/ai/auto/services       maxBatches=30
 GET  /api/ai/auto/status?sessionId=
-POST /api/ai/auto/run      {sessionId, locale?, consent:true}
-POST /api/ai/auto/cancel   {sessionId}
+POST /api/ai/auto/run            {sessionId, locale, consent:true}
+POST /api/ai/auto/cancel         {sessionId}
+POST /api/ai/import/preview      新增 target.memory.gaps
+POST /api/ai/import              不变
 ```
 
-状态字段：`status`（idle/running/complete/failed/canceled/interrupted）、`stage`（preparing/connecting/analyzing/validating/importing/aggregating/complete）、`batchIndex`、`batchTotal`、`jobId`、`error{code,detail}`、`job{state,memoryCoverage,...}`、`services`。
+## 4. 关键规则（下一轮不要破坏）
 
-### 3.4 关键安全/正确性规则
+1. 自动模式模型**永远不输出 viewer_id**；ref 只能由本地批次分配映射，重复/越界/缺失都拒绝。
+2. 组装结果必须再走 `validateAnalysisImport()` + `importAnalysisResult()`；不能直接写 `ai_*`。
+3. 缺少观众只能做一次有界定向补充；仍缺失即失败，不能默认 `no_new_information`。
+4. 手动导入的 `viewer_id` 只原样接受；未知/缺失/重复都阻塞，界面只提示不修改。
+5. `evidence_seqs` 是提示词辅助，不是新证据来源；验证器仍检查 `ai_job_memory_messages` 归属。
+6. 批次上限 30 × 10 = 300 位，保持 v0.12.0 的 12 × 25 = 300 位容量，不得静默裁剪。
+7. `lm-prompt-m6.3` 的失败任务不会被复用；重新点击会创建新任务，旧任务保留。
+8. 免费接口不做高频压力测试；真实探针数量有限，结果只代表样本。
 
-1. **同一个导入路径**：自动回答必须先 `validateAnalysisImport()` 通过，再由 `importAnalysisResult({source:'auto'})` 在单事务写入；不能直接写 `ai_*` 或事件表。
-2. **不降低 Schema**：观众覆盖、稳定 ID、证据归属、时间窗口、重复导入保护全部沿用。
-3. **不跳过观众**：自动批次仍由 `createAnalysisJob()` 分配全部可识别观众；超出 12 批时明确失败，不静默裁剪。
-4. **不伪造证据**：提示词列出每位观众允许的 excerpt seq；验证器拒绝跨观众/不存在 seq。
-5. **不把推断写成事实**：沿用 `stated/inferred/uncertain` 与证据规则。
-6. **不覆盖手动结果**：自动任务只处理自己创建的任务；手动任务/结果不受影响。
-7. **不无限重试**：每个 provider 一次网络重试、一次修复；单次运行有请求预算；429 等待上限 90 秒。
-8. **不泄漏**：日志/状态文件只含 code、provider、HTTP 状态、批次/耗时；不含提示词、聊天、回答。
-9. **不发送无关数据**：只发送当前分析包（聊天、观众上下文、已有记忆、Schema），不发送数据库文件、凭据、其他直播。
+## 5. 测试 / 验证
 
-## 4. 前端变化
-
-`src/web/js/pages/ai.js`：
-
-- 「创建分析任务」卡内、手动控件上方新增 `autoPanel`：
-  - 主按钮「自动 AI 分析」、免费匿名 chip、说明；
-  - 按钮正下方的红色错误文案（三语精确文案）与折叠「查看详情」；
-  - 取消按钮；
-  - 真实阶段文案（准备/连接/第 X/Y 批/验证/更新记忆/汇总/完成/取消）。
-- 首次点击使用自定义 modal 征求同意；`localStorage` key `livememory.aiAutoConsent.v1`。
-- 轮询 `/api/ai/auto/status`（1.5s），页面切换/刷新后从服务端恢复；同一任务运行中禁用按钮。
-- 完成时刷新任务/报告；失败时保留手动区域，不切换模式。
-- 所有动态文本 `textContent`，无 `innerHTML`、无 `alert()`。
-- `src/web/js/pages/ai-report.js`：来源显示 `sourceAuto`。
-- 三语 `src/web/i18n/*.json`：新增 `ai.auto.*`、`ai.report.sourceAuto`、`errors.aiAuto*`；更新 `ai.pageSubtitle` 与 `ai.setup.note`，不再声称软件从不调用 AI API。
-- `src/web/styles/pages.css`：`.auto-panel` / `.auto-actions` / `.auto-status` / `.auto-error` / `.auto-details` / `.auto-divider`，使用 tokens，≤700px 换行。
-
-## 5. 测试 / 构建 / 验证
-
-- 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` → **525 passed / 0 failed**，约 93 秒。
+- 全量：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+  → **545 passed / 0 failed**（约 77 秒，2026-11-11）。
 - 新增：
-  - `tests/unit/auto-client.test.mjs`：JSON 提取、限流、匿名请求、429/5xx/timeout/非 JSON。
-  - `tests/unit/auto-prompt.test.mjs`：观众 ID/证据 seq、汇总契约、上下文预算、修复提示。
-  - `tests/integration/auto-analysis.test.mjs`：成功、多批、备用、全失败、修复、错误证据、部分成功后恢复、重复点击、取消/恢复、重启、汇总失败、旧记忆不被覆盖、重复导入幂等。
-  - `tests/integration/auto-api.test.mjs`：HTTP 同意、202、409、状态、422 规模限制、取消、手动路径仍可用。
-  - `tests/unit/ai-ui.test.mjs`：按钮/状态/错误文案/三语键/无 alert/无 innerHTML。
-- 真实匿名 API 探针（开发机临时脚本，未提交；避免把真实外部请求写进自动化测试）：按 3 位合成观众包、跨场次记忆两种场景执行，结果写入 `docs/ANONYMOUS_AI_RESEARCH.md`。
-- 构建：`node scripts/build-windows.mjs` 成功（v0.12.0，91.2 MB、151 资源、requireAdministrator、SHA-256 `342294c…`）；**未能运行验收**，直接执行被 Windows 以“请求的操作需要提升”拒绝。
-- 真实浏览器：**未运行**（本机策略）。
+  - `tests/unit/auto-assemble.test.mjs`：ref 检查、组装、定向合并、定向提示词。
+  - `tests/unit/ai-import-repair.test.mjs`：修复指令不改 ID。
+  - `tests/integration/auto-compact.test.mjs`：52 人/99 消息 6 批、100 位低活跃 10 批、
+    缺失 ref 定向补充、补充失败、截断、零摘录观众。
+  - `tests/integration/manual-52-viewers.test.mjs`：52 人单批证据归属、2 未知 + 2 缺失
+    精确 gaps、修正后 52/52 事务导入。
+- 真实探针（非自动化）：
+  - 10 位/批：10/10，14.4 秒，489 completion tokens，`previewOk=true`。
+  - 25 位/批：25/25，20.4 秒，751 completion tokens，`previewOk=true`。
+  - 52 位真实全流程：6 批 + 汇总，`complete`，52/52，7 条结果，52 个记忆头。
+  - 手动 52 人新提示词：49/52，缺 3 位；正确 52/52 JSON 可导入。
+- 真实浏览器：**未运行**。
+- EXE：本轮未构建；v0.12.0 的构建产物未运行验收。
 
 ## 6. 未验证 / 边界
 
-- 真实 EXE 出站请求、代理/防火墙/UAC 下的行为；
-- 真实浏览器渲染、暗色、390px、按钮位置截图；
-- 数千观众/数万消息大场的自动批次与耗时；
-- OVH 2 req/min 在长任务中的实际总耗时；
-- 模型在多语言、反讽、低活跃观众上的长期稳定性；
-- Murakumo 恢复后的可用性；
-- Pollinations 真实包 HTTP 400 的具体原因；
-- 自动分析期间删除场次/清空数据的交互（服务端会失败并显示红色提示，未做额外 UI 守卫）。
+- 用户手动分析实际使用的模型未知；任意模型一次覆盖 52 位没有保证。
+- 25 位紧凑单批只做了一次真实样本；10 位完整运行已通过。
+- 免费 OVH 2 请求/分钟，长场次总耗时可能较长；本轮未做 1000+ 观众真实测试。
+- 真实浏览器中的 gaps 列表、复制按钮、暗色、390px 未验收。
+- Windows EXE 出站请求、UAC、代理/防火墙仍未验收。
+- 汇总 summary 仍可能把“消息回溯时间”说成直播时长；本轮已加入
+  `session.duration_seconds` 与提示词规则，但未用新包重新跑真实汇总验证。
 
 ## 7. 常用命令
 
 ```bat
-:: 全量测试
+:: 全量测试（受限环境）
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 
-:: 只测自动分析
-node --test --test-isolation=none "tests/unit/auto-*.test.mjs" "tests/integration/auto-*.test.mjs"
+:: 只测本轮
+node --test --test-isolation=none "tests/unit/auto-*.test.mjs" "tests/unit/ai-import-repair.test.mjs" "tests/integration/auto-*.test.mjs" "tests/integration/manual-52-viewers.test.mjs"
 
 :: 启动
 node src/launcher/launcher.mjs --no-open
-
-:: 真实匿名接口探针（会发外部请求，勿频繁运行）
-node tests/.tmp/auto-real.mjs
 ```
 
 ## 8. 本轮 Commit
 
-- 功能提交：`b0a985a feat: add automatic anonymous AI analysis`（本地 commit，未 Push）。
-- 本轮文档/测试与功能在同一提交；提交后仅追加本交接记录的 hash 说明。
+- 待提交（本地 commit，不 Push）。提交信息见最终报告。
 
-## 9. 上一轮（v0.11.1）摘要
+## 9. 上一轮（v0.12.0）摘要
 
-P8 统一分析与长期记忆：一次分析结果同时承担本场报告与全部可识别观众的长期记忆；删除独立记忆页；修复观众档案主播范围。详见 `log/2026-11-10-unified-analysis-memory.md` 与 `log/2026-11-10-viewer-scope-fix.md`。
+P9 匿名免费自动分析：OVHcloud `gpt-oss-20b`、3 位合成观众真实包、自动批次/汇总/修复、
+525 项测试。真实 52 位用户样本暴露本轮修复的问题。详见
+`log/2026-11-11-anonymous-ai-auto-analysis.md` 与 `docs/ANONYMOUS_AI_RESEARCH.md`。

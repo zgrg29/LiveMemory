@@ -13,8 +13,15 @@
 
 export const AUTO_SCHEMA_VERSION = '1.2.0';
 
-/** One automatic task may create at most this many batches (user-visible). */
-export const MAX_AUTO_BATCHES = 12;
+/**
+ * One automatic task may create at most this many batches (user-visible).
+ *
+ * v0.12.1 lowered the per-batch viewer cap from 25 to 10. The previous 12-batch
+ * ceiling would then have supported only 120 viewers instead of 300, so the
+ * ceiling is raised in the same change. A real 52-viewer, 99-message session now
+ * needs six batches; 300 viewers still fit (30 × 10).
+ */
+export const MAX_AUTO_BATCHES = 30;
 
 /**
  * Automatic packaging is deliberately smaller than the manual default. The
@@ -22,9 +29,15 @@ export const MAX_AUTO_BATCHES = 12;
  * smaller batches keep one bad answer from losing a large part of the stream.
  * These limits are passed into createAnalysisJob(), so coverage and evidence
  * mapping stay exactly the same as the manual path.
+ *
+ * 25 viewers per request was measured to fail against gpt-oss-20b: a batch with
+ * 25 assigned viewers either degenerated into repeated field names (json_object
+ * mode, finish_reason=length) or produced updates for viewers from another
+ * batch. 52 viewers in one request produced zero memory updates at all. 10 is
+ * the tested compromise; see docs/ANONYMOUS_AI_RESEARCH.md §11.
  */
 export const AUTO_BATCH_MESSAGES = 250;
-export const AUTO_MEMORY_VIEWERS_PER_BATCH = 25;
+export const AUTO_MEMORY_VIEWERS_PER_BATCH = 10;
 export const AUTO_MEMORY_EXCERPTS_PER_BATCH = 600;
 export const AUTO_MAX_OUTPUT_TOKENS = 12000;
 
@@ -46,6 +59,9 @@ export const AUTO_ERROR = Object.freeze({
   TIMEOUT: 'AUTO_TIMEOUT',
   INVALID_JSON: 'AUTO_INVALID_JSON',
   SCHEMA_INVALID: 'AUTO_SCHEMA_INVALID',
+  OUTPUT_TRUNCATED: 'AUTO_OUTPUT_TRUNCATED',
+  OUTPUT_DEGENERATED: 'AUTO_OUTPUT_DEGENERATED',
+  VIEWER_COVERAGE_INCOMPLETE: 'AUTO_VIEWER_COVERAGE_INCOMPLETE',
   IMPORT_FAILED: 'AUTO_IMPORT_FAILED',
   AGGREGATE_FAILED: 'AUTO_AGGREGATE_FAILED',
   CANCELED: 'AUTO_CANCELED',
@@ -69,10 +85,17 @@ export const AUTO_PROVIDERS = Object.freeze([
     label: 'OVHcloud AI Endpoints',
     endpoint: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
     model: 'gpt-oss-20b',
-    timeoutMs: 180000,
+    // A real 25-viewer request took 169 s before the output budget was hit and
+    // the answer degenerated. Structured output is much faster, but the timeout
+    // must not be the thing that fails a slow free request.
+    timeoutMs: 300000,
     reasoningEffort: 'low',
     rateLimit: Object.freeze({limit: 2, windowMs: 60000}),
-    supportsResponseFormat: true
+    supportsResponseFormat: true,
+    // Verified against this endpoint: `response_format: {type:"json_schema"}`
+    // returns valid JSON with finish_reason=stop on the same real package that
+    // degenerated in json_object mode.
+    supportsStructuredOutputs: true
   })
 ]);
 

@@ -143,13 +143,37 @@ export function extractJsonObject(text) {
 }
 
 /**
+ * A small reasoning model can fall into a repetition loop instead of emitting
+ * JSON (observed with gpt-oss-20b in json_object mode: repeated
+ * `"viewer_profiles","viewer_memory_updates"...` until max_tokens). Detecting it
+ * lets the runner report a precise cause instead of a generic "invalid JSON".
+ */
+export function looksDegenerate(text) {
+  const source = String(text ?? '');
+  if (source.length < 2000) return false;
+  const tail = source.slice(-6000);
+  // A truncated-but-healthy JSON mentions each top-level key at most a couple
+  // of times. gpt-oss degeneration instead repeats structural key names over
+  // and over with no values (`"viewer_profiles", "viewer_memory_updates", ...`).
+  const keys = ['"viewer_memory_updates"', '"viewer_profiles"', '"session_topics"', '"viewers"'];
+  let max = 0;
+  for (const key of keys) {
+    const occurrences = tail.split(key).length - 1;
+    if (occurrences > max) max = occurrences;
+  }
+  return max >= 8;
+}
+
+/**
  * Perform one provider attempt.
- * @returns {Promise<{content:string, providerId:string, model:string, usage:object|null, durationMs:number}>}
+ * @returns {Promise<{content:string, providerId:string, model:string, usage:object|null,
+ *   finishReason:string|null, reasoningTokens:number|null, degenerate:boolean, durationMs:number}>}
  */
 export async function callProvider({
   provider,
   messages,
   maxTokens,
+  responseSchema = null,
   signal = null,
   fetchImpl = globalThis.fetch,
   limiter = null,
@@ -175,7 +199,17 @@ export async function callProvider({
     temperature: 0
   };
   if (provider.supportsResponseFormat !== false) {
-    body.response_format = {type: 'json_object'};
+    if (responseSchema && provider.supportsStructuredOutputs !== false) {
+      body.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: 'livememory_auto_answer',
+          schema: responseSchema
+        }
+      };
+    } else {
+      body.response_format = {type: 'json_object'};
+    }
   }
   if (provider.reasoningEffort) body.reasoning_effort = provider.reasoningEffort;
 
@@ -241,9 +275,17 @@ export async function callProvider({
     });
   }
   const content = responseContent(payload).trim();
+  const finishReason = payload?.choices?.[0]?.finish_reason ?? null;
   if (content === '') {
+    if (finishReason === 'length') {
+      throw new AutoAnalysisError(AUTO_ERROR.OUTPUT_TRUNCATED, {
+        detail: 'empty-content-length',
+        providerId: provider.id,
+        retryable: false
+      });
+    }
     throw new AutoAnalysisError(AUTO_ERROR.INVALID_JSON, {
-      detail: 'empty-content',
+      detail: finishReason ? `empty-content-${finishReason}` : 'empty-content',
       providerId: provider.id,
       retryable: true
     });
@@ -253,6 +295,9 @@ export async function callProvider({
     providerId: provider.id,
     model: payload?.model ?? provider.model,
     usage: payload?.usage ?? null,
+    finishReason,
+    reasoningTokens: payload?.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+    degenerate: looksDegenerate(content),
     durationMs
   };
 }

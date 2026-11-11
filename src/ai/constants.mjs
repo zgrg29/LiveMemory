@@ -14,7 +14,7 @@ export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 export const RESULT_SCHEMA_VERSION = '1.2.0';
 export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0']);
 
-export const PROMPT_VERSION = 'lm-prompt-m6.2';
+export const PROMPT_VERSION = 'lm-prompt-m6.3';
 
 /**
  * Unified analysis + memory batching. A viewer is assigned to exactly one

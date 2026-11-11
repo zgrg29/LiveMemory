@@ -1,7 +1,7 @@
 # AI 文件往返协议（AI_CONTRACT）
 
-版本：**0.12.0** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.2.0**（兼容 1.0.0 / 1.1.0） · 提示词版本 **`lm-prompt-m6.2-<locale>`**
+版本：**0.12.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+结果 Schema 版本 **1.2.0**（兼容 1.0.0 / 1.1.0） · 提示词版本 **`lm-prompt-m6.3-<locale>`**
 
 ## 1. 原则
 
@@ -446,7 +446,7 @@ M6/M7 扩展（1.1.0 字段可选；1.2.0 批次必须包含 `viewer_memory_upda
 
 | 文件 | 内容 |
 | --- | --- |
-| `memory_context.json` | 本批次负责的观众：身份、本场统计、主播维度累计、现有 `memory`（version/summary/facts）、`session_excerpt_message_count` |
+| `memory_context.json` | 本批次负责的观众：`viewer_id`、昵称、`evidence_seqs`（该观众允许引用的本包记忆证据 seq）、`zero_excerpt`、现有 `memory`（version/summary/facts）、`session_excerpt_message_count`。v0.12.1 起不再重复 `viewer_context` 中的累计统计。 |
 | `viewer_excerpts.jsonl` | 本批次负责的每位观众在本场的全部可用发言（最多最近 120 条/人），`seq` 为本包内记忆证据序号 |
 
 `viewer_context.json` 同时包含本场消息中的观众与本批次负责记忆的观众（`in_memory_batch` 区分），
@@ -560,19 +560,21 @@ coverage.deleted          记忆已删除
 
 ### 11.2 批次与提示词
 
-- 自动任务使用更小的批次：`batchSize=250`、每位批次最多 25 位记忆观众、最多 600 条观众摘录，
-  最多 12 批。批次仍由 `createAnalysisJob()` 生成，全部稳定观众分配规则不变。
-- 提示词由包内 `instructions.md` + 自动模式输出契约组成：
+- 自动任务使用更小的批次：`batchSize=250`、每位批次最多 10 位记忆观众、最多 600 条观众摘录，
+  最多 30 批。批次仍由 `createAnalysisJob()` 生成，全部稳定观众分配规则不变。
+  （v0.12.1 由 25 位/12 批调整；25 位单批经真实测试可通过，但 10 位给输出预算和语义质量
+  留下更大余量，代价是请求数增加。）
+- 提示词由包内 `instructions.md` + 自动模式紧凑输出契约组成：
   - 明确 `job_id`/`batch_id`/`task_id`/`session_id`/`broadcaster_id`/`locale`；
-  - 明确 `viewer_memory_updates` 的**精确 viewer_id 列表**；
-  - 列出每位观众在 `viewer_excerpts.jsonl` 中**允许引用的 seq**；
+  - 明确每位观众的 `ref`（而不是要求模型复制稳定 ID）与**允许引用的 seq**；
   - 明确“第一人称兴趣/经历必须 add”“状态变化必须 supersede/update 旧事实”
     “问题不是兴趣证据”“问候/表情/付费不能单独推断”；
   - 汇总阶段 `viewer_memory_updates` 必须为 `[]`。
 - 系统提示词 + 包内容的预估 token 超过 90,000 时直接失败（`AUTO_CONTEXT_TOO_LARGE`），
   不截断观众或证据。
-- 输出预算：批次最低 8,000 tokens（随观众数增长，最高 12,000）；汇总 8,000。
-  实测 3,040 tokens 会截断 gpt-oss 的 JSON，因此不能把预算压得过低。
+- 输出预算：批次最低 6,000 tokens（随观众数增长，最高 12,000）；汇总 12,000。
+  v0.12.1 起使用 `json_schema` structured output，并记录 `finish_reason`；`length` 明确报
+  `AUTO_OUTPUT_TRUNCATED`，不再与普通 Schema 错误混淆。
 
 ### 11.3 校验、修复与导入
 
@@ -609,3 +611,59 @@ UI 首屏只显示固定红色文案；上述错误码与脱敏 detail 只在「
 - 不把提示词、回答、聊天正文写入日志或状态文件。
 - 不发送数据库文件、Cookie、Token、API Key、系统账户信息或不相关的历史直播。
 - 自动模式不得为了提高成功率而降低 Schema、证据、覆盖率或去重校验。
+
+## 12. v0.12.1 可靠性修复（真实故障）
+
+真实用户样本（YouTube 日语直播，99 条消息、52 位观众、录制约 1 分钟、初始无长期记忆）暴露了两个问题：
+
+1. 自动分析返回 `AUTO_SCHEMA_INVALID` / `AUTO_INVALID_JSON`。真实复现：25 位观众批次在
+   `response_format=json_object` 下把输出预算（9250 tokens）耗在重复字段名的退化循环上，
+   `finish_reason=length`，JSON 不完整；修复请求再次发送同样的巨大提示，仍然失败。
+   另外，批次的 `viewer_context.json` 包含属于其他记忆批次的观众，模型把其中 2 位写进
+   `viewer_memory_updates`，同时漏掉 2 位本批观众，产生 `MEMORY_VIEWER_UNKNOWN` +
+   `MEMORY_VIEWER_UPDATE_MISSING`。
+2. 手动导入的同一类错误。原因包括：`viewer_id` 必须由模型机械复制 52 个不透明 ID；
+   包内 `memory_context` 与 `viewer_context` 有大量重复数据；三语提示词都写了
+   “不要输出观众身份字段”，与“每位观众必须有一条带 viewer_id 的更新”直接矛盾；
+   只有礼物/SC、没有聊天发言的观众没有明确规则。
+
+### 12.1 自动模式：紧凑回答 + 本地组装（协议内部格式，不是新的结果 Schema）
+
+- 自动批次提示词不再要求模型输出 `viewer_memory_updates[].viewer_id`。模型只返回：
+  `{"session_topics": {...}, "viewers": [{"ref": 1, "memory": {...}, "profile": {...}}]}`。
+- `ref` 是本批次 `memory_context.viewers` 的序号（1..N），由本地程序确定。程序按 ref 映射
+  回真实稳定 ID，再组装成完整的 `livememory-analysis-result-v1`（Schema 1.2.0），
+  最后调用**同一个** `validateAnalysisImport()` 与 `importAnalysisResult()`。
+- 模型不能提供、修改或合并身份；重复/越界 ref 直接拒绝，缺少 ref 只做一次有界定向补充
+  （只发送缺失观众及其摘录），仍缺失则 `AUTO_VIEWER_COVERAGE_INCOMPLETE`，不写入任何结果。
+- 自动请求使用 `response_format: {type:"json_schema", json_schema:{...}}`（真实 OVH 接口验证）；
+  回答会记录 `finish_reason`、usage 与退化检测，`length` 明确归为 `AUTO_OUTPUT_TRUNCATED`。
+- 批次：10 位记忆观众 / 250 条消息 / 600 条摘录，最多 30 批（原 25 位 × 12 批 = 300 位，
+  现在 10 位 × 30 批仍支持 300 位）。25 位单批经真实测试也能通过，但 10 位为输出预算与
+  语义质量保留更大余量；代价是请求数增加。
+- 汇总阶段使用完整的 Schema 1.2.0，并通过 structured output 强制
+  `viewer_memory_updates: []`。
+
+### 12.2 手动模式：提示词与诊断修复
+
+- 删除三语提示词中“不要输出观众身份字段”的矛盾句；改为“`viewer_id` 必须从
+  `memory_context.viewers[].viewer_id` 原样复制，不能缩写、翻译、改写或用昵称代替”。
+- `memory_context.viewers[]` 新增 `ref`（仅自动提示词使用）、`evidence_seqs` 与
+  `zero_excerpt`。没有聊天发言的观众（例如只有 Super Sticker）必须保留
+  `no_new_information: true` / `operations: []` 的记录。
+- `memory_context.json` 不再重复 `viewer_context.json` 的 `broadcaster_context` / `lifetime` /
+  `session`，显著减小包体和提示词；`viewer_context.json` 仍保留完整累计与 `in_memory_batch`。
+- 导入预览新增 `target.memory.gaps`：`missing`（本批应有但缺失的观众，含昵称）、
+  `unknown`（不属于本批的 ID）、`duplicate`。界面显示这些观众，并提供「复制修复指令」，
+  把精确 ID、错误路径和规则复制给用户原先使用的 AI。绝不会自动替换或猜测 ID。
+
+### 12.3 新增错误码
+
+`AUTO_OUTPUT_TRUNCATED`、`AUTO_OUTPUT_DEGENERATED`、`AUTO_VIEWER_COVERAGE_INCOMPLETE`。
+原有错误码与 Schema 1.2.0 不变。
+
+### 12.4 兼容性
+
+- 旧分析包仍可导入；旧自动任务因提示词版本不匹配不会被复用（会创建新任务，旧任务保留）。
+- 旧 1.0.0 / 1.1.0 结果仍接受；手动粘贴的完整 Schema 1.2.0 结果仍走原有校验。
+- 自动模式仍只使用 `docs/ANONYMOUS_AI_RESEARCH.md` 中通过真实包验证的 provider。

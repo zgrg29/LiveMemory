@@ -233,3 +233,73 @@ youtube:UC_REAL_2  life_event 旅行  "我下个月要去旅行"          stated
 - 不包含数据库文件、Cookie、Token、API Key、操作系统账户信息或不相关的历史直播；
 - 不记录提示词或模型回答到日志；只记录 provider id、HTTP 状态、批次号、错误码与耗时；
 - 模型返回内容一律作为不可信外部输入，经 Schema + 业务校验 + 事务导入后才写入本地数据库。
+
+---
+
+## 11. v0.12.1 真实故障复测（2026-11-11）
+
+复测对象为真实用户样本：YouTube 日语直播 `ses_01M747HW1DH5GT9R308A`，99 条聊天 +
+1 条 Super Sticker，52 位稳定观众，录制约 51 秒，初始 `viewer_memories=0`。
+数据库与分析包从用户数据目录复制到 `tests/.tmp`，原始数据库未修改。所有请求仍是无
+`Authorization`、无 Cookie 的官方匿名接口，遵守 2 请求/分钟；没有做压力测试。
+
+### 11.1 修复前：自动批次 1（25 观众）
+
+| 项 | 结果 |
+| --- | --- |
+| 请求 | `gpt-oss-20b`，`response_format=json_object`，`max_tokens=9250`，`reasoning_effort=low` |
+| HTTP / 耗时 | 200 / 169.5 秒 |
+| usage | `prompt_tokens=44682`，`completion_tokens=9250` |
+| `finish_reason` | **length** |
+| 内容 | 35,526 字符，尾部反复出现 `"viewer_profiles","viewer_memory_updates","session_topics"`；JSON 不完整 |
+
+同一真实包改为 `response_format=json_schema`（紧凑回答尚未启用）：HTTP 200，72 秒，
+`finish_reason=stop`，`completion_tokens=2014`，JSON 有效；但模型把 2 位**其他批次**
+的观众写入 `viewer_memory_updates`，漏掉 2 位本批观众，产生
+`MEMORY_VIEWER_UNKNOWN` ×2 + `MEMORY_VIEWER_UPDATE_MISSING` ×2。
+
+### 11.2 修复后：紧凑格式真实单批
+
+| 批次 | 观众 | 提示词估算 | 耗时 | completion | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| v10 batch 1 | 10 | 19,632 | 14.4 秒 | 489 | 10/10 refs，`previewOk=true` |
+| v25 batch 1 | 25 | 29,464 | 20.4 秒 | 751 | 25/25 refs，`previewOk=true` |
+
+两次均 `finish_reason=stop`、无退化、无未知/缺失观众。25 位在紧凑格式下也能通过；
+最终仍选择 10 位/批，是为输出预算与语义质量保留余量（代价是请求数增加）。
+
+定向补充也做了真实单次请求：只发送 ref 3 的 memory + 摘录，schema 仅要求 `viewers`；
+2.9 秒返回 `{"viewers":[{"ref":3,"memory":{"no_new_information":true,"operations":[]}}]}`，
+无 `session_topics`、无其他 ref，证明该路径可用且不会重新生成整批。
+
+### 11.3 修复后：52 位观众完整自动运行
+
+- 6 个批次 + 1 个汇总，全部真实 OVH 请求；批次阶段约 159 秒（含 2/分钟限流等待），
+  汇总约 22 秒；任务 `complete`。
+- `memoryCoverage.total=52`、`no_semantics=52`、`missing_update=0`、`complete=true`；
+  `source=auto` 结果 7 条（`batch:1`–`batch:6` + `final`）；52 个 `viewer_memories` 头。
+- 该场聊天只有问候、表情和短句，没有可支持长期事实的第一人称陈述；`semantic=0` 是
+  正确结果，程序没有为了“看起来有记忆”而编造事实。
+- 汇总摘要与 topics/highlights 生成成功。首次汇总在旧的 8,000 输出预算 + `json_object`
+  下截断；改用汇总 structured output + 12,000 预算后通过。汇总文本曾把聊天回溯时间
+  说成“6 分钟”，本轮已加入 `session.duration_seconds` 与提示词规则，但未用新包复测。
+
+### 11.4 手动模式真实 52 人单包
+
+- 使用新 `lm-prompt-m6.3-ja` 包（slim memory_context + evidence_seqs）发送给 OVH
+  `gpt-oss-20b`，`json_schema` 完整结果 Schema，`max_tokens=12000`。
+- 96.5 秒，`prompt_tokens=75516`，`completion_tokens=2907`，`finish_reason=stop`；
+  返回 49 条 `viewer_memory_updates`、5 个 profiles、1 个 topic。
+- 3 位观众缺失（`@TKNG-k6r`、`@球磨川禊-m9h`、`@ゎなぉ`），1 个 profile ID 不属于本批。
+  验证器正确阻塞；界面现在会列出这 3 位观众并提供修复指令。
+- 该结果说明：手动路径仍依赖用户选择的模型；OVH gpt-oss-20b 在 52 人单包下不能稳定
+  一次覆盖。正确的 52/52 JSON 可正常导入（集成测试），用户实际使用的模型仍未确认，
+  不能把本结果等同于用户当时的 AI。
+
+### 11.5 结论
+
+- **自动模式在真实 52 观众/99 消息场景通过**；这是本轮修复的核心验收。
+- 25 位单批本身不是根本原因；根因是要求模型复制/管理身份，以及 `json_object` 下的
+  输出退化。紧凑 ref + structured output 同时消除了这两个问题。
+- 手动模式的身份校验仍然严格；修复的是提示词矛盾、包体重复和错误可操作性，而不是
+  放宽 Schema。

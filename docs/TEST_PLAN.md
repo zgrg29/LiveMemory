@@ -690,3 +690,52 @@ duration ≈ 25.0s
 - 打包 EXE 的出站网络行为；
 - 数千观众/数万消息大场的实际耗时与免费限流；
 - 第二个通过完整 LiveMemory 包的匿名 provider。
+
+## 25. 真实故障修复回归（v0.12.1）
+
+### 25.1 根因复现（真实样本，离线复制，不修改用户库）
+
+| 证据 | 结果 |
+| --- | --- |
+| 自动 batch 1（25 观众、33 消息、`max_tokens=9250`、`json_object`） | HTTP 200，169.5 秒，`prompt_tokens=44682`，`completion_tokens=9250`，`finish_reason=length`，重复字段名，JSON 不完整 |
+| 同一 batch 改 `json_schema` | HTTP 200，72 秒，`finish_reason=stop`，`completion_tokens=2014`，JSON 有效；但 2 个其他批次观众被写入、2 个本批观众缺失 |
+| 批次 `viewer_context` vs `memory_context` | batch 1：32 vs 25；batch 2：32 vs 22；batch 3：23 vs 5（跨批次观众可见） |
+| 手动 52 人新提示词（OVH） | 96.5 秒，`prompt_tokens=75516`，`completion_tokens=2907`，49/52 更新；3 位缺失，1 个未知 profile ID |
+
+### 25.2 场景矩阵
+
+| 场景 | 验证方式 | 结果 |
+| --- | --- | --- |
+| 3 位观众 | Mock 单批 | ✅ 3/3，事务导入 |
+| 10 位观众 | 真实 OVH 单批 | ✅ 10/10，14.4 秒，489 completion tokens |
+| 25 位观众（原自动上限） | 真实 OVH 单批，紧凑格式 | ✅ 25/25，20.4 秒，751 completion tokens |
+| 52 位观众 / 99 条消息（真实规模） | 真实 OVH 6 批 + 汇总 | ✅ `complete`，52/52，`missing_update=0`，7 条结果 |
+| 100 位低活跃观众 | 本地集成，10 批 | ✅ 100/100，10 条批次结果 |
+| 多批次 | 本地集成 + 真实 6 批 | ✅ 批次隔离、顺序、最终汇总 |
+| 初始空档案 | 真实 52 人（`viewer_memories=0`） | ✅ 生成 52 个记忆头；语义 0（聊天只有问候/表情，未编造） |
+| 已有长期记忆 | 既有 M7/P8 测试 + 自动跨场次测试 | ✅ 更新/确认/替代旧事实路径不变 |
+| 中日英混合 | 既有 prompt 测试 + 真实日语包 | ✅ 三语说明、日语真实包通过；未做混合真实 API 样本 |
+| 错误 ID | 手动 52 人测试（2 未知 + 2 缺失） | ✅ 阻塞、精确 gaps、不写库、不自动改 ID |
+| 错误 ref | 单元 + 集成 | ✅ 越界/重复/缺失拒绝；缺失只做一次定向补充 |
+| JSON 截断 | 集成（`finish_reason=length`） | ✅ `AUTO_OUTPUT_TRUNCATED`，不导入 |
+| 429 / 超时 / 5xx | 既有 client 单元测试 | ✅ Mock 分类与重试/限流逻辑未变 |
+| 零摘录观众（仅 Super Sticker） | 集成 + 真实包中存在 | ✅ 必须一条 `no_new_information`；定向提示词明确“no chat excerpts” |
+| 手动 52/52 正确 JSON | 集成 | ✅ 一个事务导入，覆盖率 52/52 |
+
+### 25.3 自动化结果
+
+- 新增：`tests/unit/auto-assemble.test.mjs`、`tests/unit/ai-import-repair.test.mjs`、
+  `tests/integration/auto-compact.test.mjs`、`tests/integration/manual-52-viewers.test.mjs`。
+- 更新：`auto-client`（structured output、截断、退化）、`auto-prompt`（紧凑契约）、
+  `auto-api`（maxBatches=30、310 观众 → 31 批 422）、`ai-prompts`/`ai-api`/`ai-import`
+  （提示词版本 m6.3）。
+- 全量：**545 passed / 0 failed**（约 77 秒，2026-11-11；
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+
+### 25.4 未验证（必须保留）
+
+- 用户手动分析实际使用的 AI 模型/服务；任意模型一次覆盖 52 位没有保证。
+- 真实浏览器中的 gaps 列表、复制修复按钮、暗色、390px。
+- Windows EXE 启动、出站请求、代理/防火墙/UAC。
+- 1000+ 观众真实免费接口的耗时与限流；本轮未做高频压力测试。
+- 新 `session.duration_seconds` 规则的真实汇总效果（未重新跑新包汇总）。

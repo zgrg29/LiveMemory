@@ -64,7 +64,7 @@ test('single-batch export, import and report keep evidence traceable to real mes
   assert.equal(report.report.topics[0].refs[0].available, true);
   assert.match(report.report.topics[0].refs[0].content, /<script>alert\(1\)<\/script>/);
   assert.equal(report.result.schemaVersion, '1.1.0');
-  assert.equal(report.primaryJob.promptVersion, 'lm-prompt-m6.2-en');
+  assert.equal(report.primaryJob.promptVersion, 'lm-prompt-m6.3-en');
   assert.equal(report.viewerProfiles.count, 1);
 
   // Creating a re-analysis task must not downgrade an already imported session.

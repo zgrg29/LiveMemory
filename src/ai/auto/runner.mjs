@@ -12,7 +12,7 @@ import {createAnalysisJob, buildAggregatePackage} from '../export/job.mjs';
 import {computeJobStatus} from '../tasks/status.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
-import {MAX_ANALYSIS_MESSAGES, MAX_ANALYSIS_VIEWERS, MAX_MESSAGES_PER_VIEWER_EXCERPT} from '../constants.mjs';
+import {MAX_ANALYSIS_MESSAGES, MAX_ANALYSIS_VIEWERS, MAX_MESSAGES_PER_VIEWER_EXCERPT, promptVersionFor} from '../constants.mjs';
 import {
   AUTO_BATCH_MESSAGES,
   AUTO_ERROR,
@@ -35,9 +35,17 @@ import {
   buildAggregatePrompt,
   buildBatchPrompt,
   buildRepairMessages,
+  buildTargetedViewerPrompt,
   readAggregatePackage,
   readBatchPackage
 } from './prompt.mjs';
+import {
+  assembleCompactAnswer,
+  inspectCompactAnswer,
+  isCompactAnswer,
+  mergeTargetedAnswer,
+  COMPACT_ISSUE
+} from './assemble.mjs';
 
 function abortError() {
   return new AutoAnalysisError(AUTO_ERROR.CANCELED);
@@ -47,8 +55,29 @@ function assertNotAborted(signal) {
   if (signal?.aborted) throw abortError();
 }
 
-function summarizeJobStatus(jobStatus) {
-  if (!jobStatus) return null;
+/**
+ * Pick the most actionable failure code across provider attempts. Truncation and
+ * incomplete viewer coverage are more specific than a generic schema failure and
+ * must be visible in the status panel ("查看详情").
+ */
+function pickFailureCode(codes) {
+  const priority = [
+    AUTO_ERROR.RATE_LIMITED,
+    AUTO_ERROR.TIMEOUT,
+    AUTO_ERROR.CONTEXT_TOO_LARGE,
+    AUTO_ERROR.OUTPUT_TRUNCATED,
+    AUTO_ERROR.OUTPUT_DEGENERATED,
+    AUTO_ERROR.VIEWER_COVERAGE_INCOMPLETE,
+    AUTO_ERROR.SCHEMA_INVALID,
+    AUTO_ERROR.INVALID_JSON
+  ];
+  for (const code of priority) {
+    if (codes.includes(code)) return code;
+  }
+  return AUTO_ERROR.ALL_PROVIDERS_FAILED;
+}
+
+function summarizeJobStatus(jobStatus) {  if (!jobStatus) return null;
   return {
     state: jobStatus.status,
     complete: jobStatus.complete,
@@ -159,7 +188,17 @@ export class AutoAnalysisRunner {
     const existing = this.state.get(sessionId);
     const job = existing?.jobId ? getJob(this.db, existing.jobId) : null;
     const jobStatus = job ? computeJobStatus(this.db, job) : null;
-    if (job && !jobStatus.complete) {
+    // The compact answer contract and the per-batch viewer cap changed. A job
+    // created by the old prompt would resume with packages that still carry the
+    // old instructions, so it must not be reused. Starting a new job keeps the
+    // old (result-less) rows for audit instead of silently analysing with a
+    // prompt that no longer matches this runner.
+    const expectedPrompt = promptVersionFor(job?.locale ?? locale);
+    const resumable = Boolean(job) && job.promptVersion === expectedPrompt;
+    if (job && !jobStatus.complete && !resumable) {
+      this.state.remove(sessionId);
+    }
+    if (job && !jobStatus.complete && resumable) {
       // Resume the same job, batch ids and viewer assignments. Imported batches
       // are skipped; no duplicate requests and no duplicate rows.
       this.state.set(sessionId, {
@@ -556,6 +595,7 @@ export class AutoAnalysisRunner {
       assertNotAborted(signal);
       let previousText = null;
       let previousErrors = null;
+      let targetedUsed = false;
       for (let attempt = 0; attempt <= AUTO_MAX_REPAIRS; attempt += 1) {
         assertNotAborted(signal);
         if (context.requests >= context.maxRequests) {
@@ -607,97 +647,287 @@ export class AutoAnalysisRunner {
           break;
         }
 
-        const parsed = this.parseAndPreview(result.content, kind);
-        if (parsed.ok) {
-          return {...result, text: parsed.text, preview: parsed.preview};
+        this.state.set(context.sessionId, {stage: 'validating', error: null});
+        let evaluation = this.evaluateAnswer(result, prompt, kind);
+        if (evaluation.ok) {
+          return {...result, text: evaluation.text, preview: evaluation.preview};
         }
+        // A compact answer can be missing viewers without any other defect.
+        // Ask only for those refs, once per batch, before spending the repair
+        // attempt. Every ref still has to come back from the model.
+        if (prompt.format === 'compact'
+          && evaluation.compact
+          && evaluation.code === AUTO_ERROR.VIEWER_COVERAGE_INCOMPLETE
+          && Array.isArray(evaluation.missing)
+          && evaluation.missing.length > 0
+          && !targetedUsed) {
+          targetedUsed = true;
+          context.requests += 1;
+          const supplemented = await this.completeMissing({
+            context,
+            provider,
+            prompt,
+            kind,
+            answer: evaluation.answer,
+            missing: evaluation.missing,
+            signal
+          });
+          if (supplemented.ok) {
+            return {...result, text: supplemented.text, preview: supplemented.preview};
+          }
+          evaluation = supplemented.evaluation ?? evaluation;
+          failures.push({
+            providerId: provider.id,
+            code: evaluation.code,
+            detail: 'targeted-supplement-incomplete'
+          });
+        }
+
         previousText = result.content;
-        previousErrors = parsed.errors;
+        previousErrors = evaluation.errors ?? [];
         failures.push({
           providerId: provider.id,
-          code: parsed.code,
-          detail: parsed.errors?.[0]?.code ?? null
+          code: evaluation.code,
+          detail: evaluation.errors?.[0]?.code ?? null
         });
         if (attempt < AUTO_MAX_REPAIRS) {
-          this.state.set(context.sessionId, {
-            stage: 'validating',
-            error: null
-          });
           continue;
         }
         break;
       }
     }
     const codes = [...new Set(failures.map((failure) => failure.code))];
-    const only = codes.length === 1 ? codes[0] : null;
-    const code = only === AUTO_ERROR.RATE_LIMITED
-      ? AUTO_ERROR.RATE_LIMITED
-      : only === AUTO_ERROR.TIMEOUT
-        ? AUTO_ERROR.TIMEOUT
-        : codes.includes(AUTO_ERROR.CONTEXT_TOO_LARGE)
-          ? AUTO_ERROR.CONTEXT_TOO_LARGE
-          : codes.includes(AUTO_ERROR.SCHEMA_INVALID)
-            ? AUTO_ERROR.SCHEMA_INVALID
-            : codes.includes(AUTO_ERROR.INVALID_JSON)
-              ? AUTO_ERROR.INVALID_JSON
-              : AUTO_ERROR.ALL_PROVIDERS_FAILED;
+    const code = pickFailureCode(codes);
     throw new AutoAnalysisError(code, {
       detail: failures.map((failure) => `${failure.providerId}:${failure.code}`).slice(0, 4).join(', ')
     });
   }
 
-  parseAndPreview(text, kind) {
-    const object = extractJsonObject(text);
-    if (!object) {
+  /**
+   * Ask only for the refs a compact answer did not cover. The supplement may
+   * not contain a ref that was not missing; `mergeTargetedAnswer` rejects it.
+   */
+  async completeMissing({context, provider, prompt, kind, answer, missing, signal}) {
+    assertNotAborted(signal);
+    let targeted;
+    try {
+      targeted = buildTargetedViewerPrompt({
+        files: prompt.files,
+        refs: missing,
+        errors: []
+      });
+    } catch (error) {
+      if (isAutoAnalysisError(error)) throw error;
+      throw new AutoAnalysisError(AUTO_ERROR.INTERNAL, {detail: 'targeted-prompt-failed', cause: error});
+    }
+    this.logger?.info?.({
+      event: 'ai.auto.targeted',
+      jobId: context.jobId,
+      batchIndex: prompt.manifest?.batch?.index ?? null,
+      refs: missing.length
+    });    let result;
+    try {
+      result = await this.callOne({
+        provider,
+        messages: targeted.messages,
+        prompt: targeted,
+        kind,
+        purpose: 'targeted',
+        signal
+      });
+    } catch (error) {
+      if (isAutoAnalysisError(error) && error.code === AUTO_ERROR.CANCELED) throw error;
       return {
         ok: false,
-        code: AUTO_ERROR.INVALID_JSON,
-        errors: [{path: '', code: 'INVALID_JSON'}]
+        evaluation: {
+          ok: false,
+          code: error?.code ?? AUTO_ERROR.VIEWER_COVERAGE_INCOMPLETE,
+          errors: [],
+          compact: true,
+          missing
+        }
       };
     }
-    const jsonText = JSON.stringify(object);
+    const object = extractJsonObject(result.content);
+    const merged = mergeTargetedAnswer({
+      answer,
+      supplement: object,
+      missingRefs: missing
+    });
+    if (!merged.ok) {
+      return {
+        ok: false,
+        evaluation: {
+          ok: false,
+          code: AUTO_ERROR.SCHEMA_INVALID,
+          errors: merged.issues,
+          compact: true,
+          missing,
+          answer
+        }
+      };
+    }
+    const evaluation = this.evaluateAnswer(
+      {...result, content: JSON.stringify(merged.answer)},
+      prompt,
+      kind
+    );
+    return evaluation.ok
+      ? {ok: true, text: evaluation.text, preview: evaluation.preview}
+      : {ok: false, evaluation: {...evaluation, answer: merged.answer}};
+  }
+
+  /**
+   * Turn one provider answer into a fully validated result object.
+   *
+   * Batch answers use the compact format: the model returns refs, never ids.
+   * `assembleCompactAnswer` maps refs to the exact stable ids of this batch and
+   * the assembled object goes through the same `validateAnalysisImport()` as a
+   * pasted answer. Full-format answers are still accepted for compatibility, but
+   * they never get their ids "repaired" or guessed.
+   */
+  evaluateAnswer(result, prompt, kind) {
+    const object = extractJsonObject(result.content);
+    if (!object) {
+      const code = result.finishReason === 'length'
+        ? AUTO_ERROR.OUTPUT_TRUNCATED
+        : result.degenerate
+          ? AUTO_ERROR.OUTPUT_DEGENERATED
+          : AUTO_ERROR.INVALID_JSON;
+      return {
+        ok: false,
+        code,
+        errors: [{path: '', code}],
+        compact: false,
+        missing: []
+      };
+    }
+    if (kind === 'batch' && prompt.format === 'compact' && isCompactAnswer(object)) {
+      const inspected = inspectCompactAnswer(object, {viewerCount: prompt.viewerRefs.length});
+      if (inspected.issues.length > 0) {
+        return {
+          ok: false,
+          code: AUTO_ERROR.SCHEMA_INVALID,
+          errors: inspected.issues,
+          compact: true,
+          missing: inspected.missing,
+          answer: object
+        };
+      }
+      if (inspected.missing.length > 0) {
+        return {
+          ok: false,
+          code: AUTO_ERROR.VIEWER_COVERAGE_INCOMPLETE,
+          errors: [],
+          compact: true,
+          missing: inspected.missing,
+          answer: object
+        };
+      }
+      const assembled = assembleCompactAnswer({
+        answer: object,
+        manifest: prompt.manifest,
+        viewerRefs: prompt.viewerRefs
+      });
+      if (!assembled.ok) {
+        return {
+          ok: false,
+          code: AUTO_ERROR.SCHEMA_INVALID,
+          errors: assembled.issues,
+          compact: true,
+          missing: assembled.missing,
+          answer: object
+        };
+      }
+      return this.validateAssembled({
+        text: JSON.stringify(assembled.result),
+        prompt,
+        kind,
+        compact: true,
+        answer: object
+      });
+    }
+    return this.validateAssembled({
+      text: result.content,
+      prompt,
+      kind,
+      compact: false,
+      answer: object
+    });
+  }
+
+  validateAssembled({text, prompt, kind, compact, answer}) {
     let preview;
     try {
       preview = validateAnalysisImport({
         db: this.db,
-        text: jsonText,
-        source: 'paste',
+        text,
+        source: 'auto',
         now: this.now()
       });
     } catch (error) {
       return {
         ok: false,
         code: AUTO_ERROR.SCHEMA_INVALID,
-        errors: [{path: '', code: 'VALIDATION_FAILED'}]
+        errors: [{path: '', code: 'VALIDATION_FAILED'}],
+        compact,
+        missing: [],
+        answer
       };
     }
     if (!preview.ok) {
+      const missing = compact
+        ? this.missingRefsFromErrors(preview.errors, prompt)
+        : [];
       return {
         ok: false,
         code: AUTO_ERROR.SCHEMA_INVALID,
-        errors: preview.errors ?? []
+        errors: preview.errors ?? [],
+        compact,
+        missing,
+        answer,
+        preview
       };
     }
     if (kind === 'aggregate' && preview.target?.mode !== 'aggregate') {
       return {
         ok: false,
         code: AUTO_ERROR.SCHEMA_INVALID,
-        errors: [{path: 'batch_id', code: 'AGGREGATE_EXPECTED'}]
+        errors: [{path: 'batch_id', code: 'AGGREGATE_EXPECTED'}],
+        compact,
+        missing: [],
+        answer
       };
     }
     return {
       ok: true,
-      text: jsonText,
-      preview
+      text: JSON.stringify(preview.sanitized ?? JSON.parse(text)),
+      preview,
+      compact,
+      missing: []
     };
   }
 
-  async callOne({provider, messages, prompt, kind, signal}) {
+  /** Map validator coverage errors back to local refs (no id matching heuristics). */
+  missingRefsFromErrors(errors, prompt) {
+    if (!prompt?.viewerRefs) return [];
+    const byId = new Map(prompt.viewerRefs.map((entry) => [entry.viewerId, entry.ref]));
+    const missing = new Set();
+    for (const error of errors ?? []) {
+      if (error?.code !== 'MEMORY_VIEWER_UPDATE_MISSING') continue;
+      const ref = byId.get(error.params?.viewerId);
+      if (ref) missing.add(ref);
+    }
+    return [...missing].sort((a, b) => a - b);
+  }
+
+  async callOne({provider, messages, prompt, kind, purpose = null, signal}) {
     if (this.transport) {
       const result = await this.transport({
         provider,
         messages,
         kind,
+        purpose,
         signal,
         manifest: prompt.manifest,
         viewerIds: prompt.viewerIds,
@@ -713,13 +943,17 @@ export class AutoAnalysisRunner {
         content: result.content,
         providerId: result.providerId ?? provider.id,
         model: result.model ?? provider.model,
-        usage: result.usage ?? null
+        usage: result.usage ?? null,
+        finishReason: result.finishReason ?? null,
+        reasoningTokens: result.reasoningTokens ?? null,
+        degenerate: result.degenerate === true
       };
     }
     return callProvider({
       provider,
       messages,
       maxTokens: this.maxOutputTokens(kind, prompt),
+      responseSchema: prompt.answerSchema ?? null,
       signal,
       fetchImpl: this.fetchImpl,
       limiter: this.limiters.get(provider.id) ?? null,
@@ -728,14 +962,15 @@ export class AutoAnalysisRunner {
   }
 
   maxOutputTokens(kind, prompt) {
-    if (kind === 'aggregate') return Math.min(AUTO_MAX_OUTPUT_TOKENS, 8000);
-    const viewers = prompt.viewerIds?.length ?? 0;
-    // gpt-oss spends part of the output budget on reasoning. A 3k budget was
-    // observed to truncate an otherwise valid answer, so keep a real floor and
-    // grow with the number of viewer updates that must be emitted.
+    if (kind === 'aggregate') return AUTO_MAX_OUTPUT_TOKENS;
+    const viewers = prompt.viewerRefs?.length ?? prompt.viewerIds?.length ?? 0;
+    // gpt-oss spends part of the output budget on reasoning. 3k truncated a
+    // real answer; 9.25k in json_object mode degenerated into repeated keys.
+    // The compact format omits ids and duplicate fields, so a smaller floor is
+    // enough, but keep headroom for reasoning.
     return Math.min(
       AUTO_MAX_OUTPUT_TOKENS,
-      Math.max(8000, 3000 + viewers * 250)
+      Math.max(6000, 2000 + viewers * 200)
     );
   }
 

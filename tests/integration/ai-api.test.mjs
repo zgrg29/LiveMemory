@@ -76,7 +76,7 @@ test('HTTP AI jobs, batch packages, prompts, preview, import, versions, aggregat
     assert.equal(manifest.batch.index, 1);
 
     const instructions = await jsonRequest(`${base}api/ai/instructions?jobId=${encodeURIComponent(job.id)}&batchIndex=1`);
-    assert.equal(instructions.payload.promptVersion, 'lm-prompt-m6.2-en');
+    assert.equal(instructions.payload.promptVersion, 'lm-prompt-m6.3-en');
     assert.match(instructions.payload.text, /Batch analysis/);
     assert.match(instructions.payload.text, /schema_version/);
   });

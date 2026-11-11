@@ -83,12 +83,12 @@ test('all three prompt languages carry the same batch, aggregate and provenance 
 });
 
 test('prompt versions are explicit, stable per locale and recorded on jobs', async () => {
-  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.2');
+  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.3');
   for (const locale of LOCALES) {
-    assert.equal(promptVersionFor(locale), `lm-prompt-m6.2-${locale}`);
+    assert.equal(promptVersionFor(locale), `lm-prompt-m6.3-${locale}`);
     assert.equal(instructionVersion(locale), promptVersionFor(locale));
   }
-  assert.equal(promptVersionFor('fr'), 'lm-prompt-m6.2-en');
+  assert.equal(promptVersionFor('fr'), 'lm-prompt-m6.3-en');
 
   const temp = createTempDir();
   const db = openMemoryDb();
@@ -96,9 +96,9 @@ test('prompt versions are explicit, stable per locale and recorded on jobs', asy
   const session = seedSession(db, {messageCount: 3});
   const exportsDir = join(temp.dir, 'exports');
   const job = await createAnalysisJob({db, sessionId: session.id, locale: 'ja', exportsDir, batchSize: 1000, now: T0 + 10_000});
-  assert.equal(job.job.promptVersion, 'lm-prompt-m6.2-ja');
+  assert.equal(job.job.promptVersion, 'lm-prompt-m6.3-ja');
   const packageData = readBatchPackage(exportsDir, job.packages[0]);
-  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.2-ja');
+  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.3-ja');
   assert.equal(packageData.manifest.schema_version, RESULT_SCHEMA_VERSION);
   closeDatabase(db);
   temp.cleanup();

@@ -1,5 +1,44 @@
 # 版本变化（CHANGELOG）
 
+## 0.12.1 — 2026-11-11（真实故障修复：自动分析可靠性 + 手动导入诊断）
+
+### 修复
+
+- **自动分析无效 JSON**：`json_object` 下 25 观众批次把 9,250 tokens 输出预算耗在重复字段名，
+  `finish_reason=length`。改用 `json_schema` structured output，并记录 `finish_reason` / usage /
+  退化检测；`length` 明确报 `AUTO_OUTPUT_TRUNCATED`。
+- **跨批次观众 ID 混用**：批次 `viewer_context.json` 含其他记忆批次的观众，模型会写入这些
+  ID 并漏掉本批观众。自动批次改为模型只输出 `ref`，本地按分配表组装真实 `viewer_id`；
+  不再允许模型提供身份。
+- **缺失观众**：缺少 ref 时执行一次有界定向补充（只发送缺失观众及其摘录）；仍缺失则
+  `AUTO_VIEWER_COVERAGE_INCOMPLETE`，不写库、不默认 `no_new_information`。
+- **手动提示词自相矛盾**：删除三语“不要输出观众身份字段”，明确 `viewer_id` 必须原样复制、
+  零摘录观众仍须一条空更新、`viewer_context` 中非本批观众不得写入。
+- **手动导入错误不可操作**：预览新增 `memory.gaps`（missing/unknown/duplicate，含昵称），
+  界面列出缺失观众并提供「复制修复指令」；绝不自动替换 ID。
+- **52 观众包过大**：`memory_context.viewers[]` 去掉与 `viewer_context` 重复的累计字段，
+  新增 `evidence_seqs` / `zero_excerpt`；提示词去掉重复的 messages/excerpts 与完整结果 Schema。
+- **汇总截断**：汇总阶段也用 structured output，强制 `viewer_memory_updates: []`，
+  输出预算 12,000。
+
+### 变更
+
+- 自动批次 25 → **10 位记忆观众/批**；批次上限 12 → **30**（10×30 仍支持原 300 位）。
+- 提示词版本 `lm-prompt-m6.2` → **`lm-prompt-m6.3`**；旧失败任务不再复用，点击会创建新任务。
+- `session_context.session.duration_seconds` 新增；汇总提示词要求用记录时长，不用聊天回溯推断。
+- 新错误码：`AUTO_OUTPUT_TRUNCATED`、`AUTO_OUTPUT_DEGENERATED`、
+  `AUTO_VIEWER_COVERAGE_INCOMPLETE`。
+- 数据库 schema 仍为 **12**，结果 Schema 仍为 **1.2.0**；无迁移。
+
+### 测试 / 真实验证
+
+- 新增 `auto-assemble`、`ai-import-repair`、`auto-compact`、`manual-52-viewers` 测试；
+  更新 auto client/prompt/api、ai-prompts/api/import 的提示词版本断言。
+- 真实 OVH：52 位观众 / 99 条消息 / 6 批 + 汇总 → `complete`，52/52 覆盖，7 条结果。
+- 真实单批：10 位 10/10（14.4 秒）、25 位 25/25（20.4 秒）。
+- 手动真实 52 人：49/52，精确列出 3 位缺失；正确 52/52 JSON 可导入。
+- 全量测试结果见 `docs/STATUS.md` §3。
+
 ## 0.12.0 — 2026-11-11（匿名免费 AI 自动分析）
 
 ### 新增

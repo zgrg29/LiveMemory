@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync} from 'node:fs';
+import {mkdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {openMemoryDb, addBroadcaster, seedSession, T0, HOUR} from '../helpers/ai-fixtures.mjs';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {createAnalysisJob} from '../../src/ai/export/job.mjs';
@@ -12,6 +13,11 @@ import {
   readBatchPackage
 } from '../../src/ai/auto/prompt.mjs';
 import {AutoAnalysisError} from '../../src/ai/auto/errors.mjs';
+
+const RESULT_SCHEMA = readFileSync(
+  fileURLToPath(new URL('../../src/ai/schemas/analysis-result-v1.schema.json', import.meta.url)),
+  'utf8'
+);
 
 async function makePackage(t) {
   const db = openMemoryDb();
@@ -31,7 +37,7 @@ async function makePackage(t) {
     locale: 'zh-CN',
     exportsDir: join(temp.dir, 'exports'),
     batchSize: 100,
-    memoryViewersPerBatch: 25,
+    memoryViewersPerBatch: 10,
     maxMemoryExcerptMessages: 600,
     now: T0 + HOUR
   });
@@ -39,24 +45,33 @@ async function makePackage(t) {
   return {db, temp, session, created, files};
 }
 
-test('the automatic batch prompt names every memory viewer exactly once', async (t) => {
+test('the automatic batch prompt uses refs and never asks for viewer ids', async (t) => {
   const {temp, created, files} = await makePackage(t);
   const prompt = buildBatchPrompt(files);
   const memory = JSON.parse(files['memory_context.json']);
   assert.equal(prompt.kind, 'batch');
+  assert.equal(prompt.format, 'compact');
   assert.equal(prompt.manifest.job_id, created.job.id);
   assert.equal(prompt.estimatedTokens > 0, true);
-  assert.deepEqual([...prompt.viewerIds].sort(), memory.viewers.map((viewer) => viewer.viewer_id).sort());
-  for (const viewer of memory.viewers) {
-    assert.match(prompt.system, new RegExp(viewer.viewer_id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.ok(prompt.system.includes(viewer.viewer_id));
-  }
+  assert.deepEqual(prompt.viewerRefs.map((entry) => entry.ref), [1, 2, 3]);
+  assert.deepEqual(
+    prompt.viewerRefs.map((entry) => entry.viewerId).sort(),
+    memory.viewers.map((viewer) => viewer.viewer_id).sort()
+  );
+  // The compact contract lists refs, not ids: copying an opaque id is exactly
+  // the mechanical step that failed on real packages.
   assert.match(prompt.system, /EXACTLY 3 entries/);
-  assert.match(prompt.system, /viewer_memory_updates is REQUIRED/);
-  assert.match(prompt.system, /A question/);
-  assert.match(prompt.user, /## messages\.jsonl/);
+  assert.match(prompt.system, /ref 1/);
+  assert.match(prompt.system, /never output viewer_id/i);
+  assert.doesNotMatch(prompt.system, /youtube:UC_PROMPT_0/);
+  assert.match(prompt.system, /"session_topics"/);
+  assert.match(prompt.user, /## memory_context/);
+  assert.match(prompt.user, /## viewer_directory/);
   assert.match(prompt.user, /## viewer_excerpts\.jsonl/);
-  assert.match(prompt.user, /## result\.schema\.json/);
+  assert.match(prompt.user, /evidence_seqs/);
+  assert.match(prompt.user, /"viewers"/);
+  // A single-slice batch must not send an identical chat log twice.
+  assert.match(prompt.user, /identical to viewer_excerpts\.jsonl/);
   temp.cleanup();
 });
 
@@ -101,7 +116,7 @@ test('a prompt that exceeds the context budget is rejected before any request', 
     'messages.jsonl': '',
     'viewer_context.json': '[]',
     'viewer_excerpts.jsonl': '',
-    'result.schema.json': '{}'
+    'result.schema.json': RESULT_SCHEMA
   };
   assert.throws(
     () => buildBatchPrompt(files),
@@ -115,12 +130,13 @@ test('repair messages keep the original package and list validator errors', asyn
   const repair = buildRepairMessages({
     prompt,
     previousText: '{"broken":true}',
-    errors: [{path: 'viewer_memory_updates', code: 'MEMORY_UPDATES_REQUIRED'}],
+    errors: [{path: 'viewers[1].memory', code: 'MEMORY_REQUIRED'}],
     locale: 'zh-CN'
   });
   assert.equal(repair.messages.at(-2).role, 'assistant');
   assert.equal(repair.messages.at(-1).role, 'user');
-  assert.match(repair.messages.at(-1).content, /viewer_memory_updates/);
+  assert.match(repair.messages.at(-1).content, /viewers\[1\]\.memory/);
+  assert.match(repair.messages.at(-1).content, /ref/);
   assert.ok(repair.estimatedTokens > prompt.estimatedTokens);
   temp.cleanup();
 });

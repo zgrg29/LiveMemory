@@ -1348,7 +1348,8 @@ export function buildRoutes() {
               totals: preview.memory.totals,
               viewerCount: preview.memory.viewers.length,
               legacy: preview.memory.legacy,
-              plan: preview.memory.plan
+              plan: preview.memory.plan,
+              gaps: preview.memory.gaps ?? {missing: [], unknown: [], duplicate: []}
             }
             : null,
           schemaVersion: RESULT_SCHEMA_VERSION

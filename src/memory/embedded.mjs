@@ -79,6 +79,20 @@ function factsForMemory(db, broadcasterId, viewerId) {
   return {memory, facts};
 }
 
+function viewerLabel(db, viewerId) {
+  if (!viewerId) return null;
+  try {
+    const row = db.prepare('SELECT nickname FROM viewers WHERE id = ?').get(String(viewerId));
+    return row?.nickname ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function emptyGaps() {
+  return {missing: [], unknown: [], duplicate: []};
+}
+
 /**
  * @returns {{ok:boolean, errors:Array, warnings:Array, viewers:Array, coverage:object,
  *   plan:Array, totals:object, legacy:boolean, memoryViewers:Array}}
@@ -106,9 +120,11 @@ export function validateEmbeddedMemoryUpdates({
     totals: emptyTotals,
     legacy: false,
     updatesMissing: false,
-    memoryViewers: []
+    memoryViewers: [],
+    gaps: emptyGaps()
   };
   if (!job || !session) return base;
+  const gaps = base.gaps;
   const broadcasterId = job.broadcasterId ?? session.broadcaster_id ?? null;
   if (!broadcasterId) {
     if (Array.isArray(payload.viewer_memory_updates) && payload.viewer_memory_updates.length > 0) {
@@ -148,7 +164,9 @@ export function validateEmbeddedMemoryUpdates({
   base.memoryViewers = memoryViewers;
   if (!legacy && memoryViewers.length === 0) {
     if (Array.isArray(payload.viewer_memory_updates) && payload.viewer_memory_updates.length > 0) {
-      errors.push(issue('error', 'viewer_memory_updates', 'MEMORY_VIEWER_UNKNOWN', {viewerId: payload.viewer_memory_updates[0]?.viewer_id ?? ''}));
+      const unknownId = payload.viewer_memory_updates[0]?.viewer_id ?? '';
+      gaps.unknown.push({viewerId: unknownId, nickname: viewerLabel(db, unknownId)});
+      errors.push(issue('error', 'viewer_memory_updates', 'MEMORY_VIEWER_UNKNOWN', {viewerId: unknownId}));
     }
     return {...base, ok: errors.length === 0};
   }
@@ -196,10 +214,12 @@ export function validateEmbeddedMemoryUpdates({
     const viewerId = normalizeText(entry.viewer_id, 200);
     const path = `viewer_memory_updates[${index}]`;
     if (!viewerId || !byViewer.has(viewerId)) {
+      gaps.unknown.push({viewerId, nickname: viewerLabel(db, viewerId), index});
       errors.push(issue('error', `${path}.viewer_id`, 'MEMORY_VIEWER_UNKNOWN', {viewerId}));
       continue;
     }
     if (seen.has(viewerId)) {
+      gaps.duplicate.push({viewerId, nickname: viewerLabel(db, viewerId), index});
       errors.push(issue('error', `${path}.viewer_id`, 'MEMORY_VIEWER_DUPLICATE', {viewerId}));
       continue;
     }
@@ -405,6 +425,7 @@ export function validateEmbeddedMemoryUpdates({
 
   for (const entry of memoryViewers) {
     if (seen.has(entry.viewerId)) continue;
+    gaps.missing.push({viewerId: entry.viewerId, nickname: viewerLabel(db, entry.viewerId)});
     errors.push(issue('error', 'viewer_memory_updates', 'MEMORY_VIEWER_UPDATE_MISSING', {viewerId: entry.viewerId}));
     coverage.missing_update += 1;
   }
@@ -419,7 +440,8 @@ export function validateEmbeddedMemoryUpdates({
     plan,
     totals,
     legacy,
-    memoryViewers
+    memoryViewers,
+    gaps
   };
 }
 

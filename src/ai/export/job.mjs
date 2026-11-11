@@ -95,22 +95,27 @@ function mergeEmoteEntries(...groups) {
   return [...map.values()];
 }
 
-function memoryContextViewers(viewerContext, memoryViewerSet) {
+function memoryContextViewers(viewerContext, memoryViewerSet, excerptSeqsByViewer) {
   return viewerContext
     .filter((entry) => memoryViewerSet.has(entry.viewer_id))
-    .map((entry) => ({
-      viewer_id: entry.viewer_id,
-      platform: entry.platform,
-      nickname: entry.nickname,
-      first_seen_at: entry.first_seen_at,
-      last_seen_at: entry.last_seen_at,
-      broadcaster_context: entry.broadcaster_context,
-      other_broadcaster_count: entry.other_broadcaster_count,
-      lifetime: entry.lifetime,
-      session: entry.session,
-      memory: entry.memory,
-      session_excerpt_message_count: entry.session_excerpt_message_count
-    }));
+    .map((entry) => {
+      const seqs = excerptSeqsByViewer.get(entry.viewer_id) ?? [];
+      return {
+        viewer_id: entry.viewer_id,
+        platform: entry.platform,
+        nickname: entry.nickname,
+        first_seen_at: entry.first_seen_at,
+        last_seen_at: entry.last_seen_at,
+        // The only evidence a memory answer may cite. Listing it next to the
+        // viewer removes the need for a model to cross-reference two large JSON
+        // files and copy seqs by hand.
+        evidence_seqs: seqs,
+        session_excerpt_message_count: seqs.length,
+        zero_excerpt: seqs.length === 0,
+        // Existing long-term memory for this broadcaster only.
+        memory: entry.memory
+      };
+    });
 }
 
 function contentFile(name, data) {
@@ -344,6 +349,14 @@ export async function createAnalysisJob({
       excerptMessages.sort((a, b) => (
         a.occurred_at - b.occurred_at || Number(a.id ?? 0) - Number(b.id ?? 0)
       ));
+      const excerptSeqsByViewer = new Map();
+      for (let at = 0; at < excerptMessages.length; at += 1) {
+        const viewerId = excerptMessages[at]?.viewer_id;
+        if (!viewerId) continue;
+        const list = excerptSeqsByViewer.get(viewerId) ?? [];
+        list.push(at + 1);
+        excerptSeqsByViewer.set(viewerId, list);
+      }
       const excerpt = buildMessageLines({messages: excerptMessages, session, locale});
       const excerptFile = contentFile(
         'viewer_excerpts.jsonl',
@@ -403,7 +416,7 @@ export async function createAnalysisJob({
         }
       };
 
-      const memoryViewers = memoryContextViewers(viewerContext, memoryViewerSet);
+      const memoryViewers = memoryContextViewers(viewerContext, memoryViewerSet, excerptSeqsByViewer);
       const memoryContext = {
         protocol: ANALYSIS_PROTOCOL,
         kind: 'viewer_memory_batch',

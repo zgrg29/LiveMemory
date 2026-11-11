@@ -113,26 +113,31 @@ computeJobStatus()
 - 删除记忆后的旧包不能恢复；同一结果重复导入不写。
 - 独立的 M7 记忆任务不再是用户流程；旧任务表保留只读历史。
 
-## 1.3 自动分析数据流（v0.12.0）
+## 1.3 自动分析数据流（v0.12.1）
 
 ```text
 AutoAnalysisRunner.start({sessionId, locale, consent:true})
-  ├─ 预检查：消息/观众/摘录 → 需要批次数；>12 直接失败，不创建任务
-  ├─ 若有进行中的同一 auto job：恢复（相同 job/batch/观众分配）
-  └─ 否则 createAnalysisJob({batchSize:250, viewersPerBatch:25, excerptsPerBatch:600})
+  ├─ 预检查：消息/观众/摘录 → 需要批次数；>30 直接失败，不创建任务
+  ├─ 若有进行中的同一 auto job 且 promptVersion 匹配：恢复（相同 job/batch/观众分配）
+  ├─ 旧 promptVersion 的失败任务不复用；创建新任务，旧任务保留
+  └─ 否则 createAnalysisJob({batchSize:250, viewersPerBatch:10, excerptsPerBatch:600})
 
 每批
   ├─ 读取导出的 ZIP（manifest/messages/viewer_context/memory_context/
   │   viewer_excerpts/session_context/instructions/schema）
-  ├─ buildBatchPrompt()：内联包内容 + 精确 viewer_id + 允许的证据 seq + 输出契约
-  ├─ callProvider()：无 Key、JSON mode、2/60s 限流、180s 超时、最多一次网络重试
+  ├─ buildBatchPrompt()：紧凑契约 + ref（1..N）+ 每 ref 的证据 seq + viewer_directory
+  ├─ callProvider()：无 Key、json_schema structured output、2/60s 限流、300s 超时
+  ├─ 回答：{"session_topics":..., "viewers":[{"ref":n,"memory":...,"profile":...}]}
+  ├─ assembleCompactAnswer()：ref → 本批稳定 viewer_id（模型从不输出 ID）
   ├─ validateAnalysisImport()：Schema + 业务 + 观众覆盖 + 证据归属（只读预览）
-  ├─ 失败：一次修复请求；再失败则切换已验证 provider 或停止
+  ├─ 缺 ref：一次定向补充（只发缺失观众及其摘录）；仍缺则失败，不写库
+  ├─ 其他失败：一次修复请求；再失败则切换已验证 provider 或停止
   └─ importAnalysisResult({source:'auto'})：单事务保存报告 + 记忆 + 覆盖
 
 全部批次后
   ├─ buildAggregatePackage()（复用 M6）
-  ├─ buildAggregatePrompt()：只合并已验证 batch_results；viewer_memory_updates 必须 []
+  ├─ buildAggregatePrompt()：只合并已验证 batch_results；structured output 强制
+  │   viewer_memory_updates=[]；12000 输出预算
   └─ validate + import final
 
 状态
@@ -144,10 +149,12 @@ AutoAnalysisRunner.start({sessionId, locale, consent:true})
 关键保证：
 
 - 自动模式只新增入口，不改变 M6/M7/P8 的协议、Schema、事务和覆盖率规则。
-- AI 永远不能直接写数据库；所有写入仍经 `validateAnalysisImport` + `importAnalysisResult`。
+- AI 永远不能直接写数据库，也不能提供观众身份；组装结果仍经
+  `validateAnalysisImport` + `importAnalysisResult`。
 - 批次失败不会回滚已成功批次；`partial` 状态与已导入结果保留。
 - 所有 provider 失败后停止自动流程；UI 显示统一红色提示，手动流程继续可用。
 - `runtime/ai-auto.json` 与日志不含聊天正文、提示词、模型回答或观众隐私内容。
+- 截断（`finish_reason=length`）与字段名退化有独立错误码，不再伪装成 Schema 错误。
 
 ## 2. 启动时序
 

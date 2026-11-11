@@ -12,13 +12,16 @@ import {
 } from '../ui.js';
 import {platformLabel} from './shared.js';
 import {renderAnalysisReport} from './ai-report.js';
+import {buildRepairInstruction, importGapSummary} from './ai-import-repair.js';
 
 /**
- * AI analysis centre: a manual, provider-neutral file round trip.
+ * AI analysis centre: a manual, provider-neutral file round trip plus the
+ * optional automatic free route.
  *
  * 1. choose a recorded broadcast and create a versioned task;
  * 2. download one package per batch and copy the matching prompt;
- * 3. analyse with any AI service (LiveMemory never calls one);
+ * 3. analyse with any AI service (or let the automatic route call one verified
+ *    anonymous provider after explicit consent);
  * 4. paste/select the JSON answer, validate it against the real database, and
  *    import it in one transaction;
  * 5. read the report, which is always labelled as AI output.
@@ -613,6 +616,7 @@ export const aiPage = {
       if (payload.memory) {
         const memory = payload.memory;
         const coverage = memory.coverage ?? {};
+        const gaps = importGapSummary(memory);
         const memoryRows = el('div', {className: 'def-list import-target'});
         memoryRows.append(
           defRow(t('ai.import.memoryViewers'), t('ai.import.memoryCoverageValue', {
@@ -625,6 +629,25 @@ export const aiPage = {
           defRow(t('ai.import.memoryMissing'), formatInteger(coverage.missing_update ?? 0, ctx.locale)),
           defRow(t('ai.import.memoryFacts'), formatInteger(memory.totals?.operations ?? 0, ctx.locale))
         );
+        if (!gaps.empty) {
+          const gapBlock = el('div', {style: {marginTop: '10px'}});
+          gapBlock.append(el('div', {className: 'label', text: t('ai.import.memoryGapsTitle')}));
+          const addGapRows = (entries) => {
+            for (const entry of entries.slice(0, 50)) {
+              gapBlock.append(el('div', {
+                className: 'small mono',
+                text: entry.nickname ? `${entry.nickname} · ${entry.viewerId}` : String(entry.viewerId ?? '')
+              }));
+            }
+            if (entries.length > 50) {
+              gapBlock.append(el('div', {className: 'small tertiary', text: `… +${entries.length - 50}`}));
+            }
+          };
+          addGapRows(gaps.missing);
+          addGapRows(gaps.unknown);
+          addGapRows(gaps.duplicate);
+          memoryRows.append(gapBlock);
+        }
         nodes.push(el('section', {className: 'card', style: {marginTop: '12px'}},
           el('div', {className: 'card-head'},
             el('div', {className: 'card-title', text: t('ai.import.memoryTitle')}),
@@ -632,6 +655,41 @@ export const aiPage = {
           el('div', {className: 'card-body'},
             memoryRows,
             el('p', {className: 'small tertiary', text: t('ai.import.memoryAuto')}))));
+        // A failed import is often an external model's bookkeeping mistake.
+        // Offer the exact gaps back as a paste-ready instruction; never change
+        // an id on the user's behalf.
+        if (!gaps.empty || errors.length > 0) {
+          const repairButton = el('button', {
+            className: 'button button--secondary',
+            type: 'button',
+            text: t('ai.import.repairCopy'),
+            style: {marginTop: '10px'}
+          });
+          repairButton.addEventListener('click', async () => {
+            const instruction = buildRepairInstruction({
+              ...gaps,
+              errors,
+              t
+            });
+            try {
+              await navigator.clipboard.writeText(instruction);
+              ctx.toast(t('ai.import.repairCopied'));
+            } catch {
+              const helper = el('textarea', {style: {position: 'fixed', opacity: '0'}});
+              helper.value = instruction;
+              document.body.append(helper);
+              helper.select();
+              try {
+                document.execCommand('copy');
+                ctx.toast(t('ai.import.repairCopied'));
+              } catch {
+                ctx.toast(t('ai.import.repairCopyFailed'), {tone: 'error'});
+              }
+              helper.remove();
+            }
+          });
+          nodes.push(repairButton);
+        }
       }
 
       if (target.legacy) {
