@@ -937,7 +937,8 @@
       "config": {
         "label": "API configuration",
         "openSettings": "Add an API configuration in Settings",
-        "none": "No API model configured yet. Add one in Settings."
+        "none": "No API model configured yet. Add one in Settings.",
+        "needCapability": "This model has not passed the session-analysis capability test. Run “Test capabilities” in Settings first."
       },
       "budget": {
         "label": "Per-task budget",

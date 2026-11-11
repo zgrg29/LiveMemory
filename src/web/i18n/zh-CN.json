@@ -937,7 +937,8 @@
       "config": {
         "label": "API 配置",
         "openSettings": "前往设置添加 API 配置",
-        "none": "尚未配置 API 模型，请先在设置中添加。"
+        "none": "尚未配置 API 模型，请先在设置中添加。",
+        "needCapability": "该模型尚未通过单场分析能力检测，请先在设置中点击「检测能力」。"
       },
       "budget": {
         "label": "单任务预算上限",

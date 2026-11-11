@@ -135,7 +135,7 @@ export const aiPage = {
     let autoTimer = null;
     let autoRunning = false;
     let autoRefreshedFor = null;
-    let runMethod = 'manual';
+    let runMethod = providerConfigs.length > 0 ? 'api' : 'manual';
     let runScope = 'session';
     let autoPaused = false;
 
@@ -181,6 +181,7 @@ export const aiPage = {
       el('option', {value: 'manual', text: t('ai.v13.method.manual')}),
       el('option', {value: 'anonymous', text: t('ai.v13.method.anonymous')}),
       el('option', {value: 'api', text: t('ai.v13.method.api')}));
+    methodSelect.value = runMethod;
     const scopeSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.scope.label')}});
     const configSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.config.label')}});
     const budgetInput = el('input', {
@@ -255,9 +256,8 @@ export const aiPage = {
           el('div', {className: 'small tertiary', text: t('ai.v13.run.body')})),
         chip(t('ai.v13.run.badge'), 'accent')),
       el('div', {className: 'grid-2-equal'},
-        field(t('ai.v13.method.label'), methodSelect),
-        field(t('ai.v13.scope.label'), scopeSelect)),
-      field(t('ai.v13.config.label'), configSelect),
+        field(t('ai.v13.scope.label'), scopeSelect),
+        field(t('ai.v13.config.label'), configSelect)),
       el('div', {className: 'inline'}, configLink),
       configHint,
       pricingHint,
@@ -277,6 +277,7 @@ export const aiPage = {
         el('div', {className: 'grid-2-equal'},
           field(t('ai.setup.sessionLabel'), sessionSelect),
           field(t('ai.setup.languageLabel'), languageSelect)),
+        field(t('ai.v13.method.label'), methodSelect),
         autoPanel,
         el('div', {className: 'auto-divider'},
           el('span', {text: t('ai.auto.manualDivider')})),
@@ -462,7 +463,9 @@ export const aiPage = {
       const config = selectedConfig();
       configHint.textContent = runMethod === 'api'
         ? (config
-          ? `${config.providerId} / ${config.regionId} / ${config.modelId}`
+          ? `${config.providerId} / ${config.regionId} / ${config.modelId} · ${config.capabilities?.session
+            ? t('ai.v13.capability.session')
+            : t('ai.v13.config.needCapability')}`
           : t('ai.v13.config.none'))
         : '';
       pricingHint.textContent = runMethod === 'manual'
@@ -485,6 +488,7 @@ export const aiPage = {
       const paid = config && config.pricingStatus !== 'api_free';
       const needsMemoryOptIn = runScope !== 'session';
       autoButton.disabled = !config
+        || config.capabilities?.session !== true
         || (paid && !confirmBilling.checked)
         || (needsMemoryOptIn && !optInMemory.checked);
     }
