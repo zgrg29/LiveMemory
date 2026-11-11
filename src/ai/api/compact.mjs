@@ -6,6 +6,54 @@
  * then calls the ordinary importer. A missing/unknown/duplicate ref is rejected.
  */
 
+/**
+ * Session answers are also assembled locally. The model may return only
+ * `session_topics` (and optionally per-session viewer_profiles); task IDs,
+ * protocol and session IDs are never trusted from the model.
+ */
+export function buildSessionAnswerSchema(resultSchema) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['session_topics'],
+    properties: {
+      session_topics: resultSchema?.properties?.session_topics,
+      viewer_profiles: resultSchema?.properties?.viewer_profiles
+    }
+  };
+}
+
+export function assembleSessionAnswer({answer, manifest}) {
+  const topics = answer?.session_topics;
+  if (!topics || typeof topics !== 'object' || Array.isArray(topics)) {
+    return {
+      ok: false,
+      issues: [{path: 'session_topics', code: 'SESSION_TOPICS_REQUIRED'}],
+      result: null
+    };
+  }
+  const profiles = Array.isArray(answer.viewer_profiles) ? answer.viewer_profiles : [];
+  return {
+    ok: true,
+    issues: [],
+    result: {
+      protocol: 'livememory-analysis-result-v1',
+      schema_version: '1.3.0',
+      analysis_scope: 'session',
+      job_id: manifest.job_id,
+      ...(manifest.batch?.batch_id ? {batch_id: manifest.batch.batch_id} : {}),
+      ...(Object.prototype.hasOwnProperty.call(manifest, 'broadcaster_id')
+        ? {broadcaster_id: manifest.broadcaster_id ?? null}
+        : {}),
+      task_id: manifest.tasks?.[0]?.task_id,
+      session_id: manifest.session_id,
+      locale: manifest.locale,
+      session_topics: topics,
+      viewer_profiles: profiles
+    }
+  };
+}
+
 export function buildMemoryRefs(memoryContext) {
   return (memoryContext?.viewers ?? []).map((viewer, index) => ({
     ref: index + 1,
@@ -73,6 +121,15 @@ export function inspectCompactMemory(answer, {refs, onlyRefs = null}) {
       continue;
     }
     if (!entry.memory || typeof entry.memory !== 'object' || Array.isArray(entry.memory)) {
+      // Backward-compatible flat probe shape: {ref,no_new_information,operations}.
+      if (Object.prototype.hasOwnProperty.call(entry, 'no_new_information')
+        || Array.isArray(entry.operations)) {
+        entries.set(ref, {
+          no_new_information: entry.no_new_information === true,
+          operations: Array.isArray(entry.operations) ? entry.operations : []
+        });
+        continue;
+      }
       issues.push({path: `viewers[${index}].memory`, code: 'MEMORY_REQUIRED', params: {ref}});
       continue;
     }

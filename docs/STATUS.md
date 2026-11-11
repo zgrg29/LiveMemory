@@ -59,6 +59,7 @@
 
 ### 0.6 真实验证（本轮）
 
+- **阿里云百炼真实端到端（隔离数据目录）**：`cn-beijing` / `qwen3.8-omni-flash`，单场 + 长期画像，2 次请求，5,671 输入 / 3,228 输出 tokens，估算 ¥0.0109928；状态 `complete`，`sessionReportDone=true`，`memoryDone=true`；数据库 3 个记忆头、2 条语义事实；报告 `longTermProfiles.count=3`（Mika 2 条事实，Ren/GiftOnly 仅客观记录）。这证明模型 ID 实际为 `qwen3.8-omni-flash`，且修复后的 Session 组装 + Memory 组装 + Schema 校验 + 写入链路可用。
 - OpenRouter `/api/v1/models`：真实返回 **469** 个模型，15 个 `pricing=0` 免费模型，396 个声明 structured output（2026-11-11）。
 - 其他 Provider 的真实生成请求：**阻塞**（无可用 API Key，未伪造成功）。
 - 匿名 OVHcloud 生成：本轮未重新发起（v0.12.1 真实 52 观众样本记录保留）。
@@ -67,7 +68,7 @@
 
 ### 0.7 测试（本轮实测）
 
-- 全量测试：**561 passed / 0 failed**（约 73 秒，2026-11-11，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 全量测试：**562 passed / 0 failed**（约 98 秒，2026-11-11，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - 新增覆盖：Provider catalog/price/URL/credential store/Anthropic+OpenAI adapter/OpenRouter model list；单场任务导入；memory-only 任务；52 观众 6 批部分导入恢复；免费/付费权限门；预算阻断；API runner mock 单场与画像。
 
 ## 0.1 v0.12.1（历史）真实故障修复（2026-11-11）
@@ -312,8 +313,8 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 5. 构建结果（如实）
 
 - **v0.13.0 已重新构建 EXE**：`node scripts/build-windows.mjs` 成功。
-  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `47945a876f4d27c10f4c`
-  - SHA-256 `1825188a64af3ee219a10ba48a808db27a6e2f94f9a14a8a1ee13a0beca3f5f9`
+  - 大小 **91.5 MB**，资源 **166 个**，资源哈希 `b3d0fee46a680fb84f41`
+  - SHA-256 `32f947ad55af5d6662e6fdb740438a8f19f677c36c0a9eaffa4b2b6371d50654`
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
   `--version`、启动服务、验证打包后的出站请求或 UI。

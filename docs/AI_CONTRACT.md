@@ -769,3 +769,16 @@ result.schema.json
 ```
 
 该字段只读，不改变 AI 结果、金额、计数或身份；没有画像时返回 `count=0` 与原因（`none` / `no_broadcaster`）。
+
+## 15. 本地任务元数据组装（v0.13.0 修复）
+
+付费 Provider 的 Session 与 Memory 回答都采用**内部紧凑输出**：
+
+- Session：模型只返回 `session_topics`（可选 `viewer_profiles`）；本地 `assembleSessionAnswer()` 注入 `protocol`、`schema_version=1.3.0`、`analysis_scope=session`、`job_id`、`batch_id`、`task_id`、`session_id`、`locale`、`broadcaster_id`。
+- Memory：模型只返回 `viewers[].ref` + `memory`；本地 `assembleMemoryCompact()` 映射稳定 `viewer_id` 并注入同样的任务元数据。
+
+模型提供的 `protocol`、`job_id`、`task_id`、`session_id` 等一律被忽略/覆盖，不能篡改。组装后的对象才进入 `validateAnalysisImport()` 与 Schema 1.3.0 校验；验证失败仍会被拒绝。
+
+能力检测的 `session` 与 `memory` 阶段也使用同一组装器，并执行最终 Schema 1.3.0 校验；只返回简单 JSON 不再视为完整通过。
+
+`mode=both` 在 HTTP 入口规范化为内部 `combined`；此前把 `both` 误映射为 session-only，导致只生成单场报告、不创建 memory job，该问题已修复。

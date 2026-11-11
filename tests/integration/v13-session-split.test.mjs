@@ -135,7 +135,7 @@ test('provider capability test route audits the result and updates the config', 
         const body = JSON.parse(options.body);
         const text = body.messages.map((message) => message.content).join('\n');
         let content = 'OK';
-        if (text.includes('Synthetic livestream chat')) content = JSON.stringify({summary: 's', topics: [{title: 't', summary: 's'}]});
+        if (text.includes('Synthetic livestream chat')) content = "{\"session_topics\":{\"summary\":\"summary\",\"topics\":[{\"title\":\"chat\",\"started_at\":\"2026-01-01T00:00:00Z\",\"ended_at\":\"2026-01-01T00:01:00Z\",\"summary\":\"talk\",\"key_points\":[\"point\"],\"confidence\":0.7,\"evidence\":\"observed\"}],\"sentiment\":[],\"disputes\":[],\"highlights\":[]}}";
         else if (text.includes('Synthetic LiveMemory memory test')) {
           content = JSON.stringify({viewers: [
             {ref: 1, no_new_information: false, operations: [{op: 'add', kind: 'interest', topic: 'guitar', statement: 'learning guitar', certainty: 'stated', evidence: [1]}]},

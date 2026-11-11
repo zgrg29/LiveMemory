@@ -1,7 +1,15 @@
+import {readFileSync} from 'node:fs';
 import {callProvider, listProviderModels, ProviderHttpError, PROVIDER_ERROR} from './adapters.mjs';
 import {PRICING_STATUS} from './catalog.mjs';
 import {estimateTokensFromText} from './pricing.mjs';
 import {assertSafeResolvedUrl} from './url-safety.mjs';
+import {assembleSessionAnswer, assembleMemoryCompact, buildMemoryRefs} from '../api/compact.mjs';
+import {validateAgainstSchema} from '../import/schema-validator.mjs';
+
+const RESULT_SCHEMA_V13 = JSON.parse(readFileSync(
+  new URL('../schemas/analysis-result-v1.3.schema.json', import.meta.url),
+  'utf8'
+));
 
 /**
  * Capability verification.
@@ -51,22 +59,9 @@ const JSON_SCHEMA = {
 const SESSION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'topics'],
+  required: ['session_topics'],
   properties: {
-    summary: {type: 'string'},
-    topics: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['title', 'summary'],
-        properties: {
-          title: {type: 'string'},
-          summary: {type: 'string'}
-        }
-      }
-    }
+    session_topics: RESULT_SCHEMA_V13.properties.session_topics
   }
 };
 
@@ -82,24 +77,31 @@ const MEMORY_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['ref', 'no_new_information', 'operations'],
+        required: ['ref', 'memory'],
         properties: {
           ref: {type: 'integer', minimum: 1, maximum: 3},
-          no_new_information: {type: 'boolean'},
-          operations: {
-            type: 'array',
-            maxItems: 4,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['op', 'kind', 'topic', 'statement', 'certainty', 'evidence'],
-              properties: {
-                op: {enum: ['add', 'confirm']},
-                kind: {enum: ['interest', 'topic']},
-                topic: {type: 'string'},
-                statement: {type: 'string'},
-                certainty: {enum: ['stated']},
-                evidence: {type: 'array', items: {type: 'integer'}, minItems: 1, maxItems: 2}
+          memory: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['no_new_information', 'operations'],
+            properties: {
+              no_new_information: {type: 'boolean'},
+              operations: {
+                type: 'array',
+                maxItems: 4,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['op', 'kind', 'topic', 'statement', 'certainty', 'evidence'],
+                  properties: {
+                    op: {enum: ['add', 'confirm']},
+                    kind: {enum: ['interest', 'topic']},
+                    topic: {type: 'string'},
+                    statement: {type: 'string'},
+                    certainty: {enum: ['stated']},
+                    evidence: {type: 'array', items: {type: 'integer'}, minItems: 1, maxItems: 2}
+                  }
+                }
               }
             }
           }
@@ -120,7 +122,7 @@ function memoryProbeMessages() {
         'ref 2: viewer "B" / seq 2: "最近は絵を描くのが楽しいです。"',
         'ref 3: viewer "C" has no chat excerpt (gift only).',
         'Return exactly one JSON object:',
-        '{"viewers":[{"ref":1,"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"guitar","statement":"started learning guitar","certainty":"stated","evidence":[1]}]},{"ref":2,"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"drawing","statement":"enjoys drawing","certainty":"stated","evidence":[2]}]},{"ref":3,"no_new_information":true,"operations":[]}]}',
+        '{"viewers":[{"ref":1,"memory":{"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"guitar","statement":"started learning guitar","certainty":"stated","evidence":[1]}]}},{"ref":2,"memory":{"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"drawing","statement":"enjoys drawing","certainty":"stated","evidence":[2]}]}},{"ref":3,"memory":{"no_new_information":true,"operations":[]}}]}',
         'Rules: cover refs 1, 2 and 3 exactly once. Never invent a ref. Only use evidence seq 1 for ref 1 and seq 2 for ref 2; ref 3 has no evidence and must be no_new_information. Reply in the viewer language. JSON only.'
       ].join('\n')
     }
@@ -134,7 +136,11 @@ function validateMemoryProbe(object) {
   for (const viewer of viewers) {
     const ref = Number(viewer?.ref);
     if (![1, 2, 3].includes(ref) || byRef.has(ref)) return {ok: false, code: 'MEMORY_REF'};
-    byRef.set(ref, viewer);
+    // The provider contract is compact: {ref, memory:{...}}. Accept the older
+    // flat shape only as a capability-probe compatibility path.
+    byRef.set(ref, viewer.memory && typeof viewer.memory === 'object'
+      ? {ref, ...viewer.memory}
+      : viewer);
   }
   if (byRef.size !== 3) return {ok: false, code: 'MEMORY_COVERAGE'};
   for (const ref of [1, 2]) {
@@ -317,18 +323,42 @@ export async function verifyProviderConfig({
       {role: 'system', content: SYSTEM},
       {
         role: 'user',
-        content: 'Synthetic livestream chat: A says "hello"; B says "the guitar part was great". Return only {"summary":"short summary","topics":[{"title":"music","summary":"chat discussed the guitar"}]}.'
+        content: 'Synthetic livestream chat: A says "hello"; B says "the guitar part was great". Return only {"session_topics":{"summary":"short summary","topics":[{"title":"music","started_at":"2026-01-01T00:00:00Z","ended_at":"2026-01-01T00:01:00Z","summary":"chat discussed the guitar","key_points":["guitar"],"confidence":0.7,"evidence":"observed"}],"sentiment":[],"disputes":[],"highlights":[]}}.'
       }
     ], 300, SESSION_SCHEMA);
     if (result) {
       const object = extractJson(result.text);
+      const assembled = assembleSessionAnswer({
+        answer: object,
+        manifest: {
+          job_id: 'aij_capability',
+          batch: {batch_id: 'aij_capability-b01'},
+          broadcaster_id: null,
+          tasks: [{task_id: 'ses_capability-analysis'}],
+          session_id: 'ses_capability',
+          locale: 'en'
+        }
+      });
+      const schemaErrors = assembled.ok
+        ? validateAgainstSchema(RESULT_SCHEMA_V13, assembled.result)
+        : [];
       capabilities.session = Boolean(
-        object
-        && typeof object.summary === 'string'
-        && Array.isArray(object.topics)
-        && object.topics.length >= 1
-        && typeof object.topics[0]?.title === 'string'
+        assembled.ok
+        && schemaErrors.length === 0
+        && object?.session_topics
+        && Array.isArray(object.session_topics.topics)
+        && object.session_topics.topics.length >= 1
       );
+      if (!capabilities.session) {
+        stages.session = {
+          ...(stages.session ?? {}),
+          status: 'failed',
+          code: 'SESSION_ASSEMBLY_INVALID',
+          detail: assembled.issues?.[0]?.code
+            ?? schemaErrors[0]?.code
+            ?? 'session probe failed local assembly/schema validation'
+        };
+      }
     }
   }
 
@@ -338,14 +368,39 @@ export async function verifyProviderConfig({
     if (result) {
       const object = extractJson(result.text);
       const checked = validateMemoryProbe(object);
-      capabilities.memory = checked.ok;
-      capabilities.multilingual = checked.ok;
-      if (!checked.ok) {
+      const refs = buildMemoryRefs({
+        viewers: [
+          {viewer_id: 'youtube:capability_1', nickname: 'A', evidence_seqs: [1]},
+          {viewer_id: 'youtube:capability_2', nickname: 'B', evidence_seqs: [2]},
+          {viewer_id: 'youtube:capability_3', nickname: 'C', evidence_seqs: []}
+        ]
+      });
+      const assembled = assembleMemoryCompact({
+        answer: object,
+        manifest: {
+          job_id: 'aij_capability',
+          batch: {batch_id: 'aij_capability-b01'},
+          broadcaster_id: 'youtube:capability_broadcaster',
+          tasks: [{task_id: 'ses_capability-memory'}],
+          session_id: 'ses_capability',
+          locale: 'en'
+        },
+        refs
+      });
+      const schemaErrors = assembled.ok
+        ? validateAgainstSchema(RESULT_SCHEMA_V13, assembled.result)
+        : [];
+      capabilities.memory = checked.ok && assembled.ok && schemaErrors.length === 0;
+      capabilities.multilingual = capabilities.memory;
+      if (!capabilities.memory) {
         stages.memory = {
           ...(stages.memory ?? {}),
           status: 'failed',
-          code: checked.code,
-          detail: 'memory probe did not satisfy identity/evidence coverage'
+          code: 'MEMORY_ASSEMBLY_INVALID',
+          detail: checked.code
+            ?? assembled.issues?.[0]?.code
+            ?? schemaErrors[0]?.code
+            ?? 'memory probe failed local assembly/schema validation'
         };
       }
     }

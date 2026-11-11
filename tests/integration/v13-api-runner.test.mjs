@@ -4,21 +4,8 @@ import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 import {addBroadcaster, seedSession, T0} from '../helpers/ai-fixtures.mjs';
 
-function extract(pattern, text) {
-  return pattern.exec(text)?.[1] ?? null;
-}
-
-function sessionAnswer(prompt) {
-  const text = prompt.messages.map((message) => message.content).join('\n');
+function sessionAnswer() {
   return JSON.stringify({
-    protocol: 'livememory-analysis-result-v1',
-    schema_version: '1.3.0',
-    analysis_scope: 'session',
-    job_id: extract(/job_id: `([^`]+)`/, text),
-    batch_id: extract(/batch_id: `([^`]+)`/, text),
-    task_id: extract(/task_id: `([^`]+)`/, text),
-    session_id: extract(/session_id: `([^`]+)`/, text),
-    locale: 'en',
     session_topics: {
       summary: 'API session summary',
       topics: [],
@@ -85,27 +72,14 @@ test('paid verified runner can update memory without replacing the session repor
     },
     stages: {}
   });
-  // First create the session report through the same runner.
-  await server.analysisRunner.start({
-    sessionId: session.id,
-    locale: 'en',
-    mode: 'session',
-    configId: config.id,
-    consent: true,
-    confirmBilling: true
-  });
-  for (let index = 0; index < 100; index += 1) {
-    if (server.analysisRunner.getStatus(session.id).status === 'complete') break;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  assert.equal(server.analysisRunner.getStatus(session.id).status, 'complete');
-
+  // One HTTP click with `mode: both` must run session then memory. This is the
+  // path the console uses; a previous mapping treated `both` as session-only.
   const started = await fetch(`${server.url}api/ai/analyze/run`, {
     method: 'POST',
     headers: {'content-type': 'application/json'},
     body: JSON.stringify({
       sessionId: session.id,
-      mode: 'memory',
+      mode: 'both',
       configId: config.id,
       locale: 'en',
       consent: true,
@@ -114,7 +88,10 @@ test('paid verified runner can update memory without replacing the session repor
       budget: {amount: 10, currency: 'USD'}
     })
   });
-  assert.equal(started.status, 202, await started.text());
+  const startedText = await started.text();
+  assert.equal(started.status, 202, startedText);
+  const startedBody = JSON.parse(startedText);
+  assert.equal(startedBody.mode, 'combined');
   for (let index = 0; index < 200; index += 1) {
     if (server.analysisRunner.getStatus(session.id).status === 'complete') break;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -122,6 +99,7 @@ test('paid verified runner can update memory without replacing the session repor
   const status = server.analysisRunner.getStatus(session.id);
   assert.equal(status.status, 'complete', JSON.stringify(status));
   assert.equal(status.memoryDone, true);
+  assert.ok(status.sessionJobId);
   assert.ok(status.memoryJobId);
   assert.equal(status.memoryJob.memoryCoverage.covered, 2);
 

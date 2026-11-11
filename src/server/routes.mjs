@@ -1249,7 +1249,9 @@ export function buildRoutes() {
             locale,
             mode: body.mode === ANALYSIS_MODE.MEMORY
               ? ANALYSIS_MODE.MEMORY
-              : (body.mode === ANALYSIS_MODE.COMBINED ? ANALYSIS_MODE.COMBINED : ANALYSIS_MODE.SESSION),
+              : (body.mode === 'both' || body.mode === ANALYSIS_MODE.COMBINED
+                ? ANALYSIS_MODE.COMBINED
+                : ANALYSIS_MODE.SESSION),
             configId: typeof body.configId === 'string' ? body.configId : null,
             consent: body.consent === true,
             confirmBilling: body.confirmBilling === true,

@@ -9,14 +9,14 @@
 | 手动 AI 只做单场 | **已实现**。`analysisMode=session` 生成单包；无 memory 文件；导入拒绝非空 `viewer_memory_updates`。 |
 | 匿名免费只做单场 | **已实现**。新统一 runner 的匿名路径强制 `mode=session`；旧自动 API 保留兼容。 |
 | API Key 免费模型只做单场 | **已实现**。`api_free` 配置无法通过 `memoryPermission()`。 |
-| 付费模型完整画像 | **已实现（Mock 验证）**。独立 memory job，付费+价格+能力 `memory=true`+opt-in 才能运行；分批、暂停/恢复/取消、预算与 usage。 |
-| 单场与画像独立保存 | **已实现**。单场先导入；画像失败只标记 partial；已导入画像批次保留；报告读取排除 memory-only 结果。 |
-| 多 Provider | **已实现适配层**；OpenRouter 模型列表已真实请求。OpenAI/Anthropic/DeepSeek/MiniMax/DashScope 真实生成未验证（无 Key）。 |
+| 付费模型完整画像 | **已实现（Mock + 阿里云真实单场+画像验证）**。独立 memory job，付费+价格+能力 `memory=true`+opt-in 才能运行；分批、暂停/恢复/取消、预算与 usage。 |
+| 单场与画像独立保存 | **已实现**。单场先导入；画像失败只标记 partial；已导入画像批次保留；报告读取排除 memory-only 结果，并新增长期画像只读展示。 |
+| 多 Provider | **已实现适配层**；OpenRouter 模型列表已真实请求；阿里云百炼 `qwen3.8-omni-flash` 已完成真实完整分析。OpenAI/Anthropic/DeepSeek/MiniMax 真实生成未验证（无 Key）。 |
 | 密钥安全 | **已实现**。AES-256-GCM 本地存储；普通配置只保存 credentialReference；切换 region 轮换引用。测试断言配置文件不含 Key。 |
 | 三语 UI | **已实现静态键与页面**；无真实浏览器验收。 |
-| 真实 API | **部分**：OpenRouter 模型列表真实；生成请求全部阻塞（无 Key）。不得声称 Provider 已通过真实生成测试。 |
-| 全量测试 | **561 passed / 0 failed**（2026-11-11，约 73 秒）。 |
-| EXE | **已构建 v0.13.0（包含报告长期画像关联修复）**（91.5 MB / 166 assets / SHA-256 `1825188a64af3ee219a10ba48a808db27a6e2f94f9a14a8a1ee13a0beca3f5f9` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
+| 真实 API | **部分**：OpenRouter 模型列表真实；阿里云百炼真实单场+画像通过；其余生成阻塞（无 Key）。 |
+| 全量测试 | **562 passed / 0 failed**（2026-11-11，约 98 秒）。 |
+| EXE | **已构建 v0.13.0（包含 Session/Memory 元数据组装、both 映射、报告画像关联修复）**（91.5 MB / 166 assets / SHA-256 `32f947ad55af5d6662e6fdb740438a8f19f677c36c0a9eaffa4b2b6371d50654` / requireAdministrator），**未能运行**（UAC 拒绝）。 |
 
 ## 2. 关键文件
 

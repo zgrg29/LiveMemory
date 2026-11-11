@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {readZipEntry, readZipIndex} from '../../shared/zip.mjs';
 import {estimateTokensFromText} from '../providers/pricing.mjs';
-import {buildMemoryRefs, buildMemoryCompactSchema} from './compact.mjs';
+import {buildMemoryRefs, buildMemoryCompactSchema, buildSessionAnswerSchema} from './compact.mjs';
 
 /**
  * Prompt construction for the paid/configured-provider path.
@@ -61,11 +61,16 @@ export function buildSessionPrompt(files) {
   const manifest = JSON.parse(files['manifest.json']);
   const instructions = files['instructions.md'];
   const schemaText = files['result.schema.json'];
+  const resultSchema = JSON.parse(schemaText);
+  const answerSchema = buildSessionAnswerSchema(resultSchema);
   const user = [
     instructions.trimEnd(),
+    '## AUTOMATIC PROVIDER MODE — LOCAL TASK METADATA',
+    'Ignore any instruction above that asks you to output protocol, schema_version, analysis_scope, job_id, batch_id, task_id, session_id or locale. In this mode the local program owns and injects all of them.',
+    'Return only one JSON object with `session_topics` and, optionally, `viewer_profiles`.',
     block('session_context.json', compactJson(files['session_context.json'])),
     block('messages.jsonl', files['messages.jsonl']),
-    block('result.schema.json', schemaText),
+    block('compact answer schema', JSON.stringify(answerSchema)),
     'Return only the JSON object for the session report. Do not output viewer_memory_updates.'
   ].join('\n\n');
   return {
@@ -75,7 +80,7 @@ export function buildSessionPrompt(files) {
       {role: 'system', content: SYSTEM[manifest.locale] ?? SYSTEM.en},
       {role: 'user', content: user}
     ],
-    answerSchema: JSON.parse(schemaText),
+    answerSchema,
     estimatedTokens: estimateTokensFromText(user) + 200,
     format: 'session'
   };

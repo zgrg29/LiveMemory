@@ -8,6 +8,7 @@ import {verifyProviderConfig} from '../../src/ai/providers/verify.mjs';
 import {pricingFromOpenRouterModel, estimateCost, memoryPermission} from '../../src/ai/providers/pricing.mjs';
 import {validateBaseUrl} from '../../src/ai/providers/url-safety.mjs';
 import {callAnthropic, callOpenAICompatible, listProviderModels} from '../../src/ai/providers/adapters.mjs';
+import {assembleSessionAnswer} from '../../src/ai/api/compact.mjs';
 
 function mockProviderFetch() {
   return async (url, options) => {
@@ -18,7 +19,7 @@ function mockProviderFetch() {
     const prompt = (body?.messages ?? []).map((message) => message.content).join('\n');
     let content = 'OK';
     if (prompt.includes('Synthetic livestream chat')) {
-      content = JSON.stringify({summary: 'summary', topics: [{title: 'chat', summary: 'talk'}]});
+      content = "{\"session_topics\":{\"summary\":\"summary\",\"topics\":[{\"title\":\"chat\",\"started_at\":\"2026-01-01T00:00:00Z\",\"ended_at\":\"2026-01-01T00:01:00Z\",\"summary\":\"talk\",\"key_points\":[\"point\"],\"confidence\":0.7,\"evidence\":\"observed\"}],\"sentiment\":[],\"disputes\":[],\"highlights\":[]}}";
     } else if (prompt.includes('Synthetic LiveMemory memory test')) {
       content = JSON.stringify({
         viewers: [
@@ -149,6 +150,45 @@ test('capability verification records session and memory stages separately', asy
   } finally {
     temp.cleanup();
   }
+});
+
+test('session metadata is generated locally and model-supplied IDs are ignored', () => {
+  const assembled = assembleSessionAnswer({
+    answer: {
+      protocol: 'forged',
+      schema_version: '0.0.0',
+      analysis_scope: 'viewer_memory',
+      job_id: 'forged_job',
+      batch_id: 'forged_batch',
+      task_id: 'forged_task',
+      session_id: 'forged_session',
+      locale: 'fr',
+      session_topics: {
+        summary: 'ok',
+        topics: [],
+        sentiment: [],
+        disputes: [],
+        highlights: []
+      }
+    },
+    manifest: {
+      job_id: 'aij_real',
+      batch: {batch_id: 'aij_real-b01'},
+      broadcaster_id: 'youtube:UC_real',
+      tasks: [{task_id: 'ses_real-analysis'}],
+      session_id: 'ses_real',
+      locale: 'en'
+    }
+  });
+  assert.equal(assembled.ok, true);
+  assert.equal(assembled.result.protocol, 'livememory-analysis-result-v1');
+  assert.equal(assembled.result.schema_version, '1.3.0');
+  assert.equal(assembled.result.analysis_scope, 'session');
+  assert.equal(assembled.result.job_id, 'aij_real');
+  assert.equal(assembled.result.task_id, 'ses_real-analysis');
+  assert.equal(assembled.result.session_id, 'ses_real');
+  assert.equal(assembled.result.locale, 'en');
+  assert.equal(assembled.result.viewer_memory_updates, undefined);
 });
 
 test('OpenAI-compatible and Anthropic adapters keep protocol differences explicit', async () => {

@@ -25,7 +25,8 @@ import {
 import {
   assembleMemoryCompact,
   mergeMemorySupplement,
-  buildMemoryRefs
+  buildMemoryRefs,
+  assembleSessionAnswer
 } from './compact.mjs';
 
 /**
@@ -182,6 +183,10 @@ export class AnalysisRunner {
     budget = null
   } = {}) {
     if (this.active.has(sessionId)) throw new AnalysisPermissionError('ALREADY_RUNNING');
+    // The console exposes the user-facing value `both`; the database and the
+    // legacy jobs use `combined` for the same task. Accept both spellings here
+    // so selecting "session + memory" can never silently degrade to session-only.
+    if (mode === 'both') mode = ANALYSIS_MODE.COMBINED;
     if (![ANALYSIS_MODE.SESSION, ANALYSIS_MODE.MEMORY, ANALYSIS_MODE.COMBINED].includes(mode)) {
       throw new AnalysisPermissionError('INVALID_MODE');
     }
@@ -638,25 +643,53 @@ export class AnalysisRunner {
 
   async requestWithRepair({context, prompt, kind}) {
     let generated = await this.requestOnce({context, prompt, kind});
-    let validation = this.validate(generated.content);
-    if (validation.ok) return {...generated, text: JSON.stringify(validation.sanitized)};
+    let evaluation = this.evaluateSessionAnswer(generated.content, prompt);
+    if (evaluation.ok) return {...generated, text: JSON.stringify(evaluation.sanitized)};
     const repair = buildRepairMessages({
       prompt,
       previousText: generated.content,
-      errors: validation.errors,
+      errors: evaluation.errors,
       locale: prompt.locale
     });
     generated = await this.requestOnce({context, prompt: {...prompt, messages: repair.messages}, kind: `${kind}-repair`});
-    validation = this.validate(generated.content);
-    if (!validation.ok) {
+    evaluation = this.evaluateSessionAnswer(generated.content, prompt);
+    if (!evaluation.ok) {
       throw Object.assign(new Error('SCHEMA_INVALID'), {
         code: 'AUTO_SCHEMA_INVALID',
-        detail: (validation.errors ?? []).slice(0, 3)
+        detail: (evaluation.errors ?? []).slice(0, 3)
           .map((error) => `${error.path || '(root)'}:${error.code}`)
           .join(', ') || 'validation failed'
       });
     }
-    return {...generated, text: JSON.stringify(validation.sanitized)};
+    return {...generated, text: JSON.stringify(evaluation.sanitized)};
+  }
+
+  /**
+   * Session answers must go through the local assembler before the Schema 1.3
+   * validator. Models frequently omit protocol/job/task/session IDs; those are
+   * not semantic output and must never be required from the model.
+   */
+  evaluateSessionAnswer(text, prompt) {
+    const object = extractJsonObject(text);
+    if (!object) {
+      return {
+        ok: false,
+        errors: [{path: '', code: 'AUTO_INVALID_JSON'}]
+      };
+    }
+    const assembled = assembleSessionAnswer({answer: object, manifest: prompt.manifest});
+    if (!assembled.ok) {
+      return {ok: false, errors: assembled.issues};
+    }
+    const validation = this.validate(JSON.stringify(assembled.result));
+    if (!validation.ok) {
+      return {ok: false, errors: validation.errors ?? []};
+    }
+    return {
+      ok: true,
+      sanitized: validation.sanitized,
+      errors: []
+    };
   }
 
   validate(text) {
