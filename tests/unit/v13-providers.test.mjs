@@ -45,6 +45,8 @@ test('provider catalogue keeps regional platforms separate', async () => {
   assert.notEqual(minimax.regions[0].baseUrl, minimax.regions[1].baseUrl);
   const dashscope = PROVIDER_CATALOG.find((entry) => entry.id === 'dashscope');
   assert.ok(dashscope.regions.length >= 3);
+  assert.equal(dashscope.presets[0].id, 'qwen-plus');
+  assert.equal(dashscope.presets[0].pricing.currency, 'CNY');
   assert.equal(PROVIDER_CATALOG.find((entry) => entry.id === 'openrouter').regions[0].baseUrl, 'https://openrouter.ai/api/v1');
 });
 

@@ -973,7 +973,11 @@
         "memoryDone": "Long-term profiles complete",
         "partial": "The session report is saved, but long-term profiles did not finish. Completed profile batches remain valid.",
         "usageCost": "Known cost ≈ {amount} {currency}",
-        "usageTokens": "Known usage: input {input} / output {output} tokens"
+        "usageTokens": "Known usage: input {input} / output {output} tokens",
+        "refresh": "Refresh status",
+        "elapsed": "{seconds}s elapsed",
+        "locked": "Long-term profiles are unavailable for this configuration: they require a paid model with known pricing, a passed memory capability test, and explicit opt-in. Free models can only analyse one session.",
+        "pollFailed": "Cannot read the local task status right now; retrying… (this is not an AI failure)"
       },
       "stage": {
         "preparing": "Preparing data",
@@ -1037,7 +1041,9 @@
         "modelRequired": "Enter a model ID.",
         "keyRequired": "Enter the API key for this provider.",
         "priceRequired": "A paid model requires input and output prices; both cannot be zero.",
-        "manualModelHint": "This provider has no model-list endpoint. Copy the exact Model ID from its official docs/console and enter it manually."
+        "manualModelHint": "This provider has no model-list endpoint. Copy the exact Model ID from its official docs/console and enter it manually.",
+        "preset": "Recommended model (fills reference price)",
+        "customPreset": "Custom model / enter manually"
       },
       "capability": {
         "memory": "Capability: session + long-term profiles",

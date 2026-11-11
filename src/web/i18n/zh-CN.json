@@ -973,7 +973,11 @@
         "memoryDone": "长期画像已完成",
         "partial": "单场报告已完成，长期画像未完成；已完成的画像批次仍然有效。",
         "usageCost": "已知费用约 {amount} {currency}",
-        "usageTokens": "已知用量：输入 {input} / 输出 {output} tokens"
+        "usageTokens": "已知用量：输入 {input} / 输出 {output} tokens",
+        "refresh": "刷新状态",
+        "elapsed": "已用 {seconds} 秒",
+        "locked": "当前配置不能做长期画像：需要付费模型、已知价格、通过「长期画像能力检测」，并明确勾选开启。免费模型只能做单场分析。",
+        "pollFailed": "暂时无法读取本地任务状态，正在重试…（这不代表 AI 分析失败）"
       },
       "stage": {
         "preparing": "准备数据",
@@ -1037,7 +1041,9 @@
         "modelRequired": "请填写模型 ID。",
         "keyRequired": "请填写该服务商的 API Key。",
         "priceRequired": "付费模型必须填写输入和输出价格，且不能同时为 0。",
-        "manualModelHint": "该服务商不提供模型列表，请从官方文档/控制台复制完整 Model ID 后手动填入。"
+        "manualModelHint": "该服务商不提供模型列表，请从官方文档/控制台复制完整 Model ID 后手动填入。",
+        "preset": "推荐模型（自动填参考价）",
+        "customPreset": "自定义模型 / 手动输入"
       },
       "capability": {
         "memory": "能力：单场 + 长期画像",

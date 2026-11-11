@@ -99,6 +99,53 @@ export const PROVIDER_CATALOG = Object.freeze([
     keyHint: 'sk-…',
     supportsModelList: false,
     supportsStructuredOutputs: false,
+    // Optional convenience presets. Prices are reference prices from the
+    // official Chinese pricing page, for the Beijing region only. They are
+    // never presented as a live quote; the user can still type any Model ID.
+    presets: Object.freeze([
+      Object.freeze({
+        id: 'qwen-plus',
+        label: 'Qwen Plus（推荐）',
+        regionIds: Object.freeze(['cn-beijing']),
+        pricingStatus: 'paid',
+        pricing: Object.freeze({
+          currency: 'CNY',
+          inputPerMillion: 0.8,
+          outputPerMillion: 2,
+          sourceUrl: 'https://help.aliyun.com/zh/model-studio/model-pricing',
+          confirmedAt: '2026-11-11'
+        }),
+        note: '北京地域、非思考模式、0–128K 输入参考价'
+      }),
+      Object.freeze({
+        id: 'qwen-max',
+        label: 'Qwen Max',
+        regionIds: Object.freeze(['cn-beijing']),
+        pricingStatus: 'paid',
+        pricing: Object.freeze({
+          currency: 'CNY',
+          inputPerMillion: 2.4,
+          outputPerMillion: 9.6,
+          sourceUrl: 'https://help.aliyun.com/zh/model-studio/model-pricing',
+          confirmedAt: '2026-11-11'
+        }),
+        note: '北京地域、非思考模式参考价'
+      }),
+      Object.freeze({
+        id: 'qwen3.8-max',
+        label: 'Qwen3.8 Max',
+        regionIds: Object.freeze(['cn-beijing']),
+        pricingStatus: 'paid',
+        pricing: Object.freeze({
+          currency: 'CNY',
+          inputPerMillion: 12,
+          outputPerMillion: 36,
+          sourceUrl: 'https://help.aliyun.com/zh/model-studio/model-pricing',
+          confirmedAt: '2026-11-11'
+        }),
+        note: '北京地域、非思考/思考模式参考价'
+      })
+    ]),
     regions: Object.freeze([
       Object.freeze({
         id: 'cn-beijing',
@@ -184,6 +231,14 @@ export function publicCatalog() {
     supportsModelList: provider.supportsModelList,
     supportsStructuredOutputs: provider.supportsStructuredOutputs,
     custom: Boolean(provider.custom),
+    presets: (provider.presets ?? []).map((preset) => ({
+      id: preset.id,
+      label: preset.label,
+      regionIds: [...(preset.regionIds ?? [])],
+      pricingStatus: preset.pricingStatus ?? 'unknown',
+      pricing: preset.pricing ? {...preset.pricing} : null,
+      note: preset.note ?? null
+    })),
     regions: provider.regions.map((region) => ({
       id: region.id,
       label: region.label,

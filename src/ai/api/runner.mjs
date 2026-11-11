@@ -299,6 +299,7 @@ export class AnalysisRunner {
       pricingStatus: entry.pricingStatus ?? null,
       batchIndex: Number(entry.batchIndex ?? 0),
       batchTotal: Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0),
+      startedAt: entry.startedAt ?? null,
       sessionReportDone,
       memoryDone,
       sessionJobId: entry.sessionJobId ?? null,

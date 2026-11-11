@@ -163,6 +163,8 @@ export async function renderProviderSettingsCard(ctx) {
   const baseUrlInput = el('input', {className: 'input', type: 'url', attrs: {placeholder: 'https://…'}});
   const keyInput = el('input', {className: 'input', type: 'password', attrs: {autocomplete: 'off', spellcheck: 'false'}});
   const modelInput = el('input', {className: 'input', type: 'text', attrs: {placeholder: t('ai.v13.providers.modelPlaceholder')}});
+  const presetSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.providers.preset')}});
+  const presetNote = el('div', {className: 'small tertiary'});
   const pricingSelect = el('select', {className: 'select'},
     el('option', {value: 'unknown', text: t('ai.v13.price.unknown')}),
     el('option', {value: 'api_free', text: t('ai.v13.price.free')}),
@@ -177,6 +179,35 @@ export async function renderProviderSettingsCard(ctx) {
   function selectedProvider() {
     return providers.find((entry) => entry.id === providerSelect.value) ?? providers[0];
   }
+  function applyPreset(preset) {
+    if (!preset) return;
+    modelInput.value = preset.id;
+    if (preset.pricingStatus) pricingSelect.value = preset.pricingStatus;
+    if (preset.pricing) {
+      inputPrice.value = String(preset.pricing.inputPerMillion ?? 0);
+      outputPrice.value = String(preset.pricing.outputPerMillion ?? 0);
+      currencyInput.value = preset.pricing.currency ?? 'USD';
+    }
+    presetNote.textContent = preset.note ?? '';
+    syncPricing();
+  }
+  function syncPresets() {
+    const provider = selectedProvider();
+    const region = provider?.regions?.find((entry) => entry.id === regionSelect.value);
+    const presets = (provider?.presets ?? []).filter((preset) => (
+      !preset.regionIds?.length || preset.regionIds.includes(region?.id)
+    ));
+    presetSelect.replaceChildren(
+      el('option', {value: '', text: t('ai.v13.providers.customPreset')}),
+      ...presets.map((preset) => el('option', {value: preset.id, text: preset.label}))
+    );
+    presetSelect.hidden = presets.length === 0;
+    presetNote.textContent = '';
+    if (presets.length > 0) {
+      presetSelect.value = presets[0].id;
+      applyPreset(presets[0]);
+    }
+  }
   function syncRegions() {
     const provider = selectedProvider();
     regionSelect.replaceChildren(...(provider?.regions ?? []).map((region) => el('option', {
@@ -186,13 +217,29 @@ export async function renderProviderSettingsCard(ctx) {
     baseUrlInput.value = provider?.regions?.[0]?.baseUrl ?? '';
     baseUrlInput.disabled = !provider?.custom;
     localCheck.checked = false;
+    syncPresets();
     syncModelPicker();
   }
   function syncPricing() {
     priceFields.hidden = pricingSelect.value !== 'paid';
   }
   providerSelect.addEventListener('change', syncRegions);
+  regionSelect.addEventListener('change', syncPresets);
   pricingSelect.addEventListener('change', syncPricing);
+  presetSelect.addEventListener('change', () => {
+    const provider = selectedProvider();
+    const preset = (provider?.presets ?? []).find((entry) => entry.id === presetSelect.value);
+    if (preset) applyPreset(preset);
+    else presetNote.textContent = '';
+  });
+  modelInput.addEventListener('input', () => {
+    const provider = selectedProvider();
+    const known = (provider?.presets ?? []).some((entry) => entry.id === modelInput.value.trim());
+    if (!known) {
+      presetSelect.value = '';
+      presetNote.textContent = '';
+    }
+  });
 
   const loadModels = el('button', {
     className: 'button button--ghost button--small',
@@ -314,9 +361,11 @@ export async function renderProviderSettingsCard(ctx) {
       field(t('ai.v13.providers.provider'), providerSelect),
       field(t('ai.v13.providers.region'), regionSelect)),
     field(t('ai.v13.providers.baseUrl'), baseUrlInput),
+    field(t('ai.v13.providers.apiKey'), keyInput, t('ai.v13.providers.keyHint')),
     el('div', {className: 'grid-2-equal'},
-      field(t('ai.v13.providers.apiKey'), keyInput, t('ai.v13.providers.keyHint')),
+      field(t('ai.v13.providers.preset'), presetSelect),
       field(t('ai.v13.providers.model'), modelInput)),
+    presetNote,
     el('div', {className: 'inline'}, loadModels, modelListBox),
     el('div', {className: 'grid-2-equal'},
       field(t('ai.v13.providers.pricingStatus'), pricingSelect),

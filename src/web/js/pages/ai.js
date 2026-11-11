@@ -193,6 +193,7 @@ export const aiPage = {
     const optInMemory = el('input', {type: 'checkbox'});
     const pricingHint = el('div', {className: 'small tertiary'});
     const configHint = el('div', {className: 'small tertiary'});
+    const memoryLockedHint = el('div', {className: 'callout callout--neutral', hidden: true});
     const billingRow = el('label', {className: 'choice'},
       confirmBilling,
       el('div', {className: 'choice-text'},
@@ -236,6 +237,11 @@ export const aiPage = {
       text: t('ai.v13.run.pause'),
       hidden: true
     });
+    const autoRefreshButton = el('button', {
+      className: 'button button--ghost button--small',
+      type: 'button',
+      text: t('ai.v13.run.refresh')
+    });
     const autoStatusText = el('div', {
       className: 'auto-status',
       attrs: {role: 'status', 'aria-live': 'polite'}
@@ -261,12 +267,13 @@ export const aiPage = {
       el('div', {className: 'inline'}, configLink),
       configHint,
       pricingHint,
+      memoryLockedHint,
       el('div', {className: 'grid-2-equal'},
         field(t('ai.v13.budget.label'), budgetInput, t('ai.v13.budget.hint')),
         el('div', {className: 'stack stack--tight'},
           billingRow,
           memoryOptRow)),
-      el('div', {className: 'auto-actions'}, autoButton, autoPauseButton, autoCancelButton),
+      el('div', {className: 'auto-actions'}, autoButton, autoRefreshButton, autoPauseButton, autoCancelButton),
       autoError,
       autoStatusText,
       autoDetails);
@@ -473,6 +480,8 @@ export const aiPage = {
         : (runMethod === 'anonymous'
           ? t('ai.v13.price.anonymousFree')
           : (config ? `${t('ai.v13.price.status')}: ${priceText(config)}` : ''));
+      memoryLockedHint.hidden = !(runMethod === 'api' && config && !memoryAllowed(config));
+      memoryLockedHint.textContent = memoryLockedHint.hidden ? '' : t('ai.v13.run.locked');
       const paid = runMethod === 'api' && config && config.pricingStatus !== 'api_free';
       billingRow.hidden = !paid;
       confirmBilling.checked = false;
@@ -1206,7 +1215,10 @@ export const aiPage = {
           status.sessionReportDone ? t('ai.v13.run.sessionDone') : null,
           status.memoryDone ? t('ai.v13.run.memoryDone') : null
         ].filter(Boolean).join(' · ');
-        autoStatusText.textContent += progress + (flags ? ` · ${flags}` : '');
+        const elapsed = status.startedAt
+          ? t('ai.v13.run.elapsed', {seconds: Math.max(1, Math.round((Date.now() - status.startedAt) / 1000))})
+          : '';
+        autoStatusText.textContent += progress + (flags ? ` · ${flags}` : '') + (elapsed ? ` · ${elapsed}` : '');
         return;
       }
       autoButton.disabled = !selectedId;
@@ -1275,10 +1287,22 @@ export const aiPage = {
           if (autoRefreshedFor !== key) {
             autoRefreshedFor = key;
             await Promise.all([refreshJobs(), refreshReport(), loadPrompt()]);
+            if (status.status === 'complete') {
+              window.requestAnimationFrame(() => {
+                document.getElementById('ai-report')?.scrollIntoView({block: 'start', behavior: 'smooth'});
+              });
+            }
           }
         }
       } catch {
-        // A local status read must not be presented as an AI failure.
+        // A local status read must not be presented as an AI failure, but it
+        // also must not leave the user staring at a frozen "preparing" label.
+        autoStatusText.className = 'auto-status';
+        autoStatusText.textContent = t('ai.v13.run.pollFailed');
+        autoRefreshButton.disabled = false;
+        if (autoRunning) {
+          autoTimer = window.setTimeout(refreshAutoStatus, 2500);
+        }
       }
     }
 
@@ -1380,6 +1404,7 @@ export const aiPage = {
     createButton.addEventListener('click', createTask);
     validateButton.addEventListener('click', validateInput);
     autoButton.addEventListener('click', startAuto);
+    autoRefreshButton.addEventListener('click', () => refreshAutoStatus());
     autoCancelButton.addEventListener('click', cancelAuto);
     autoPauseButton.addEventListener('click', pauseOrResumeAuto);
     methodSelect.addEventListener('change', () => {
