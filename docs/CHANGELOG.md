@@ -1,5 +1,20 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r2 — 2026-11-12（60/45 分钟软/硬任务预算）
+
+### 修复
+
+- 真实 7/7 批次后，final aggregate 在 435,770 ms 被任务剩余预算 `maxTotalMs` 中止，20:00 标记 `ANALYSIS_TASK_TIMEOUT`；实际并非阻止汇总启动。
+- 默认任务预算 20 分钟 → **60 分钟**；45 分钟软提醒；60 分钟只停止启动新批次，在途请求按自身首响应/空闲超时完成并保存。
+- 单请求不再使用 `maxTotalMs`，不会被任务剩余时间缩短；已发送超时仍不自动重发。
+- 仍有未完成批次 → `ANALYSIS_TASK_PAUSED` + `status=paused`（可恢复）；用户取消仍立即 `canceled`。
+- 只剩 final aggregate 时不被硬预算阻断；7/7 后 resume 只发 aggregate。
+- 状态/UI 新增已运行时间、`taskBudgetState`、`waitingAggregate`、`pending*Batches`、可继续提示；暂停态明确已完成批次已保存。
+
+### 验证
+
+- 603 passed / 0 failed；新增 `tests/integration/v14-task-budget.test.mjs`。
+
 ## 0.13.2 — 2026-11-12（构建可验证、分批预算重平衡、输出有界）
 
 ### 修复
@@ -15,7 +30,7 @@
 ### 验证
 
 - 597 passed / 0 failed（约 93 秒）。
-- EXE `33ea5e659ce0` / commit `87f500e` / SHA-256 `d87722ec…`；asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- EXE `f5bbd685abe2` / commit `090aadf` / SHA-256 `06e7ecb…`；asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
 - 真实 889 消息离线规划：8k=24 批、16k=11 批、24k=6 批、32k=4 批，全部 889/889 覆盖。
 
 ### 未验证

@@ -363,9 +363,9 @@
 - ✅ 区分超时 / 用户取消 / 暂停 / 网络 / 429 / 5xx / 4xx / 无效响应 / 流中断
 - ✅ 已发出的长请求超时默认不自动重试；取消与暂停绝不重试；仅连接错误一次安全重试
 - ✅ `runPool` 失败改为停止调度新批次，不 abort 在途兄弟批次；已完成批次兼容保留
-- ✅ 20 分钟任务级时间预算；达到后明确 `ANALYSIS_TASK_TIMEOUT`
+- ✅ 60 分钟任务级时间预算（45 分钟软提醒）；达到后只停止启动新批次，在途请求与 final aggregate 完成并保存；未完成进入可恢复 paused
 - ✅ 每次尝试脱敏日志：attempt、耗时、错误类型、HTTP status、是否收到响应头/输出、是否重试
-- ✅ Token 预算动态分批：session 默认 8k、可配 2k–32k，小上下文自适应；memory 观众不拆批
+- ✅ Token 预算动态分批：session 默认 24k、可配 2k–32k，固定开销/内容/输出分开；memory 观众不拆批
 - ✅ 多批 session + final aggregate；全部消息覆盖、汇总去重、证据 `{batch, seq}`
 - ✅ 自动 Streaming（OpenAI-compatible / Anthropic SSE），只缓冲、完成后校验；不兼容一次回退并持久化
 - ✅ AI 中心：单场批次 n/N、等待汇总、已收到输出、运行时长、重试、已保存批次、真实失败原因

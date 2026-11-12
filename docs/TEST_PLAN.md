@@ -925,5 +925,19 @@ duration ≈ 25.0s
 - `tests/unit/ai-repair-guard.test.mjs`：repair 保留原批 prompt，只截断上次回答；估算不超限。
 - `tests/unit/ai-token-batching.test.mjs`：889 消息在 8/16/24/32k 下分别 24/11/6/4 批，覆盖 889/889；8k 不再 125 批；124 观众恰好一次；单观众 48k 硬上限显式失败。
 - `tests/unit/bootstrap.test.mjs`：篡改缓存文件后 `app-root.stale` 并重新解压；marker 含 buildId。
-- EXE：`buildId 33ea5e659ce0`；asInvoker 副本实际启动，`/api/health`、`/api/bootstrap` 返回同一 build；第二次启动 `filesVerified=169`。
+- EXE：`buildId f5bbd685abe2`；asInvoker 副本实际启动，`/api/health`、`/api/bootstrap` 返回同一 build；第二次启动 `filesVerified=169`。
 - 未做：真实付费 API、真实 UAC 双击、889 消息真实付费回放。
+
+### 31.6 v0.13.2-r2 任务时间预算（2026-11-12）
+
+- 全量：**603 passed / 0 failed**（约 96 秒）。
+- `tests/unit/ai-attempts.test.mjs`：默认 60 分钟 / 软 45 分钟；normal→soft→hard 状态；软预算不超过硬预算。
+- `tests/integration/v14-task-budget.test.mjs`：
+  - 20 分钟后任务仍正常完成；
+  - 45 分钟仅 soft 提示、不停止；
+  - 60 分钟停止启动新批次，在途批次成功保存，状态 paused 可恢复；
+  - resume 只跑缺失批次，不重复已保存批次；
+  - 所有批次完成后硬预算下 final aggregate 仍执行并完成；
+  - aggregate 超时后 resume 只发 aggregate、不重发任何批次。
+- `tests/integration/v14-streaming-timeout.test.mjs`：在途请求跨过 60 分钟时按自身 `PROVIDER_TIMEOUT` 结束，而不是 `ANALYSIS_TASK_TIMEOUT`。
+- 未做：真实 60 分钟长任务；Mock/注入时钟已覆盖。

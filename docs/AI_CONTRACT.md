@@ -829,12 +829,12 @@ result.schema.json
 - `TimeoutError`（已发出的请求）默认**不自动重试**。理由：Provider 可能仍在执行，重发会重复推理与计费。
 - 外部 `AbortError`（用户取消、暂停、退出）与超时分开，归类为 `canceled`，永不重试；终态为 `canceled` / `paused`。
 - 连接阶段网络错误最多一次安全重试；429 遵守 `Retry-After`（含 0）；5xx/408/425 指数退避 + 抖动，最多 3 次尝试；4xx、空响应、流中断不重试。
-- 任务级 20 分钟预算；达到后返回 `ANALYSIS_TASK_TIMEOUT`，不再发起新请求；已完成批次保留。
+- 任务级 60 分钟预算（45 分钟软提醒）；达到后停止启动新批次，在途请求与 final aggregate 按自身超时完成并保存；仍有未完成批次时进入可恢复 `paused`（`ANALYSIS_TASK_PAUSED`），用户取消仍立即 `canceled`。
 - 一次 Schema 校验失败仍可发一次 repair；`finish_reason=length`、退化检测、流中断不触发 repair/重发。
 
 ### 19.2 Token 分批
 
-- 批次预算 `batchInputTokens`：默认 8,000；配置范围 2,000–32,000；模型上下文较小时自动缩小，并相应限制输出 token。
+- 批次预算 `batchInputTokens`：默认 **24,000**（2,000–32,000）；固定提示词开销、内容预算与输出预留分开计算，内容至少占 50%。
 - session：按消息序列化后的估算 token 连续切分；单条超预算消息单独成批；全部消息恰好出现一次。
 - session 多批（`batchTotal > 1`）必须导入 final aggregate 才 `complete`；aggregate 结果 `task_id = <session>-analysis-final`，无 `batch_id`，`analysis_scope = session`，证据必须为 `{"batch": n, "seq": m}`。
 - memory：同一观众只属于一个批次；预算计入摘录、现有记忆、允许 evidence seq 列表与固定提示词开销；超预算观众单独成批，不丢观众。

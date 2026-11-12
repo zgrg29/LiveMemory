@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-12（v0.13.2 构建可验证 + 分批预算重平衡；597 tests；EXE 已实跑验证 buildId）
+最后更新：2026-11-12（v0.13.2：构建可验证、分批预算、60/45 分钟任务时间预算；603 tests；EXE 已实跑验证 buildId）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -22,14 +22,14 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | 91.6 MB |
-| SHA-256 | `d87722ec07b93433c6d2a2b45dc2bed217ae0b5443cacad46b7a81c6d09f6aca` |
-| commit | `87f500ebcd58b47319ea8d101677141f2c89dadb` |
-| buildId | `33ea5e659ce0` |
-| asset hash | `33ea5e659ce0295a2061` |
-| builtAt | 2026-11-12T07:31:03.200Z（15:31:03 +08） |
+| SHA-256 | `06e7ecb29e835378d65d94c193158392a06a9c646e67e3bdb46c0d4030ba640c` |
+| commit | `090aadf8cf51c54ebd56557f887d547338b780be` |
+| buildId | `f5bbd685abe2` |
+| asset hash | `f5bbd685abe2032b237b` |
+| builtAt | 2026-11-12T09:41:52.970Z（17:41:52 +08） |
 | 资源 | 169 files；7 个必需模块；RT_MANIFEST requireAdministrator |
 
-本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=33ea5e659ce0`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
+本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=f5bbd685abe2`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
 
 ### 0.14.2 分批预算（真实 889 条消息离线规划）
 
@@ -62,6 +62,25 @@
 - 全量：**597 passed / 0 failed**（2026-11-12，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 93 秒）。
 - 新增：`tests/unit/build-info.test.mjs`、`ai-adapter-output.test.mjs`、`ai-repair-guard.test.mjs`；`ai-token-batching.test.mjs` 增加 889 消息 / 124 观众 / 硬上限；`bootstrap.test.mjs` 增加缓存篡改重解压。
 - 未做：真实付费 API（含 `max_completion_tokens` 与思考模式行为）、真实 UAC 双击、真实 889 消息付费回放。
+
+### 0.14.5 任务时间预算（2026-11-12 真实测试后）
+
+**真实触发路径（已确认）**：
+
+- 15:35:58 启动，`batchTotal=7`；15:48:40 第 7 批完成并**立即发出** final aggregate 请求；15:55:58 aggregate 在 `elapsedMs=435,770` 时以 `PROVIDER_TIMEOUT` 结束，任务于 20:00 标记 `ANALYSIS_TASK_TIMEOUT`。
+- 不是“阻止启动汇总”：汇总已经启动；是 `requestOnce` 把 `maxTotalMs` 设为剩余任务预算（当时约 438 秒），在途流式请求被任务预算中止。
+- 7/7 批次全部保存；只有 final aggregate 丢失。
+
+**修复**：
+
+- 默认任务预算 **60 分钟**；**45 分钟**软提醒；60 分钟停止启动**新批次**，在途请求与 final aggregate 按自身首响应/空闲超时继续并保存。
+- 单请求不再使用 `maxTotalMs`，只保留 provider `timeoutMs`（首响应）与 60 秒流空闲；已发出的超时请求仍不自动重发。
+- 到达预算且仍有未完成批次 → `ANALYSIS_TASK_PAUSED` + `status=paused`，可恢复；用户取消仍是 `canceled`，立即 abort。
+- 只剩 final aggregate 时不受硬预算阻断；7/7 后 resume 只发 aggregate。
+- 状态新增 `taskElapsedMs`、`taskSoftDeadlineAt`、`taskBudgetState`（normal/soft/hard/paused）、`taskSoftBudgetReached`、`taskBudgetReached`、`waitingAggregate`、`pendingSessionBatches`、`pendingMemoryBatches`、`resumeReason`。
+- UI 显示已运行时间、阶段、批次、等待汇总、时间预算状态与“可继续”；暂停态显示“继续不会重复已完成批次”。
+
+**测试**：603 passed / 0 failed；新增 `tests/integration/v14-task-budget.test.mjs`（20 分钟仍运行、45 分钟软提醒、60 分钟停机、在途完成保存、7/7 后汇总、汇总-only 恢复），`tests/unit/ai-attempts.test.mjs` 增加 soft/hard 状态。
 
 ## 0.13 v0.13.1 可靠性专项（2026-11-12）
 
@@ -526,9 +545,9 @@ POST /api/ai/auto/cancel      {sessionId}
 
 - **v0.13.2 已构建并实际启动验证（asInvoker 副本）**：`node scripts/build-windows.mjs`。
   - 大小 **91.6 MB**
-  - SHA-256 `d87722ec07b93433c6d2a2b45dc2bed217ae0b5443cacad46b7a81c6d09f6aca`
-  - commit `87f500ebcd58b47319ea8d101677141f2c89dadb`
-  - buildId `33ea5e659ce0`，资源哈希 `33ea5e659ce0295a2061`
+  - SHA-256 `06e7ecb29e835378d65d94c193158392a06a9c646e67e3bdb46c0d4030ba640c`
+  - commit `090aadf8cf51c54ebd56557f887d547338b780be`
+  - buildId `f5bbd685abe2`，资源哈希 `f5bbd685abe2032b237b`
   - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **实际启动验证**：本会话非提升，使用同一二进制临时改 manifest 为 asInvoker 后启动；`/api/health`、`/api/bootstrap` 返回上面的 buildId/commit，`mode=packaged`、`verified=true`；启动日志 `startup.begin` 记录同一 build；第二次启动复用缓存并校验 169 个文件。
@@ -572,7 +591,7 @@ POST /api/ai/auto/cancel      {sessionId}
 20. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
 21. 手动导入失败不再由 UI 修复；历史结果仍可只读，重复导入仍幂等。
 22. **超时/取消语义**：`TimeoutError` 与 `AbortError` 必须分开；已发出的长请求超时后默认不自动重发；用户取消/暂停绝不重试。
-23. **任务级时间预算**：所有尝试受任务预算约束；达到后停止新请求并保留已完成批次，不得无限重试。
+23. **任务级时间预算**：默认 60 分钟、45 分钟软提醒；到达后停止启动新批次，但在途请求与 final aggregate 按自身超时完成并保存；未完成时进入可恢复 `paused`，不得无限重试。
 24. **批次隔离**：任何批次失败不得 abort 同批其他在途请求；已完成批次必须继续导入；恢复只处理未完成批次。
 25. **Token 分批**：单场与画像按 input token 预算分批；默认 8k、可配 2k–32k；不得静默丢消息/观众；多批 session 必须有 final aggregate 才 complete。
 26. **自动流式**：普通用户不选择 Streaming；流式只缓冲，完成后仍走同一校验/事务导入；不兼容时最多回退一次并持久化响应模式。

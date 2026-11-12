@@ -51,7 +51,7 @@
 | --- | --- | --- |
 | `timeoutMs` | 180,000 ms，UI 可设 10–600 秒 | 等待**响应头**的最长时间；流式开始后作为无进展上限基准 |
 | 流式空闲超时 | 60,000 ms（不超过 `timeoutMs`） | 持续有 token 时不会因“总时长”被截断；停止输出 60 秒才失败 |
-| 任务时间预算 | 20 分钟 | 达到后不再发起新尝试，返回 `ANALYSIS_TASK_TIMEOUT`；已完成批次保留 |
+| 任务时间预算 | 60 分钟（45 分钟软提醒） | 达到后只停止启动新批次；在途请求与 final aggregate 按自身超时完成并保存；未完成进入可恢复 `paused` |
 
 > 没有把 180 秒简单改成 600 秒。非流式只在“无响应头”阶段等待；流式按空闲计时，长回答可以持续推进。
 
@@ -283,5 +283,31 @@ AI 分析中心新增/明确显示：
 ### 9.5 验证
 
 - 596 passed / 0 failed（约 94 秒）。
-- EXE v0.13.2：`buildId 33ea5e659ce0`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- EXE v0.13.2：`buildId f5bbd685abe2`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
 - **未验证**：真实付费 API 的 `max_completion_tokens` 接受度、思考模式实际行为、24k/6 批真实回放、真实 UAC 双击。
+
+---
+
+## 10. v0.13.2-r2：软/硬任务预算（2026-11-12 真实测试后）
+
+### 10.1 真实触发路径
+
+- 15:35:58 启动；15:48:40 第 7 批完成并发出 final aggregate；15:55:58 aggregate 在 `elapsedMs=435,770` 时 `PROVIDER_TIMEOUT`；20:00 任务 `ANALYSIS_TASK_TIMEOUT`。
+- 不是“预算阻止汇总启动”：汇总已经启动。原因是 `requestOnce` 把 `maxTotalMs` 设为剩余任务预算（约 438 秒），在途流式 aggregate 被任务预算中止。
+- 7/7 批次已保存；只有汇总丢失。
+
+### 10.2 新语义
+
+- `createTaskBudget`：默认 `taskTimeoutMs=60m`、`softBudgetMs=45m`，暴露 `deadlineAt`、`softDeadlineAt`、`taskBudgetState`（normal/soft/hard）。
+- **硬预算只控制调度**：`runPool` 的 `canStart` 在剩余 <15 秒或达到 hard 时停止取新批次；已经在途的 worker 不受影响。
+- `requestOnce` 不再接收 `maxTotalMs`，单请求只受 `timeoutMs`（首响应）和 60 秒流空闲约束；已发送超时仍不重发。
+- 仍有未完成批次时抛 `ANALYSIS_TASK_PAUSED`，状态 `paused`、可恢复；用户取消仍是 `canceled` 并立即 abort。
+- 只剩 final aggregate 时不检查 `canStart`，7/7 后必做汇总；resume 只发缺失批次或 aggregate。
+- 状态新增 `taskElapsedMs`、`taskSoftBudgetReached`、`taskBudgetReached`、`taskBudgetState`、`waitingAggregate`、`pendingSessionBatches`、`pendingMemoryBatches`、`resumeReason`。
+- UI：已运行时间、阶段、批次、等待汇总、预算状态、可继续提示；暂停态明确“已完成批次已保存，可继续”。
+
+### 10.3 验证
+
+- 603 passed / 0 failed。
+- `tests/integration/v14-task-budget.test.mjs`：20 分钟仍完成、45 分钟 soft、60 分钟停新批次且在途保存、pause/resume 不重发、硬预算下 final aggregate 仍执行、aggregate-only resume。
+- 未验证：真实 60 分钟长任务；本机只做 Mock/注入时钟。
