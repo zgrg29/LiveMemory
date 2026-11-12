@@ -244,7 +244,7 @@ export function setViewerFocused(db, viewerId, focused, {now = Date.now()} = {})
 
 /** Everyone who took part in one session, with their lifetime aggregates. */
 export function listSessionViewers(db, sessionId, {limit = 2000} = {}) {
-  const safeLimit = Math.min(Math.max(Number(limit) || 2000, 1), 20000);
+  const safeLimit = Math.min(Math.max(Number(limit) || 2000, 1), 200000);
   return db.prepare(`
     SELECT v.id AS viewer_id, v.platform, v.platform_uid, v.nickname,
            v.first_seen_at, v.last_seen_at, v.message_count, v.payment_event_count,

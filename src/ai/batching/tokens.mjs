@@ -262,7 +262,7 @@ export function planMemoryViewerBatches({
   contentBudget = null,
   overheadTokens = 0,
   inputBudget = null,
-  maxBatches = 2001,
+  maxBatches = Number.MAX_SAFE_INTEGER,
   maxSingleViewerTokens = null
 } = {}) {
   const cap = Math.max(1, Math.floor(Number(viewerCap) || 10));

@@ -8,15 +8,14 @@ import {chip, el} from '../ui.js';
  */
 
 function priceLabel(ctx, config) {
-  if (config.pricingStatus === 'api_free') return ctx.t('ai.v13.price.free');
-  if (config.pricingStatus === 'paid' && config.pricing) {
+  if (config.pricing) {
     return ctx.t('ai.v13.price.paidValue', {
       input: String(config.pricing.inputPerMillion),
       output: String(config.pricing.outputPerMillion),
       currency: config.pricing.currency
     });
   }
-  return ctx.t('ai.v13.price.unknown');
+  return ctx.t('ai.v13.price.optional');
 }
 
 function capabilityLabel(ctx, config) {
@@ -31,27 +30,6 @@ function field(label, control, hint = null) {
     el('label', {className: 'label', text: label}),
     control,
     hint ? el('div', {className: 'small tertiary', text: hint}) : null);
-}
-
-async function confirmCharge(ctx) {
-  return new Promise((resolve) => {
-    const modal = createModal({title: ctx.t('ai.v13.test.chargeTitle'), t: ctx.t});
-    modal.body.append(el('p', {className: 'modal-desc', text: ctx.t('ai.v13.test.chargeBody')}));
-    const cancel = el('button', {
-      className: 'button button--ghost',
-      type: 'button',
-      text: ctx.t('common.cancel'),
-      onClick: () => { modal.close(); resolve(false); }
-    });
-    const ok = el('button', {
-      className: 'button button--primary',
-      type: 'button',
-      text: ctx.t('ai.v13.test.chargeContinue'),
-      onClick: () => { modal.close(); resolve(true); }
-    });
-    modal.actions.append(cancel, ok);
-    ok.focus();
-  });
 }
 
 export async function renderProviderSettingsCard(ctx) {
@@ -92,7 +70,7 @@ export async function renderProviderSettingsCard(ctx) {
         el('div', {className: 'provider-config-title'},
           el('span', {text: config.name}),
           config.isDefault ? chip(t('ai.v13.providers.default'), 'accent') : null),
-        chip(priceLabel(ctx, config), config.pricingStatus === 'paid' ? 'accent' : 'neutral')),
+        chip(priceLabel(ctx, config), config.pricing ? 'accent' : 'neutral')),
       el('div', {className: 'small tertiary mono', text: `${config.providerId} / ${config.regionId} / ${config.modelId}`}),
       el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)} · ${t('ai.v13.providers.concurrency')}: ${config.concurrency ?? 3} · ${t('ai.v13.providers.timeoutShort', {seconds: String(Math.round(Number(config.timeoutMs ?? 180000) / 1000))})}`}),
       failedStage
@@ -127,14 +105,10 @@ export async function renderProviderSettingsCard(ctx) {
           type: 'button',
           text: t('ai.v13.providers.test'),
           onClick: async (event) => {
-            const paid = config.pricingStatus !== 'api_free';
-            if (paid && !await confirmCharge(ctx)) return;
             event.target.disabled = true;
             event.target.textContent = t('ai.v13.providers.testing');
             try {
-              const result = await api.post(`/api/ai/providers/configs/${encodeURIComponent(config.id)}/test`, {
-                confirmBilling: paid
-              });
+              const result = await api.post(`/api/ai/providers/configs/${encodeURIComponent(config.id)}/test`, {});
               ctx.toast(t('ai.v13.providers.testDone', {status: result.result?.status ?? 'failed'}), {
                 tone: result.result?.status === 'failed' ? 'error' : 'info'
               });
@@ -185,10 +159,6 @@ export async function renderProviderSettingsCard(ctx) {
   const modelInput = el('input', {className: 'input', type: 'text', attrs: {placeholder: t('ai.v13.providers.modelPlaceholder')}});
   const presetSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.v13.providers.preset')}});
   const presetNote = el('div', {className: 'small tertiary'});
-  const pricingSelect = el('select', {className: 'select'},
-    el('option', {value: 'unknown', text: t('ai.v13.price.unknown')}),
-    el('option', {value: 'api_free', text: t('ai.v13.price.free')}),
-    el('option', {value: 'paid', text: t('ai.v13.price.paid')}));
   const inputPrice = el('input', {className: 'input input--compact', type: 'number', attrs: {min: '0', step: '0.0001'}});
   const outputPrice = el('input', {className: 'input input--compact', type: 'number', attrs: {min: '0', step: '0.0001'}});
   const currencyInput = el('input', {className: 'input input--compact', type: 'text', value: 'USD', attrs: {maxlength: '8'}});
@@ -212,7 +182,6 @@ export async function renderProviderSettingsCard(ctx) {
     attrs: {min: '2000', max: '32000', step: '500', placeholder: t('ai.v13.providers.batchInputAuto')}
   });
   const localCheck = el('input', {type: 'checkbox'});
-  const priceFields = el('div', {className: 'grid-2-equal'}, field(t('ai.v13.providers.inputPrice'), inputPrice), field(t('ai.v13.providers.outputPrice'), outputPrice));
   const modelListBox = el('div', {className: 'small tertiary'});
   const formTitle = el('div', {className: 'choice-title', text: t('ai.v13.providers.addTitle')});
   const cancelButton = el('button', {
@@ -230,14 +199,12 @@ export async function renderProviderSettingsCard(ctx) {
   function applyPreset(preset) {
     if (!preset) return;
     modelInput.value = preset.id;
-    if (preset.pricingStatus) pricingSelect.value = preset.pricingStatus;
     if (preset.pricing) {
-      inputPrice.value = String(preset.pricing.inputPerMillion ?? 0);
-      outputPrice.value = String(preset.pricing.outputPerMillion ?? 0);
+      inputPrice.value = String(preset.pricing.inputPerMillion ?? '');
+      outputPrice.value = String(preset.pricing.outputPerMillion ?? '');
       currencyInput.value = preset.pricing.currency ?? 'USD';
     }
     presetNote.textContent = preset.note ?? '';
-    syncPricing();
   }
   function syncPresets({apply = true} = {}) {
     const provider = selectedProvider();
@@ -270,9 +237,6 @@ export async function renderProviderSettingsCard(ctx) {
     syncPresets();
     syncModelPicker();
   }
-  function syncPricing() {
-    priceFields.hidden = pricingSelect.value !== 'paid';
-  }
   function syncKeyState() {
     if (!editingConfig) {
       keyStatus.textContent = '';
@@ -303,7 +267,6 @@ export async function renderProviderSettingsCard(ctx) {
     syncKeyState();
   });
   baseUrlInput.addEventListener('input', syncKeyState);
-  pricingSelect.addEventListener('change', syncPricing);
   presetSelect.addEventListener('change', () => {
     const provider = selectedProvider();
     const preset = (provider?.presets ?? []).find((entry) => entry.id === presetSelect.value);
@@ -319,14 +282,10 @@ export async function renderProviderSettingsCard(ctx) {
     }
     if (editingConfig && modelInput.value.trim() !== editingConfig.modelId) {
       // A new model must not inherit the previous model's capability test or
-      // price. The server also enforces this; the form makes it visible.
+      // display price. The server also enforces this; the form makes it visible.
       presetNote.textContent = t('ai.v13.providers.modelChangedReverify');
-      if (pricingSelect.value !== 'unknown') {
-        pricingSelect.value = 'unknown';
-        inputPrice.value = '';
-        outputPrice.value = '';
-        syncPricing();
-      }
+      inputPrice.value = '';
+      outputPrice.value = '';
     }
   });
 
@@ -345,7 +304,7 @@ export async function renderProviderSettingsCard(ctx) {
         }
         const select = el('select', {className: 'select'});
         for (const model of models) {
-          const price = model.pricingStatus === 'api_free' ? t('ai.v13.price.free') : (model.pricing ? `${model.pricing.currency} ${model.pricing.inputPerMillion}/${model.pricing.outputPerMillion}` : t('ai.v13.price.unknown'));
+          const price = model.pricing ? `${model.pricing.currency} ${model.pricing.inputPerMillion}/${model.pricing.outputPerMillion}` : t('ai.v13.price.optional');
           select.append(el('option', {
             value: model.id,
             text: `${model.name} · ${model.id}${model.contextLength ? ` · ${model.contextLength}` : ''} · ${price}`
@@ -355,11 +314,9 @@ export async function renderProviderSettingsCard(ctx) {
           modelInput.value = select.value;
           const selected = models.find((model) => model.id === select.value);
           if (selected?.pricing) {
-            pricingSelect.value = selected.pricingStatus === 'api_free' ? 'api_free' : 'paid';
-            inputPrice.value = String(selected.pricing.inputPerMillion ?? 0);
-            outputPrice.value = String(selected.pricing.outputPerMillion ?? 0);
+            inputPrice.value = String(selected.pricing.inputPerMillion ?? '');
+            outputPrice.value = String(selected.pricing.outputPerMillion ?? '');
             currencyInput.value = selected.pricing.currency ?? 'USD';
-            syncPricing();
           }
         });
         modelListBox.replaceChildren(select);
@@ -400,7 +357,6 @@ export async function renderProviderSettingsCard(ctx) {
     baseUrlInput.disabled = !provider?.custom;
     localCheck.checked = config.allowLocalNetwork === true;
     modelInput.value = config.modelId ?? '';
-    pricingSelect.value = config.pricingStatus ?? 'unknown';
     inputPrice.value = config.pricing ? String(config.pricing.inputPerMillion ?? '') : '';
     outputPrice.value = config.pricing ? String(config.pricing.outputPerMillion ?? '') : '';
     currencyInput.value = config.pricing?.currency ?? 'USD';
@@ -410,7 +366,6 @@ export async function renderProviderSettingsCard(ctx) {
     presetSelect.value = '';
     presetNote.textContent = t('ai.v13.providers.editHint');
     keyInput.value = '';
-    syncPricing();
     syncModelPicker();
     syncKeyState();
     formBlock?.scrollIntoView({behavior: 'smooth', block: 'start'});
@@ -436,7 +391,6 @@ export async function renderProviderSettingsCard(ctx) {
     keyInput.placeholder = '';
     keyStatus.textContent = '';
     modelInput.value = '';
-    pricingSelect.value = 'unknown';
     inputPrice.value = '';
     outputPrice.value = '';
     currencyInput.value = 'USD';
@@ -445,7 +399,6 @@ export async function renderProviderSettingsCard(ctx) {
     batchBudgetInput.value = '';
     presetSelect.value = '';
     presetNote.textContent = '';
-    syncPricing();
     syncModelPicker();
   }
 
@@ -458,7 +411,6 @@ export async function renderProviderSettingsCard(ctx) {
       try {
         const provider = selectedProvider();
         const region = provider.regions.find((entry) => entry.id === regionSelect.value);
-        const pricingStatus = pricingSelect.value;
         const modelId = modelInput.value.trim();
         const baseUrl = provider.custom ? baseUrlInput.value.trim() : region.baseUrl;
         const keyProvided = keyInput.value.trim() !== '';
@@ -489,29 +441,27 @@ export async function renderProviderSettingsCard(ctx) {
         }
         const input = Number(inputPrice.value);
         const output = Number(outputPrice.value);
-        if (pricingStatus === 'paid') {
-          if (inputPrice.value.trim() === '' || outputPrice.value.trim() === '') {
-            fail('ai.v13.providers.priceRequired');
-            return;
+        const inputFilled = inputPrice.value.trim() !== '';
+        const outputFilled = outputPrice.value.trim() !== '';
+        // Prices are optional display metadata. Both sides must be valid before
+        // a cost can be shown; a partial price is stored as unknown, never as 0.
+        const pricing = inputFilled && outputFilled
+          && Number.isFinite(input) && input >= 0
+          && Number.isFinite(output) && output >= 0
+          ? {
+            inputPerMillion: input,
+            outputPerMillion: output,
+            currency: currencyInput.value.trim() || 'USD',
+            confirmedAt: new Date().toISOString()
           }
-          if (input === 0 && output === 0) {
-            fail('ai.v13.providers.priceRequired');
-            return;
-          }
-        }
+          : null;
         const payload = {
           name: nameInput.value.trim() || provider.label,
           providerId: provider.id,
           regionId: region.id,
           baseUrl,
           modelId,
-          pricingStatus,
-          pricing: (pricingStatus === 'paid' || pricingStatus === 'api_free') ? {
-            inputPerMillion: pricingStatus === 'api_free' ? 0 : input,
-            outputPerMillion: pricingStatus === 'api_free' ? 0 : output,
-            currency: currencyInput.value.trim() || 'USD',
-            confirmedAt: new Date().toISOString()
-          } : null,
+          pricing,
           concurrency: Number(concurrencyInput.value) || 3,
           timeoutMs: Math.max(10, Math.min(600, Number(timeoutInput.value) || 180)) * 1000,
           batchInputTokens: batchBudgetInput.value.trim() === ''
@@ -539,7 +489,6 @@ export async function renderProviderSettingsCard(ctx) {
   });
 
   syncRegions();
-  syncPricing();
 
   formBlock = el('div', {className: 'setting-block', style: {marginTop: '18px'}},
     formTitle,
@@ -555,10 +504,11 @@ export async function renderProviderSettingsCard(ctx) {
       field(t('ai.v13.providers.model'), modelInput)),
     presetNote,
     el('div', {className: 'inline'}, loadModels, modelListBox),
+    el('div', {className: 'small tertiary', text: t('ai.v13.providers.priceOptional')}),
     el('div', {className: 'grid-2-equal'},
-      field(t('ai.v13.providers.pricingStatus'), pricingSelect),
-      field(t('ai.v13.providers.currency'), currencyInput)),
-    priceFields,
+      field(t('ai.v13.providers.inputPrice'), inputPrice),
+      field(t('ai.v13.providers.outputPrice'), outputPrice)),
+    field(t('ai.v13.providers.currency'), currencyInput),
     el('div', {className: 'grid-2-equal'},
       field(t('ai.v13.providers.concurrency'), concurrencyInput, t('ai.v13.providers.concurrencyHint')),
       field(t('ai.v13.providers.timeout'), timeoutInput, t('ai.v13.providers.timeoutHint'))),

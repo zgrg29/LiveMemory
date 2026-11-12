@@ -233,10 +233,11 @@ test('a request that times out is reported as a timeout and is not automatically
       consent: true,
       confirmBilling: true
     });
-    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'failed');
+    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
     const elapsed = Date.now() - before;
     assert.equal(status.error.code, 'PROVIDER_TIMEOUT');
     assert.equal(status.error.kind, 'timeout');
+    assert.equal(status.canResume, true);
     assert.equal(status.error.receivedHeaders, false);
     assert.equal(status.attemptStats.total, 1);
     assert.equal(status.attemptStats.timedOut, 1);
@@ -388,16 +389,15 @@ test('streaming works for the Anthropic Messages protocol too', async (t) => {
   });
 });
 
-test('an in-flight request past the task deadline keeps its own timeout instead of being task-aborted', async (t) => {
+test('an in-flight request times out on its own clock and becomes resumable, not task-aborted', async (t) => {
   await withServer(t, async (server) => {
     const session = seedSession(server.db, {id: 'ses_task_budget', messageCount: 6, viewerCount: 2, startedAt: T0});
     let fakeNow = Date.now();
     server.analysisRunner.now = () => fakeNow;
     server.analysisRunner.fetchImpl = async () => {
-      // The task clock crosses the 60-minute deadline while this request is
-      // already in flight. It must be bounded by its own timeout, not by the
-      // task budget; the provider timeout is the real failure here.
-      fakeNow += server.analysisRunner.taskTimeoutMs + 1000;
+      // The task clock crosses 60 minutes while this request is already in
+      // flight. It must be bounded by its own timeout, not by a task budget.
+      fakeNow += 61 * 60 * 1000;
       throw Object.assign(new Error('timeout'), {name: 'TimeoutError'});
     };
     const config = paidConfig(server);
@@ -409,12 +409,12 @@ test('an in-flight request past the task deadline keeps its own timeout instead 
       consent: true,
       confirmBilling: true
     });
-    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'failed');
+    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
     assert.equal(status.error.code, 'PROVIDER_TIMEOUT', 'the in-flight request keeps its own timeout');
+    assert.equal(status.canResume, true);
     assert.equal(status.attemptStats.total, 1);
     assert.equal(status.attemptStats.timedOut, 1);
-    assert.equal(status.taskRemainingMs, 0);
-    assert.equal(status.taskBudgetState, 'hard');
+    assert.equal(status.taskElapsedMs >= 60 * 60 * 1000, true);
   });
 });
 

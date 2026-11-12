@@ -287,32 +287,16 @@ export class ProviderConfigStore {
     }
     const modelId = String(input.modelId ?? existing?.modelId ?? '').trim();
     const modelChanged = Boolean(existing && modelId !== existing.modelId);
-    const pricingStatus = normalizePricingStatus(
-      input.pricingStatus ?? existing?.pricingStatus,
-      {fallback: PRICING_STATUS.UNKNOWN}
-    );
     const pricing = Object.prototype.hasOwnProperty.call(input, 'pricing')
       ? normalizePricing(input.pricing)
       : normalizePricing(existing?.pricing);
-    if (pricingStatus === PRICING_STATUS.PAID && !pricing) {
-      throw Object.assign(new Error('PRICING_REQUIRED'), {code: 'PRICING_REQUIRED'});
-    }
-    if (pricingStatus === PRICING_STATUS.PAID
-      && pricing
-      && pricing.inputPerMillion === 0
-      && pricing.outputPerMillion === 0) {
-      // A "paid" model cannot be priced at zero in both directions. Free models
-      // must be configured as api_free; otherwise the budget/memory gate would
-      // be bypassed by a contradictory price declaration.
-      throw Object.assign(new Error('PRICING_INVALID'), {code: 'PRICING_INVALID'});
-    }
-    if (pricingStatus === PRICING_STATUS.API_FREE) {
-      const zeroPrice = pricing && pricing.inputPerMillion === 0 && pricing.outputPerMillion === 0;
-      const freeSuffix = /:free$/i.test(modelId);
-      if (!zeroPrice && !freeSuffix) {
-        throw Object.assign(new Error('FREE_PRICING_UNVERIFIED'), {code: 'FREE_PRICING_UNVERIFIED'});
-      }
-    }
+    // Pricing is optional display metadata. A partial or empty price simply
+    // means "unknown"; it never blocks a request, a capability test, or memory.
+    const pricingStatus = pricing
+      ? (pricing.inputPerMillion === 0 && pricing.outputPerMillion === 0
+        ? PRICING_STATUS.API_FREE
+        : PRICING_STATUS.PAID)
+      : PRICING_STATUS.UNKNOWN;
     return {
       provider,
       region,

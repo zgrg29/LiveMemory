@@ -102,15 +102,6 @@ export function estimateCost({pricing, inputTokens, outputTokens, currency = nul
   };
 }
 
-export function normalizeBudget(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
-  const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount < 0) return null;
-  const currency = String(input.currency ?? 'USD').toUpperCase().slice(0, 8);
-  if (!/^[A-Z]{3,8}$/.test(currency)) return null;
-  return {amount, currency};
-}
-
 /** Add usage returned by a provider and cost it if pricing is available. */
 export function addUsage(total, usage, pricing) {
   const next = {
@@ -130,26 +121,12 @@ export function addUsage(total, usage, pricing) {
   return next;
 }
 
-export function budgetRemaining(budget, usage) {
-  if (!budget || !usage?.cost) return null;
-  if (budget.currency !== usage.cost.currency) return null;
-  return {
-    amount: Math.max(0, budget.amount - usage.cost.amount),
-    currency: budget.currency,
-    exceeded: usage.cost.amount >= budget.amount
-  };
-}
-
 /**
- * Gate for long-term profiling. All conditions are required:
- * paid status, explicit pricing, capability test specifically for memory, and
- * the user's explicit opt-in.
+ * Long-term profiling gate. Only a verified technical memory capability is
+ * required; price, a free/paid label, and billing confirmation never block it.
  */
-export function memoryPermission({pricingStatus, pricing, capabilities, optIn}) {
+export function memoryPermission({capabilities} = {}) {
   const reasons = [];
-  if (optIn !== true) reasons.push('OPT_IN_REQUIRED');
-  if (pricingStatus !== PRICING_STATUS.PAID) reasons.push('PAID_MODEL_REQUIRED');
-  if (!pricing) reasons.push('PRICING_UNKNOWN');
   if (capabilities?.memory !== true) reasons.push('MEMORY_CAPABILITY_UNVERIFIED');
   if (capabilities?.session !== true) reasons.push('SESSION_CAPABILITY_UNVERIFIED');
   return {allowed: reasons.length === 0, reasons};

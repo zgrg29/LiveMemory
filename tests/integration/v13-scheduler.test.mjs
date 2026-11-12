@@ -243,11 +243,12 @@ test('a failed memory batch can be resumed without repeating imported batches', 
     optInMemory: true
   });
   for (let index = 0; index < 200; index += 1) {
-    if (['failed', 'partial', 'complete'].includes(server.analysisRunner.getStatus(session.id).status)) break;
+    if (['failed', 'partial', 'needs_action', 'complete'].includes(server.analysisRunner.getStatus(session.id).status)) break;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   const failed = server.analysisRunner.getStatus(session.id);
-  assert.equal(failed.status, 'failed', JSON.stringify(failed));
+  assert.equal(failed.status, 'needs_action', JSON.stringify(failed));
+  assert.equal(failed.canResume, true);
   assert.equal(failed.memoryJob.memoryCoverage.covered, 10);
   assert.equal(requestedBatches.length, 2);
 

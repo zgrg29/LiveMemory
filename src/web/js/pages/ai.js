@@ -31,7 +31,7 @@ import {chooseInitialSessionId} from './ai-selection.js';
  */
 
 const CONSENT_KEY = 'livememory.aiConsent.v1';
-const TERMINAL = new Set(['complete', 'partial', 'failed', 'canceled', 'interrupted']);
+const TERMINAL = new Set(['complete', 'partial', 'failed', 'canceled', 'interrupted', 'needs_action']);
 
 function field(label, control, hint = null) {
   return el('div', {className: 'field'},
@@ -93,16 +93,12 @@ function rememberConsent() {
 }
 
 function priceText(ctx, config) {
-  if (!config) return ctx.t('ai.v13.price.unknown');
-  if (config.pricingStatus === 'api_free') return ctx.t('ai.v13.price.free');
-  if (config.pricingStatus === 'paid' && config.pricing) {
-    return ctx.t('ai.v13.price.paidValue', {
-      input: String(config.pricing.inputPerMillion),
-      output: String(config.pricing.outputPerMillion),
-      currency: config.pricing.currency
-    });
-  }
-  return ctx.t('ai.v13.price.unknown');
+  if (!config || !config.pricing) return ctx.t('ai.v13.price.optional');
+  return ctx.t('ai.v13.price.paidValue', {
+    input: String(config.pricing.inputPerMillion),
+    output: String(config.pricing.outputPerMillion),
+    currency: config.pricing.currency
+  });
 }
 
 function configLine(config) {
@@ -112,8 +108,6 @@ function configLine(config) {
 
 function memoryAllowed(config) {
   return Boolean(config
-    && config.pricingStatus === 'paid'
-    && config.pricing
     && config.capabilities?.session
     && config.capabilities?.memory);
 }
@@ -190,7 +184,7 @@ export const aiPage = {
       stepCard(1, t('ai.center.stepSession'), t('ai.center.stepSessionDesc')),
       stepCard(2, t('ai.center.stepConfig'), t('ai.center.stepConfigDesc')),
       stepCard(3, t('ai.center.stepScope'), t('ai.center.stepScopeDesc')),
-      stepCard(4, t('ai.center.stepCost'), t('ai.center.stepCostDesc')),
+      stepCard(4, t('ai.center.stepConfirm'), t('ai.center.stepConfirmDesc')),
       stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
     let selectedId = chooseInitialSessionId(sessions, requestedId);
@@ -225,27 +219,10 @@ export const aiPage = {
     if (defaultConfig) configSelect.value = defaultConfig.id;
 
     const scopeSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.scopeLabel')}});
-    const budgetInput = el('input', {
-      className: 'input input--compact',
-      type: 'number',
-      attrs: {min: '0', step: '0.01', placeholder: t('ai.v13.budget.placeholder')}
-    });
-    const confirmBilling = el('input', {type: 'checkbox'});
-    const optInMemory = el('input', {type: 'checkbox'});
     const configSummary = el('div', {className: 'small tertiary'});
     const pricingSummary = el('div', {className: 'small tertiary'});
     const scaleSummary = el('div', {className: 'def-list'});
     const scopeHint = el('div', {className: 'callout callout--neutral', hidden: true});
-    const billingRow = el('label', {className: 'choice'},
-      confirmBilling,
-      el('div', {className: 'choice-text'},
-        el('div', {className: 'choice-title', text: t('ai.v13.billing.confirm')}),
-        el('div', {className: 'choice-desc', text: t('ai.v13.billing.hint')})));
-    const memoryOptRow = el('label', {className: 'choice'},
-      optInMemory,
-      el('div', {className: 'choice-text'},
-        el('div', {className: 'choice-title', text: t('ai.v13.memory.optIn')}),
-        el('div', {className: 'choice-desc', text: t('ai.v13.memory.optInHint')})));
     const settingsLink = el('button', {
       className: 'button button--ghost button--small',
       type: 'button',
@@ -284,9 +261,6 @@ export const aiPage = {
         configNotice,
         field(t('ai.center.scopeLabel'), scopeSelect),
         scopeHint,
-        el('div', {className: 'grid-2-equal'},
-          field(t('ai.v13.budget.label'), budgetInput, t('ai.v13.budget.hint')),
-          el('div', {className: 'stack stack--tight'}, billingRow, memoryOptRow)),
         el('div', {className: 'divider'}),
         el('div', {className: 'small tertiary', text: t('ai.center.scaleTitle')}),
         scaleSummary,
@@ -381,10 +355,6 @@ export const aiPage = {
       scopeSelect.disabled = !allowed;
       scopeHint.hidden = allowed;
       scopeHint.textContent = allowed ? '' : t('ai.v13.run.locked');
-      memoryOptRow.hidden = !allowed || runScope === 'session';
-      billingRow.hidden = !config || config.pricingStatus === 'api_free';
-      if (!billingRow.hidden) confirmBilling.checked = false;
-      if (memoryOptRow.hidden) optInMemory.checked = false;
     }
 
     function renderSummary() {
@@ -420,9 +390,6 @@ export const aiPage = {
       } else if (state.kind === 'untested') {
         configNotice.hidden = false;
         configNotice.textContent = t('ai.center.configUntested');
-      } else if (state.kind === 'pricing_missing') {
-        configWarning.hidden = false;
-        configWarning.textContent = t('ai.center.configPricingMissing');
       }
       const messages = Number(session?.messageCount ?? 0);
       const viewers = Number(session?.uniqueViewerCount ?? 0);
@@ -438,30 +405,16 @@ export const aiPage = {
           el('span', {className: 'def-key', text: t('ai.center.scaleRequests')}),
           el('span', {className: 'def-value', text: requests === null
             ? t('ai.center.scaleRequestsAuto')
-            : formatInteger(requests, ctx.locale)})),
-        el('div', {className: 'def-row'},
-          el('span', {className: 'def-key', text: t('ai.center.scaleBudget')}),
-          el('span', {className: 'def-value', text: budgetInput.value
-            ? `${budgetInput.value} ${config?.pricing?.currency ?? ''}`
-            : t('ai.center.scaleNoBudget')})));
+            : formatInteger(requests, ctx.locale)})));
       syncStartGate();
     }
 
     function syncStartGate() {
       const config = selectedConfig();
       const state = providerConfigState(config);
-      const needsMemoryOptIn = runScope !== 'session';
       startButton.disabled = Boolean(busy)
         || status?.running === true
-        || !state.usable
-        || (state.needsBilling && !confirmBilling.checked)
-        || (needsMemoryOptIn && !optInMemory.checked);
-    }
-
-    function budgetPayload() {
-      const amount = Number(budgetInput.value);
-      if (!budgetInput.value || !Number.isFinite(amount) || amount <= 0) return null;
-      return {amount, currency: selectedConfig()?.pricing?.currency ?? 'USD'};
+        || !state.usable;
     }
 
     function stageLabel(current) {
@@ -666,18 +619,12 @@ export const aiPage = {
 
     function renderBudget(current) {
       const elapsed = Number(current?.taskElapsedMs);
-      if (!Number.isFinite(elapsed)) {
-        budgetStatus.hidden = true;
-        budgetStatus.textContent = '';
-        return;
-      }
-      const parts = [t('ai.center.budget.elapsed', {elapsed: elapsedLabel(elapsed)})];
-      if (current.taskBudgetState === 'soft') parts.push(t('ai.center.budget.soft'));
-      if (current.taskBudgetState === 'hard') parts.push(t('ai.center.budget.hard'));
-      if (current.taskBudgetState === 'paused') parts.push(t('ai.center.budget.paused'));
-      if (current.waitingAggregate) parts.push(t('ai.center.budget.waitingAggregate'));
-      if (current.canResume && current.status !== 'running') parts.push(t('ai.center.budget.resumeHint'));
-      budgetStatus.hidden = false;
+      const parts = [];
+      if (Number.isFinite(elapsed)) parts.push(t('ai.center.task.elapsed', {elapsed: elapsedLabel(elapsed)}));
+      if (current?.waitingAggregate) parts.push(t('ai.center.task.waitingAggregate'));
+      if (current?.needsUserAction) parts.push(t('ai.center.task.needsAction'));
+      if (current?.canResume && current.status !== 'running') parts.push(t('ai.center.task.resumeHint'));
+      budgetStatus.hidden = parts.length === 0;
       budgetStatus.textContent = parts.join(' · ');
     }
 
@@ -790,9 +737,13 @@ export const aiPage = {
       } else if (current.status === 'canceled') {
         statusText.textContent = t('ai.center.canceled');
       } else if (current.status === 'paused') {
-        statusText.textContent = current.error?.code === 'ANALYSIS_TASK_PAUSED'
-          ? t('ai.center.budget.pausedTitle')
-          : t('ai.v13.stage.paused');
+        statusText.textContent = t('ai.v13.stage.paused');
+      } else if (current.status === 'needs_action') {
+        statusText.textContent = t('ai.center.needsAction');
+        errorText.hidden = false;
+        errorText.textContent = reasonText(current.error?.code);
+        errorDetails.hidden = !current.error?.detail;
+        errorDetailsText.textContent = current.error?.detail ?? '';
       } else if (current.status === 'partial') {
         statusText.textContent = t('ai.v13.run.partial');
         errorText.hidden = false;
@@ -912,10 +863,7 @@ export const aiPage = {
           locale,
           mode: runScope,
           configId: config.id,
-          consent: true,
-          confirmBilling: confirmBilling.checked,
-          optInMemory: optInMemory.checked,
-          budget: budgetPayload()
+          consent: true
         });
         statusEpoch += 1;
         renderStatus(current);
@@ -953,10 +901,7 @@ export const aiPage = {
         try {
           const current = await api.post('/api/ai/analyze/resume', {
             sessionId: selectedId,
-            consent: true,
-            confirmBilling: confirmBilling.checked,
-            optInMemory: optInMemory.checked,
-            budget: budgetPayload()
+            consent: true
           });
           renderStatus(current);
           if (current.running) timer = window.setTimeout(refreshStatus, 800);
@@ -979,13 +924,8 @@ export const aiPage = {
     configSelect.addEventListener('change', renderAll);
     scopeSelect.addEventListener('change', () => {
       runScope = scopeSelect.value;
-      memoryOptRow.hidden = runScope === 'session';
-      optInMemory.checked = false;
       renderSummary();
     });
-    confirmBilling.addEventListener('change', syncStartGate);
-    optInMemory.addEventListener('change', syncStartGate);
-    budgetInput.addEventListener('input', () => renderSummary());
     languageSelect.addEventListener('change', () => {
       locale = languageSelect.value;
     });

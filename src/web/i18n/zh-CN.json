@@ -506,8 +506,8 @@
       "stepConfigDesc": "显示当前服务商、区域与模型；没有配置时先前往设置。",
       "stepScope": "选择分析内容",
       "stepScopeDesc": "单场直播、长期观众画像，或两者。",
-      "stepCost": "确认费用",
-      "stepCostDesc": "查看模型价格、任务规模与预算保护。",
+      "stepConfirm": "确认任务",
+      "stepConfirmDesc": "查看任务规模与预计请求数；价格仅用于展示，不影响执行。",
       "stepStart": "开始分析",
       "stepStartDesc": "点击一次，程序自动生成、校验并保存结果。",
       "setupTitle": "分析设置",
@@ -522,7 +522,6 @@
       "configMissingKey": "已有 API 配置，但缺少可用的 API Key。请前往设置重新填写密钥。",
       "configTestFailed": "API Key 测试失败：{reason}。请检查 Key、模型与网络后重试。",
       "configUntested": "API Key 已保存，但尚未完成能力检测。请前往设置点击「检测能力」；这不是“未配置 API Key”。",
-      "configPricingMissing": "已保存 API Key，但付费模型缺少价格信息，无法执行预算保护。请前往设置补充价格。",
       "configNotUsable": "当前 API 配置还不能开始分析，请按提示前往设置检查。",
       "progressSession": "单场报告：{done}/{total}",
       "progressMemory": "长期画像：{done}/{total} 批",
@@ -534,8 +533,6 @@
       "scaleMessages": "聊天消息",
       "scaleViewers": "可识别观众",
       "scaleRequests": "预计请求数",
-      "scaleBudget": "预算上限",
-      "scaleNoBudget": "未设置（不启用预算保护）",
       "start": "开始 AI 分析",
       "starting": "正在启动…",
       "started": "AI 分析已开始。",
@@ -548,15 +545,13 @@
       "errorDetails": "查看技术详情",
       "cancel": "取消分析",
       "eta": "预计剩余 {time}",
-      "budget": {
+      "task": {
         "elapsed": "已运行 {elapsed}",
-        "soft": "分析时间较长，但任务仍在进行",
-        "hard": "已达到任务时间预算：不再启动新批次，正在等待在途请求或最终汇总",
-        "paused": "任务已因时间预算暂停；已完成批次已保存，可继续",
-        "pausedTitle": "分析已暂停（时间预算），可继续未完成部分",
         "waitingAggregate": "正在等待最终汇总",
+        "needsAction": "需要处理：已完成批次已保存，可修复配置后继续",
         "resumeHint": "继续不会重复已完成批次"
       },
+      "needsAction": "分析需要你处理，已完成批次已保存",
       "consentTitle": "发送分析数据前确认",
       "consentBody": "本次分析会把当前场次的聊天、统计和（如选择）相关观众记忆发送给你配置的 AI 服务。数据不经过 LiveMemory 开发者服务器。",
       "consentHint": "只发送当前任务所需的数据；不发送数据库文件、登录凭据或不相关的直播记录。",
@@ -587,7 +582,6 @@
         "ANALYSIS_FAILED": "分析未能完成。",
         "ANALYSIS_CANCELED": "分析已取消，已完成的结果会保留。",
         "ANALYSIS_INTERRUPTED": "分析被中断；可以继续，已完成的批次会跳过。",
-        "ANALYSIS_BUDGET_EXCEEDED": "已达到本次任务的预算上限，后续请求已停止。",
         "ANALYSIS_MEMORY_OUT_OF_ORDER": "该主播已有更新场次的长期画像；为避免旧记忆覆盖新记忆，已拒绝按较旧场次更新。",
         "ANALYSIS_MEMORY_NO_VIEWERS": "本场直播没有可用于建立长期画像的可识别观众。",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "本场直播没有可确认的主播身份，无法建立长期画像。",
@@ -612,8 +606,6 @@
         "ANALYSIS_SESSION_NOT_FOUND": "对应的直播场次已不存在。",
         "PROVIDER_STREAM_INTERRUPTED": "模型输出中断，本次结果未保存；可恢复未完成批次。",
         "PROVIDER_STREAM_ERROR": "模型流式响应报错，本次结果未保存。",
-        "ANALYSIS_TASK_TIMEOUT": "任务已达到总时间预算，后续请求已停止；已完成批次已保留。",
-        "ANALYSIS_TASK_PAUSED": "任务已达到时间预算并暂停；已完成批次已保存，可继续未完成部分。",
         "AUTO_OUTPUT_DEGENERATED": "模型输出重复退化且不完整，未保存结果。",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "批次结果太多，无法一次汇总；批次结果已保留。请降低批次上限或改用上下文更大的模型。",
         "ANALYSIS_CONTEXT_TOO_SMALL": "模型上下文太小，固定提示词与最低批次内容放不下；请换用上下文更大的模型或提高批次上限。",
@@ -1061,27 +1053,13 @@
         "none": "尚未配置 API 模型，请先在设置中添加。",
         "needCapability": "该模型尚未通过单场分析能力检测，请先在设置中点击「检测能力」。"
       },
-      "budget": {
-        "label": "单任务预算上限",
-        "hint": "留空表示不限制。仅在价格与币种已知时执行保护。",
-        "placeholder": "例如 0.50"
-      },
-      "billing": {
-        "confirm": "我确认此模型可能产生费用",
-        "hint": "费用未知或付费模型必须明确确认后才会发出请求。"
-      },
       "memory": {
-        "optIn": "我明确开启长期观众画像",
-        "optInHint": "长期画像需要付费模型、价格信息和通过长期画像能力验证；不会自动分析全部历史观众。",
-        "ready": "此配置已通过长期画像能力检测。一场直播也可以生成画像：请选择「仅长期画像」或「单场直播 + 长期画像」，并勾选开启。"
+        "ready": "此配置已通过长期画像能力检测。选择「仅长期画像」或「单场直播 + 长期画像」即可执行。"
       },
       "price": {
-        "unknown": "费用未知",
-        "free": "免费模型",
-        "paid": "付费模型",
+        "optional": "价格未填写（仅统计 Token，不计算费用）",
         "manual": "手动模式不调用 API",
-        "paidValue": "输入 {input} / 输出 {output} {currency} 每百万 token",
-        "status": "费用状态"
+        "paidValue": "输入 {input} / 输出 {output} {currency} 每百万 token"
       },
       "run": {
         "title": "创建分析任务",
@@ -1162,6 +1140,7 @@
         "currency": "币种",
         "inputPrice": "输入价格 / 百万 token",
         "outputPrice": "输出价格 / 百万 token",
+        "priceOptional": "价格字段全部可选。填写完整时按实际 Token 显示费用；留空或只填一项时正常分析，但不计算总费用。",
         "localTitle": "允许访问本机/局域网模型服务",
         "localDesc": "仅在你明确运行本地模型时勾选；这会跳过私网地址拦截。",
         "concurrency": "初始并发数",

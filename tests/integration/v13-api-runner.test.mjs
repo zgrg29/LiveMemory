@@ -193,7 +193,7 @@ test('a broadcast with no identifiable viewers keeps its session report and skip
   assert.equal(failed.error.code, 'ANALYSIS_MEMORY_NO_VIEWERS');
 });
 
-test('the per-task budget stops paid requests before they are sent', async (t) => {
+test('a stale per-task budget field is ignored and never blocks analysis', async (t) => {
   const temp = createTempDir();
   let calls = 0;
   const server = await startServer({
@@ -232,13 +232,13 @@ test('the per-task budget stops paid requests before they are sent', async (t) =
     budget: {amount: 0.0000001, currency: 'USD'}
   });
   for (let index = 0; index < 100; index += 1) {
-    if (server.analysisRunner.getStatus(session.id).status === 'failed') break;
+    const current = server.analysisRunner.getStatus(session.id);
+    if (current.status !== 'running') break;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   const status = server.analysisRunner.getStatus(session.id);
-  assert.equal(status.status, 'failed');
-  assert.equal(status.error.code, 'ANALYSIS_BUDGET_EXCEEDED');
-  assert.equal(calls, 0);
+  assert.ok(calls > 0, 'the request is sent; the legacy budget field has no effect');
+  assert.notEqual(status.error?.code, 'ANALYSIS_BUDGET_EXCEEDED');
 });
 
 test('configured free API runner analyses only one session and saves it', async (t) => {
@@ -326,7 +326,7 @@ test('configured free API runner analyses only one session and saves it', async 
       optInMemory: true
     })
   });
-  assert.equal(memory.status, 403);
+  assert.equal(memory.status, 409);
   const payload = await memory.json();
-  assert.equal(payload.error.code, 'AI_MEMORY_PERMISSION_DENIED');
+  assert.equal(payload.error.code, 'AI_MEMORY_CAPABILITY_REQUIRED');
 });

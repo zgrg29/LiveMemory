@@ -229,8 +229,9 @@ test('a failed session batch does not cancel or lose a sibling batch that is alr
     consent: true,
     confirmBilling: true
   });
-  const failed = await waitForStatus(server.analysisRunner, session.id, (value) => value.status === 'failed');
+  const failed = await waitForStatus(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
   assert.equal(failed.error.code, 'PROVIDER_HTTP_ERROR');
+  assert.equal(failed.canResume, true);
   assert.ok(failed.saved.sessionBatches >= 1, JSON.stringify({saved: failed.saved, sessionJob: failed.sessionJob, error: failed.error}));
   const jobId = failed.sessionJobId;
   const savedBeforeResume = listResults(server.db, jobId).filter((row) => row.batchIndex !== null);

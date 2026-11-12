@@ -506,8 +506,8 @@
       "stepConfigDesc": "Shows the current provider, region and model. Open settings first if none exists.",
       "stepScope": "Choose what to analyse",
       "stepScopeDesc": "Session report, long-term viewer profiles, or both.",
-      "stepCost": "Confirm cost",
-      "stepCostDesc": "Review model pricing, task size and budget protection.",
+      "stepConfirm": "Confirm the task",
+      "stepConfirmDesc": "Review task size and estimated requests; price is display-only and never blocks execution.",
       "stepStart": "Start analysis",
       "stepStartDesc": "One click: the program generates, validates and saves the result.",
       "setupTitle": "Analysis settings",
@@ -522,7 +522,6 @@
       "configMissingKey": "An API configuration exists, but no usable API key is saved. Re-enter the key in Settings.",
       "configTestFailed": "API key test failed: {reason}. Check the key, model and network, then retry.",
       "configUntested": "The API key is saved, but the capability test has not completed. Run “Test capability” in Settings; this is not a missing key.",
-      "configPricingMissing": "The API key is saved, but this paid model has no pricing information, so budget protection cannot run. Add the price in Settings.",
       "configNotUsable": "The current API configuration cannot start analysis yet. Follow the hint and check Settings.",
       "progressSession": "Session report: {done}/{total}",
       "progressMemory": "Long-term profiles: {done}/{total} batches",
@@ -534,8 +533,6 @@
       "scaleMessages": "Chat messages",
       "scaleViewers": "Identifiable viewers",
       "scaleRequests": "Estimated requests",
-      "scaleBudget": "Budget limit",
-      "scaleNoBudget": "Not set (budget protection off)",
       "start": "Start AI analysis",
       "starting": "Starting…",
       "started": "AI analysis started.",
@@ -548,15 +545,13 @@
       "errorDetails": "Technical details",
       "cancel": "Cancel analysis",
       "eta": "about {time} remaining",
-      "budget": {
+      "task": {
         "elapsed": "Running for {elapsed}",
-        "soft": "This analysis is taking a while, but it is still running",
-        "hard": "Task time budget reached: no new batches will start; waiting for in-flight requests or the final merge",
-        "paused": "Paused at the time budget; completed batches are saved and can be resumed",
-        "pausedTitle": "Analysis paused at the time budget; unfinished work can continue",
         "waitingAggregate": "Waiting for the final merge",
+        "needsAction": "Needs your action: completed batches are saved; fix the configuration and continue",
         "resumeHint": "Resuming will not repeat completed batches"
       },
+      "needsAction": "Analysis needs your action; completed batches are saved",
       "consentTitle": "Confirm data transmission",
       "consentBody": "This analysis sends the selected broadcast's chat, statistics and (if chosen) related viewer memories to the AI service you configured. Data does not pass through a LiveMemory developer server.",
       "consentHint": "Only data needed for this task is sent. The database file, login credentials and unrelated broadcasts are never sent.",
@@ -587,7 +582,6 @@
         "ANALYSIS_FAILED": "The analysis could not finish.",
         "ANALYSIS_CANCELED": "The analysis was canceled; completed results are kept.",
         "ANALYSIS_INTERRUPTED": "The analysis was interrupted. Resume skips completed batches.",
-        "ANALYSIS_BUDGET_EXCEEDED": "The task budget limit was reached; further requests stopped.",
         "ANALYSIS_MEMORY_OUT_OF_ORDER": "A newer broadcast already has long-term profiles for this broadcaster. Updating from an older broadcast was refused so old memory cannot overwrite newer memory.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "This broadcast has no identifiable viewers available for long-term profiles.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "This broadcast has no confirmed broadcaster identity, so long-term profiles cannot be created.",
@@ -612,8 +606,6 @@
         "ANALYSIS_SESSION_NOT_FOUND": "The broadcast no longer exists.",
         "PROVIDER_STREAM_INTERRUPTED": "The model output was interrupted, so this result was not saved. Unfinished batches can be resumed.",
         "PROVIDER_STREAM_ERROR": "The model stream reported an error, so this result was not saved.",
-        "ANALYSIS_TASK_TIMEOUT": "The task time budget was reached and later requests were stopped. Completed batches are preserved.",
-        "ANALYSIS_TASK_PAUSED": "The task reached its time budget and paused. Completed batches are saved; unfinished work can be resumed.",
         "AUTO_OUTPUT_DEGENERATED": "The model output degenerated into repetition and is incomplete, so nothing was saved.",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "There are too many batch results to merge in one request. Batch results are preserved; lower the batch budget or use a model with a larger context.",
         "ANALYSIS_CONTEXT_TOO_SMALL": "The model context is too small for the fixed prompt plus the minimum batch content; use a larger-context model or raise the batch budget.",
@@ -1061,27 +1053,13 @@
         "none": "No API model configured yet. Add one in Settings.",
         "needCapability": "This model has not passed the session-analysis capability test. Run “Test capabilities” in Settings first."
       },
-      "budget": {
-        "label": "Per-task budget",
-        "hint": "Leave empty for no limit. Protection applies only when price and currency are known.",
-        "placeholder": "e.g. 0.50"
-      },
-      "billing": {
-        "confirm": "I understand this model may charge me",
-        "hint": "Paid or unknown-pricing models require explicit confirmation before any request."
-      },
       "memory": {
-        "optIn": "Explicitly enable long-term viewer profiles",
-        "optInHint": "Long-term profiles require a paid model with pricing and a passed memory capability test. Historical viewers are never analysed automatically.",
-        "ready": "This configuration passed the memory capability test. One session is enough: choose “Long-term profiles only” or “Session + long-term profiles”, then enable it."
+        "ready": "This configuration passed the memory capability test. Choose “Long-term profiles only” or “Session + long-term profiles” to run it."
       },
       "price": {
-        "unknown": "Pricing unknown",
-        "free": "Free model",
-        "paid": "Paid model",
+        "optional": "Price not set (tokens are counted; no cost is calculated)",
         "manual": "Manual mode makes no API request",
-        "paidValue": "Input {input} / output {output} {currency} per million tokens",
-        "status": "Pricing status"
+        "paidValue": "Input {input} / output {output} {currency} per million tokens"
       },
       "run": {
         "title": "Create an analysis task",
@@ -1162,6 +1140,7 @@
         "currency": "Currency",
         "inputPrice": "Input price / million tokens",
         "outputPrice": "Output price / million tokens",
+        "priceOptional": "All price fields are optional. Fill both to show a cost from real token usage; leave them empty or partial to analyze normally without a total cost.",
         "localTitle": "Allow a local/LAN model service",
         "localDesc": "Check only if you deliberately run a local model; this bypasses private-address blocking.",
         "concurrency": "Initial concurrency",

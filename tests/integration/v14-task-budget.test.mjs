@@ -13,13 +13,13 @@ function iso(ms) {
 function sessionAnswer() {
   return JSON.stringify({
     session_topics: {
-      summary: 'Budget test batch summary.',
+      summary: 'Long-running budget test.',
       topics: [{
-        title: 'Budget topic',
+        title: 'Long topic',
         started_at: iso(T0 + 1000),
         ended_at: iso(T0 + 2000),
         summary: 'A topic.',
-        key_points: ['budget'],
+        key_points: ['long'],
         confidence: 0.7,
         evidence: 'observed',
         message_refs: [1]
@@ -34,7 +34,7 @@ function sessionAnswer() {
 function aggregateAnswer(total) {
   return JSON.stringify({
     session_topics: {
-      summary: 'Merged budget report.',
+      summary: 'Merged long report.',
       topics: [{
         title: 'Merged topic',
         started_at: iso(T0 + 1000),
@@ -115,7 +115,6 @@ async function withServer(t, fn) {
   return fn(server);
 }
 
-/** Parse the batch metadata that the runner embeds in the prompt. */
 function batchMeta(text) {
   const match = /"batch":\{"index":(\d+),"total":(\d+)/.exec(text);
   return match ? {index: Number(match[1]), total: Number(match[2])} : null;
@@ -126,141 +125,36 @@ function aggregateTotal(text) {
   return match ? Number(match[1]) : 1;
 }
 
-test('a task still runs normally after 20 minutes', async (t) => {
-  await withServer(t, async (server) => {
-    const session = seedSession(server.db, {id: 'ses_budget_20m', messageCount: 6, viewerCount: 2, startedAt: T0});
-    let fakeNow = Date.now();
-    server.analysisRunner.now = () => fakeNow;
-    server.analysisRunner.fetchImpl = async () => {
-      fakeNow += 21 * MINUTE;
-      return sse(sessionAnswer());
-    };
-    const config = paidConfig(server);
-    await server.analysisRunner.start({
-      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id,
-      consent: true, confirmBilling: true
+test('no task time limit: a task still completes after 20 and 60 minutes', async (t) => {
+  for (const advanceMinutes of [21, 61]) {
+    await withServer(t, async (server) => {
+      const session = seedSession(server.db, {
+        id: `ses_no_time_limit_${advanceMinutes}`,
+        messageCount: 6,
+        viewerCount: 2,
+        startedAt: T0
+      });
+      let fakeNow = Date.now();
+      server.analysisRunner.now = () => fakeNow;
+      server.analysisRunner.fetchImpl = async () => {
+        fakeNow += advanceMinutes * MINUTE;
+        return sse(sessionAnswer());
+      };
+      const config = paidConfig(server);
+      await server.analysisRunner.start({
+        sessionId: session.id, locale: 'en', mode: 'session', configId: config.id, consent: true
+      });
+      const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
+      assert.equal(status.error, null);
+      assert.ok(status.taskElapsedMs >= advanceMinutes * MINUTE);
+      assert.equal(status.sessionReportDone, true);
     });
-    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
-    assert.equal(status.error, null);
-    assert.ok(status.taskElapsedMs >= 20 * MINUTE);
-    assert.notEqual(status.taskBudgetState, 'paused');
-    assert.equal(status.sessionReportDone, true);
-  });
+  }
 });
 
-test('45 minutes is a visible soft warning, not a stop', async (t) => {
+test('a request timeout preserves progress and resumes the unfinished aggregate only', async (t) => {
   await withServer(t, async (server) => {
-    const session = seedSession(server.db, {id: 'ses_budget_45m', messageCount: 6, viewerCount: 2, startedAt: T0});
-    let fakeNow = Date.now();
-    server.analysisRunner.now = () => fakeNow;
-    server.analysisRunner.fetchImpl = async () => {
-      fakeNow += 46 * MINUTE;
-      return sse(sessionAnswer());
-    };
-    const config = paidConfig(server);
-    await server.analysisRunner.start({
-      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id,
-      consent: true, confirmBilling: true
-    });
-    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
-    assert.equal(status.sessionReportDone, true);
-    assert.equal(status.taskBudgetState, 'soft');
-    assert.equal(status.taskSoftBudgetReached, true);
-    assert.equal(status.taskBudgetReached, false);
-  });
-});
-
-test('the hard deadline stops new batches, lets the in-flight batch save, and resume skips it', async (t) => {
-  await withServer(t, async (server) => {
-    const session = seedSession(server.db, {id: 'ses_budget_pause', messageCount: 420, viewerCount: 3, startedAt: T0});
-    let fakeNow = Date.now();
-    server.analysisRunner.now = () => fakeNow;
-    const calls = [];
-    let advanceOnce = true;
-    server.analysisRunner.fetchImpl = async (url, options) => {
-      const body = JSON.parse(options.body);
-      const text = body.messages.map((message) => message.content).join('\n');
-      if (text.includes('AGGREGATE MERGE CONTRACT')) {
-        calls.push({kind: 'aggregate'});
-        return sse(aggregateAnswer(aggregateTotal(text)));
-      }
-      const meta = batchMeta(text);
-      calls.push({kind: 'batch', index: meta?.index ?? null});
-      if (advanceOnce) {
-        advanceOnce = false;
-        // This in-flight batch started before the deadline; the clock passes
-        // 60 minutes while it is still running. It must finish and save.
-        fakeNow += 61 * MINUTE;
-      }
-      return sse(sessionAnswer());
-    };
-    const config = paidConfig(server, {batchInputTokens: 2000, contextLength: 32000, concurrency: 1});
-    await server.analysisRunner.start({
-      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id,
-      consent: true, confirmBilling: true
-    });
-    const paused = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'paused');
-    assert.equal(paused.error.code, 'ANALYSIS_TASK_PAUSED');
-    assert.equal(paused.taskBudgetState, 'paused');
-    assert.equal(paused.canResume, true);
-    assert.ok(paused.saved.sessionBatches >= 1);
-    assert.ok(paused.pendingSessionBatches > 0);
-    assert.equal(calls.filter((call) => call.kind === 'batch').length, 1, 'only the in-flight batch was sent');
-
-    const batchCallsBeforeResume = calls.filter((call) => call.kind === 'batch').length;
-    await server.analysisRunner.resume(session.id, {consent: true, confirmBilling: true});
-    const completed = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
-    assert.equal(completed.sessionReportDone, true);
-    const batchCallsAfterResume = calls.filter((call) => call.kind === 'batch').length;
-    assert.ok(batchCallsAfterResume > batchCallsBeforeResume, 'resume runs the missing batches');
-    assert.equal(
-      calls.filter((call) => call.kind === 'batch' && call.index === 1).length,
-      1,
-      'the saved batch is never re-sent'
-    );
-  });
-});
-
-test('the final aggregate is still allowed when the deadline is reached at 7/7 batches', async (t) => {
-  await withServer(t, async (server) => {
-    const session = seedSession(server.db, {id: 'ses_budget_aggregate', messageCount: 420, viewerCount: 2, startedAt: T0});
-    let fakeNow = Date.now();
-    server.analysisRunner.now = () => fakeNow;
-    const calls = [];
-    server.analysisRunner.fetchImpl = async (url, options) => {
-      const body = JSON.parse(options.body);
-      const text = body.messages.map((message) => message.content).join('\n');
-      if (text.includes('AGGREGATE MERGE CONTRACT')) {
-        calls.push({kind: 'aggregate'});
-        return sse(aggregateAnswer(aggregateTotal(text)));
-      }
-      const meta = batchMeta(text);
-      calls.push({kind: 'batch', index: meta?.index ?? null});
-      if (meta && meta.index === meta.total) {
-        // All batches are done; the clock crosses the hard deadline immediately
-        // before the final merge. The merge must not be discarded.
-        fakeNow += 61 * MINUTE;
-      }
-      return sse(sessionAnswer());
-    };
-    const config = paidConfig(server, {batchInputTokens: 2000, contextLength: 32000, concurrency: 1});
-    await server.analysisRunner.start({
-      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id,
-      consent: true, confirmBilling: true
-    });
-    const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
-    assert.equal(status.sessionAggregateRequired, true);
-    assert.equal(status.sessionAggregateDone, true);
-    assert.equal(calls.filter((call) => call.kind === 'aggregate').length, 1);
-    assert.equal(status.status, 'complete');
-  });
-});
-
-test('a finished 7/7 session resumes directly into the final aggregate without repeating batches', async (t) => {
-  await withServer(t, async (server) => {
-    const session = seedSession(server.db, {id: 'ses_budget_resume_aggregate', messageCount: 420, viewerCount: 2, startedAt: T0});
-    let fakeNow = Date.now();
-    server.analysisRunner.now = () => fakeNow;
+    const session = seedSession(server.db, {id: 'ses_timeout_resume', messageCount: 420, viewerCount: 2, startedAt: T0});
     let failAggregate = true;
     const calls = [];
     server.analysisRunner.fetchImpl = async (url, options) => {
@@ -270,7 +164,7 @@ test('a finished 7/7 session resumes directly into the final aggregate without r
         calls.push({kind: 'aggregate'});
         if (failAggregate) {
           failAggregate = false;
-          throw Object.assign(new Error('synthetic aggregate timeout'), {name: 'TimeoutError'});
+          throw Object.assign(new Error('synthetic timeout'), {name: 'TimeoutError'});
         }
         return sse(aggregateAnswer(aggregateTotal(text)));
       }
@@ -280,21 +174,85 @@ test('a finished 7/7 session resumes directly into the final aggregate without r
     };
     const config = paidConfig(server, {batchInputTokens: 2000, contextLength: 32000, concurrency: 1});
     await server.analysisRunner.start({
-      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id,
-      consent: true, confirmBilling: true
+      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id, consent: true
     });
-    const failed = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'failed');
-    assert.equal(failed.error.code, 'PROVIDER_TIMEOUT');
-    assert.equal(failed.sessionAggregateRequired, true);
-    assert.equal(failed.sessionAggregateDone, false);
-    assert.equal(failed.canResume, true);
+    const waiting = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
+    assert.equal(waiting.error.code, 'PROVIDER_TIMEOUT');
+    assert.equal(waiting.canResume, true);
+    assert.ok(waiting.saved.sessionBatches > 0);
+    assert.equal(waiting.sessionAggregateDone, false);
     const batchesBefore = calls.filter((call) => call.kind === 'batch').length;
     const aggregatesBefore = calls.filter((call) => call.kind === 'aggregate').length;
 
-    await server.analysisRunner.resume(session.id, {consent: true, confirmBilling: true});
+    await server.analysisRunner.resume(session.id, {consent: true});
     const completed = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
     assert.equal(completed.sessionAggregateDone, true);
     assert.equal(calls.filter((call) => call.kind === 'batch').length, batchesBefore, 'no batch is re-sent');
     assert.equal(calls.filter((call) => call.kind === 'aggregate').length, aggregatesBefore + 1);
+  });
+});
+
+test('a balance failure is needs_action and resumes from the next batch', async (t) => {
+  await withServer(t, async (server) => {
+    const session = seedSession(server.db, {id: 'ses_balance_needs_action', messageCount: 420, viewerCount: 2, startedAt: T0});
+    let batchCalls = 0;
+    let blocked = true;
+    const calls = [];
+    server.analysisRunner.fetchImpl = async (url, options) => {
+      const body = JSON.parse(options.body);
+      const text = body.messages.map((message) => message.content).join('\n');
+      if (text.includes('AGGREGATE MERGE CONTRACT')) return sse(aggregateAnswer(aggregateTotal(text)));
+      const meta = batchMeta(text);
+      calls.push({kind: 'batch', index: meta?.index ?? null});
+      batchCalls += 1;
+      if (blocked && batchCalls === 2) {
+        return Response.json({error: {message: 'insufficient balance'}}, {status: 402});
+      }
+      return sse(sessionAnswer());
+    };
+    const config = paidConfig(server, {batchInputTokens: 2000, contextLength: 32000, concurrency: 1});
+    await server.analysisRunner.start({
+      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id, consent: true
+    });
+    const waiting = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
+    assert.equal(waiting.error.httpStatus, 402);
+    assert.equal(waiting.canResume, true);
+    assert.ok(waiting.saved.sessionBatches >= 1);
+    blocked = false;
+    await server.analysisRunner.resume(session.id, {consent: true});
+    const completed = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
+    assert.equal(completed.sessionReportDone, true);
+    const firstBatchCalls = calls.filter((call) => call.index === 1).length;
+    assert.equal(firstBatchCalls, 1, 'the completed first batch is never re-sent');
+  });
+});
+
+test('an auth failure is needs_action, keeps progress, and resumes after the key is fixed', async (t) => {
+  await withServer(t, async (server) => {
+    const session = seedSession(server.db, {id: 'ses_auth_needs_action', messageCount: 420, viewerCount: 2, startedAt: T0});
+    let calls = 0;
+    server.analysisRunner.fetchImpl = async (url, options) => {
+      calls += 1;
+      if (calls === 1) {
+        return Response.json({error: {message: 'invalid key'}}, {status: 401});
+      }
+      const body = JSON.parse(options.body);
+      const text = body.messages.map((message) => message.content).join('\n');
+      if (text.includes('AGGREGATE MERGE CONTRACT')) return sse(aggregateAnswer(aggregateTotal(text)));
+      return sse(sessionAnswer());
+    };
+    const config = paidConfig(server, {batchInputTokens: 2000, contextLength: 32000, concurrency: 1});
+    await server.analysisRunner.start({
+      sessionId: session.id, locale: 'en', mode: 'session', configId: config.id, consent: true
+    });
+    const waiting = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'needs_action');
+    assert.equal(waiting.error.code, 'PROVIDER_AUTH_FAILED');
+    assert.equal(waiting.needsUserAction, true);
+    assert.equal(waiting.canResume, true);
+    assert.equal(waiting.saved.sessionBatches, 0);
+
+    await server.analysisRunner.resume(session.id, {consent: true});
+    const completed = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'complete');
+    assert.equal(completed.sessionReportDone, true);
   });
 });

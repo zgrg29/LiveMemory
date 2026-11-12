@@ -30,12 +30,11 @@ test('a saved key with a failed test is a test failure, not a missing key', () =
   assert.equal(state.detail, 'auth failed');
 });
 
-test('a usable paid key requires billing confirmation and known pricing', () => {
+test('a usable key is ready regardless of pricing or billing confirmation', () => {
   assert.deepEqual(providerConfigState(base), {
     kind: 'ready',
-    usable: true,
-    needsBilling: true
+    usable: true
   });
-  assert.equal(providerConfigState({...base, pricing: null}).kind, 'pricing_missing');
-  assert.equal(providerConfigState({...base, pricingStatus: 'api_free'}).needsBilling, false);
+  assert.equal(providerConfigState({...base, pricing: null}).kind, 'ready');
+  assert.equal(providerConfigState({...base, pricingStatus: 'api_free'}).usable, true);
 });

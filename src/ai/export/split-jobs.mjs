@@ -139,7 +139,6 @@ export async function createSessionAnalysisJob({
   regionId = null,
   modelId = null,
   pricingStatus = null,
-  budget = null,
   costEstimate = null,
   tokenBudget = null,
   contextLength = null,
@@ -150,17 +149,11 @@ export async function createSessionAnalysisJob({
   const session = summary.session;
   const totalMessages = countSessionMessages(db, session.id);
   if (totalMessages === 0) return null;
-  if (totalMessages > MAX_ANALYSIS_MESSAGES) {
-    throw Object.assign(new Error('ANALYSIS_TOO_LARGE'), {code: 'ANALYSIS_TOO_LARGE'});
-  }
   const allMessages = listSessionMessagesAsc(db, {sessionId: session.id, limit: MAX_ANALYSIS_MESSAGES});
   if (allMessages.length !== totalMessages) {
     throw Object.assign(new Error('ANALYSIS_SESSION_CHANGED'), {code: 'ANALYSIS_SESSION_CHANGED'});
   }
-  const participants = listSessionViewers(db, session.id, {limit: MAX_ANALYSIS_VIEWERS + 1});
-  if (participants.length > MAX_ANALYSIS_VIEWERS) {
-    throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {code: 'ANALYSIS_TOO_MANY_VIEWERS'});
-  }
+  const participants = listSessionViewers(db, session.id, {limit: MAX_ANALYSIS_VIEWERS});
 
   const inputBudgetTarget = resolveBatchInputTokens({
     configured: tokenBudget,
@@ -415,7 +408,6 @@ export async function createSessionAnalysisJob({
         regionId,
         modelId,
         pricingStatus,
-        budget,
         costEstimate,
         aggregateTaskId: aggregateId,
         createdAt: now
@@ -589,13 +581,12 @@ export async function createViewerMemoryJob({
   exportsDir,
   viewersPerBatch = 10,
   excerptCap = 600,
-  maxBatches = 30,
+  maxBatches = Number.MAX_SAFE_INTEGER,
   providerConfigId = null,
   providerId = null,
   regionId = null,
   modelId = null,
   pricingStatus = null,
-  budget = null,
   costEstimate = null,
   tokenBudget = null,
   contextLength = null,
@@ -607,12 +598,9 @@ export async function createViewerMemoryJob({
   if (!session.broadcasterId) {
     throw Object.assign(new Error('MEMORY_BROADCASTER_REQUIRED'), {code: 'MEMORY_BROADCASTER_REQUIRED'});
   }
-  const allViewers = listSessionViewers(db, session.id, {limit: MAX_ANALYSIS_VIEWERS + 1});
+  const allViewers = listSessionViewers(db, session.id, {limit: MAX_ANALYSIS_VIEWERS});
   if (allViewers.length === 0) {
     throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {code: 'MEMORY_NO_VIEWERS'});
-  }
-  if (allViewers.length > MAX_ANALYSIS_VIEWERS) {
-    throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {code: 'ANALYSIS_TOO_MANY_VIEWERS'});
   }
   const allMessages = listSessionMessagesAsc(db, {
     sessionId: session.id,
@@ -928,7 +916,6 @@ export async function createViewerMemoryJob({
         regionId,
         modelId,
         pricingStatus,
-        budget,
         costEstimate,
         aggregateTaskId: null,
         createdAt: now

@@ -8,11 +8,10 @@ import {computeJobStatus} from '../tasks/status.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
 import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-jobs.mjs';
-import {ANALYSIS_MODE, MAX_ANALYSIS_VIEWERS, TASK_KIND} from '../constants.mjs';
+import {ANALYSIS_MODE, TASK_KIND} from '../constants.mjs';
 import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
-import {memoryPermission, addUsage, estimateCost, budgetRemaining} from '../providers/pricing.mjs';
-import {PRICING_STATUS} from '../providers/catalog.mjs';
+import {addUsage} from '../providers/pricing.mjs';
 import {AnalysisState} from '../runtime/state.mjs';
 import {
   extractJsonObject,
@@ -22,16 +21,10 @@ import {
 } from '../runtime/json.mjs';
 import {ProviderRequestScheduler, retryDelayMs} from '../runtime/scheduler.mjs';
 import {
-  DEFAULT_SOFT_TASK_BUDGET_MS,
-  DEFAULT_TASK_TIMEOUT_MS,
   ERROR_KIND,
   attemptRecord,
-  createTaskBudget,
   isCanceledError,
-  shouldRetryAttempt,
-  taskBudgetElapsed,
-  taskBudgetRemaining,
-  taskBudgetState
+  shouldRetryAttempt
 } from '../runtime/attempt.mjs';
 import {
   estimateTokens,
@@ -81,15 +74,7 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 180000;
 const DEFAULT_IDLE_TIMEOUT_MS = 60000;
-const MIN_ATTEMPT_WINDOW_MS = 15000;
 const MAX_CONCURRENCY = 8;
-/**
- * Paid providers are not limited by the old anonymous 30-batch ceiling. The
- * real safety bound is MAX_ANALYSIS_VIEWERS; at the smallest tested viewer batch
- * (10) this allows every allowed viewer to be assigned. The count is explicit,
- * never silently truncated.
- */
-const MAX_MEMORY_BATCHES = Math.ceil(MAX_ANALYSIS_VIEWERS / 10) + 1;
 
 /** Repair and aggregate must never recreate an unbounded prompt. */
 const MAX_REPAIR_INPUT_TOKENS = 48000;
@@ -113,18 +98,25 @@ function abortError() {
 }
 
 /**
- * A resumable pause, deliberately distinct from user cancel and from a failed
- * provider request. Completed batches stay saved; the next resume starts a new
- * task clock and only requests unfinished work.
+ * Errors the user can fix or retry later, or transient failures where the
+ * provider may already have processed the request. These must not discard the
+ * completed batches; the task becomes resumable instead of a dead failure.
  */
-function taskPausedError(detail = 'task-time-budget', extra = {}) {
-  return Object.assign(new Error('TASK_TIME_BUDGET_PAUSED'), {
-    code: 'ANALYSIS_TASK_PAUSED',
-    detail,
-    kind: ERROR_KIND.TIMEOUT,
-    resumable: true,
-    ...extra
-  });
+function needsUserAction(error) {
+  const code = String(error?.code ?? '');
+  if ([
+    'PROVIDER_AUTH_FAILED',
+    'PROVIDER_ENDPOINT_NOT_FOUND',
+    'PROVIDER_CONFIG_INVALID',
+    'PROVIDER_TIMEOUT',
+    'PROVIDER_RATE_LIMITED',
+    'PROVIDER_NETWORK_FAILED'
+  ].includes(code)) return true;
+  const status = Number(error?.status ?? 0);
+  if (code === 'PROVIDER_HTTP_ERROR' && [400, 401, 402, 403, 404, 408, 422, 429, 500, 502, 503, 504].includes(status)) {
+    return true;
+  }
+  return false;
 }
 
 function emptyAttemptStats() {
@@ -186,11 +178,10 @@ function schedulerKey(provider) {
  * for. Only user cancel/pause/shutdown aborts in-flight work, through the
  * external signal. The first error is re-thrown after every worker settles.
  */
-async function runPool(items, limit, worker, signal, {canStart = null} = {}) {
+async function runPool(items, limit, worker, signal) {
   let nextIndex = 0;
   let firstError = null;
   let stopped = false;
-  const control = {budgetStopped: false, completed: 0};
   const maxWorkers = Math.max(1, Math.min(Number(limit) || 1, items.length));
   const workers = Array.from({length: maxWorkers}, async () => {
     for (;;) {
@@ -199,18 +190,11 @@ async function runPool(items, limit, worker, signal, {canStart = null} = {}) {
         return;
       }
       if (stopped) return;
-      if (canStart && !canStart()) {
-        // The task deadline stops *scheduling*; requests already running keep
-        // their own timeouts and finish below.
-        control.budgetStopped = true;
-        return;
-      }
       const index = nextIndex;
       nextIndex += 1;
       if (index >= items.length) return;
       try {
         await worker(items[index], index, signal);
-        control.completed += 1;
       } catch (error) {
         if (!firstError) {
           firstError = signal?.aborted ? abortError() : error;
@@ -222,7 +206,6 @@ async function runPool(items, limit, worker, signal, {canStart = null} = {}) {
   });
   await Promise.allSettled(workers);
   if (firstError) throw firstError;
-  return control;
 }
 
 export class AnalysisRunner {
@@ -235,8 +218,6 @@ export class AnalysisRunner {
     fetchImpl = globalThis.fetch,
     maxRetries = 2,
     random = Math.random,
-    taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
-    softBudgetMs = DEFAULT_SOFT_TASK_BUDGET_MS,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
   }) {
     this.db = db;
@@ -247,11 +228,6 @@ export class AnalysisRunner {
     this.fetchImpl = fetchImpl;
     this.maxRetries = Math.max(0, Math.min(5, Number(maxRetries) || 0));
     this.random = random;
-    this.taskTimeoutMs = Math.max(60000, Number(taskTimeoutMs) || DEFAULT_TASK_TIMEOUT_MS);
-    this.softBudgetMs = Math.max(
-      60000,
-      Math.min(this.taskTimeoutMs, Number(softBudgetMs) || DEFAULT_SOFT_TASK_BUDGET_MS)
-    );
     this.idleTimeoutMs = Math.max(10000, Number(idleTimeoutMs) || DEFAULT_IDLE_TIMEOUT_MS);
     this.active = new Map();
     this.schedulers = new Map();
@@ -316,7 +292,7 @@ export class AnalysisRunner {
     }
   }
 
-  #checkProvider({mode, configId, consent, confirmBilling, optInMemory}) {
+  #checkProvider({mode, configId, consent}) {
     if (consent !== true) throw new AnalysisPermissionError('CONSENT_REQUIRED');
     if (!configId) throw new AnalysisPermissionError('PROVIDER_CONFIG_REQUIRED');
     const config = this.configStore.get(configId);
@@ -325,20 +301,10 @@ export class AnalysisRunner {
     if (!config.capabilities?.session) {
       throw new AnalysisPermissionError('SESSION_CAPABILITY_REQUIRED');
     }
-    if (mode !== ANALYSIS_MODE.SESSION) {
-      const permission = memoryPermission({
-        pricingStatus: config.pricingStatus,
-        pricing: config.pricing,
-        capabilities: config.capabilities,
-        optIn: optInMemory === true
-      });
-      if (!permission.allowed) {
-        throw new AnalysisPermissionError('MEMORY_PERMISSION_DENIED', {reasons: permission.reasons});
-      }
-    }
-    if (config.pricingStatus !== PRICING_STATUS.API_FREE
-      && confirmBilling !== true) {
-      throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
+    // Long-term profiling depends on a verified technical capability, never on
+    // price, a "paid/free" label, or a billing confirmation.
+    if (mode !== ANALYSIS_MODE.SESSION && config.capabilities?.memory !== true) {
+      throw new AnalysisPermissionError('MEMORY_CAPABILITY_REQUIRED');
     }
     const provider = providerFromConfig(config, {
       responseMode: this.state.getProviderMode(configId)
@@ -351,10 +317,7 @@ export class AnalysisRunner {
     locale = 'en',
     mode = ANALYSIS_MODE.SESSION,
     configId = null,
-    consent = false,
-    confirmBilling = false,
-    optInMemory = false,
-    budget = null
+    consent = false
   } = {}) {
     if (this.active.has(sessionId)) throw new AnalysisPermissionError('ALREADY_RUNNING');
     // The console exposes the user-facing value `both`; the database and the
@@ -364,7 +327,7 @@ export class AnalysisRunner {
     if (![ANALYSIS_MODE.SESSION, ANALYSIS_MODE.MEMORY, ANALYSIS_MODE.COMBINED].includes(mode)) {
       throw new AnalysisPermissionError('INVALID_MODE');
     }
-    const checked = this.#checkProvider({mode, configId, consent, confirmBilling, optInMemory});
+    const checked = this.#checkProvider({mode, configId, consent});
     const state = this.state.get(sessionId);
     if (state?.status === 'running') {
       throw new AnalysisPermissionError('ALREADY_RUNNING');
@@ -391,7 +354,7 @@ export class AnalysisRunner {
         modelId: checked.provider.modelId,
         pricingStatus: checked.provider.pricingStatus
       });
-      return this.launch({sessionId, provider: checked.provider, mode, budget, resume: true});
+      return this.launch({sessionId, provider: checked.provider, mode, resume: true});
     }
     this.state.set(sessionId, {
       status: 'running',
@@ -419,37 +382,25 @@ export class AnalysisRunner {
       batchTotal: 0,
       batchIndex: 0,
       usage: null,
-      budget: budget ?? null,
       error: null,
       batchesCompleted: 0,
       activeBatches: 0,
       batchDurationMsTotal: 0,
       batchSamples: 0,
-      sessionBatchTotal: 0,
-      sessionBatchesCompleted: 0,
       attemptStats: emptyAttemptStats(),
       currentRequest: null,
       lastRequest: null,
       startedAt: this.now()
     });
-    return this.launch({sessionId, provider: checked.provider, mode, budget, resume: false});
+    return this.launch({sessionId, provider: checked.provider, mode, resume: false});
   }
 
-  launch({sessionId, provider, mode, budget, resume}) {
+  launch({sessionId, provider, mode, resume}) {
     const controller = new AbortController();
-    const timeBudget = createTaskBudget({
-      now: this.now,
-      taskTimeoutMs: this.taskTimeoutMs,
-      softBudgetMs: this.softBudgetMs
-    });
     const previous = this.state.get(sessionId);
     this.state.set(sessionId, {
       status: 'running',
-      taskStartedAt: timeBudget.startedAt,
-      taskDeadlineAt: timeBudget.deadlineAt,
-      taskSoftDeadlineAt: timeBudget.softDeadlineAt,
-      taskTimeoutMs: timeBudget.taskTimeoutMs,
-      taskSoftBudgetMs: timeBudget.softBudgetMs,
+      taskStartedAt: this.now(),
       taskPausedAt: null,
       currentRequest: null,
       attemptStats: resume
@@ -460,11 +411,9 @@ export class AnalysisRunner {
       sessionId,
       provider,
       mode,
-      budget: budget ?? null,
       controller,
       signal: controller.signal,
       paused: false,
-      timeBudget,
       streamFallbackUsed: false
     };
     const promise = this.run(context, {resume})
@@ -543,27 +492,9 @@ export class AnalysisRunner {
       ? (entry.currentRequest ?? null)
       : null;
     const attemptStats = entry.attemptStats ?? emptyAttemptStats();
-    const taskDeadlineAt = entry.taskDeadlineAt
-      ?? (entry.taskStartedAt && entry.taskTimeoutMs
-        ? entry.taskStartedAt + entry.taskTimeoutMs
-        : null);
-    const taskTimeoutMs = entry.taskTimeoutMs ?? this.taskTimeoutMs;
-    const taskSoftBudgetMs = entry.taskSoftBudgetMs ?? this.softBudgetMs;
-    const taskSoftDeadlineAt = entry.taskSoftDeadlineAt
-      ?? (entry.taskStartedAt ? entry.taskStartedAt + taskSoftBudgetMs : null);
     const taskElapsedMs = entry.taskStartedAt
       ? Math.max(0, (entry.taskPausedAt ?? entry.completedAt ?? this.now()) - entry.taskStartedAt)
       : null;
-    const taskBudgetPhase = (status === 'paused' && error?.code === 'ANALYSIS_TASK_PAUSED')
-      ? 'paused'
-      : taskBudgetState(
-        entry.taskStartedAt ? {
-          startedAt: entry.taskStartedAt,
-          taskTimeoutMs,
-          softBudgetMs: taskSoftBudgetMs
-        } : null,
-        entry.taskPausedAt ?? entry.completedAt ?? this.now()
-      );
     const sessionAggregateRequired = Boolean(sessionJob && sessionJob.batchTotal > 1);
     const sessionAggregateDone = Boolean(sessionStatus?.aggregateImported);
     const waitingAggregate = sessionAggregateRequired
@@ -621,7 +552,6 @@ export class AnalysisRunner {
       usage: entry.usage ?? null,
       usageKnown: entry.usage !== null && entry.usage !== undefined,
       usageUnknownAttempts: Number(attemptStats.usageUnknown ?? 0),
-      budget: entry.budget ?? null,
       estimatedCost: entry.estimatedCost ?? null,
       requestStats,
       attemptStats,
@@ -631,19 +561,10 @@ export class AnalysisRunner {
       retrying: currentRequest?.retrying === true,
       outputReceived: currentRequest?.receivedOutput === true,
       taskStartedAt: entry.taskStartedAt ?? null,
-      taskDeadlineAt,
-      taskSoftDeadlineAt,
-      taskRemainingMs: taskDeadlineAt === null ? null : Math.max(0, taskDeadlineAt - this.now()),
       taskElapsedMs,
-      taskTimeoutMs,
-      taskSoftBudgetMs,
-      taskBudgetState: taskBudgetPhase,
-      taskBudgetReached: taskBudgetPhase === 'hard' || taskBudgetPhase === 'paused',
-      taskSoftBudgetReached: ['soft', 'hard', 'paused'].includes(taskBudgetPhase),
       taskPausedAt: entry.taskPausedAt ?? null,
-      resumeReason: entry.error?.code === 'ANALYSIS_TASK_PAUSED'
-        ? (entry.error?.detail ?? 'task-time-budget')
-        : null,
+      needsUserAction: status === 'needs_action',
+      resumeReason: status === 'needs_action' ? (entry.error?.code ?? null) : null,
       saved: {
         sessionReport: sessionReportDone,
         sessionBatches: sessionBatchesCompleted,
@@ -671,27 +592,6 @@ export class AnalysisRunner {
         ? patch.currentRequest
         : current
     });
-  }
-
-  #taskRemaining(context) {
-    if (!context?.timeBudget) return null;
-    return taskBudgetRemaining(context.timeBudget, this.now());
-  }
-
-  #taskBudgetPhase(context) {
-    if (!context?.timeBudget) return 'normal';
-    return taskBudgetState(context.timeBudget, this.now());
-  }
-
-  /**
-   * Only a *new batch* is gated by the deadline. Repair/aggregate requests that
-   * belong to work already started are allowed to finish, otherwise a task at
-   * 7/7 batches would throw away a paid-for report.
-   */
-  #canStartBatch(context) {
-    const remaining = this.#taskRemaining(context);
-    if (remaining === null) return true;
-    return remaining >= MIN_ATTEMPT_WINDOW_MS && this.#taskBudgetPhase(context) !== 'hard';
   }
 
   #beginRequest(context, {
@@ -878,6 +778,7 @@ export class AnalysisRunner {
           status: 'paused',
           stage: 'paused',
           error: {code: 'ANALYSIS_PAUSED', detail: null},
+          taskPausedAt: this.now(),
           currentRequest: null
         });
         return;
@@ -887,33 +788,8 @@ export class AnalysisRunner {
           status: 'canceled',
           stage: 'canceled',
           error: null,
+          completedAt: this.now(),
           currentRequest: null
-        });
-        return;
-      }
-      if (error?.code === 'ANALYSIS_TASK_PAUSED') {
-        this.state.set(sessionId, {
-          status: 'paused',
-          stage: 'paused',
-          error: {
-            code: error.code,
-            detail: error.detail ?? 'task-time-budget',
-            kind: error.kind ?? ERROR_KIND.TIMEOUT
-          },
-          taskPausedAt: this.now(),
-          taskBudgetState: 'paused',
-          currentRequest: null
-        });
-        this.logger?.warn?.({
-          event: 'ai.analysis.paused',
-          sessionId,
-          mode,
-          reason: error.detail ?? 'task-time-budget',
-          pendingBatches: error.pendingBatches ?? null,
-          completedBatches: error.completedBatches ?? null,
-          elapsedMs: context.timeBudget
-            ? taskBudgetElapsed(context.timeBudget, this.now())
-            : null
         });
         return;
       }
@@ -930,34 +806,45 @@ export class AnalysisRunner {
     const sessionJob = entry?.sessionJobId ? getJob(this.db, entry.sessionJobId) : null;
     const sessionStatus = sessionJob ? computeJobStatus(this.db, sessionJob) : null;
     const sessionDone = entry?.sessionReportDone === true || Boolean(sessionStatus?.complete);
+    const actionRequired = needsUserAction(error);
+    const uncertainBilling = code === 'PROVIDER_TIMEOUT'
+      && (error?.receivedHeaders === true || error?.receivedOutput === true);
+    const detailWithUncertainty = uncertainBilling
+      ? `${detail ?? 'request-timeout'}; the provider may have processed this request, so resume retries only the unfinished batch`
+      : detail;
     this.state.set(context.sessionId, {
       // A successful session report makes a later memory failure "partial"; a
       // memory-only task that fails stays "failed" even though its already
       // imported batches are preserved and resumable (see `saved`).
-      status: sessionDone ? 'partial' : 'failed',
-      stage: 'failed',
+      status: actionRequired ? 'needs_action' : (sessionDone ? 'partial' : 'failed'),
+      stage: actionRequired ? 'needs_action' : 'failed',
       error: {
         code,
-        detail,
+        detail: detailWithUncertainty,
         kind: error?.kind ?? null,
         httpStatus: error?.status ?? null,
         retryAfterMs: error?.retryAfterMs ?? null,
         receivedHeaders: error?.receivedHeaders === true,
         receivedOutput: error?.receivedOutput === true,
-        elapsedMs: Number.isFinite(Number(error?.elapsedMs)) ? Number(error.elapsedMs) : null
+        elapsedMs: Number.isFinite(Number(error?.elapsedMs)) ? Number(error.elapsedMs) : null,
+        actionRequired,
+        uncertainBilling
       },
       sessionReportDone: sessionDone,
       memoryDone: false,
+      completedAt: this.now(),
       currentRequest: null
     });
     this.logger?.warn?.({
-      event: 'ai.analysis.failed',
+      event: actionRequired ? 'ai.analysis.needs_action' : 'ai.analysis.failed',
       sessionId: context.sessionId,
       mode: context.mode,
       provider: context.provider?.providerId ?? null,
       model: context.provider?.modelId ?? null,
       code,
-      detail,
+      detail: detailWithUncertainty,
+      actionRequired,
+      uncertainBilling,
       errorKind: error?.kind ?? null,
       retryAfterMs: error?.retryAfterMs ?? null,
       httpStatus: error?.status ?? null,
@@ -1009,7 +896,6 @@ export class AnalysisRunner {
         regionId: provider.regionId ?? null,
         modelId: provider.modelId,
         pricingStatus: provider.pricingStatus,
-        budget: context.budget,
         costEstimate: null,
         tokenBudget,
         contextLength: provider.contextLength,
@@ -1058,7 +944,7 @@ export class AnalysisRunner {
       activeBatches: 0
     });
     let active = 0;
-    const control = await runPool(
+    await runPool(
       pending,
       Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
       async (batch, _index, workerSignal) => {
@@ -1072,16 +958,6 @@ export class AnalysisRunner {
         const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), SESSION_FILES);
         const prompt = buildSessionPrompt(files);
         prompt.files = files;
-        const estimate = estimateCost({
-          pricing: provider.pricing,
-          inputTokens: prompt.estimatedTokens,
-          outputTokens: this.#sessionOutputTokens(provider, prompt)
-        });
-        if (context.budget && estimate
-          && context.budget.currency === estimate.currency
-          && estimate.amount > context.budget.amount) {
-          throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
-        }
         active += 1;
         this.#setRunning(sessionId, {
           stage: 'session_analyzing',
@@ -1158,21 +1034,8 @@ export class AnalysisRunner {
           }
         }
       },
-      context.signal,
-      {canStart: () => this.#canStartBatch(context)}
+      context.signal
     );
-
-    if (control.budgetStopped) {
-      const stillPending = listJobBatches(this.db, job.id).filter((batch) => (
-        !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
-      ));
-      if (stillPending.length > 0) {
-        throw taskPausedError('task-time-budget-session', {
-          pendingBatches: stillPending.length,
-          completedBatches: total - stillPending.length
-        });
-      }
-    }
 
     const final = latestResultForScope(this.db, job.id, 'final');
     if (!final && total > 1) {
@@ -1369,17 +1232,11 @@ export class AnalysisRunner {
         detail: 'session has no stable broadcaster id'
       });
     }
-    const viewers = listSessionViewers(this.db, sessionId, {limit: MAX_ANALYSIS_VIEWERS + 1});
+    const viewers = listSessionViewers(this.db, sessionId, {limit: 1000000});
     if (viewers.length === 0) {
       throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {
         code: 'ANALYSIS_MEMORY_NO_VIEWERS',
         detail: 'identifiable viewers = 0'
-      });
-    }
-    if (viewers.length > MAX_ANALYSIS_VIEWERS) {
-      throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {
-        code: 'ANALYSIS_TOO_MANY_VIEWERS',
-        detail: `identifiable viewers = ${viewers.length}`
       });
     }
     if (broadcasterId && sessionStartedAt !== null) {
@@ -1400,13 +1257,11 @@ export class AnalysisRunner {
         exportsDir: this.paths.exports,
         viewersPerBatch: memoryViewersPerBatch(provider),
         excerptCap: 600,
-        maxBatches: MAX_MEMORY_BATCHES,
         providerConfigId: provider.configId ?? null,
         providerId: provider.providerId,
         regionId: provider.regionId ?? null,
         modelId: provider.modelId,
         pricingStatus: provider.pricingStatus,
-        budget: context.budget,
         costEstimate: null,
         tokenBudget,
         contextLength: provider.contextLength,
@@ -1461,7 +1316,7 @@ export class AnalysisRunner {
           batchesCompleted: completed,
           activeBatches: 0
         });
-        const control = await runPool(
+        await runPool(
           pending,
           Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
           async (batch, _index, workerSignal) => {
@@ -1544,20 +1399,8 @@ export class AnalysisRunner {
               }
             }
           },
-          context.signal,
-          {canStart: () => this.#canStartBatch(context)}
+          context.signal
         );
-        if (control.budgetStopped) {
-          const stillPending = listJobBatches(this.db, job.id).filter((batch) => (
-            !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
-          ));
-          if (stillPending.length > 0) {
-            throw taskPausedError('task-time-budget-memory', {
-              pendingBatches: stillPending.length,
-              completedBatches: total - stillPending.length
-            });
-          }
-        }
         const updated = getJob(this.db, job.id);
         if (!updated || !computeJobStatus(this.db, updated).complete) {
           throw Object.assign(new Error('MEMORY_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
@@ -1944,7 +1787,6 @@ export class AnalysisRunner {
             const job = getJob(this.db, entry.sessionJobId);
             if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
           }
-          this.#checkBudget(context, nextUsage);
         }
         // A provider that ignores `stream` and returns JSON is handled by the
         // adapter, but remember the verified mode so the next batch does not
@@ -1995,7 +1837,6 @@ export class AnalysisRunner {
         };
       } catch (error) {
         lastError = error;
-        if (error?.code === 'ANALYSIS_BUDGET_EXCEEDED') throw error;
         const canceled = isCanceledError(error) || signal.aborted;
         const outcome = canceled ? 'canceled' : (error?.kind === ERROR_KIND.TIMEOUT ? 'timeout' : 'failed');
         const durationMs = this.now() - startedAt;
@@ -2081,19 +1922,12 @@ export class AnalysisRunner {
     throw this.#normalizeProviderError(lastError);
   }
 
-  #checkBudget(context, usage) {
-    if (!context.budget) return;
-    const remaining = budgetRemaining(context.budget, usage);
-    if (remaining?.exceeded) {
-      throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
-    }
-  }
 
   #normalizeProviderError(error) {
     if (!error) {
       return Object.assign(new Error('PROVIDER_FAILED'), {code: 'PROVIDER_FAILED', kind: ERROR_KIND.NETWORK});
     }
-    if (error instanceof AnalysisPermissionError || error?.code === 'ANALYSIS_BUDGET_EXCEEDED') return error;
+    if (error instanceof AnalysisPermissionError) return error;
     if (isCanceledError(error)) return abortError();
     const normalized = Object.assign(new Error(error?.code ?? 'PROVIDER_FAILED'), {
       code: error?.code ?? 'PROVIDER_FAILED',
@@ -2128,7 +1962,7 @@ export class AnalysisRunner {
     return this.getStatus(sessionId);
   }
 
-  async resume(sessionId, {consent = false, confirmBilling = false, optInMemory = false, budget = null} = {}) {
+  async resume(sessionId, {consent = false} = {}) {
     const entry = this.state.get(sessionId);
     if (!entry || !(entry.sessionJobId || entry.memoryJobId)) {
       throw new AnalysisPermissionError('NOTHING_TO_RESUME');
@@ -2147,25 +1981,14 @@ export class AnalysisRunner {
         currentModelId: config.modelId ?? null
       });
     }
-    if (entry.mode !== ANALYSIS_MODE.SESSION) {
-      const permission = memoryPermission({
-        pricingStatus: config.pricingStatus,
-        pricing: config.pricing,
-        capabilities: config.capabilities,
-        optIn: optInMemory === true
-      });
-      if (!permission.allowed) {
-        throw new AnalysisPermissionError('MEMORY_PERMISSION_DENIED', {reasons: permission.reasons});
-      }
-    }
-    if (config.pricingStatus !== PRICING_STATUS.API_FREE && confirmBilling !== true) {
-      throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
+    if (entry.mode !== ANALYSIS_MODE.SESSION && config.capabilities?.memory !== true) {
+      throw new AnalysisPermissionError('MEMORY_CAPABILITY_REQUIRED');
     }
     const provider = providerFromConfig(config, {
       responseMode: this.state.getProviderMode(config.id)
     });
     this.state.set(sessionId, {status: 'running', stage: 'resuming', error: null});
-    return this.launch({sessionId, provider, mode: entry.mode, budget: budget ?? entry.budget, resume: true});
+    return this.launch({sessionId, provider, mode: entry.mode, resume: true});
   }
 
   async shutdown() {

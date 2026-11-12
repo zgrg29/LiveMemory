@@ -49,10 +49,10 @@ import {
 } from '../storage/repositories/broadcasters.mjs';
 import {listPackages} from '../storage/repositories/ai-packages.mjs';
 import {ANALYSIS_PROTOCOL} from '../ai/export/package.mjs';
-import {publicCatalog, getProvider, getRegion, PRICING_STATUS} from '../ai/providers/catalog.mjs';
+import {publicCatalog, getProvider, getRegion} from '../ai/providers/catalog.mjs';
 import {listProviderModels} from '../ai/providers/adapters.mjs';
 import {verifyProviderConfig} from '../ai/providers/verify.mjs';
-import {normalizePricing, normalizeBudget} from '../ai/providers/pricing.mjs';
+import {normalizePricing} from '../ai/providers/pricing.mjs';
 import {AnalysisPermissionError} from '../ai/api/runner.mjs';
 import {ANALYSIS_MODE} from '../ai/constants.mjs';
 import {createId} from '../shared/ids.mjs';
@@ -215,19 +215,15 @@ function providerConfigError(error) {
 function analysisError(error) {
   const map = {
     CONSENT_REQUIRED: ['AI_CONSENT_REQUIRED', 'errors.aiConsentRequired', 400],
-    SPEND_CONFIRMATION_REQUIRED: ['AI_SPEND_CONFIRMATION_REQUIRED', 'errors.aiSpendConfirmationRequired', 400],
-    MEMORY_PERMISSION_DENIED: ['AI_MEMORY_PERMISSION_DENIED', 'errors.aiMemoryPermissionDenied', 403],
+    MEMORY_CAPABILITY_REQUIRED: ['AI_MEMORY_CAPABILITY_REQUIRED', 'errors.aiCapabilityRequired', 409],
     SESSION_CAPABILITY_REQUIRED: ['AI_SESSION_CAPABILITY_REQUIRED', 'errors.aiCapabilityRequired', 409],
-    PAID_MODEL_REQUIRED: ['AI_PAID_MODEL_REQUIRED', 'errors.aiPaidModelRequired', 403],
     PROVIDER_CONFIG_NOT_FOUND: ['AI_PROVIDER_CONFIG_NOT_FOUND', 'errors.aiProviderConfigNotFound', 404],
     PROVIDER_CONFIG_REQUIRED: ['AI_PROVIDER_CONFIG_REQUIRED', 'errors.aiProviderConfigRequired', 400],
     MODEL_REQUIRED: ['AI_PROVIDER_MODEL_REQUIRED', 'errors.aiProviderModelRequired', 400],
     ALREADY_RUNNING: ['AI_ALREADY_RUNNING', 'errors.aiAlreadyRunning', 409],
     CONFIG_CHANGED: ['AI_PROVIDER_CONFIG_CHANGED', 'errors.aiProviderConfigChanged', 409],
     NOTHING_TO_RESUME: ['AI_NOTHING_TO_RESUME', 'errors.aiNothingToResume', 409],
-    INVALID_MODE: ['AI_INVALID_MODE', 'errors.badRequest', 400],
-    BUDGET_EXCEEDED: ['AI_BUDGET_EXCEEDED', 'errors.aiBudgetExceeded', 409],
-    ANALYSIS_BUDGET_EXCEEDED: ['AI_BUDGET_EXCEEDED', 'errors.aiBudgetExceeded', 409]
+    INVALID_MODE: ['AI_INVALID_MODE', 'errors.badRequest', 400]
   };
   if (error instanceof AnalysisPermissionError || map[error?.code]) {
     const [code, messageKey, httpStatus] = map[error.code] ?? ['AI_ANALYSIS_DENIED', 'errors.aiAnalysisDenied', 403];
@@ -1179,16 +1175,8 @@ export function buildRoutes() {
         if (!deps.providerConfigStore || !deps.analysisRunner) {
           throw new AppError('AI_PROVIDER_UNAVAILABLE', {messageKey: 'errors.aiProviderUnavailable', httpStatus: 503});
         }
-        const body = await readJsonBody(req).catch(() => ({}));
         const config = deps.providerConfigStore.get(params.id);
         if (!config) throw notFound(ERROR_CODES.NOT_FOUND, 'errors.aiProviderConfigNotFound');
-        const paid = config.pricingStatus !== PRICING_STATUS.API_FREE;
-        if (paid && body.confirmBilling !== true) {
-          throw new AppError('AI_SPEND_CONFIRMATION_REQUIRED', {
-            messageKey: 'errors.aiSpendConfirmationRequired',
-            httpStatus: 400
-          });
-        }
         const apiKey = deps.providerConfigStore.secret(params.id);
         const result = await verifyProviderConfig({
           config: {
@@ -1265,10 +1253,6 @@ export function buildRoutes() {
           throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
         }
         const locale = normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
-        const budget = body.budget ? normalizeBudget(body.budget) : null;
-        if (body.budget && !budget) {
-          throw new AppError('AI_BUDGET_INVALID', {messageKey: 'errors.aiBudgetInvalid', httpStatus: 400});
-        }
         try {
           const status = await deps.analysisRunner.start({
             sessionId,
@@ -1279,10 +1263,7 @@ export function buildRoutes() {
                 ? ANALYSIS_MODE.COMBINED
                 : ANALYSIS_MODE.SESSION),
             configId: typeof body.configId === 'string' ? body.configId : null,
-            consent: body.consent === true,
-            confirmBilling: body.confirmBilling === true,
-            optInMemory: body.optInMemory === true,
-            budget
+            consent: body.consent === true
           });
           deps.logger?.info?.({
             event: 'ai.analysis.accepted',
@@ -1334,10 +1315,7 @@ export function buildRoutes() {
         }
         try {
           const status = await deps.analysisRunner.resume(sessionId, {
-            consent: body.consent === true,
-            confirmBilling: body.confirmBilling === true,
-            optInMemory: body.optInMemory === true,
-            budget: body.budget ? normalizeBudget(body.budget) : null
+            consent: body.consent === true
           });
           sendJson(res, 202, status);
         } catch (error) {

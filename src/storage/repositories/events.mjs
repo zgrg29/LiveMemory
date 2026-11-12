@@ -120,7 +120,7 @@ export function listTimelineRows(db, sessionId) {
  * an internal row id.
  */
 export function listSessionMessagesAsc(db, {sessionId, limit = 20000, offset = 0} = {}) {
-  const safeLimit = Math.min(Math.max(Number(limit) || 20000, 1), 50000);
+  const safeLimit = Math.min(Math.max(Number(limit) || 20000, 1), 1000000);
   const safeOffset = Math.max(Number(offset) || 0, 0);
   return db.prepare(`
     SELECT * FROM events

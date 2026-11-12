@@ -60,8 +60,9 @@ test('OpenRouter pricing distinguishes free and paid and never infers from provi
   assert.equal(paid.pricing.outputPerMillion, 2);
   const unknown = pricingFromOpenRouterModel({id: 'foo/bar'});
   assert.equal(unknown.pricingStatus, 'unknown');
-  assert.equal(memoryPermission({pricingStatus: 'unknown', pricing: null, capabilities: {session: true, memory: true}, optIn: true}).allowed, false);
-  assert.equal(memoryPermission({pricingStatus: 'paid', pricing: {currency: 'USD'}, capabilities: {session: true, memory: true}, optIn: true}).allowed, true);
+  assert.equal(memoryPermission({pricingStatus: 'unknown', pricing: null, capabilities: {session: true, memory: true}, optIn: false}).allowed, true);
+  assert.equal(memoryPermission({pricingStatus: 'paid', pricing: null, capabilities: {session: true, memory: true}, optIn: false}).allowed, true);
+  assert.equal(memoryPermission({capabilities: {session: true, memory: false}}).allowed, false);
   const cost = estimateCost({pricing: {currency: 'USD', inputPerMillion: 1, outputPerMillion: 2}, inputTokens: 1_000_000, outputTokens: 500_000});
   assert.equal(cost.amount, 2);
 });
@@ -98,14 +99,23 @@ test('configuration store encrypts keys and rotates credentials on region change
     assert.equal(store.secret(config.id), 'test-secret-value');
     assert.equal(store.list()[0].apiKey, undefined);
     assert.equal(existsSync(join(temp.dir, 'secrets', 'ai-keys.json')), true);
-    assert.throws(() => store.create({
+    const zeroPriced = store.create({
       providerId: 'custom',
       regionId: 'custom',
       baseUrl: 'https://example.com/v1',
-      modelId: 'paid-but-zero',
+      modelId: 'zero-priced',
       pricingStatus: 'paid',
       pricing: {inputPerMillion: 0, outputPerMillion: 0, currency: 'USD'}
-    }), (error) => error.code === 'PRICING_INVALID');
+    });
+    assert.equal(zeroPriced.pricingStatus, 'api_free', 'zero prices are accepted and display as free, not blocked');
+    const noPrice = store.create({
+      providerId: 'custom',
+      regionId: 'custom',
+      baseUrl: 'https://example.com/v1',
+      modelId: 'no-price'
+    });
+    assert.equal(noPrice.pricing, null);
+    assert.equal(noPrice.pricingStatus, 'unknown');
 
     assert.throws(() => store.update(config.id, {regionId: 'intl'}), (error) => error.code === 'API_KEY_REQUIRED_FOR_REGION');
     const rotated = store.update(config.id, {regionId: 'intl', apiKey: 'test-intl-value'});

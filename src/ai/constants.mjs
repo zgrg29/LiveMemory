@@ -46,10 +46,10 @@ export const DEFAULT_BATCH_MESSAGES = 1000;
 export const MIN_BATCH_MESSAGES = 100;
 export const MAX_BATCH_MESSAGES = 5000;
 
-/** Hard limits that protect memory and the SQLite store from hostile input. */
+/** Technical resource guards only; these are not product batch limits. */
 export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
-export const MAX_ANALYSIS_MESSAGES = 50000;
-export const MAX_ANALYSIS_VIEWERS = 20000;
+export const MAX_ANALYSIS_MESSAGES = 1000000;
+export const MAX_ANALYSIS_VIEWERS = 200000;
 export const MAX_REPORT_EVIDENCE = 400;
 
 export const TASK_KIND = Object.freeze({

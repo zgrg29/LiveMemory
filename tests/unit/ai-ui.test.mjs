@@ -51,8 +51,9 @@ test('the AI centre exposes exactly one API-key analysis flow', () => {
   assert.ok(source.includes('configWarning'), 'missing config-state warning');
   assert.ok(source.includes("providerConfigState"), 'missing config state helper');
   assert.ok(source.includes('memorySkipped'), 'missing skipped-memory status');
-  assert.ok(source.includes('ai.v13.billing.confirm'), 'missing spend confirmation');
-  assert.ok(source.includes('ai.v13.memory.optIn'), 'missing memory opt-in');
+  assert.doesNotMatch(source, /ai\.v13\.billing\.confirm/, 'spend confirmation must be gone');
+  assert.doesNotMatch(source, /budgetInput|budgetPayload/, 'per-task budget UI must be gone');
+  assert.doesNotMatch(source, /optInMemory/, 'billing/price opt-in must be gone');
   assert.ok(source.includes('requestStats'), 'missing local request statistics');
   assert.ok(source.includes('estimatedRemainingMs'), 'missing ETA support');
   assert.doesNotMatch(source, /\bwindow\.alert\s*\(/, 'must not use browser alert()');
@@ -100,7 +101,6 @@ test('the unified AI centre has complete Chinese, Japanese and English copy', ()
     'ai.center.stepSession',
     'ai.center.stepConfig',
     'ai.center.stepScope',
-    'ai.center.stepCost',
     'ai.center.stepStart',
     'ai.center.setupTitle',
     'ai.center.sessionLabel',
@@ -113,7 +113,6 @@ test('the unified AI centre has complete Chinese, Japanese and English copy', ()
     'ai.center.scaleMessages',
     'ai.center.scaleViewers',
     'ai.center.scaleRequests',
-    'ai.center.scaleBudget',
     'ai.center.start',
     'ai.center.starting',
     'ai.center.configLoadFailed',
@@ -149,8 +148,11 @@ test('the unified AI centre has complete Chinese, Japanese and English copy', ()
     'ai.center.reason.ANALYSIS_MEMORY_OUT_OF_ORDER',
     'ai.center.reason.PROVIDER_RATE_LIMITED',
     'ai.center.reason.AI_PROVIDER_CONFIG_REQUIRED',
-    'ai.v13.billing.confirm',
-    'ai.v13.memory.optIn',
+    'ai.center.task.elapsed',
+    'ai.center.task.waitingAggregate',
+    'ai.center.task.needsAction',
+    'ai.center.needsAction',
+    'ai.v13.price.optional',
     'ai.v13.providers.concurrency',
     'ai.v13.providers.concurrencyHint',
     'ai.report.sourceAuto',

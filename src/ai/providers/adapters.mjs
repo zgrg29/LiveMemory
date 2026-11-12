@@ -21,8 +21,7 @@ import {ERROR_KIND, ATTEMPT_PHASE} from '../runtime/attempt.mjs';
  *
  * Timeouts are split into:
  *   - header timeout: no response headers within `timeoutMs`;
- *   - idle timeout: streaming started but no bytes for `idleTimeoutMs`;
- *   - total attempt cap: the remaining task budget (`maxTotalMs`).
+ *   - idle timeout: streaming started but no bytes for `idleTimeoutMs`.
  * A timeout is never reported as a generic network failure, and an external
  * abort (pause/cancel/shutdown) is never reported as a timeout.
  */
@@ -185,14 +184,12 @@ function cancelError(providerId, extra = {}) {
  */
 function createRequestControl({
   externalSignal = null,
-  headerTimeoutMs = 180000,
-  maxTotalMs = null
+  headerTimeoutMs = 180000
 }) {
   const controller = new AbortController();
   const flags = {
     externalAborted: false,
     headerTimedOut: false,
-    totalTimedOut: false,
     headersReceived: false
   };
   const onExternalAbort = () => {
@@ -213,14 +210,6 @@ function createRequestControl({
     controller.abort();
   }, Math.max(1000, Number(headerTimeoutMs) || 180000));
   headerTimer.unref?.();
-  let totalTimer = null;
-  if (Number.isFinite(Number(maxTotalMs)) && Number(maxTotalMs) > 0) {
-    totalTimer = setTimeout(() => {
-      flags.totalTimedOut = true;
-      controller.abort();
-    }, Math.max(1000, Number(maxTotalMs)));
-    totalTimer.unref?.();
-  }
   return {
     controller,
     flags,
@@ -231,7 +220,6 @@ function createRequestControl({
     },
     cleanup() {
       clearTimeout(headerTimer);
-      if (totalTimer) clearTimeout(totalTimer);
       externalSignal?.removeEventListener?.('abort', onExternalAbort);
     }
   };
@@ -250,10 +238,9 @@ function transportError(error, {
   if (control.flags.externalAborted) {
     return cancelError(providerId, {elapsedMs, metrics});
   }
-  if (control.flags.headerTimedOut || control.flags.totalTimedOut
-    || error?.name === 'TimeoutError') {
+  if (control.flags.headerTimedOut || error?.name === 'TimeoutError') {
     return new ProviderHttpError(PROVIDER_ERROR.TIMEOUT, {
-      detail: control.flags.totalTimedOut ? 'attempt-budget-exhausted' : 'response-timeout',
+      detail: 'response-timeout',
       retryable: false,
       providerId,
       cause: error,
@@ -359,7 +346,6 @@ export async function callOpenAICompatible({
   signal = null,
   timeoutMs = 180000,
   idleTimeoutMs = 60000,
-  maxTotalMs = null,
   streaming = false,
   now = Date.now,
   onProgress = null,
@@ -414,7 +400,7 @@ export async function callOpenAICompatible({
   const startedAt = now();
   const bodyText = JSON.stringify(body);
   const requestBytes = Buffer.byteLength(bodyText, 'utf8');
-  const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs, maxTotalMs});
+  const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs});
   let response;
   try {
     response = await fetchImpl(joinUrl(config.baseUrl, '/chat/completions'), {
@@ -489,19 +475,6 @@ export async function callOpenAICompatible({
         });
       }
       if (control.flags.externalAborted) throw cancelError(config.providerId);
-      if (control.flags.totalTimedOut) {
-        throw new ProviderHttpError(PROVIDER_ERROR.TIMEOUT, {
-          detail: 'attempt-budget-exhausted',
-          retryable: false,
-          providerId: config.providerId,
-          kind: ERROR_KIND.TIMEOUT,
-          phase: ATTEMPT_PHASE.STREAM,
-          receivedHeaders: true,
-          receivedOutput: true,
-          elapsedMs: now() - startedAt,
-          timeoutMs
-        });
-      }
       if (error instanceof StreamIdleTimeoutError) {
         throw timeoutFromIdle(error, {
           providerId: config.providerId,
@@ -651,7 +624,6 @@ export async function callAnthropic({
   signal = null,
   timeoutMs = 180000,
   idleTimeoutMs = 60000,
-  maxTotalMs = null,
   streaming = false,
   now = Date.now,
   onProgress = null
@@ -686,7 +658,7 @@ export async function callAnthropic({
   const startedAt = now();
   const bodyText = JSON.stringify(body);
   const requestBytes = Buffer.byteLength(bodyText, 'utf8');
-  const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs, maxTotalMs});
+  const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs});
   let response;
   try {
     response = await fetchImpl(joinUrl(config.baseUrl, '/messages'), {
@@ -760,19 +732,6 @@ export async function callAnthropic({
         });
       }
       if (control.flags.externalAborted) throw cancelError(config.providerId);
-      if (control.flags.totalTimedOut) {
-        throw new ProviderHttpError(PROVIDER_ERROR.TIMEOUT, {
-          detail: 'attempt-budget-exhausted',
-          retryable: false,
-          providerId: config.providerId,
-          kind: ERROR_KIND.TIMEOUT,
-          phase: ATTEMPT_PHASE.STREAM,
-          receivedHeaders: true,
-          receivedOutput: true,
-          elapsedMs: now() - startedAt,
-          timeoutMs
-        });
-      }
       throw new ProviderHttpError(PROVIDER_ERROR.STREAM_INTERRUPTED, {
         detail: String(error?.code ?? error?.name ?? 'stream-read-failed').slice(0, 120),
         retryable: false,

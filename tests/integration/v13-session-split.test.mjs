@@ -192,7 +192,7 @@ test('provider capability test route audits the result and updates the config', 
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_provider_tests').get().n, 1);
 });
 
-test('v0.13 permission gates keep free models session-only and require a paid memory capability', async (t) => {
+test('memory is gated only by the verified technical capability, never by price', async (t) => {
   const temp = createTempDir();
   const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
@@ -202,51 +202,26 @@ test('v0.13 permission gates keep free models session-only and require a paid me
   addBroadcaster(server.db);
   const session = seedSession(server.db, {id: 'ses_v13_gates', messageCount: 4, viewerCount: 2, startedAt: T0});
   const base = server.url;
-  const free = server.providerConfigStore.create({
+  const noMemory = server.providerConfigStore.create({
     providerId: 'custom', regionId: 'custom', baseUrl: 'https://example.com/v1',
-    modelId: 'free-model', apiKey: 'test-free-key', pricingStatus: 'api_free', pricing: {inputPerMillion: 0, outputPerMillion: 0, currency: 'USD'}
+    modelId: 'no-memory-model', apiKey: 'test-free-key', pricingStatus: 'api_free',
+    pricing: {inputPerMillion: 0, outputPerMillion: 0, currency: 'USD'}
   });
-  server.providerConfigStore.recordTest(free.id, {
+  server.providerConfigStore.recordTest(noMemory.id, {
     status: 'passed',
     capabilities: {network: true, auth: true, text: true, json: true, session: true, memory: false}
   });
-  const freeMemory = await jsonRequest(`${base}api/ai/analyze/run`, {
+  const memoryRejected = await jsonRequest(`${base}api/ai/analyze/run`, {
     method: 'POST',
-    body: {sessionId: session.id, mode: 'memory', configId: free.id, locale: 'en', consent: true, optInMemory: true}
+    body: {sessionId: session.id, mode: 'memory', configId: noMemory.id, locale: 'en', consent: true}
   });
   const anonymousMemory = await jsonRequest(`${base}api/ai/analyze/run`, {
     method: 'POST',
-    body: {sessionId: session.id, mode: 'memory', locale: 'en', consent: true, optInMemory: true}
+    body: {sessionId: session.id, mode: 'memory', locale: 'en', consent: true}
   });
   assert.equal(anonymousMemory.status, 400);
   assert.equal(anonymousMemory.payload.error.code, 'AI_PROVIDER_CONFIG_REQUIRED');
-  assert.equal(freeMemory.status, 403);
-  assert.equal(freeMemory.payload.error.code, 'AI_MEMORY_PERMISSION_DENIED');
-
-  const paidUnknown = server.providerConfigStore.create({
-    providerId: 'custom', regionId: 'custom', baseUrl: 'https://example.com/v1',
-    modelId: 'paid-model', apiKey: 'test-paid-key', pricingStatus: 'paid',
-    pricing: {inputPerMillion: 1, outputPerMillion: 2, currency: 'USD'}
-  });
-  server.providerConfigStore.recordTest(paidUnknown.id, {
-    status: 'passed',
-    capabilities: {network: true, auth: true, text: true, json: true, session: true, memory: true}
-  });
-  const noConfirm = await jsonRequest(`${base}api/ai/analyze/run`, {
-    method: 'POST',
-    body: {sessionId: session.id, mode: 'session', configId: paidUnknown.id, locale: 'en', consent: true}
-  });
-  assert.equal(noConfirm.status, 400);
-  assert.equal(noConfirm.payload.error.code, 'AI_SPEND_CONFIRMATION_REQUIRED');
-
-  const noOptIn = await jsonRequest(`${base}api/ai/analyze/run`, {
-    method: 'POST',
-    body: {
-      sessionId: session.id, mode: 'memory', configId: paidUnknown.id, locale: 'en',
-      consent: true, confirmBilling: true, optInMemory: false
-    }
-  });
-  assert.equal(noOptIn.status, 403);
-  assert.equal(noOptIn.payload.error.code, 'AI_MEMORY_PERMISSION_DENIED');
+  assert.equal(memoryRejected.status, 409);
+  assert.equal(memoryRejected.payload.error.code, 'AI_MEMORY_CAPABILITY_REQUIRED');
 });
 

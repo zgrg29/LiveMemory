@@ -258,6 +258,24 @@ test('a single viewer above the hard request cap fails explicitly instead of bei
   }), (error) => error.code === 'ANALYSIS_MEMORY_VIEWER_TOO_LARGE');
 });
 
+test('a very large viewer set has no artificial total-batch cap', () => {
+  const viewers = Array.from({length: 2500}, (_, index) => ({
+    viewerId: `v${index}`,
+    excerptCount: 1,
+    excerptTokens: 40,
+    memoryTokens: 0
+  }));
+  const plan = planMemoryViewerBatches({
+    viewers,
+    viewerCap: 10,
+    excerptCap: 600,
+    contentBudget: 4000,
+    overheadTokens: 5000
+  });
+  assert.equal(plan.batches.flatMap((batch) => batch.viewerIds).length, 2500);
+  assert.ok(plan.batches.length >= 250);
+});
+
 test('DashScope total completion is bounded without disabling thinking', () => {
   assert.equal(resolveMaxCompletionTokens({
     providerId: 'dashscope',
