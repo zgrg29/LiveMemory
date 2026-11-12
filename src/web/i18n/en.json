@@ -565,7 +565,14 @@
         "tokens": "Tokens used",
         "cost": "Known actual cost",
         "eta": "Estimated remaining",
-        "msValue": "{ms} ms"
+        "msValue": "{ms} ms",
+        "attempts": "Request attempts",
+        "succeeded": "Succeeded",
+        "canceled": "Canceled by user",
+        "timedOut": "Timed out",
+        "retried": "Automatic retries",
+        "usage": "Usage this task",
+        "usageUnknown": "Usage unknown (failed requests returned no usage)"
       },
       "reason": {
         "ANALYSIS_FAILED": "The analysis could not finish.",
@@ -593,8 +600,50 @@
         "AUTO_SESSION_EMPTY": "This broadcast has no messages to analyse.",
         "SESSION_EMPTY": "This broadcast has no messages to analyse.",
         "ANALYSIS_PAUSED": "The analysis is paused.",
-        "ANALYSIS_SESSION_NOT_FOUND": "The broadcast no longer exists."
-      }
+        "ANALYSIS_SESSION_NOT_FOUND": "The broadcast no longer exists.",
+        "PROVIDER_STREAM_INTERRUPTED": "The model output was interrupted, so this result was not saved. Unfinished batches can be resumed.",
+        "PROVIDER_STREAM_ERROR": "The model stream reported an error, so this result was not saved.",
+        "ANALYSIS_TASK_TIMEOUT": "The task time budget was reached and later requests were stopped. Completed batches are preserved.",
+        "AUTO_OUTPUT_DEGENERATED": "The model output degenerated into repetition and is incomplete, so nothing was saved.",
+        "ANALYSIS_AGGREGATE_TOO_LARGE": "There are too many batch results to merge in one request. Batch results are preserved; lower the batch budget or use a model with a larger context.",
+        "ANALYSIS_INCOMPLETE": "The task did not finish, so no complete report was saved.",
+        "ANALYSIS_AGGREGATE_NOT_READY": "Some batch results are still missing, so the merge cannot run yet.",
+        "ANALYSIS_PACKAGE_MISSING": "A local analysis package is missing, so this batch cannot continue.",
+        "PROVIDER_CONFIG_INVALID": "The API configuration is invalid."
+      },
+      "progressSessionBatches": "Session batches {done}/{total}",
+      "progressAggregate": "Waiting for the final merge",
+      "progressAggregateDone": "Final merge complete",
+      "request": {
+        "unknown": "Request",
+        "aggregate": "Final merge request",
+        "memory": "Viewer profile request",
+        "session": "Session analysis request",
+        "retrying": "Waiting for attempt {attempt}/{max}",
+        "output": "Model output received",
+        "headers": "Connected, waiting for model output",
+        "waiting": "Waiting for the model response",
+        "batch": "Batch {index}",
+        "elapsedSeconds": "Running for {seconds}s",
+        "elapsedMinutes": "Running for {minutes}m {seconds}s",
+        "last": "{kind}: last {outcome} after {elapsed}",
+        "outcome": {
+          "succeeded": "succeeded",
+          "failed": "failed",
+          "canceled": "canceled",
+          "timeout": "timed out"
+        },
+        "durationSeconds": "{seconds}s",
+        "durationMinutes": "{minutes}m {seconds}s"
+      },
+      "saved": {
+        "label": "Saved results",
+        "session": "session report saved",
+        "sessionBatches": "session batches saved {done}/{total}",
+        "memoryBatches": "profile batches saved {done}/{total}",
+        "memory": "long-term profiles saved"
+      },
+      "scaleRequestsAuto": "Automatic (token-budget batches)"
     },
     "steps": {
       "exportTitle": "1 · Export AI analysis package",
@@ -982,7 +1031,9 @@
       "longTermNote": "From long-term viewer memory (independent of the session report); scoped to the current broadcaster only.",
       "longTermCount": "{count} viewers have a long-term profile",
       "longTermFacts": "Long-term facts",
-      "longTermObjectiveOnly": "Interaction history recorded; no semantic facts yet."
+      "longTermObjectiveOnly": "Interaction history recorded; no semantic facts yet.",
+      "missingBatchesMore": "…and {count} more batches.",
+      "awaitingAggregateAuto": "All batch results are saved. Use Continue in the AI analysis centre to finish only the missing batches and the final merge."
     },
     "v13": {
       "scope": {
@@ -1048,7 +1099,10 @@
         "memoryBatchDone": "Profile batch complete",
         "memoryDone": "Long-term profiles complete",
         "resuming": "Resuming task",
-        "paused": "Paused"
+        "paused": "Paused",
+        "sessionBatchAnalyzing": "Analysing the session (batch {index}/{total})",
+        "sessionBatchDone": "Session batch saved",
+        "sessionAggregating": "Merging the whole session ({total} batches)"
       },
       "consent": {
         "title": "Confirm before sending data",
@@ -1065,6 +1119,7 @@
         "test": "Test capabilities",
         "testing": "Testing…",
         "testDone": "Capability test: {status}",
+        "testFailureDetail": "Test failure: {detail}",
         "keyStored": "Key stored",
         "noKey": "No key",
         "delete": "Delete",
@@ -1113,7 +1168,13 @@
         "priceRequired": "A paid model requires input and output prices; both cannot be zero.",
         "manualModelHint": "This provider has no model-list endpoint. Copy the exact Model ID from its official docs/console and enter it manually.",
         "preset": "Recommended model (fills reference price)",
-        "customPreset": "Custom model / enter manually"
+        "customPreset": "Custom model / enter manually",
+        "timeout": "No-response timeout (seconds)",
+        "timeoutHint": "Longest wait for response headers or streaming data. A stream that keeps producing output is not cut off by total duration. Default 180s.",
+        "timeoutShort": "timeout {seconds}s",
+        "batchInput": "Input per batch (tokens, blank = automatic)",
+        "batchInputHint": "Blank selects a value from the model context (about 2,000–32,000). This is the input budget per request, not the output budget.",
+        "batchInputAuto": "Automatic"
       },
       "capability": {
         "memory": "Capability: session + long-term profiles",

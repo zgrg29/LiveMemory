@@ -1,8 +1,59 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-11（v0.13.1 第 8 项修复：已保存 API 配置可编辑，改模型保留 Key 并失效旧能力）
+最后更新：2026-11-12（v0.13.1 可靠性专项：超时/重试分类、token 分批、自动流式、进度与费用统计；583 tests）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.13 v0.13.1 可靠性专项（2026-11-12）
+
+完整设计、边界与测试清单：`docs/AI_RELIABILITY.md`。
+前序根因调查：`docs/AI_TIMEOUT_INVESTIGATION.md`。**本轮已改代码并完成本地确定性验证，但未发起真实付费 API 请求。**
+
+### 0.13.1 超时与重试
+
+| 问题（调查编号） | 修复 |
+| --- | --- |
+| B1 超时被当成可重试，自动重发 2 次 | `timeout` 明确 `retryable:false`；已发出的长请求超时后默认**不自动重试** |
+| B2 `AbortError`/`TimeoutError` 合并 | adapter 区分 `canceled` / `timeout` / `network` / `rate_limit` / `server` / `client` / `invalid_response` / `stream_interrupted`；取消绝不重试 |
+| B3 超时不降速 | 超时不再触发同批重发脉冲；429/5xx 仍按各自的退避与 `Retry-After` |
+| B4 无任务级总时限 | 新增 20 分钟任务预算（可注入时钟测试）；达到后 `ANALYSIS_TASK_TIMEOUT`，已完成批次保留 |
+| B5 无 attempt 级状态/日志 | 每次尝试写 `ai.request.attempt`（脱敏：attempt、耗时、错误类型、HTTP status、是否收到响应头/输出、是否重试、usage 是否存在）；状态含 `attemptStats`、`currentRequest`、`lastRequest` |
+| B6 `runPool` 首个失败中止其他请求 | 失败只停止调度新批次；在途兄弟批次继续完成并导入；最后抛第一个错误 |
+| B7 统计按配置/进程 | 任务级 `attemptStats` 与按 `configId` 的 `requestStats` 并存；成功/失败/取消/超时/重试分开 |
+| B8 失败尝试不计 usage | 失败/超时/取消未返回 usage 时计入 `usageUnknownAttempts`，UI 显示“用量未知”，不当作零费用 |
+| B9 无流式/空闲超时 | 自动流式 + 60 秒空闲超时；持续输出不会被 180 秒总时长截断 |
+
+### 0.13.2 Token 分批与汇总
+
+- `src/ai/batching/tokens.mjs`：按估算 input token 规划 session 消息批次与 memory 观众批次。
+- session：默认 8,000 input tokens/批；Provider 配置 `batchInputTokens` 可设 2,000–32,000；小上下文模型自动缩小并限制输出。
+- 单场消息多批时，必须成功导入 **final aggregate** 才算 `complete`；汇总只使用已校验批结果，证据必须 `{batch, seq}`。
+- memory：同一观众不拆批；预算同时计入摘录、现有记忆、evidence seq 列表与固定开销；超预算的单观众单独成批，不丢观众。
+- 批包新增可选 `manifest.batch_plan` 诊断字段；结果 Schema 仍为 1.3.0，未迁移数据库。
+
+### 0.13.3 流式
+
+- 默认优先 Streaming；用户只选择 Provider/区域/Model ID，不出现 Streaming 开关。
+- 支持 OpenAI-compatible SSE 与 Anthropic Messages SSE；Provider 返回 JSON 或明确拒绝 stream 时自动回退，且回退模式持久化，后续任务不再重复探测。
+- 流式内容只缓冲，完成后仍走原 JSON 提取、本地组装、Schema/覆盖/证据校验与事务导入；中断流不写库。
+- 计时区分响应头、首字节/首 token、流持续时间、最大空闲与总耗时。
+
+### 0.13.4 UI / 统计
+
+- 新增：单场批次 4/70、等待汇总、已收到模型输出、请求运行秒数、重试次数、已保存单场/画像批次、失败真实原因。
+- 统计分开：请求尝试、成功、失败、取消、超时、自动重试、429、并发、模型耗时、token、已知费用；失败无 usage 显示“用量未知”。
+- ETA 只在 ≥3 个成功批次样本且运行中显示；无依据不显示。
+- `Estimated requests` 在含 session 的任务中显示“自动（按 token 预算分批）”，不再给出错误的固定 1。
+- 修复全局 `[hidden]` 被 `.callout {display:flex}` 覆盖导致空提示框可见的 CSS 缺陷。
+- 真实浏览器验收：headless Edge + DevTools 截图（运行中、完成、390px、设置页），见 `docs/screenshots/ai-reliability-*`。
+
+### 0.13.5 测试与验证（本轮实测）
+
+- 全量：**583 passed / 0 failed**（2026-11-12，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 96 秒）。
+- 新增：`tests/unit/ai-attempts.test.mjs`、`ai-stream.test.mjs`、`ai-token-batching.test.mjs`；`tests/integration/v14-session-batching.test.mjs`、`v14-streaming-timeout.test.mjs`；更新 `ai-progress.test.mjs`。
+- 真实浏览器：Edge headless CDP 打开 AI 中心与设置页，确认运行中/完成/窄屏/暗色渲染；截图使用合成 Fixture，不是真实 Provider。
+- **未做**：真实付费 API 请求（本机无 Key）、真实 174k token 大场、真实 EXE 运行、UAC 验收。
+- **阻塞**：真实 DashScope/OpenAI/Anthropic/DeepSeek/MiniMax/OpenRouter 生成仍未验证；不得用 Mock 结果冒充。
 
 ## 1. 当前阶段
 
@@ -427,10 +478,11 @@ POST /api/ai/auto/cancel      {sessionId}
 ## 6. 未完成 / 未验证
 
 - v0.13.1 EXE 运行验收（UAC 拒绝）；如已构建见 §5。
-- 真实浏览器 AI 分析中心、Provider 设置卡、暗色、390px 截图。
+- **真实浏览器 UI 已在本轮补验**（headless Edge + CDP）：AI 中心运行中/完成、390px、暗色与 Provider 设置页；截图见 `docs/screenshots/ai-reliability-*`。未做真实点击“开始分析”（使用合成 Fixture 与 Mock Provider）。
 - **真实付费 API 生成**：本机没有 `config/ai-providers.json` / `ai-keys.json` / 环境变量 Key，阻塞；不得用 Mock 或历史样本冒充。
 - 真实 Provider 的 429、`Retry-After`、并发与 1,000 观众运行。
 - 真实 DashScope/OpenAI/Anthropic/DeepSeek/MiniMax 生成与能力检测。
+- 真实 174k token 大场的 token 分批与汇总（Mock 已覆盖 420 消息多批）。
 - 真实 Bilibili/YouTube 大场自动画像；礼物/SC-only 真实样本。
 - 真实运行中删除场次/清空数据的 UI 守卫与交互。
 - M5 可移植备份仍未实现。
@@ -458,13 +510,21 @@ POST /api/ai/auto/cancel      {sessionId}
 19. 同一主播跨场次记忆必须按时间顺序；较旧场次不得覆盖较新场次。批次内并发只能发生在观众互不重叠的批次之间。
 20. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
 21. 手动导入失败不再由 UI 修复；历史结果仍可只读，重复导入仍幂等。
+22. **超时/取消语义**：`TimeoutError` 与 `AbortError` 必须分开；已发出的长请求超时后默认不自动重发；用户取消/暂停绝不重试。
+23. **任务级时间预算**：所有尝试受任务预算约束；达到后停止新请求并保留已完成批次，不得无限重试。
+24. **批次隔离**：任何批次失败不得 abort 同批其他在途请求；已完成批次必须继续导入；恢复只处理未完成批次。
+25. **Token 分批**：单场与画像按 input token 预算分批；默认 8k、可配 2k–32k；不得静默丢消息/观众；多批 session 必须有 final aggregate 才 complete。
+26. **自动流式**：普通用户不选择 Streaming；流式只缓冲，完成后仍走同一校验/事务导入；不兼容时最多回退一次并持久化响应模式。
+27. **统计诚实**：成功/失败/取消/超时/重试分开；失败无 usage 显示“用量未知”，不能当零费用；能力检测请求不计入分析任务。
+28. **UI 证据**：`[hidden]` 必须真正隐藏；进度只用服务端批次/观众计数；ETA 需要 ≥3 个样本；不显示没有依据的预计。
 
 ## 8. 相关文档
 
-`docs/AI_SCHEDULER_AUDIT.md`、`docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、
-`docs/AI_CONTRACT.md`、`docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、
-`docs/CHANGELOG.md`、`docs/ROADMAP.md`、历史 `docs/ANONYMOUS_AI_RESEARCH.md`、
-`log/2026-11-11-ai-scheduler-v0131.md`、`log/2026-11-11-anonymous-ai-auto-analysis.md`。
+`docs/AI_RELIABILITY.md`、`docs/AI_TIMEOUT_INVESTIGATION.md`、`docs/AI_SCHEDULER_AUDIT.md`、
+`docs/HANDOFF.md`、`docs/ARCHITECTURE.md`、`docs/DATA_MODEL.md`、`docs/AI_CONTRACT.md`、
+`docs/UI_DESIGN.md`、`docs/PRIVACY_SECURITY.md`、`docs/TEST_PLAN.md`、`docs/CHANGELOG.md`、
+`docs/ROADMAP.md`、历史 `docs/ANONYMOUS_AI_RESEARCH.md`、`log/2026-11-11-ai-scheduler-v0131.md`、
+`log/2026-11-12-ai-reliability-v0131.md`。
 
 ## 9. 下一步
 
@@ -475,6 +535,24 @@ POST /api/ai/auto/cancel      {sessionId}
 5. 观察真实 429 后的并发恢复；如 Provider 明确公布 RPM/TPM，再增加可选官方限额配置，不预设统一值。
 6. 评估自动运行中删除场次/清空数据的 UI 守卫。
 7. M5 可移植备份仍未实现。
+
+## 11. 2026-11-12 专项调查：DashScope 174/175 秒与 `PROVIDER_TIMEOUT`
+
+完整报告：`docs/AI_TIMEOUT_INVESTIGATION.md`（含代码位置、脱敏日志、8 项逐条回答、复现条件、
+影响、修复建议、仍需日志）。
+
+- **根因**：`timeoutMs` 默认/配置/生效值均为 **180000 ms**；非流式 `qwen3.8-max` 长推理超过
+  180 秒仍无响应头，客户端 `AbortSignal.timeout` 主动断开。平台记录 status 0、耗时 174–175 s、
+  usage 空，是"客户端中断"的结果，不是平台 175 s 固定超时。
+- **重试**：超时被标记为可重试，`requestOnce` 自动重发同一请求 2 次（3 次尝试）；
+  本地总耗时 543.18 s ≈ 3×180 s + 打包/退避。平台两条 174/175 s 请求对应第 1、2 次尝试，
+  应还有第 3 条约 23:39:57 开始。
+- **为何"停滞"**：3 次重试期间状态一直是 `running / session_analyzing`，没有 attempt 级状态/日志；
+  第 3 次超时后才写 `failed`（23:42:54）。
+- **统计口径**：UI 总/失败请求 = 调度器尝试数（按 config、按进程，重启清零）；`usage.requests`
+  只计成功响应（失败任务为 null）；平台按每个 HTTP 请求计数（含 status 0、能力检测的 4 个请求）。
+- **未做**：未改代码/配置/超时，未发付费 API 请求，未提交修复。本机 PATH 无 `git`，无法创建
+  本地 commit。
 
 ## 10. 补丁 0.11.1：观众档案主播范围
 

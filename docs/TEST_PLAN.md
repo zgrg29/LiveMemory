@@ -877,3 +877,42 @@ duration ≈ 25.0s
 - 真实浏览器点击「编辑配置→改 Model ID→保存」视觉流程（本机 headless 被策略阻止）。
 - 真实百炼 Key 的编辑后真实生成；未伪造。
 - EXE 已重建但 UAC 未运行。
+
+## 31. AI 可靠性、Token 分批与自动流式（v0.13.1，2026-11-12）
+
+### 31.1 单元
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/ai-attempts.test.mjs` | 已发出超时不重试；取消/暂停不重试；仅连接网络错误一次；429/5xx/4xx/无效响应/流中断策略；attempt 日志字段；注入时钟任务预算 |
+| `tests/unit/ai-stream.test.mjs` | SSE `event/data` 与多行 data；跨任意 chunk 重组；空闲超时抛 `StreamIdleTimeoutError` 并调用 abort；OpenAI/Anthropic 累积 text/finish/usage |
+| `tests/unit/ai-token-batching.test.mjs` | 预算默认/夹紧/小上下文自适应；输出预算；session 消息全覆盖；memory 观众不拆不丢、超预算单观众隔离、视图/摘录上限、批次上限显式失败；legacy 分配器兼容 |
+| `tests/unit/ai-progress.test.mjs`（更新） | 多批 session 批次 + aggregate 单位；combined 单位；100% 仅 complete；跳过画像不计数 |
+| `tests/unit/i18n.test.mjs` | 新增 request/saved/attempt/聚合/超时/用量未知三语文案键与占位符一致 |
+
+### 31.2 集成（Mock Provider / 可控 SSE / 注入时钟，不消耗真实 API）
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/integration/v14-session-batching.test.mjs` | 420 消息按 2k 预算多批；`ai_job_messages` 420 条唯一且每批 seq 合法；final aggregate 一次；报告 `mode=final`；单场无画像写入；批次 1 失败时在途批次 2 仍导入；失败不做 aggregate；resume 只发缺失批次、不重发已导入批次、最后只 aggregate 一次 |
+| `tests/integration/v14-streaming-timeout.test.mjs` | 流式成功并导入；运行中首 token 进度；流提前结束 → `PROVIDER_STREAM_INTERRUPTED` 且 0 结果；超时 → `PROVIDER_TIMEOUT`、1 次尝试、usage unknown；取消 → `canceled`、1 次调用、0 结果；流式被拒绝 → 一次非流式回退、模式持久化；不完整 JSON → 一次 repair；Anthropic SSE 成功；任务预算 → `ANALYSIS_TASK_TIMEOUT`；429 三次尝试/retry=2/rateLimited=2；8 观众小预算 → 每观众恰一批、覆盖 8/8 |
+| `tests/integration/v14-session-batching.test.mjs` | 失败后 `saved.sessionBatches` 反映已导入批次，状态仍为 `failed`（memory-only 语义），可恢复 |
+
+### 31.3 真实浏览器（headless Edge + DevTools，合成 Fixture）
+
+| 检查 | 结果 |
+| --- | --- |
+| AI 中心运行中 | ✅ 单场批次 4/70、等待汇总、请求运行中、已收到模型输出、尝试/成功/失败/取消/超时/重试、并发、token、费用、ETA（≥3 样本） |
+| AI 中心完成 | ✅ 100%、70/70、final merge complete、保存报告/批次、无画像误报 |
+| 暗色 | ✅ headless Edge 实测（AI 中心完成态）；暗色截图未单独保存到 `docs/screenshots/` |
+| 390px | ✅ `docs/screenshots/ai-reliability-complete-v0131-narrow.png`，无横向溢出 |
+| 设置页 | ✅ 无响应超时（180 秒）、单批输入上限（自动/2k–32k）字段与说明可见：`docs/screenshots/ai-reliability-settings-v0131-light.png` |
+| 空提示框缺陷 | ✅ 修复全局 `[hidden]`，运行中截图不再出现空 beige callout |
+
+> 上述浏览器页面由 `tests/.tmp/ui-v14-fixture.mjs`（开发用，未提交）启动，Provider 为 Mock SSE；不是真实付费 API 验收。
+
+### 31.4 全量结果
+
+- **583 passed / 0 failed**（2026-11-12，约 96–106 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 新增 34 个测试（19 单元 + 11 集成 + 2 分批 + 2 进度）。
+- 未做：真实付费 API、真实 174k token 大场、真实 EXE/UAC。

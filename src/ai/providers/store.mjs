@@ -23,6 +23,8 @@ const DEFAULT_CONCURRENCY = 3;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_TIMEOUT_MS = 180000;
 const MAX_TIMEOUT_MS = 600000;
+const MIN_BATCH_INPUT_TOKENS = 2000;
+const MAX_BATCH_INPUT_TOKENS = 32000;
 
 function normalizeConcurrency(value, {fallback = DEFAULT_CONCURRENCY} = {}) {
   const number = Number(value);
@@ -34,6 +36,18 @@ function normalizeTimeoutMs(value, {fallback = DEFAULT_TIMEOUT_MS} = {}) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.max(10000, Math.min(MAX_TIMEOUT_MS, Math.floor(number)));
+}
+
+/**
+ * Optional per-request input-token budget. `null` means "derive from the model
+ * context window" (the runner's documented default), which keeps the default
+ * adaptive instead of hard-coding one batch size for every model.
+ */
+function normalizeBatchInputTokens(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.max(MIN_BATCH_INPUT_TOKENS, Math.min(MAX_BATCH_INPUT_TOKENS, Math.floor(number)));
 }
 
 function normalizeCapabilities(input) {
@@ -103,6 +117,7 @@ function normalizeConfig(raw, {now = Date.now()} = {}) {
     // lowers it on 429 and slowly restores it; the UI shows the live value.
     concurrency: normalizeConcurrency(raw.concurrency),
     timeoutMs: normalizeTimeoutMs(raw.timeoutMs),
+    batchInputTokens: normalizeBatchInputTokens(raw.batchInputTokens),
     createdAt: Number(raw.createdAt ?? now),
     updatedAt: Number(raw.updatedAt ?? now)
   };
@@ -132,6 +147,7 @@ function publicConfig(config) {
     contextLength: config.contextLength,
     concurrency: config.concurrency,
     timeoutMs: config.timeoutMs,
+    batchInputTokens: config.batchInputTokens,
     createdAt: config.createdAt,
     updatedAt: config.updatedAt
   };
@@ -318,6 +334,9 @@ export class ProviderConfigStore {
         input.timeoutMs === undefined ? existing?.timeoutMs : input.timeoutMs,
         {fallback: existing?.timeoutMs ?? DEFAULT_TIMEOUT_MS}
       ),
+      batchInputTokens: normalizeBatchInputTokens(
+        input.batchInputTokens === undefined ? existing?.batchInputTokens : input.batchInputTokens
+      ),
       // Capabilities are only ever written by recordTest(). A client-supplied
       // capability object is ignored so a config cannot self-certify memory.
       capabilities: normalizeCapabilities(existing?.capabilities)
@@ -348,6 +367,7 @@ export class ProviderConfigStore {
       contextLength: checked.contextLength,
       concurrency: checked.concurrency,
       timeoutMs: checked.timeoutMs,
+      batchInputTokens: checked.batchInputTokens,
       createdAt: now,
       updatedAt: now
     }, {now});

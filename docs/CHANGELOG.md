@@ -1,5 +1,35 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.1-r2 — 2026-11-12（AI 可靠性、token 分批、自动流式）
+
+### 修复
+
+- 超时不再被当作可重试错误：已发出的长请求超时后默认不重发；用户取消/暂停绝不重试；只有连接阶段网络错误允许一次安全重试。
+- `runPool` 首个失败不再 abort 同批在途请求：已完成的兄弟批次继续导入，恢复只处理缺失批次。
+- 新增 20 分钟任务级时间预算（`ANALYSIS_TASK_TIMEOUT`），不再等 9 分钟后才发现失败。
+- 每次尝试写脱敏 `ai.request.attempt` 日志与状态（attempt、耗时、错误类型、HTTP status、响应头/输出、是否重试）。
+- 修复全局 `[hidden]` 被 `.callout {display:flex}` 覆盖导致空提示框可见。
+- 修复会话任务遗留旧 job id、导致 memory-only 失败被误标 partial。
+- 修复 AI 中心“预计请求数”在含 session 时固定显示 1 的错误，改为自动分批提示。
+- `Retry-After: 0` 不再被回退成 1.5 秒固定等待。
+
+### 新增
+
+- `src/ai/batching/tokens.mjs`：session 消息与 memory 观众按估算 input token 分批；默认 8k，可配 2k–32k；小上下文自适应。
+- 多批 session + final aggregate：全部消息/观众覆盖，汇总证据 `{batch, seq}`，报告去重不拼接。
+- 自动 Streaming：OpenAI-compatible SSE 与 Anthropic Messages SSE；流式只缓冲，完成后仍走原校验/事务导入；不兼容自动回退一次并持久化模式。
+- 计时区分响应头、首字节/首 token、流持续时间、最大空闲与总耗时。
+- AI 中心：单场批次 n/N、等待汇总、已收到模型输出、请求运行时间、重试状态、已保存批次、真实失败原因。
+- 统计分开成功/失败/取消/超时/重试；失败无 usage 显示“用量未知”；ETA 仅 ≥3 个成功批次样本。
+- Provider 配置新增“无响应超时（秒，10–600）”与“单批输入上限 tokens（留空自动）”。
+- `docs/AI_RELIABILITY.md`；真实浏览器截图 `docs/screenshots/ai-reliability-*`。
+
+### 测试
+
+- 全量 **583 passed / 0 failed**（约 96 秒）。
+- 新增 `ai-attempts`、`ai-stream`、`ai-token-batching`、`v14-session-batching`、`v14-streaming-timeout`；更新 `ai-progress`。
+- 真实付费 API、真实 174k token 大场、真实 EXE 仍未验证（本机无 Key / UAC 限制）。
+
 ## 0.13.1 — 2026-11-11（移除匿名/手动 AI，重写付费调度）
 
 ### 删除

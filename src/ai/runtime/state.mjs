@@ -13,7 +13,7 @@ export class AnalysisState {
   constructor({runtimeDir, now = Date.now, fileName = 'ai-v13.json'}) {
     this.file = join(runtimeDir, fileName);
     this.now = now;
-    this.data = {version: 1, sessions: {}};
+    this.data = {version: 1, sessions: {}, providers: {}};
     this.load();
   }
 
@@ -22,9 +22,13 @@ export class AnalysisState {
       if (!existsSync(this.file)) return;
       const parsed = JSON.parse(readFileSync(this.file, 'utf8'));
       if (!parsed || parsed.version !== 1 || typeof parsed.sessions !== 'object') return;
-      this.data = {version: 1, sessions: parsed.sessions};
+      this.data = {
+        version: 1,
+        sessions: parsed.sessions,
+        providers: parsed.providers && typeof parsed.providers === 'object' ? parsed.providers : {}
+      };
     } catch {
-      this.data = {version: 1, sessions: {}};
+      this.data = {version: 1, sessions: {}, providers: {}};
     }
   }
 
@@ -63,6 +67,38 @@ export class AnalysisState {
     if (!(key in this.data.sessions)) return;
     delete this.data.sessions[key];
     this.save();
+  }
+
+  /**
+   * Remember whether this provider/model configuration accepted streaming.
+   * A model that rejects `stream` must not be probed again on every batch: the
+   * next task uses the verified non-streaming mode directly.
+   */
+  getProviderMode(configId) {
+    if (!configId) return null;
+    const entry = this.data.providers?.[String(configId)];
+    return entry?.responseMode === 'streaming' || entry?.responseMode === 'non_streaming'
+      ? entry.responseMode
+      : null;
+  }
+
+  setProviderMode(configId, responseMode, {reason = null} = {}) {
+    if (!configId) return null;
+    const key = String(configId);
+    const mode = responseMode === 'streaming' ? 'streaming' : 'non_streaming';
+    const normalizedReason = typeof reason === 'string' ? reason.slice(0, 120) : null;
+    const existing = this.data.providers?.[key];
+    if (existing?.responseMode === mode && existing?.reason === normalizedReason) {
+      return existing;
+    }
+    this.data.providers = this.data.providers ?? {};
+    this.data.providers[key] = {
+      responseMode: mode,
+      reason: normalizedReason,
+      updatedAt: this.now()
+    };
+    this.save();
+    return this.data.providers[key];
   }
 
   /**

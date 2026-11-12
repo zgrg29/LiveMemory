@@ -818,3 +818,71 @@ result.schema.json
 - 正在运行的任务使用启动时的 provider/model 快照；该配置在运行期间禁止编辑/删除（409 `AI_PROVIDER_CONFIG_IN_USE`）。
 - 暂停/中断的旧任务若配置身份改变，`resume` 返回 409 `AI_PROVIDER_CONFIG_CHANGED`；新分析使用新配置。
 - 历史报告、长期画像、其他配置与新任务互不影响。状态/日志响应均不包含 Key。
+
+## 19. v0.13.1 可靠性：超时、token 分批与内部流式（2026-11-12）
+
+本节描述协议内部的传输与调度行为；**结果 Schema 仍为 1.3.0，包协议仍为 `livememory-analysis-v1`，数据库 Schema 仍为 13**。
+
+### 19.1 超时与重试语义
+
+- `timeoutMs`（默认 180 秒，配置范围 10–600 秒）表示“等待响应头/无进展”的上限；流式开始后按空闲时间（默认 60 秒）判断，不按总时长截断持续输出。
+- `TimeoutError`（已发出的请求）默认**不自动重试**。理由：Provider 可能仍在执行，重发会重复推理与计费。
+- 外部 `AbortError`（用户取消、暂停、退出）与超时分开，归类为 `canceled`，永不重试；终态为 `canceled` / `paused`。
+- 连接阶段网络错误最多一次安全重试；429 遵守 `Retry-After`（含 0）；5xx/408/425 指数退避 + 抖动，最多 3 次尝试；4xx、空响应、流中断不重试。
+- 任务级 20 分钟预算；达到后返回 `ANALYSIS_TASK_TIMEOUT`，不再发起新请求；已完成批次保留。
+- 一次 Schema 校验失败仍可发一次 repair；`finish_reason=length`、退化检测、流中断不触发 repair/重发。
+
+### 19.2 Token 分批
+
+- 批次预算 `batchInputTokens`：默认 8,000；配置范围 2,000–32,000；模型上下文较小时自动缩小，并相应限制输出 token。
+- session：按消息序列化后的估算 token 连续切分；单条超预算消息单独成批；全部消息恰好出现一次。
+- session 多批（`batchTotal > 1`）必须导入 final aggregate 才 `complete`；aggregate 结果 `task_id = <session>-analysis-final`，无 `batch_id`，`analysis_scope = session`，证据必须为 `{"batch": n, "seq": m}`。
+- memory：同一观众只属于一个批次；预算计入摘录、现有记忆、允许 evidence seq 列表与固定提示词开销；超预算观众单独成批，不丢观众。
+- `manifest.json` 可带可选诊断字段 `batch_plan`（`input_budget_tokens`、`estimated_prompt_tokens`、`batches_total`、`viewerOversized`）；不是结果字段，不参与校验。
+- 汇总失败、批次失败、任务超时都只影响 `status`，已导入的批次结果与证据保留；`resume` 只处理缺失批次与缺失 final。
+
+### 19.3 内部流式
+
+- 自动优先 Streaming；普通用户只选择 Provider/区域/Model ID，不存在 Streaming 开关。
+- OpenAI-compatible：`stream:true` + SSE `choices[].delta`；`stream_options.include_usage` 仅对已知支持者发送。
+- Anthropic：`/messages` + SSE `message_start` / `content_block_delta` / `message_delta`。
+- Provider 返回 JSON 而非 SSE 时按普通响应处理；明确拒绝 stream（400/404/415/422 且错误指向 stream）时只回退一次到非流式，并把响应模式写入 `runtime/ai-v13.json`，后续任务不再重复探测。
+- 流式内容只在本进程缓冲；完成后仍执行 JSON 提取、本地组装、`validateAnalysisImport()`、观众覆盖/证据校验、去重与事务导入。中断流不产生任何 `ai_results` 行。
+- 每次尝试记录：响应头/首字节/首 token/结束时间、`maxIdleMs`、`streamDurationMs`、是否收到输出、usage 是否存在。日志不含提示词、聊天或回答正文。
+
+### 19.4 状态与统计新增字段
+
+`GET /api/ai/analyze/status` 继续返回原字段，并新增：
+
+```json
+{
+  "sessionBatchTotal": 5,
+  "sessionBatchIndex": 2,
+  "sessionBatchesCompleted": 2,
+  "sessionAggregateRequired": true,
+  "sessionAggregateDone": false,
+  "memoryBatchTotal": 3,
+  "memoryBatchesCompleted": 1,
+  "requestMode": "streaming",
+  "attemptStats": {"total": 4, "succeeded": 3, "failed": 1, "canceled": 0, "timedOut": 0, "retried": 1, "usageUnknown": 1},
+  "currentRequest": {"kind": "session", "batchIndex": 3, "attempt": 1, "maxAttempts": 3, "mode": "streaming", "startedAt": 0, "receivedHeaders": true, "receivedOutput": true, "retrying": false},
+  "lastRequest": {"kind": "session", "outcome": "succeeded", "mode": "streaming", "elapsedMs": 2832, "receivedHeaders": true, "receivedOutput": true, "usageKnown": true},
+  "usageKnown": true,
+  "usageUnknownAttempts": 1,
+  "taskDeadlineAt": 0,
+  "taskRemainingMs": 0,
+  "saved": {"sessionReport": false, "sessionBatches": 2, "memoryBatches": 1, "memory": false}
+}
+```
+
+- `attemptStats` 按任务统计尝试；`requestStats` 仍按 `configId`/进程统计调度器。
+- 失败、超时、取消且未取得 usage 的尝试计入 `usageUnknownAttempts`；不得把缺失 usage 当作零费用。
+- 能力检测请求不进入上述分析统计；仍写入独立 `ai_provider_tests` 审计表。
+- `estimatedRemainingMs` 只在 ≥3 个成功批次样本且运行中时返回，否则为 `null`。
+
+### 19.5 兼容性
+
+- 旧 1.0.0–1.2.0 结果、旧 `combined` 任务、旧单批 session 包继续可读/可导入。
+- 新单批 session 包格式不变；只有多批 session 会新增 final aggregate 要求。
+- 旧任务恢复时若缺少 final 且 `batchTotal > 1`，会补做 aggregate；已导入批次不重发。
+- 流式与非流式生成的回答使用同一结果协议；传输方式不写入结果 Schema。

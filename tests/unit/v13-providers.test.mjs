@@ -204,6 +204,34 @@ test('editing a saved config keeps its id, default state and API key unless repl
   }
 });
 
+test('a hard provider auth failure is reported as failed, not partial', async () => {
+  const result = await verifyProviderConfig({
+    config: {
+      providerId: 'custom',
+      protocol: 'openai',
+      regionId: 'custom',
+      baseUrl: 'http://127.0.0.1:9/v1',
+      modelId: 'qwen-plus',
+      allowLocalNetwork: true,
+      supportsStructuredOutputs: false
+    },
+    apiKey: 'test-key',
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: {message: 'Free quota exhausted. Add funds or disable use-free-tier-only mode.'}
+    }), {
+      status: 403,
+      headers: {'content-type': 'application/json'}
+    })
+  });
+  assert.equal(result.status, 'failed', JSON.stringify(result.stages));
+  assert.equal(result.capabilities.text, false);
+  assert.equal(result.stages.text.status, 'failed');
+  assert.equal(result.stages.text.httpStatus, 403);
+  assert.equal(result.stages.text.code, 'PROVIDER_AUTH_FAILED');
+  assert.match(result.stages.text.detail, /free quota|funds/i);
+  assert.equal(result.error, 'PROVIDER_AUTH_FAILED');
+});
+
 test('capability verification records session and memory stages separately', async () => {
   const temp = createTempDir();
   try {

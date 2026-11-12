@@ -63,6 +63,8 @@ export class ProviderRequestScheduler {
     this.total = 0;
     this.completed = 0;
     this.failed = 0;
+    this.timedOut = 0;
+    this.canceled = 0;
     this.queueWaitMsTotal = 0;
     this.throttleWaitMsTotal = 0;
     this.durationMsTotal = 0;
@@ -164,7 +166,9 @@ export class ProviderRequestScheduler {
       this.#recover();
       return value;
     } catch (error) {
-      this.failed += 1;
+      if (error?.kind === 'canceled') this.canceled += 1;
+      else if (error?.kind === 'timeout') this.timedOut += 1;
+      else this.failed += 1;
       this.#penalize(error);
       throw error;
     } finally {
@@ -184,6 +188,8 @@ export class ProviderRequestScheduler {
       total: this.total,
       completed: this.completed,
       failed: this.failed,
+      timedOut: this.timedOut,
+      canceled: this.canceled,
       active: this.active,
       waiting: this.waiting,
       concurrency: this.concurrency,

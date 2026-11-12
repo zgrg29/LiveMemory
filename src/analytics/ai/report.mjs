@@ -327,7 +327,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
   let incompleteReason = null;
   if (mode === 'exported' || mode === 'partial') {
     if (primary.missingBatches.length > 0) incompleteReason = 'missing_batches';
-    else if ((primary.analysisMode ?? 'combined') === 'combined' && job.batchTotal > 1) incompleteReason = 'awaiting_aggregate';
+    else if ((primary.analysisMode ?? 'combined') !== 'memory' && job.batchTotal > 1) incompleteReason = 'awaiting_aggregate';
     else incompleteReason = 'no_results';
   }
 

@@ -31,19 +31,35 @@ import {
   RESULT_PROTOCOL,
   RESULT_SCHEMA_VERSION,
   TASK_KIND,
+  aggregateTaskId,
+  batchTaskId,
   promptVersionFor
 } from '../constants.mjs';
 import {
   PACKAGE_NOTES,
   buildMessageLines,
+  buildEmoteDictionary,
   buildMemoryPayload,
   buildSessionContextBlock,
   buildViewerContextList
 } from './context.mjs';
-import {getMemory} from '../../storage/repositories/viewer-memory.mjs';
 import {buildSessionInstructions, buildMemoryInstructions} from '../prompts/split.mjs';
+import {
+  estimateJsonTokens,
+  estimateTokens,
+  planMemoryViewerBatches,
+  planSessionMessageBatches,
+  promptOverheadTokens,
+  resolveBatchInputTokens
+} from '../batching/tokens.mjs';
+import {getMemory} from '../../storage/repositories/viewer-memory.mjs';
 
 const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.3.schema.json', import.meta.url));
+
+/** Budget for one session batch output. Used only to bound context/window math. */
+const SESSION_OUTPUT_TOKENS = 8000;
+/** Budget for one memory batch output. */
+const MEMORY_OUTPUT_TOKENS = 6000;
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -71,11 +87,40 @@ async function readSchemaText() {
 }
 
 /**
- * Session-only manual package. Deliberately contains no viewer memory context,
- * no viewer excerpts and no per-viewer profile requirement. One file, one JSON
- * answer. The package can still be large; it is significantly smaller than the
- * old combined package because local statistics are included once and long-term
- * memory blobs are omitted.
+ * The provider prompt contains a compact answer schema (not the full result
+ * schema). Measure the same subset so the batching overhead is not guessed.
+ */
+function sessionAnswerSchemaEstimate(schemaText) {
+  try {
+    const schema = JSON.parse(schemaText);
+    return estimateJsonTokens({
+      type: 'object',
+      additionalProperties: false,
+      required: ['session_topics'],
+      properties: {
+        session_topics: schema?.properties?.session_topics ?? null,
+        viewer_profiles: schema?.properties?.viewer_profiles ?? null
+      }
+    });
+  } catch {
+    return 2500;
+  }
+}
+
+function memoryAnswerSchemaEstimate(schemaText) {
+  try {
+    const schema = JSON.parse(schemaText);
+    return estimateJsonTokens(schema?.properties?.viewer_memory_updates?.items ?? {}) + 500;
+  } catch {
+    return 2500;
+  }
+}
+
+/**
+ * Session-only analysis job. The session is split by an estimated input-token
+ * budget (4k–32k, default 8k, configurable) instead of one giant request. A
+ * single-batch session keeps the original one-answer behaviour; a multi-batch
+ * session requires a final aggregate answer before the report is `complete`.
  */
 export async function createSessionAnalysisJob({
   db,
@@ -89,6 +134,8 @@ export async function createSessionAnalysisJob({
   pricingStatus = null,
   budget = null,
   costEstimate = null,
+  tokenBudget = null,
+  contextLength = null,
   now = Date.now()
 }) {
   const summary = buildSessionSummary(db, sessionId, {now});
@@ -108,47 +155,18 @@ export async function createSessionAnalysisJob({
     throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {code: 'ANALYSIS_TOO_MANY_VIEWERS'});
   }
 
-  const jobId = createId('aij');
-  const promptVersion = promptVersionFor(locale, ANALYSIS_MODE.SESSION);
-  const batchId = `${jobId}-b01`;
-  const taskId = `${session.id}-analysis`;
-  const createdAt = new Date(now);
-  const {lines, emoteEntries, messagesWithEmotes} = buildMessageLines({messages: allMessages, session, locale});
-  const messagesData = lines.length ? `${lines.join('\n')}\n` : '';
-  const messagesFile = contentFile('messages.jsonl', messagesData);
-  const baseContext = buildSessionContextBlock(summary);
+  const inputBudget = resolveBatchInputTokens({
+    configured: tokenBudget,
+    contextLength,
+    outputReserve: SESSION_OUTPUT_TOKENS
+  });
   const schemaText = await readSchemaText();
-  const fromAt = allMessages[0]?.occurred_at ?? session.startedAt;
-  const toAt = allMessages[allMessages.length - 1]?.occurred_at ?? session.endedAt ?? now;
-  const coverage = {
-    from_seq: 1,
-    to_seq: allMessages.length,
-    message_count: allMessages.length,
-    from_at: isoFromEpochMs(fromAt),
-    to_at: isoFromEpochMs(toAt)
-  };
-  const sessionContext = {
-    protocol: ANALYSIS_PROTOCOL,
-    generated_at: isoFromEpochMs(now),
-    ...baseContext,
-    job: {id: jobId, prompt_version: promptVersion, locale, schema_version: RESULT_SCHEMA_VERSION, analysis_scope: 'session'},
-    batch: {index: 1, total: 1, batch_id: batchId, task_id: taskId, ...coverage},
-    batch_coverage: coverage,
-    counts: {
-      messages_in_package: allMessages.length,
-      messages_total: totalMessages,
-      messages_with_emotes: messagesWithEmotes,
-      emote_kinds: emoteEntries.length,
-      viewers: participants.length,
-      events: summary.stats.eventCount
-    },
-    notes: {
-      ...PACKAGE_NOTES,
-      session_only: 'This is a session-only report. Do not produce viewer profiles or long-term memory updates.',
-      memory: 'Long-term viewer memory is not part of this task and must not be inferred or returned.'
-    }
-  };
-  const instructions = buildSessionInstructions(locale, {
+  const baseContext = buildSessionContextBlock(summary);
+  const sizing = buildMessageLines({messages: allMessages, session, locale});
+  const messageTokens = sizing.lines.map((line) => estimateTokens(line));
+  // Build one representative instruction block; its size is stable across
+  // batches, and the per-batch fields are covered by the wrapper margin.
+  const sampleInstructions = buildSessionInstructions(locale, {
     session: {
       id: session.id,
       platform: session.platform,
@@ -157,70 +175,201 @@ export async function createSessionAnalysisJob({
       ended_at: session.endedAt
     },
     broadcaster: baseContext.broadcaster,
-    messageCount: allMessages.length,
-    messagesWithEmotes,
-    emoteCount: emoteEntries.length,
+    messageCount: 1,
+    messagesWithEmotes: 0,
+    emoteCount: 0,
     support: summary.support,
-    jobId,
-    taskId,
-    batchId,
-    promptVersion
+    jobId: 'aij_pending',
+    taskId: 'ses_pending-analysis-b01',
+    batchId: 'aij_pending-b01',
+    batchIndex: 1,
+    batchTotal: 1,
+    promptVersion: promptVersionFor(locale, ANALYSIS_MODE.SESSION)
   });
-  const manifest = {
-    protocol: ANALYSIS_PROTOCOL,
-    result_protocol: RESULT_PROTOCOL,
-    schema_version: RESULT_SCHEMA_VERSION,
-    analysis_scope: 'session',
-    created_at: isoFromEpochMs(now),
-    app: {name: APP_NAME, version: APP_VERSION},
-    locale,
-    prompt_version: promptVersion,
-    session_id: session.id,
-    platform: session.platform,
-    broadcaster_id: session.broadcasterId ?? null,
-    broadcaster_identity: session.broadcasterIdentity ?? 'unresolved',
-    simulated: session.simulated,
-    job_id: jobId,
-    stage: 'session',
-    batch: {
-      index: 1,
-      total: 1,
-      batch_id: batchId,
-      from_seq: 1,
-      to_seq: allMessages.length,
-      message_count: allMessages.length,
-      from_at: coverage.from_at,
-      to_at: coverage.to_at,
-      checksum: messagesFile.sha256
+  const overheadTokens = promptOverheadTokens({
+    instructions: sampleInstructions,
+    context: {
+      ...baseContext,
+      job: {id: 'aij_pending', prompt_version: 'lm', locale, schema_version: RESULT_SCHEMA_VERSION, analysis_scope: 'session'},
+      batch: {index: 1, total: 1, batch_id: 'b', task_id: 't', from_seq: 1, to_seq: 1, message_count: 1, from_at: null, to_at: null},
+      batch_coverage: {from_seq: 1, to_seq: 1, message_count: 1, from_at: null, to_at: null},
+      counts: {messages_in_package: 1, messages_total: totalMessages, viewers: participants.length, events: summary.stats.eventCount},
+      notes: {...PACKAGE_NOTES, session_only: 'x', memory: 'x', batch_scope: 'x'}
     },
-    coverage: {...coverage, messages_total: totalMessages},
-    tasks: [{task_id: taskId, kind: TASK_KIND.SESSION_ANALYSIS, session_id: session.id}],
-    counts: {
-      messages: allMessages.length,
-      viewers: participants.length,
-      events: summary.stats.eventCount,
-      messages_with_emotes: messagesWithEmotes,
-      emote_kinds: emoteEntries.length
-    },
-    files: []
-  };
-  const contentFiles = [
-    contentFile('session_context.json', `${JSON.stringify(sessionContext, null, 2)}\n`),
-    messagesFile,
-    contentFile('instructions.md', instructions.endsWith('\n') ? instructions : `${instructions}\n`),
-    contentFile('result.schema.json', schemaText)
-  ];
-  manifest.files = contentFiles.map((file) => ({name: file.name, bytes: file.bytes, sha256: file.sha256}));
-  const archive = createZip([
-    {name: 'manifest.json', data: `${JSON.stringify(manifest, null, 2)}\n`},
-    ...contentFiles
-  ]);
-  const fileName = `LiveMemory-Session-${safeFilePart(session.id.slice(-8))}-${safeFilePart(jobId.slice(-6))}-${timestampForFile(createdAt)}-${locale}.zip`;
-  await mkdir(exportsDir, {recursive: true});
-  const absolutePath = join(exportsDir, fileName);
-  await writeFile(absolutePath, archive);
-  let packageId = null;
+    schema: sessionAnswerSchemaEstimate(schemaText)
+  });
+  const plan = planSessionMessageBatches({
+    messageTokens,
+    overheadTokens: overheadTokens + 250,
+    inputBudget,
+    maxMessages: MAX_ANALYSIS_MESSAGES
+  });
+  if (plan.length === 0) return null;
+  const batchTotal = plan.length;
+  const jobId = createId('aij');
+  const promptVersion = promptVersionFor(locale, ANALYSIS_MODE.SESSION);
+  const aggregateId = batchTotal > 1 ? aggregateTaskId(session.id) : null;
+  const createdAt = new Date(now);
+  const written = [];
+  const entries = [];
   try {
+    await mkdir(exportsDir, {recursive: true});
+    for (let index = 0; index < plan.length; index += 1) {
+      const slice = plan[index];
+      const batchIndex = index + 1;
+      const batchId = `${jobId}-b${pad(batchIndex)}`;
+      const taskId = batchTaskId(session.id, batchIndex, batchTotal);
+      const batchMessages = allMessages.slice(slice.startIndex, slice.endIndex);
+      const built = buildMessageLines({messages: batchMessages, session, locale});
+      const messagesData = built.lines.length ? `${built.lines.join('\n')}\n` : '';
+      const messagesFile = contentFile('messages.jsonl', messagesData);
+      const emoteEntries = buildEmoteDictionary(batchMessages);
+      const fromAt = batchMessages[0]?.occurred_at ?? session.startedAt;
+      const toAt = batchMessages[batchMessages.length - 1]?.occurred_at ?? session.endedAt ?? now;
+      const coverage = {
+        from_seq: slice.startIndex + 1,
+        to_seq: slice.endIndex,
+        message_count: batchMessages.length,
+        from_at: isoFromEpochMs(fromAt),
+        to_at: isoFromEpochMs(toAt)
+      };
+      const sessionContext = {
+        protocol: ANALYSIS_PROTOCOL,
+        generated_at: isoFromEpochMs(now),
+        ...baseContext,
+        job: {
+          id: jobId,
+          prompt_version: promptVersion,
+          locale,
+          schema_version: RESULT_SCHEMA_VERSION,
+          analysis_scope: 'session'
+        },
+        batch: {index: batchIndex, total: batchTotal, batch_id: batchId, task_id: taskId, ...coverage},
+        batch_coverage: coverage,
+        counts: {
+          messages_in_package: batchMessages.length,
+          messages_total: totalMessages,
+          messages_with_emotes: built.messagesWithEmotes,
+          emote_kinds: emoteEntries.length,
+          viewers: participants.length,
+          events: summary.stats.eventCount
+        },
+        notes: {
+          ...PACKAGE_NOTES,
+          session_only: 'This is a session-only report. Do not produce viewer profiles or long-term memory updates.',
+          memory: 'Long-term viewer memory is not part of this task and must not be inferred or returned.',
+          ...(batchTotal > 1
+            ? {
+              batch_scope: 'This package contains only this batch of the broadcast. Cite only seq numbers present in this package. Do not claim to have seen the whole broadcast.'
+            }
+            : {})
+        }
+      };
+      const instructions = buildSessionInstructions(locale, {
+        session: {
+          id: session.id,
+          platform: session.platform,
+          simulated: session.simulated,
+          started_at: session.startedAt,
+          ended_at: session.endedAt
+        },
+        broadcaster: baseContext.broadcaster,
+        messageCount: batchMessages.length,
+        messagesWithEmotes: built.messagesWithEmotes,
+        emoteCount: emoteEntries.length,
+        support: summary.support,
+        jobId,
+        taskId,
+        batchId,
+        batchIndex,
+        batchTotal,
+        promptVersion
+      });
+      const manifest = {
+        protocol: ANALYSIS_PROTOCOL,
+        result_protocol: RESULT_PROTOCOL,
+        schema_version: RESULT_SCHEMA_VERSION,
+        analysis_scope: 'session',
+        created_at: isoFromEpochMs(now),
+        app: {name: APP_NAME, version: APP_VERSION},
+        locale,
+        prompt_version: promptVersion,
+        session_id: session.id,
+        platform: session.platform,
+        broadcaster_id: session.broadcasterId ?? null,
+        broadcaster_identity: session.broadcasterIdentity ?? 'unresolved',
+        simulated: session.simulated,
+        job_id: jobId,
+        stage: 'session',
+        batch: {
+          index: batchIndex,
+          total: batchTotal,
+          batch_id: batchId,
+          from_seq: coverage.from_seq,
+          to_seq: coverage.to_seq,
+          message_count: batchMessages.length,
+          from_at: coverage.from_at,
+          to_at: coverage.to_at,
+          checksum: messagesFile.sha256
+        },
+        coverage: {...coverage, messages_total: totalMessages},
+        ...(aggregateId ? {aggregate: {required: true, task_id: aggregateId}} : {}),
+        tasks: [{task_id: taskId, kind: TASK_KIND.SESSION_ANALYSIS, session_id: session.id}],
+        counts: {
+          messages: batchMessages.length,
+          messages_total: totalMessages,
+          viewers: participants.length,
+          events: summary.stats.eventCount,
+          messages_with_emotes: built.messagesWithEmotes,
+          emote_kinds: emoteEntries.length
+        },
+        batch_plan: {
+          input_budget_tokens: inputBudget,
+          estimated_prompt_tokens: slice.estimatedTokens,
+          batches_total: batchTotal
+        },
+        files: []
+      };
+      const contentFiles = [
+        contentFile('session_context.json', `${JSON.stringify(sessionContext, null, 2)}\n`),
+        messagesFile,
+        contentFile('instructions.md', instructions.endsWith('\n') ? instructions : `${instructions}\n`),
+        contentFile('result.schema.json', schemaText)
+      ];
+      manifest.files = contentFiles.map((file) => ({name: file.name, bytes: file.bytes, sha256: file.sha256}));
+      const archive = createZip([
+        {name: 'manifest.json', data: `${JSON.stringify(manifest, null, 2)}\n`},
+        ...contentFiles
+      ]);
+      const batchLabel = batchTotal > 1 ? `-b${pad(batchIndex)}of${pad(batchTotal)}` : '';
+      const fileName = `LiveMemory-Session-${safeFilePart(session.id.slice(-8))}-${safeFilePart(jobId.slice(-6))}${batchLabel}-${timestampForFile(createdAt)}-${locale}.zip`;
+      const absolutePath = join(exportsDir, fileName);
+      await writeFile(absolutePath, archive);
+      written.push(absolutePath);
+      const batchViewerIds = new Set(batchMessages.map((message) => message.viewer_id).filter(Boolean));
+      entries.push({
+        batchIndex,
+        batchId,
+        taskId,
+        fileName,
+        absolutePath,
+        archive,
+        messageCount: batchMessages.length,
+        fromSeq: coverage.from_seq,
+        toSeq: coverage.to_seq,
+        fromAt,
+        toAt,
+        checksum: messagesFile.sha256,
+        messages: batchMessages.map((message, messageIndex) => ({
+          seq: messageIndex + 1,
+          eventId: message.id
+        })),
+        viewerIds: participants
+          .map((viewer) => viewer.viewer_id)
+          .filter((viewerId) => batchViewerIds.has(viewerId))
+      });
+    }
+
     withTransaction(db, () => {
       insertJob(db, {
         id: jobId,
@@ -230,8 +379,8 @@ export async function createSessionAnalysisJob({
         locale,
         promptVersion,
         protocolVersion: ANALYSIS_PROTOCOL,
-        batchTotal: 1,
-        maxMessages: allMessages.length,
+        batchTotal: entries.length,
+        maxMessages: Math.max(...entries.map((entry) => entry.messageCount)),
         totalMessages,
         memoryViewersTotal: 0,
         analysisMode: ANALYSIS_MODE.SESSION,
@@ -242,85 +391,130 @@ export async function createSessionAnalysisJob({
         pricingStatus,
         budget,
         costEstimate,
-        aggregateTaskId: null,
+        aggregateTaskId: aggregateId,
         createdAt: now
       });
-      packageId = createId('pkg');
-      insertPackage(db, {
-        id: packageId,
-        sessionId: session.id,
-        kind: 'analysis',
-        protocolVersion: ANALYSIS_PROTOCOL,
-        locale,
-        fileName,
-        relativePath: fileName,
-        checksum: sha256(archive),
-        messageCount: allMessages.length,
-        jobId,
-        batchIndex: 1,
-        stage: 'session',
-        promptVersion,
-        createdAt: now
-      });
-      insertJobBatch(db, {
-        jobId,
-        batchIndex: 1,
-        batchId,
-        taskId,
-        fromSeq: 1,
-        toSeq: allMessages.length,
-        fromAt,
-        toAt,
-        messageCount: allMessages.length,
-        checksum: messagesFile.sha256,
-        packageId,
-        createdAt: now
-      });
-      insertJobMessages(db, jobId, 1, allMessages.map((message, index) => ({
-        seq: index + 1,
-        eventId: message.id
-      })));
-      insertJobViewers(db, jobId, 1, participants.map((viewer) => viewer.viewer_id));
+      for (const entry of entries) {
+        const packageId = createId('pkg');
+        entry.packageId = packageId;
+        insertPackage(db, {
+          id: packageId,
+          sessionId: session.id,
+          kind: 'analysis',
+          protocolVersion: ANALYSIS_PROTOCOL,
+          locale,
+          fileName: entry.fileName,
+          relativePath: entry.fileName,
+          checksum: sha256(entry.archive),
+          messageCount: entry.messageCount,
+          jobId,
+          batchIndex: entry.batchIndex,
+          stage: 'session',
+          promptVersion,
+          createdAt: now
+        });
+        insertJobBatch(db, {
+          jobId,
+          batchIndex: entry.batchIndex,
+          batchId: entry.batchId,
+          taskId: entry.taskId,
+          fromSeq: entry.fromSeq ?? 1,
+          toSeq: entry.toSeq ?? (entry.messageCount ?? 0),
+          fromAt: entry.fromAt,
+          toAt: entry.toAt,
+          messageCount: entry.messageCount,
+          checksum: entry.checksum,
+          packageId,
+          createdAt: now
+        });
+        insertJobMessages(db, jobId, entry.batchIndex, entry.messages);
+        insertJobViewers(db, jobId, entry.batchIndex, entry.viewerIds);
+      }
       recomputeSessionAiStatus(db, session.id, {setSessionAiStatus, listJobs, now});
     });
+    return {
+      job: {
+        id: jobId,
+        sessionId: session.id,
+        locale,
+        promptVersion,
+        analysisMode: ANALYSIS_MODE.SESSION,
+        batchTotal: entries.length,
+        totalMessages,
+        aggregateTaskId: aggregateId,
+        inputBudgetTokens: inputBudget,
+        createdAt: now
+      },
+      packages: entries.map((entry) => ({
+        id: entry.packageId,
+        batchIndex: entry.batchIndex,
+        fileName: entry.fileName,
+        absolutePath: entry.absolutePath,
+        bytes: entry.archive.length,
+        stage: 'session',
+        messageCount: entry.messageCount
+      })),
+      package: {
+        id: entries[0].packageId,
+        fileName: entries[0].fileName,
+        absolutePath: entries[0].absolutePath,
+        bytes: entries[0].archive.length,
+        stage: 'session',
+        batchIndex: 1
+      }
+    };
   } catch (error) {
-    await rm(absolutePath, {force: true}).catch(() => {});
+    await Promise.all(written.map((file) => rm(file, {force: true}).catch(() => {})));
     throw error;
   }
-  return {
-    job: {
-      id: jobId,
-      sessionId: session.id,
-      locale,
-      promptVersion,
-      analysisMode: ANALYSIS_MODE.SESSION,
-      batchTotal: 1,
-      totalMessages,
-      createdAt: now
-    },
-    package: {
-      id: packageId,
-      fileName,
-      absolutePath,
-      bytes: archive.length,
-      stage: 'session',
-      batchIndex: 1
-    }
-  };
 }
 
 /**
- * Assign viewers to memory-only batches. A viewer is never split across batches
- * and is never silently dropped when the requested caps are exceeded; the cap
- * is used as a soft load target and the actual batch count grows.
+ * Assign viewers to memory-only batches.
+ *
+ * A viewer is never split across batches and is never silently dropped when the
+ * requested caps are exceeded; the caps are soft load targets and the actual
+ * batch count grows. When `viewerCosts` (estimated tokens per viewer) is given
+ * the planner also respects `inputBudget`, so two viewers with 600 messages each
+ * do not end up in one request just because the viewer cap allows it.
  */
 export function assignMemoryOnlyBatches({
   viewers,
   messagesByViewer,
   viewerCap = 10,
   excerptCap = 600,
-  maxBatches = 30
+  maxBatches = 30,
+  viewerCosts = null,
+  overheadTokens = 0,
+  inputBudget = null
 }) {
+  if (viewerCosts) {
+    const plan = planMemoryViewerBatches({
+      viewers: viewers.map((viewer) => {
+        const excerptCount = Math.min(
+          messagesByViewer.get(viewer.viewer_id)?.length ?? 0,
+          MAX_MESSAGES_PER_VIEWER_EXCERPT
+        );
+        return {
+          viewerId: viewer.viewer_id,
+          excerptCount,
+          excerptTokens: viewerCosts.get(viewer.viewer_id)?.excerptTokens ?? 0,
+          memoryTokens: viewerCosts.get(viewer.viewer_id)?.memoryTokens ?? 0
+        };
+      }),
+      viewerCap,
+      excerptCap,
+      overheadTokens,
+      inputBudget: inputBudget ?? undefined,
+      maxBatches
+    });
+    return plan.batches.map((batch) => ({
+      viewerIds: batch.viewerIds,
+      messages: batch.excerptCount,
+      estimatedTokens: batch.estimatedTokens,
+      oversized: batch.oversized
+    }));
+  }
   const batches = [];
   let current = {viewerIds: [], messages: 0};
   const flush = () => {
@@ -372,6 +566,8 @@ export async function createViewerMemoryJob({
   pricingStatus = null,
   budget = null,
   costEstimate = null,
+  tokenBudget = null,
+  contextLength = null,
   now = Date.now()
 }) {
   const summary = buildSessionSummary(db, sessionId, {now});
@@ -398,16 +594,79 @@ export async function createViewerMemoryJob({
     list.push(message);
     messagesByViewer.set(message.viewer_id, list);
   }
-  const batches = assignMemoryOnlyBatches({
+  // One viewer-context query per viewer for the whole job. It carries the
+  // existing long-term memory, so the same data is used for token planning and
+  // for the package instead of being re-read per batch.
+  const viewerContext = buildViewerContextList({
+    db,
     viewers: allViewers,
-    messagesByViewer,
+    broadcasterId: session.broadcasterId
+  });
+  const contextByViewer = new Map(viewerContext.map((entry) => [entry.viewer_id, entry]));
+  const viewerCosts = new Map();
+  for (const viewer of allViewers) {
+    const slice = (messagesByViewer.get(viewer.viewer_id) ?? []).slice(-MAX_MESSAGES_PER_VIEWER_EXCERPT);
+    const excerptTokens = slice.reduce((total, message) => total + estimateTokens(message.content) + 28, 0);
+    // The memory contract repeats this viewer's allowed evidence seqs; a flat
+    // per-message estimate keeps that list inside the same budget.
+    const contractTokens = Math.min(600, slice.length * 4);
+    const entry = contextByViewer.get(viewer.viewer_id);
+    const memoryTokens = estimateJsonTokens(entry?.memory ?? null);
+    viewerCosts.set(viewer.viewer_id, {
+      excerptTokens: excerptTokens + contractTokens,
+      memoryTokens
+    });
+  }
+
+  const inputBudget = resolveBatchInputTokens({
+    configured: tokenBudget,
+    contextLength,
+    outputReserve: MEMORY_OUTPUT_TOKENS
+  });
+  const schemaText = await readSchemaText();
+  const sampleInstructions = buildMemoryInstructions(locale, {
+    session: {id: session.id, platform: session.platform, simulated: session.simulated},
+    broadcaster: {id: session.broadcasterId, name: session.broadcasterName ?? null},
+    viewerCount: 10,
+    viewersTotal: allViewers.length,
+    messageCount: 600,
+    jobId: 'aij_pending',
+    taskId: 'ses_pending-memory',
+    batchId: 'aij_pending-b01',
+    promptVersion: promptVersionFor(locale, ANALYSIS_MODE.MEMORY)
+  });
+  const overheadTokens = promptOverheadTokens({
+    instructions: sampleInstructions,
+    context: {
+      protocol: ANALYSIS_PROTOCOL,
+      kind: 'viewer_memory_only',
+      analysis_scope: 'viewer_memory',
+      job: {id: 'aij_pending'},
+      batch: {index: 1, total: 1, batch_id: 'b', task_id: 't', viewers: 10, messages: 600, viewers_total: allViewers.length},
+      viewers: [],
+      notes: {untrusted_content: 'x', scope: 'x', authority: 'x', coverage: 'x', money: 'x', emoticons: 'x'}
+    },
+    schema: memoryAnswerSchemaEstimate(schemaText)
+  });
+  const plan = planMemoryViewerBatches({
+    viewers: allViewers.map((viewer) => ({
+      viewerId: viewer.viewer_id,
+      excerptCount: Math.min(
+        (messagesByViewer.get(viewer.viewer_id) ?? []).length,
+        MAX_MESSAGES_PER_VIEWER_EXCERPT
+      ),
+      excerptTokens: viewerCosts.get(viewer.viewer_id)?.excerptTokens ?? 0,
+      memoryTokens: viewerCosts.get(viewer.viewer_id)?.memoryTokens ?? 0
+    })),
     viewerCap: viewersPerBatch,
     excerptCap,
+    overheadTokens: overheadTokens + 250,
+    inputBudget,
     maxBatches
   });
+  const batches = plan.batches;
   const jobId = createId('aij');
   const promptVersion = promptVersionFor(locale, ANALYSIS_MODE.MEMORY);
-  const schemaText = await readSchemaText();
   const createdAt = new Date(now);
   const written = [];
   const entries = [];
@@ -440,20 +699,21 @@ export async function createViewerMemoryJob({
         'viewer_excerpts.jsonl',
         excerptFile.lines.length ? `${excerptFile.lines.join('\n')}\n` : ''
       );
-      const viewerContext = buildViewerContextList({
-        db,
-        viewers,
-        broadcasterId: session.broadcasterId
+      const memoryViewers = viewers.map((viewer) => {
+        const entry = contextByViewer.get(viewer.viewer_id) ?? {};
+        return {
+          viewer_id: entry.viewer_id ?? viewer.viewer_id,
+          platform: entry.platform ?? viewer.platform,
+          nickname: entry.nickname ?? viewer.nickname,
+          evidence_seqs: seqByViewer.get(viewer.viewer_id) ?? [],
+          session_excerpt_message_count: (seqByViewer.get(viewer.viewer_id) ?? []).length,
+          zero_excerpt: (seqByViewer.get(viewer.viewer_id) ?? []).length === 0,
+          memory: entry.memory ?? buildMemoryPayload(db, {
+            broadcasterId: session.broadcasterId,
+            viewerId: viewer.viewer_id
+          })
+        };
       });
-      const memoryViewers = viewerContext.map((entry) => ({
-        viewer_id: entry.viewer_id,
-        platform: entry.platform,
-        nickname: entry.nickname,
-        evidence_seqs: seqByViewer.get(entry.viewer_id) ?? [],
-        session_excerpt_message_count: (seqByViewer.get(entry.viewer_id) ?? []).length,
-        zero_excerpt: (seqByViewer.get(entry.viewer_id) ?? []).length === 0,
-        memory: buildMemoryPayload(db, {broadcasterId: session.broadcasterId, viewerId: entry.viewer_id})
-      }));
       const memoryContext = {
         protocol: ANALYSIS_PROTOCOL,
         kind: 'viewer_memory_only',
@@ -544,6 +804,12 @@ export async function createViewerMemoryJob({
           messages: excerptMessages.length,
           events: summary.stats.eventCount
         },
+        batch_plan: {
+          input_budget_tokens: inputBudget,
+          estimated_prompt_tokens: batch.estimatedTokens,
+          batches_total: batches.length,
+          viewerOversized: batch.oversized === true
+        },
         files: []
       };
       const contentFiles = [
@@ -572,11 +838,14 @@ export async function createViewerMemoryJob({
         excerptContent,
         messageCount: excerptMessages.length,
         memoryViewers: memoryViewers.map((viewer) => {
-          const memory = getMemory(db, {broadcasterId: session.broadcasterId, viewerId: viewer.viewer_id});
+          const memoryRow = getMemory(db, {
+            broadcasterId: session.broadcasterId,
+            viewerId: viewer.viewer_id
+          });
           return {
             viewerId: viewer.viewer_id,
-            baseMemoryId: memory?.id ?? null,
-            baseVersion: memory?.version ?? 0,
+            baseMemoryId: memoryRow?.id ?? null,
+            baseVersion: Number(viewer.memory?.version ?? 0),
             messageCount: viewer.evidence_seqs.length
           };
         }),
@@ -664,6 +933,7 @@ export async function createViewerMemoryJob({
         analysisMode: ANALYSIS_MODE.MEMORY,
         batchTotal: entries.length,
         memoryViewersTotal: allViewers.length,
+        inputBudgetTokens: inputBudget,
         createdAt: now
       },
       packages: entries.map((entry) => ({

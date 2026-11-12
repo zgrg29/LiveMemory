@@ -44,7 +44,11 @@ function extractJson(text) {
 
 function stageError(error) {
   if (error instanceof ProviderHttpError) {
-    return {code: error.code, status: error.status, detail: error.detail};
+    // Do not call this field `status`: stage objects also use `status` for their
+    // passed/failed state. Spreading an HTTP `status` over it previously turned
+    // a hard 403 into a numeric stage status and made the whole test look
+    // "partial" instead of "failed".
+    return {code: error.code, httpStatus: error.status, detail: error.detail};
   }
   return {code: 'PROVIDER_TEST_FAILED', detail: String(error?.message ?? error?.name ?? 'unknown').slice(0, 200)};
 }

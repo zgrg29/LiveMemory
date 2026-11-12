@@ -54,6 +54,39 @@ export function assembleSessionAnswer({answer, manifest}) {
   };
 }
 
+/**
+ * The final aggregate answer is still a session report. It has no batch id and
+ * its task id is the job's aggregate task. Batch-qualified evidence refs are
+ * validated against every imported batch by the normal importer.
+ */
+export function assembleSessionAggregateAnswer({answer, manifest}) {
+  const topics = answer?.session_topics;
+  if (!topics || typeof topics !== 'object' || Array.isArray(topics)) {
+    return {
+      ok: false,
+      issues: [{path: 'session_topics', code: 'SESSION_TOPICS_REQUIRED'}],
+      result: null
+    };
+  }
+  return {
+    ok: true,
+    issues: [],
+    result: {
+      protocol: 'livememory-analysis-result-v1',
+      schema_version: '1.3.0',
+      analysis_scope: 'session',
+      job_id: manifest.job_id,
+      ...(Object.prototype.hasOwnProperty.call(manifest, 'broadcaster_id')
+        ? {broadcaster_id: manifest.broadcaster_id ?? null}
+        : {}),
+      task_id: manifest.tasks?.[0]?.task_id,
+      session_id: manifest.session_id,
+      locale: manifest.locale,
+      session_topics: topics
+    }
+  };
+}
+
 export function buildMemoryRefs(memoryContext) {
   return (memoryContext?.viewers ?? []).map((viewer, index) => ({
     ref: index + 1,

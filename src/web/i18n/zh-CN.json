@@ -565,7 +565,14 @@
         "tokens": "已使用 Token",
         "cost": "已知实际费用",
         "eta": "预计剩余时间",
-        "msValue": "{ms} ms"
+        "msValue": "{ms} ms",
+        "attempts": "请求尝试总数",
+        "succeeded": "成功请求",
+        "canceled": "用户取消",
+        "timedOut": "超时请求",
+        "retried": "自动重试",
+        "usage": "本次用量",
+        "usageUnknown": "用量未知（失败请求未返回 usage）"
       },
       "reason": {
         "ANALYSIS_FAILED": "分析未能完成。",
@@ -593,8 +600,50 @@
         "AUTO_SESSION_EMPTY": "这场直播没有可分析的消息。",
         "SESSION_EMPTY": "这场直播没有可分析的消息。",
         "ANALYSIS_PAUSED": "分析已暂停。",
-        "ANALYSIS_SESSION_NOT_FOUND": "对应的直播场次已不存在。"
-      }
+        "ANALYSIS_SESSION_NOT_FOUND": "对应的直播场次已不存在。",
+        "PROVIDER_STREAM_INTERRUPTED": "模型输出中断，本次结果未保存；可恢复未完成批次。",
+        "PROVIDER_STREAM_ERROR": "模型流式响应报错，本次结果未保存。",
+        "ANALYSIS_TASK_TIMEOUT": "任务已达到总时间预算，后续请求已停止；已完成批次已保留。",
+        "AUTO_OUTPUT_DEGENERATED": "模型输出重复退化且不完整，未保存结果。",
+        "ANALYSIS_AGGREGATE_TOO_LARGE": "批次结果太多，无法一次汇总；批次结果已保留。请降低批次上限或改用上下文更大的模型。",
+        "ANALYSIS_INCOMPLETE": "任务未完成，未保存完整报告。",
+        "ANALYSIS_AGGREGATE_NOT_READY": "还有批次结果未完成，暂不能汇总。",
+        "ANALYSIS_PACKAGE_MISSING": "本地分析包缺失，无法继续该批次。",
+        "PROVIDER_CONFIG_INVALID": "API 配置无效。"
+      },
+      "progressSessionBatches": "单场批次 {done}/{total}",
+      "progressAggregate": "等待整场汇总",
+      "progressAggregateDone": "整场汇总已完成",
+      "request": {
+        "unknown": "请求",
+        "aggregate": "整场汇总请求",
+        "memory": "观众画像请求",
+        "session": "单场分析请求",
+        "retrying": "等待第 {attempt}/{max} 次尝试",
+        "output": "已收到模型输出",
+        "headers": "已连接，等待模型输出",
+        "waiting": "等待模型响应",
+        "batch": "批次 {index}",
+        "elapsedSeconds": "已运行 {seconds} 秒",
+        "elapsedMinutes": "已运行 {minutes} 分 {seconds} 秒",
+        "last": "{kind}：上次{outcome}，耗时 {elapsed}",
+        "outcome": {
+          "succeeded": "成功",
+          "failed": "失败",
+          "canceled": "已取消",
+          "timeout": "超时"
+        },
+        "durationSeconds": "{seconds} 秒",
+        "durationMinutes": "{minutes} 分 {seconds} 秒"
+      },
+      "saved": {
+        "label": "已完成结果",
+        "session": "单场报告已保存",
+        "sessionBatches": "单场批次已保存 {done}/{total}",
+        "memoryBatches": "画像批次已保存 {done}/{total}",
+        "memory": "长期画像已保存"
+      },
+      "scaleRequestsAuto": "自动（按 token 预算分批）"
     },
     "steps": {
       "exportTitle": "1 · 导出 AI 分析包",
@@ -982,7 +1031,9 @@
       "longTermNote": "来自观众长期记忆（独立于单场报告）；仅显示当前主播范围内的画像。",
       "longTermCount": "{count} 位观众有长期画像",
       "longTermFacts": "长期事实",
-      "longTermObjectiveOnly": "已记录互动历史，暂无语义事实。"
+      "longTermObjectiveOnly": "已记录互动历史，暂无语义事实。",
+      "missingBatchesMore": "…另有 {count} 个批次未完成。",
+      "awaitingAggregateAuto": "所有批次结果已保存。可在 AI 分析中心点击「继续」，只补做未完成批次与整场汇总。"
     },
     "v13": {
       "scope": {
@@ -1048,7 +1099,10 @@
         "memoryBatchDone": "画像批次完成",
         "memoryDone": "长期画像已完成",
         "resuming": "恢复任务",
-        "paused": "已暂停"
+        "paused": "已暂停",
+        "sessionBatchAnalyzing": "分析单场直播（批次 {index}/{total}）",
+        "sessionBatchDone": "单场批次已保存",
+        "sessionAggregating": "汇总整场直播（{total} 个批次）"
       },
       "consent": {
         "title": "发送数据前确认",
@@ -1065,6 +1119,7 @@
         "test": "检测能力",
         "testing": "检测中…",
         "testDone": "能力检测：{status}",
+        "testFailureDetail": "检测失败原因：{detail}",
         "keyStored": "密钥已保存",
         "noKey": "无密钥",
         "delete": "删除",
@@ -1113,7 +1168,13 @@
         "priceRequired": "付费模型必须填写输入和输出价格，且不能同时为 0。",
         "manualModelHint": "该服务商不提供模型列表，请从官方文档/控制台复制完整 Model ID 后手动填入。",
         "preset": "推荐模型（自动填参考价）",
-        "customPreset": "自定义模型 / 手动输入"
+        "customPreset": "自定义模型 / 手动输入",
+        "timeout": "无响应超时（秒）",
+        "timeoutHint": "等待响应头或流式数据的最长时间；持续有输出时不会因总时长被截断。默认 180 秒。",
+        "timeoutShort": "超时 {seconds}s",
+        "batchInput": "单批输入上限（tokens，留空自动）",
+        "batchInputHint": "留空时按模型上下文自动选择（约 2,000–32,000）。这是每个请求的输入预算，不是输出预算。",
+        "batchInputAuto": "自动"
       },
       "capability": {
         "memory": "能力：单场 + 长期画像",

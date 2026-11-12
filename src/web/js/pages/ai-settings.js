@@ -82,6 +82,11 @@ export async function renderProviderSettingsCard(ctx) {
   }
   for (const config of configs) {
     const testStatus = config.lastTestStatus?.status ?? 'untested';
+    const failedStage = config.lastTestStatus?.stages
+      ? Object.values(config.lastTestStatus.stages).find((stage) => (
+        stage?.status === 'failed' && stage.detail
+      ))
+      : null;
     const row = el('div', {className: 'provider-config'},
       el('div', {className: 'provider-config-head'},
         el('div', {className: 'provider-config-title'},
@@ -89,7 +94,13 @@ export async function renderProviderSettingsCard(ctx) {
           config.isDefault ? chip(t('ai.v13.providers.default'), 'accent') : null),
         chip(priceLabel(ctx, config), config.pricingStatus === 'paid' ? 'accent' : 'neutral')),
       el('div', {className: 'small tertiary mono', text: `${config.providerId} / ${config.regionId} / ${config.modelId}`}),
-      el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)} · ${t('ai.v13.providers.concurrency')}: ${config.concurrency ?? 3}`}),
+      el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)} · ${t('ai.v13.providers.concurrency')}: ${config.concurrency ?? 3} · ${t('ai.v13.providers.timeoutShort', {seconds: String(Math.round(Number(config.timeoutMs ?? 180000) / 1000))})}`}),
+      failedStage
+        ? el('div', {className: 'small tertiary', style: {color: 'var(--danger)'}},
+          t('ai.v13.providers.testFailureDetail', {
+            detail: String(failedStage.detail).slice(0, 300)
+          }))
+        : null,
       el('div', {className: 'inline', style: {marginTop: '8px'}},
         !config.isDefault ? el('button', {
           className: 'button button--secondary button--small',
@@ -186,6 +197,19 @@ export async function renderProviderSettingsCard(ctx) {
     type: 'number',
     value: '3',
     attrs: {min: '1', max: '8', step: '1'}
+  });
+  // "No response" timeout. The value is stored in ms, shown in seconds.
+  const timeoutInput = el('input', {
+    className: 'input input--compact',
+    type: 'number',
+    value: '180',
+    attrs: {min: '10', max: '600', step: '10'}
+  });
+  // Optional per-request input budget. Blank means "derive from model context".
+  const batchBudgetInput = el('input', {
+    className: 'input input--compact',
+    type: 'number',
+    attrs: {min: '2000', max: '32000', step: '500', placeholder: t('ai.v13.providers.batchInputAuto')}
   });
   const localCheck = el('input', {type: 'checkbox'});
   const priceFields = el('div', {className: 'grid-2-equal'}, field(t('ai.v13.providers.inputPrice'), inputPrice), field(t('ai.v13.providers.outputPrice'), outputPrice));
@@ -381,6 +405,8 @@ export async function renderProviderSettingsCard(ctx) {
     outputPrice.value = config.pricing ? String(config.pricing.outputPerMillion ?? '') : '';
     currencyInput.value = config.pricing?.currency ?? 'USD';
     concurrencyInput.value = String(config.concurrency ?? 3);
+    timeoutInput.value = String(Math.round(Number(config.timeoutMs ?? 180000) / 1000));
+    batchBudgetInput.value = config.batchInputTokens ? String(config.batchInputTokens) : '';
     presetSelect.value = '';
     presetNote.textContent = t('ai.v13.providers.editHint');
     keyInput.value = '';
@@ -415,6 +441,8 @@ export async function renderProviderSettingsCard(ctx) {
     outputPrice.value = '';
     currencyInput.value = 'USD';
     concurrencyInput.value = '3';
+    timeoutInput.value = '180';
+    batchBudgetInput.value = '';
     presetSelect.value = '';
     presetNote.textContent = '';
     syncPricing();
@@ -485,6 +513,10 @@ export async function renderProviderSettingsCard(ctx) {
             confirmedAt: new Date().toISOString()
           } : null,
           concurrency: Number(concurrencyInput.value) || 3,
+          timeoutMs: Math.max(10, Math.min(600, Number(timeoutInput.value) || 180)) * 1000,
+          batchInputTokens: batchBudgetInput.value.trim() === ''
+            ? null
+            : (Number(batchBudgetInput.value) || null),
           allowLocalNetwork: localCheck.checked
         };
         if (keyProvided) payload.apiKey = keyInput.value;
@@ -527,7 +559,10 @@ export async function renderProviderSettingsCard(ctx) {
       field(t('ai.v13.providers.pricingStatus'), pricingSelect),
       field(t('ai.v13.providers.currency'), currencyInput)),
     priceFields,
-    field(t('ai.v13.providers.concurrency'), concurrencyInput, t('ai.v13.providers.concurrencyHint')),
+    el('div', {className: 'grid-2-equal'},
+      field(t('ai.v13.providers.concurrency'), concurrencyInput, t('ai.v13.providers.concurrencyHint')),
+      field(t('ai.v13.providers.timeout'), timeoutInput, t('ai.v13.providers.timeoutHint'))),
+    field(t('ai.v13.providers.batchInput'), batchBudgetInput, t('ai.v13.providers.batchInputHint')),
     el('label', {className: 'choice', style: {marginTop: '10px'}},
       localCheck,
       el('div', {className: 'choice-text'},

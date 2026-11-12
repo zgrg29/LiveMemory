@@ -342,9 +342,12 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
   if (payload.incompleteReason) {
     const reasons = [];
     if (payload.incompleteReason === 'missing_batches') {
-      reasons.push(t('ai.report.missingBatches', {
-        list: (payload.primaryJob?.missingBatches ?? []).join(', ')
-      }));
+      const missing = payload.primaryJob?.missingBatches ?? [];
+      const shown = missing.slice(0, 16).join(', ');
+      const suffix = missing.length > 16
+        ? ` ${t('ai.report.missingBatchesMore', {count: formatInteger(missing.length - 16, ctx.locale)})}`
+        : '';
+      reasons.push(t('ai.report.missingBatches', {list: `${shown}${suffix}`}));
     } else if (payload.incompleteReason === 'awaiting_aggregate') {
       reasons.push(t('ai.report.awaitingAggregate'));
     } else {
@@ -363,6 +366,9 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
               text: t('ai.jobs.aggregate'),
               onClick: onAggregate
             }))
+          : null,
+        !onAggregate && payload.incompleteReason === 'awaiting_aggregate'
+          ? el('div', {className: 'small tertiary', style: {marginTop: '8px'}, text: t('ai.report.awaitingAggregateAuto')})
           : null)));
   }
 

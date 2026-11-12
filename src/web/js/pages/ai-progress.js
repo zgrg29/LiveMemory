@@ -4,6 +4,11 @@
  * Percent is derived only from server-reported batch counts, never from elapsed
  * time. A stage with no countable unit returns `percent: null`, which the UI
  * renders as an indeterminate bar.
+ *
+ * A large session report is split into message batches plus one aggregate step;
+ * both are real, server-reported units. The aggregate is shown as its own unit so
+ * a job that finished every batch but still needs the final merge never looks
+ * complete.
  */
 
 function clampPercent(value) {
@@ -24,6 +29,19 @@ export function buildAnalysisProgress(status) {
   const sessionSelected = mode === 'session' || mode === 'combined';
   const memorySelected = (mode === 'memory' || mode === 'combined') && current.memorySkipped !== true;
   const sessionDone = current.sessionReportDone === true;
+  const sessionBatchTotal = number(current.sessionBatchTotal);
+  const sessionBatchesDone = Math.min(
+    number(current.sessionBatchIndex ?? current.sessionBatchesCompleted),
+    sessionBatchTotal
+  );
+  const aggregateRequired = sessionBatchTotal > 1;
+  const aggregateDone = current.sessionAggregateDone === true || (aggregateRequired && sessionDone);
+  const sessionUnits = sessionBatchTotal > 0
+    ? sessionBatchTotal + (aggregateRequired ? 1 : 0)
+    : 1;
+  const sessionDoneUnits = sessionBatchTotal > 0
+    ? sessionBatchesDone + (aggregateDone ? 1 : 0)
+    : (sessionDone ? 1 : 0);
   const memoryTotal = number(current.batchTotal);
   const memoryDone = Math.min(number(current.batchIndex), memoryTotal);
   const viewersTotal = number(current.memoryViewersTotal ?? current.memoryJob?.memoryCoverage?.total);
@@ -36,9 +54,13 @@ export function buildAnalysisProgress(status) {
   if (sessionSelected) {
     parts.push({
       key: 'session',
-      done: sessionDone ? 1 : 0,
-      total: 1,
-      complete: sessionDone
+      done: sessionDoneUnits,
+      total: sessionUnits,
+      complete: sessionDone,
+      batchDone: sessionBatchesDone,
+      batchTotal: sessionBatchTotal,
+      aggregateRequired,
+      aggregateDone
     });
   }
   if (current.memorySkipped === true) {
@@ -66,13 +88,16 @@ export function buildAnalysisProgress(status) {
     percent = 100;
   } else if (mode === 'memory' && !current.memorySkipped) {
     percent = memoryTotal > 0 ? clampPercent((memoryDone / memoryTotal) * 100) : null;
+  } else if (mode === 'session') {
+    // A one-request session has no predictable unit; keep it indeterminate.
+    percent = sessionBatchTotal > 0
+      ? clampPercent((sessionDoneUnits / Math.max(1, sessionUnits)) * 100)
+      : null;
   } else if (mode === 'combined') {
-    const totalUnits = (sessionSelected ? 1 : 0) + (current.memorySkipped ? 0 : memoryTotal);
-    const doneUnits = (sessionDone ? 1 : 0) + memoryDone;
+    const totalUnits = (sessionSelected ? sessionUnits : 0) + (current.memorySkipped ? 0 : memoryTotal);
+    const doneUnits = (sessionSelected ? sessionDoneUnits : 0) + memoryDone;
     percent = totalUnits > 0 ? clampPercent((doneUnits / totalUnits) * 100) : null;
   }
-  // A session-only task is one request; its duration is not predictable from a
-  // batch count, so it stays indeterminate until the server marks it complete.
 
   // Only the server's terminal "complete" state may display 100%. A failure
   // after importing every batch must not look like a successful finish.

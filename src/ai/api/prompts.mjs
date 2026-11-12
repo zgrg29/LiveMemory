@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {readZipEntry, readZipIndex} from '../../shared/zip.mjs';
 import {estimateTokensFromText} from '../providers/pricing.mjs';
 import {buildMemoryRefs, buildMemoryCompactSchema, buildSessionAnswerSchema} from './compact.mjs';
+import {estimateJsonTokens} from '../batching/tokens.mjs';
 
 /**
  * Prompt construction for the paid/configured-provider path.
@@ -202,6 +203,103 @@ export function buildTargetedMemoryPrompt({prompt, missingRefs}) {
     estimatedTokens: estimateTokensFromText(user) + 200,
     format: 'memory'
   };
+}
+
+/**
+ * Stage-2 aggregate prompt for a multi-batch session report.
+ *
+ * No raw chat is sent: the model receives the locally validated batch answers
+ * only. Evidence must stay batch-qualified (`{batch, seq}`) and merge rules are
+ * explicit, which is what keeps the final report from duplicating batch topics
+ * or inventing facts that no batch observed.
+ */
+export function buildSessionAggregatePrompt({manifest, batchResults, resultSchema}) {
+  const locale = manifest.locale ?? 'en';
+  const answerSchema = buildSessionAnswerSchema(resultSchema);
+  const rules = {
+    'zh-CN': [
+      '你在合并同一场直播的多个分批结果。没有原始聊天可看，不得编造任何事实、时间或观众。',
+      '合并相同话题、争论与片段；不要简单拼接；冲突或证据不足时降低 confidence。',
+      '证据只能使用 {"batch": 批次号, "seq": 序号} 形式，且只能引用对应批次结果中出现过的 seq；不得输出纯整数 seq。',
+      '时间必须保持在各批次覆盖范围内。',
+      '只返回 session_topics；不要输出 viewer_memory_updates。viewer_profiles 省略。'
+    ],
+    ja: [
+      '同じ配信の複数バッチ結果を統合します。生のチャットは見えないため、事実・時刻・視聴者を捏造してはいけません。',
+      '同じ話題・論争・見どころは統合し、単純に連結しないでください。矛盾や証拠不足は confidence を下げます。',
+      '証拠は {"batch": バッチ番号, "seq": 連番} 形式のみ。各バッチ結果に存在する seq だけを引用し、整数だけの seq は出力しないでください。',
+      '時刻は各バッチの範囲内に保ってください。',
+      'session_topics だけを返してください。viewer_memory_updates は出力せず、viewer_profiles も省略します。'
+    ],
+    en: [
+      'You are merging several validated batch reports of ONE broadcast. No raw chat is available; never invent facts, times or viewers.',
+      'Merge duplicate topics, disputes and highlights instead of concatenating them. Lower confidence for conflicts or thin evidence.',
+      'Evidence must use {"batch": batchNumber, "seq": seqNumber} and may only cite seqs present in that batch result. Never output a bare integer seq.',
+      'Keep every time inside the batch coverage ranges.',
+      'Return session_topics only. Do not output viewer_memory_updates and omit viewer_profiles.'
+    ]
+  }[locale] ?? [];
+  const user = [
+    '## AGGREGATE MERGE CONTRACT',
+    ...rules.map((line) => `- ${line}`),
+    `- job_id: ${JSON.stringify(manifest.job_id)}`,
+    `- task_id: ${JSON.stringify(manifest.tasks?.[0]?.task_id ?? null)}`,
+    `- session_id: ${JSON.stringify(manifest.session_id)}`,
+    `- batches: ${batchResults.length}`,
+    block('batch_results (validated, evidence refs are batch-qualified)', JSON.stringify(batchResults)),
+    block('compact answer schema', JSON.stringify(answerSchema))
+  ].join('\n\n');
+  return {
+    locale,
+    manifest,
+    answerSchema,
+    messages: [
+      {role: 'system', content: SYSTEM[locale] ?? SYSTEM.en},
+      {role: 'user', content: user}
+    ],
+    estimatedTokens: estimateTokensFromText(user) + 200
+  };
+}
+
+/** Keep only the fields the aggregate needs, so a large job can still merge. */
+export function condenseBatchResult(result, {batchIndex = null} = {}) {
+  const topics = result?.session_topics ?? {};
+  const qualify = (refs) => (Array.isArray(refs) ? refs : [])
+    .map((ref) => (typeof ref === 'number' && Number.isInteger(ref) && batchIndex !== null
+      ? {batch: batchIndex, seq: ref}
+      : ref))
+    .filter((ref) => (typeof ref === 'number' && batchIndex !== null)
+      || (ref && Number.isInteger(Number(ref.batch)) && Number.isInteger(Number(ref.seq))));
+  const pick = (entry, keys) => {
+    const out = {};
+    for (const key of keys) {
+      if (entry?.[key] !== undefined) out[key] = entry[key];
+    }
+    return out;
+  };
+  const withRefs = (entry, keys) => ({
+    ...pick(entry, keys),
+    ...(entry?.message_refs !== undefined ? {message_refs: qualify(entry.message_refs)} : {})
+  });
+  return {
+    summary: typeof topics.summary === 'string' ? topics.summary.slice(0, 2000) : '',
+    topics: (topics.topics ?? []).slice(0, 60).map((entry) => withRefs(entry, [
+      'title', 'started_at', 'ended_at', 'summary', 'key_points', 'confidence', 'evidence'
+    ])),
+    sentiment: (topics.sentiment ?? []).slice(0, 40).map((entry) => pick(entry, [
+      'at', 'tone', 'note', 'confidence', 'sample_size', 'evidence_note'
+    ])),
+    disputes: (topics.disputes ?? []).slice(0, 40).map((entry) => withRefs(entry, [
+      'title', 'summary', 'started_at', 'ended_at', 'note', 'viewpoints', 'confidence', 'evidence'
+    ])),
+    highlights: (topics.highlights ?? []).slice(0, 40).map((entry) => withRefs(entry, [
+      'title', 'started_at', 'ended_at', 'reason', 'clip_suggestion', 'confidence', 'evidence'
+    ]))
+  };
+}
+
+export function aggregatePromptTokens(batchResults, resultSchema) {
+  return estimateJsonTokens(batchResults) + estimateJsonTokens(resultSchema) + 500;
 }
 
 export function buildRepairMessages({prompt, previousText, errors, locale}) {

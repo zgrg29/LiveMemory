@@ -1,14 +1,14 @@
 import {join} from 'node:path';
 import {getJob, listJobBatches, setJobUsage} from '../../storage/repositories/ai-jobs.mjs';
 import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
-import {latestResultForScope} from '../../storage/repositories/ai-results.mjs';
+import {latestResultForScope, listResults} from '../../storage/repositories/ai-results.mjs';
 import {getSession} from '../../storage/repositories/sessions.mjs';
 import {listSessionViewers} from '../../storage/repositories/viewers.mjs';
 import {computeJobStatus} from '../tasks/status.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
 import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-jobs.mjs';
-import {ANALYSIS_MODE, MAX_ANALYSIS_VIEWERS} from '../constants.mjs';
+import {ANALYSIS_MODE, MAX_ANALYSIS_VIEWERS, TASK_KIND} from '../constants.mjs';
 import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
 import {memoryPermission, addUsage, estimateCost, budgetRemaining} from '../providers/pricing.mjs';
@@ -17,22 +17,38 @@ import {AnalysisState} from '../runtime/state.mjs';
 import {
   extractJsonObject,
   sleepWithSignal,
-  cancellationError
+  cancellationError,
+  looksDegenerate
 } from '../runtime/json.mjs';
 import {ProviderRequestScheduler, retryDelayMs} from '../runtime/scheduler.mjs';
+import {
+  ERROR_KIND,
+  attemptRecord,
+  createTaskBudget,
+  isCanceledError,
+  shouldRetryAttempt,
+  taskBudgetRemaining
+} from '../runtime/attempt.mjs';
+import {
+  resolveBatchInputTokens,
+  resolveOutputTokens
+} from '../batching/tokens.mjs';
 import {
   SESSION_FILES,
   MEMORY_FILES,
   buildSessionPrompt,
   buildMemoryPrompt,
   buildTargetedMemoryPrompt,
+  buildSessionAggregatePrompt,
+  condenseBatchResult,
   buildRepairMessages,
   readAnalysisPackage
 } from './prompts.mjs';
 import {
   assembleMemoryCompact,
   mergeMemorySupplement,
-  assembleSessionAnswer
+  assembleSessionAnswer,
+  assembleSessionAggregateAnswer
 } from './compact.mjs';
 
 /**
@@ -42,11 +58,15 @@ import {
  * provider/model. There is no anonymous free route and no manual prompt/JSON
  * round trip in the product UI. Session and memory are separate jobs:
  *
- *   - the session report is imported as soon as it succeeds;
+ *   - a session report is imported as soon as each batch succeeds;
+ *   - a large session is split by an input-token budget and finished with one
+ *     aggregate answer, so one oversized request can never block the report;
  *   - viewer memory batches are independent and may run with bounded
  *     concurrency inside one job;
+ *   - a failed batch never aborts sibling batches that already produced or are
+ *     producing a valid answer;
  *   - a memory failure never invalidates a saved session report, and already
- *     imported memory batches remain valid and are skipped on resume.
+ *     imported batches remain valid and are skipped on resume.
  *
  * Every answer still goes through the existing schema/business validator and
  * the single transactional importer. The runner never writes analysis tables
@@ -54,6 +74,9 @@ import {
  */
 
 const DEFAULT_TIMEOUT_MS = 180000;
+const DEFAULT_TASK_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_IDLE_TIMEOUT_MS = 60000;
+const MIN_ATTEMPT_WINDOW_MS = 15000;
 const MAX_CONCURRENCY = 8;
 /**
  * Paid providers are not limited by the old anonymous 30-batch ceiling. The
@@ -76,7 +99,19 @@ function abortError() {
   return cancellationError();
 }
 
-function providerFromConfig(config) {
+function emptyAttemptStats() {
+  return {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    canceled: 0,
+    timedOut: 0,
+    retried: 0,
+    usageUnknown: 0
+  };
+}
+
+function providerFromConfig(config, {responseMode = null} = {}) {
   return {
     id: config.id,
     label: config.name || config.providerId,
@@ -87,6 +122,8 @@ function providerFromConfig(config) {
     modelId: config.modelId,
     supportsStructuredOutputs: config.capabilities?.structuredOutputs === true && config.supportsStructuredOutputs !== false,
     timeoutMs: Math.max(10000, Math.min(600000, Number(config.timeoutMs) || DEFAULT_TIMEOUT_MS)),
+    batchInputTokens: Number(config.batchInputTokens) > 0 ? Number(config.batchInputTokens) : null,
+    responseMode: responseMode === 'non_streaming' ? 'non_streaming' : 'streaming',
     pricingStatus: config.pricingStatus,
     pricing: config.pricing,
     allowLocalNetwork: config.allowLocalNetwork === true,
@@ -97,9 +134,9 @@ function providerFromConfig(config) {
 }
 
 /**
- * Viewer batch size is a model property, not a global constant. Larger declared
- * context windows get a slightly larger batch; the default stays conservative
- * because output completeness, not context length, is the usual failure mode.
+ * Viewer batch size is a model property, not a global constant. The token
+ * planner reduces the batch further when excerpts or existing memory would not
+ * fit the request budget; this cap is only the outer viewer bound.
  */
 function memoryViewersPerBatch(provider) {
   const context = Number(provider.contextLength ?? 0);
@@ -113,38 +150,37 @@ function schedulerKey(provider) {
   return `${provider.providerId}:${provider.regionId ?? 'default'}:${provider.modelId}`;
 }
 
-function isRetryable(error) {
-  return error instanceof ProviderHttpError && error.retryable === true;
-}
-
 /**
- * Run a worker pool over independent batches. The first failure aborts the
- * remaining in-flight requests through `poolController` and is re-thrown after
- * every worker settles, so a partially failed job is reported precisely instead
- * of hanging on sibling requests.
+ * Run a worker pool over independent batches with safe isolation.
+ *
+ * A failure stops *scheduling* new batches but does not abort requests that are
+ * already running: those imports are valuable and may already have been paid
+ * for. Only user cancel/pause/shutdown aborts in-flight work, through the
+ * external signal. The first error is re-thrown after every worker settles.
  */
 async function runPool(items, limit, worker, signal) {
-  const poolController = new AbortController();
-  const poolSignal = signal
-    ? AbortSignal.any([signal, poolController.signal])
-    : poolController.signal;
   let nextIndex = 0;
   let firstError = null;
+  let stopped = false;
   const maxWorkers = Math.max(1, Math.min(Number(limit) || 1, items.length));
   const workers = Array.from({length: maxWorkers}, async () => {
     for (;;) {
-      if (poolSignal.aborted) return;
+      if (signal?.aborted) {
+        if (!firstError) firstError = abortError();
+        return;
+      }
+      if (stopped) return;
       const index = nextIndex;
       nextIndex += 1;
       if (index >= items.length) return;
       try {
-        await worker(items[index], index, poolSignal);
+        await worker(items[index], index, signal);
       } catch (error) {
         if (!firstError) {
           firstError = signal?.aborted ? abortError() : error;
-          poolController.abort();
+          // Stop pulling new work; in-flight siblings finish and are imported.
+          stopped = true;
         }
-        return;
       }
     }
   });
@@ -161,7 +197,9 @@ export class AnalysisRunner {
     now = Date.now,
     fetchImpl = globalThis.fetch,
     maxRetries = 2,
-    random = Math.random
+    random = Math.random,
+    taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+    idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
   }) {
     this.db = db;
     this.paths = paths;
@@ -171,6 +209,8 @@ export class AnalysisRunner {
     this.fetchImpl = fetchImpl;
     this.maxRetries = Math.max(0, Math.min(5, Number(maxRetries) || 0));
     this.random = random;
+    this.taskTimeoutMs = Math.max(60000, Number(taskTimeoutMs) || DEFAULT_TASK_TIMEOUT_MS);
+    this.idleTimeoutMs = Math.max(10000, Number(idleTimeoutMs) || DEFAULT_IDLE_TIMEOUT_MS);
     this.active = new Map();
     this.schedulers = new Map();
     this.memoryGates = new Map();
@@ -258,7 +298,10 @@ export class AnalysisRunner {
       && confirmBilling !== true) {
       throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
     }
-    return {provider: providerFromConfig(config), config};
+    const provider = providerFromConfig(config, {
+      responseMode: this.state.getProviderMode(configId)
+    });
+    return {provider, config};
   }
 
   async start({
@@ -324,6 +367,15 @@ export class AnalysisRunner {
       memoryDone: mode === ANALYSIS_MODE.SESSION,
       memorySkipped: false,
       memorySkipReason: null,
+      // A new task must not inherit the previous task's job ids. Keeping them
+      // made a memory-only run appear to own an older, already complete session
+      // report and changed a real failure into "partial".
+      sessionJobId: null,
+      memoryJobId: null,
+      sessionBatchTotal: 0,
+      sessionBatchesCompleted: 0,
+      batchTotal: 0,
+      batchIndex: 0,
       usage: null,
       budget: budget ?? null,
       error: null,
@@ -331,6 +383,11 @@ export class AnalysisRunner {
       activeBatches: 0,
       batchDurationMsTotal: 0,
       batchSamples: 0,
+      sessionBatchTotal: 0,
+      sessionBatchesCompleted: 0,
+      attemptStats: emptyAttemptStats(),
+      currentRequest: null,
+      lastRequest: null,
       startedAt: this.now()
     });
     return this.launch({sessionId, provider: checked.provider, mode, budget, resume: false});
@@ -338,6 +395,18 @@ export class AnalysisRunner {
 
   launch({sessionId, provider, mode, budget, resume}) {
     const controller = new AbortController();
+    const timeBudget = createTaskBudget({now: this.now, taskTimeoutMs: this.taskTimeoutMs});
+    const previous = this.state.get(sessionId);
+    this.state.set(sessionId, {
+      status: 'running',
+      taskStartedAt: timeBudget.startedAt,
+      taskDeadlineAt: timeBudget.deadlineAt,
+      taskTimeoutMs: timeBudget.taskTimeoutMs,
+      currentRequest: null,
+      attemptStats: resume
+        ? (previous?.attemptStats ?? emptyAttemptStats())
+        : emptyAttemptStats()
+    });
     const context = {
       sessionId,
       provider,
@@ -345,7 +414,9 @@ export class AnalysisRunner {
       budget: budget ?? null,
       controller,
       signal: controller.signal,
-      paused: false
+      paused: false,
+      timeBudget,
+      streamFallbackUsed: false
     };
     const promise = this.run(context, {resume})
       .catch((error) => this.fail(context, error))
@@ -391,25 +462,42 @@ export class AnalysisRunner {
         : Boolean(memoryStatus?.complete));
     const scheduler = entry.configId && this.schedulers.get(`config:${entry.configId}`);
     const requestStats = scheduler ? scheduler.stats() : null;
-    const batchTotal = Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0);
-    const batchesCompleted = Number(
-      entry.batchesCompleted
-        ?? memoryStatus?.batchesImported
-        ?? (memoryDone ? batchTotal : 0)
+    const sessionBatchTotal = Number(sessionStatus?.batchTotal ?? entry.sessionBatchTotal ?? 0);
+    const sessionBatchesCompleted = Number(
+      sessionStatus?.batchesImported ?? entry.sessionBatchesCompleted ?? 0
     );
+    const memoryBatchTotal = entry.memoryJobId
+      ? Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0)
+      : 0;
+    const memoryBatchesCompleted = entry.memoryJobId
+      ? Number(
+        entry.batchesCompleted
+          ?? memoryStatus?.batchesImported
+          ?? (memoryDone ? memoryBatchTotal : 0)
+      )
+      : 0;
+    const batchTotal = entry.memoryJobId ? memoryBatchTotal : sessionBatchTotal;
+    const batchesCompleted = entry.memoryJobId ? memoryBatchesCompleted : sessionBatchesCompleted;
     const averageBatchMs = Number(entry.batchSamples ?? 0) > 0
       ? Number(entry.batchDurationMsTotal ?? 0) / Number(entry.batchSamples)
       : null;
     const remainingBatches = Math.max(0, batchTotal - batchesCompleted);
-    const estimatedRemainingMs = (
-      status === 'running'
+    const hasBasisForEta = Number(entry.batchSamples ?? 0) >= 3
       && averageBatchMs !== null
       && remainingBatches > 0
-      && requestStats
-    )
+      && Boolean(requestStats);
+    const estimatedRemainingMs = (status === 'running' && hasBasisForEta)
       ? Math.round((averageBatchMs * remainingBatches)
         / Math.max(1, requestStats.concurrency))
       : null;
+    const currentRequest = (status === 'running' && active)
+      ? (entry.currentRequest ?? null)
+      : null;
+    const attemptStats = entry.attemptStats ?? emptyAttemptStats();
+    const taskDeadlineAt = entry.taskDeadlineAt
+      ?? (entry.taskStartedAt && entry.taskTimeoutMs
+        ? entry.taskStartedAt + entry.taskTimeoutMs
+        : null);
     return {
       sessionId,
       status,
@@ -431,6 +519,14 @@ export class AnalysisRunner {
       batchTotal,
       batchesCompleted,
       activeBatches: Number(entry.activeBatches ?? 0),
+      sessionBatchIndex: sessionBatchesCompleted,
+      sessionBatchTotal,
+      sessionBatchesCompleted,
+      sessionAggregateRequired: Boolean(sessionJob && sessionJob.batchTotal > 1),
+      sessionAggregateDone: Boolean(sessionStatus?.aggregateImported),
+      memoryBatchIndex: memoryBatchesCompleted,
+      memoryBatchTotal,
+      memoryBatchesCompleted,
       averageBatchMs: averageBatchMs === null ? null : Math.round(averageBatchMs),
       estimatedRemainingMs,
       startedAt: entry.startedAt ?? null,
@@ -446,9 +542,30 @@ export class AnalysisRunner {
       sessionJob: sessionStatus,
       memoryJob: memoryStatus,
       usage: entry.usage ?? null,
+      usageKnown: entry.usage !== null && entry.usage !== undefined,
+      usageUnknownAttempts: Number(attemptStats.usageUnknown ?? 0),
       budget: entry.budget ?? null,
       estimatedCost: entry.estimatedCost ?? null,
       requestStats,
+      attemptStats,
+      currentRequest,
+      lastRequest: entry.lastRequest ?? null,
+      requestMode: currentRequest?.mode ?? entry.lastRequest?.mode ?? entry.responseMode ?? null,
+      retrying: currentRequest?.retrying === true,
+      outputReceived: currentRequest?.receivedOutput === true,
+      taskStartedAt: entry.taskStartedAt ?? null,
+      taskDeadlineAt,
+      taskRemainingMs: taskDeadlineAt === null ? null : Math.max(0, taskDeadlineAt - this.now()),
+      taskTimeoutMs: entry.taskTimeoutMs ?? this.taskTimeoutMs,
+      saved: {
+        sessionReport: sessionReportDone,
+        sessionBatches: sessionBatchesCompleted,
+        memoryBatches: memoryBatchesCompleted,
+        // A session-only task must not claim that long-term profiles were
+        // saved; only a real memory job can do that. A skipped memory half is
+        // reported separately, never as "saved".
+        memory: entry.memoryJobId ? memoryDone : false
+      },
       lastProvider: entry.lastProvider ?? null,
       lastModel: entry.lastModel ?? null,
       updatedAt: entry.updatedAt ?? null,
@@ -457,7 +574,139 @@ export class AnalysisRunner {
   }
 
   #setRunning(sessionId, patch) {
-    return this.state.set(sessionId, {status: 'running', stage: patch.stage ?? 'running', ...patch});
+    const previous = this.state.get(sessionId);
+    const current = previous?.currentRequest ?? null;
+    return this.state.set(sessionId, {
+      status: 'running',
+      stage: patch.stage ?? previous?.stage ?? 'running',
+      ...patch,
+      currentRequest: Object.prototype.hasOwnProperty.call(patch, 'currentRequest')
+        ? patch.currentRequest
+        : current
+    });
+  }
+
+  #taskRemaining(context) {
+    if (!context?.timeBudget) return null;
+    return taskBudgetRemaining(context.timeBudget, this.now());
+  }
+
+  #assertTaskBudget(context, {minWindowMs = MIN_ATTEMPT_WINDOW_MS} = {}) {
+    const remaining = this.#taskRemaining(context);
+    if (remaining === null) return;
+    if (remaining < minWindowMs) {
+      throw Object.assign(new Error('TASK_TIME_BUDGET'), {
+        code: 'ANALYSIS_TASK_TIMEOUT',
+        detail: 'task-time-budget',
+        kind: ERROR_KIND.TIMEOUT
+      });
+    }
+  }
+
+  #beginRequest(context, {
+    kind,
+    batchIndex = null,
+    attempt = 1,
+    maxAttempts = 1,
+    mode = null,
+    timeoutMs = null,
+    idleTimeoutMs = null,
+    stage = null
+  }) {
+    const currentRequest = {
+      kind,
+      batchIndex,
+      attempt,
+      maxAttempts,
+      mode,
+      streaming: mode === 'streaming',
+      startedAt: this.now(),
+      timeoutMs,
+      idleTimeoutMs,
+      receivedHeaders: false,
+      receivedOutput: false,
+      retrying: false,
+      nextRetryAt: null
+    };
+    this.#setRunning(context.sessionId, {
+      ...(stage ? {stage} : {}),
+      currentRequest
+    });
+    return currentRequest;
+  }
+
+  #clearCurrentRequest(context) {
+    this.#setRunning(context.sessionId, {currentRequest: null});
+  }
+
+  #markRetrying(context, {error, attempt, maxAttempts, nextRetryAt, stage}) {
+    const previous = this.state.get(context.sessionId)?.currentRequest;
+    this.#setRunning(context.sessionId, {
+      ...(stage ? {stage} : {}),
+      currentRequest: {
+        ...(previous ?? {}),
+        attempt,
+        maxAttempts,
+        retrying: true,
+        nextRetryAt,
+        lastErrorCode: error?.code ?? null,
+        lastErrorKind: error?.kind ?? null
+      }
+    });
+  }
+
+  #recordAttempt(context, record) {
+    const entry = this.state.get(context.sessionId);
+    const stats = {...emptyAttemptStats(), ...(entry?.attemptStats ?? {})};
+    stats.total += 1;
+    if (record.outcome === 'succeeded') stats.succeeded += 1;
+    else if (record.outcome === 'canceled') stats.canceled += 1;
+    else if (record.outcome === 'timeout') stats.timedOut += 1;
+    else stats.failed += 1;
+    if (record.retry) stats.retried += 1;
+    if (record.outcome !== 'succeeded' && record.usageKnown !== true) stats.usageUnknown += 1;
+    const lastRequest = {
+      kind: record.kind ?? null,
+      batchIndex: record.batchIndex ?? null,
+      attempt: record.attempt,
+      maxAttempts: record.maxAttempts,
+      mode: record.mode ?? null,
+      outcome: record.outcome,
+      errorCode: record.errorCode ?? null,
+      errorKind: record.errorKind ?? null,
+      httpStatus: record.httpStatus ?? null,
+      elapsedMs: record.elapsedMs ?? null,
+      receivedHeaders: record.receivedHeaders === true,
+      receivedOutput: record.receivedOutput === true,
+      timeToFirstByteMs: record.timeToFirstByteMs ?? null,
+      usageKnown: record.usageKnown === true,
+      at: this.now()
+    };
+    this.state.set(context.sessionId, {
+      attemptStats: stats,
+      lastRequest,
+      currentRequest: record.retry ? entry?.currentRequest ?? null : null
+    });
+    this.logger?.info?.({
+      event: 'ai.request.attempt',
+      sessionId: context.sessionId,
+      kind: record.kind,
+      batchIndex: record.batchIndex,
+      attempt: record.attempt,
+      maxAttempts: record.maxAttempts,
+      mode: record.mode,
+      outcome: record.outcome,
+      errorCode: record.errorCode ?? null,
+      errorKind: record.errorKind ?? null,
+      httpStatus: record.httpStatus ?? null,
+      elapsedMs: record.elapsedMs ?? null,
+      timeoutMs: record.timeoutMs ?? null,
+      receivedHeaders: record.receivedHeaders === true,
+      receivedOutput: record.receivedOutput === true,
+      retry: record.retry === true,
+      usageKnown: record.usageKnown === true,
+      timeToFirstByteMs: record.timeToFirstByteMs ?? null
+    });
   }
 
   async run(context, {resume}) {
@@ -495,6 +744,7 @@ export class AnalysisRunner {
         stage: 'complete',
         error: null,
         completedAt: this.now(),
+        currentRequest: null,
         sessionReportDone: entry?.sessionReportDone === true,
         memoryDone: entry?.memorySkipped === true
           ? true
@@ -512,15 +762,17 @@ export class AnalysisRunner {
         this.state.set(sessionId, {
           status: 'paused',
           stage: 'paused',
-          error: {code: 'ANALYSIS_PAUSED', detail: null}
+          error: {code: 'ANALYSIS_PAUSED', detail: null},
+          currentRequest: null
         });
         return;
       }
-      if (signal.aborted || error?.code === 'ANALYSIS_CANCELED') {
+      if (signal.aborted || isCanceledError(error) || error?.code === 'ANALYSIS_CANCELED') {
         this.state.set(sessionId, {
           status: 'canceled',
           stage: 'canceled',
-          error: null
+          error: null,
+          currentRequest: null
         });
         return;
       }
@@ -534,13 +786,28 @@ export class AnalysisRunner {
       ?? (error instanceof AnalysisPermissionError ? JSON.stringify(error.details) : null)
       ?? String(error?.message ?? '').slice(0, 300);
     const entry = this.state.get(context.sessionId);
-    const sessionDone = entry?.sessionReportDone === true;
+    const sessionJob = entry?.sessionJobId ? getJob(this.db, entry.sessionJobId) : null;
+    const sessionStatus = sessionJob ? computeJobStatus(this.db, sessionJob) : null;
+    const sessionDone = entry?.sessionReportDone === true || Boolean(sessionStatus?.complete);
     this.state.set(context.sessionId, {
+      // A successful session report makes a later memory failure "partial"; a
+      // memory-only task that fails stays "failed" even though its already
+      // imported batches are preserved and resumable (see `saved`).
       status: sessionDone ? 'partial' : 'failed',
       stage: 'failed',
-      error: {code, detail},
+      error: {
+        code,
+        detail,
+        kind: error?.kind ?? null,
+        httpStatus: error?.status ?? null,
+        retryAfterMs: error?.retryAfterMs ?? null,
+        receivedHeaders: error?.receivedHeaders === true,
+        receivedOutput: error?.receivedOutput === true,
+        elapsedMs: Number.isFinite(Number(error?.elapsedMs)) ? Number(error.elapsedMs) : null
+      },
       sessionReportDone: sessionDone,
-      memoryDone: false
+      memoryDone: false,
+      currentRequest: null
     });
     this.logger?.warn?.({
       event: 'ai.analysis.failed',
@@ -549,8 +816,20 @@ export class AnalysisRunner {
       provider: context.provider?.providerId ?? null,
       model: context.provider?.modelId ?? null,
       code,
+      detail,
+      errorKind: error?.kind ?? null,
       retryAfterMs: error?.retryAfterMs ?? null,
-      httpStatus: error?.status ?? null
+      httpStatus: error?.status ?? null,
+      receivedHeaders: error?.receivedHeaders === true,
+      receivedOutput: error?.receivedOutput === true
+    });
+  }
+
+  #sessionOutputTokens(provider, prompt) {
+    return resolveOutputTokens({
+      desired: 8000,
+      inputTokens: prompt?.estimatedTokens ?? 0,
+      contextLength: provider.contextLength
     });
   }
 
@@ -560,6 +839,11 @@ export class AnalysisRunner {
     let job = entry?.sessionJobId ? getJob(this.db, entry.sessionJobId) : null;
     if (!job) {
       this.#setRunning(sessionId, {stage: 'packaging_session'});
+      const tokenBudget = resolveBatchInputTokens({
+        configured: provider.batchInputTokens,
+        contextLength: provider.contextLength,
+        outputReserve: 8000
+      });
       const created = await createSessionAnalysisJob({
         db: this.db,
         sessionId,
@@ -572,48 +856,239 @@ export class AnalysisRunner {
         pricingStatus: provider.pricingStatus,
         budget: context.budget,
         costEstimate: null,
+        tokenBudget,
+        contextLength: provider.contextLength,
         now: this.now()
       });
       if (!created) throw Object.assign(new Error('SESSION_EMPTY'), {code: 'AUTO_SESSION_EMPTY'});
       job = getJob(this.db, created.job.id);
-      this.state.set(sessionId, {sessionJobId: job.id, locale: job.locale});
+      this.state.set(sessionId, {
+        sessionJobId: job.id,
+        locale: job.locale,
+        sessionBatchTotal: job.batchTotal,
+        sessionBatchesCompleted: 0,
+        batchTotal: job.batchTotal,
+        batchIndex: 0,
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+      });
+      this.logger?.info?.({
+        event: 'ai.analysis.session.packaged',
+        sessionId,
+        jobId: job.id,
+        batches: job.batchTotal,
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+      });
     }
-    const existing = latestResultForScope(this.db, job.id, 'batch:1');
-    if (existing) {
-      this.state.set(sessionId, {sessionReportDone: true});
-      return;
-    }
-    const pkg = getJobPackage(this.db, {jobId: job.id, stage: 'session'});
-    if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
-    const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), SESSION_FILES);
-    const prompt = buildSessionPrompt(files);
-    const estimate = estimateCost({
-      pricing: provider.pricing,
-      inputTokens: prompt.estimatedTokens,
-      outputTokens: 6000
-    });
-    this.state.set(sessionId, {
+    const batches = listJobBatches(this.db, job.id);
+    const total = Math.max(1, Number(job.batchTotal) || batches.length);
+    const pending = batches.filter((batch) => (
+      !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
+    ));
+    let completed = total - pending.length;
+    this.#setRunning(sessionId, {
       stage: 'session_analyzing',
-      batchIndex: 0,
-      batchTotal: 1,
-      estimatedCost: estimate
+      sessionBatchIndex: completed,
+      sessionBatchTotal: total,
+      sessionBatchesCompleted: completed,
+      batchTotal: total,
+      batchIndex: completed,
+      activeBatches: 0
     });
-    if (context.budget && estimate
-      && context.budget.currency === estimate.currency
-      && estimate.amount > context.budget.amount) {
-      throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
+    let active = 0;
+    await runPool(
+      pending,
+      Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
+      async (batch, _index, workerSignal) => {
+        if (workerSignal?.aborted) throw abortError();
+        const pkg = getJobPackage(this.db, {
+          jobId: job.id,
+          stage: 'session',
+          batchIndex: batch.batchIndex
+        });
+        if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
+        const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), SESSION_FILES);
+        const prompt = buildSessionPrompt(files);
+        prompt.files = files;
+        const estimate = estimateCost({
+          pricing: provider.pricing,
+          inputTokens: prompt.estimatedTokens,
+          outputTokens: this.#sessionOutputTokens(provider, prompt)
+        });
+        if (context.budget && estimate
+          && context.budget.currency === estimate.currency
+          && estimate.amount > context.budget.amount) {
+          throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
+        }
+        active += 1;
+        this.#setRunning(sessionId, {
+          stage: 'session_analyzing',
+          sessionBatchIndex: completed,
+          sessionBatchTotal: total,
+          sessionBatchesCompleted: completed,
+          batchTotal: total,
+          batchIndex: completed,
+          activeBatches: active
+        });
+        const batchStartedAt = this.now();
+        try {
+          const generated = await this.requestWithRepair({
+            context: {...context, signal: workerSignal},
+            prompt,
+            kind: 'session',
+            batchIndex: batch.batchIndex,
+            stage: 'session_analyzing',
+            outputTokens: this.#sessionOutputTokens(provider, prompt)
+          });
+          this.#setRunning(sessionId, {
+            stage: 'session_importing',
+            sessionBatchIndex: completed,
+            sessionBatchTotal: total,
+            sessionBatchesCompleted: completed,
+            activeBatches: active
+          });
+          const outcome = importAnalysisResult({
+            db: this.db,
+            text: generated.text,
+            source: 'api',
+            now: this.now()
+          });
+          completed += 1;
+          const batchMs = this.now() - batchStartedAt;
+          const current = this.state.get(sessionId);
+          const updated = getJob(this.db, job.id);
+          this.state.set(sessionId, {
+            stage: 'session_batch_done',
+            sessionBatchIndex: completed,
+            sessionBatchTotal: total,
+            sessionBatchesCompleted: completed,
+            batchTotal: total,
+            batchIndex: completed,
+            activeBatches: active,
+            batchDurationMsTotal: Number(current?.batchDurationMsTotal ?? 0) + batchMs,
+            batchSamples: Number(current?.batchSamples ?? 0) + 1,
+            usage: updated?.usage ?? null,
+            lastProvider: generated.providerId,
+            lastModel: generated.model
+          });
+          this.logger?.info?.({
+            event: 'ai.analysis.session.batch',
+            sessionId,
+            jobId: job.id,
+            batchIndex: batch.batchIndex,
+            provider: generated.providerId,
+            model: generated.model,
+            durationMs: batchMs,
+            duplicate: outcome.duplicate
+          });
+        } finally {
+          active = Math.max(0, active - 1);
+          const current = this.state.get(sessionId);
+          if (current?.status === 'running') {
+            this.state.set(sessionId, {
+              activeBatches: active,
+              sessionBatchIndex: completed,
+              sessionBatchTotal: total,
+              sessionBatchesCompleted: completed,
+              batchTotal: total,
+              batchIndex: completed
+            });
+          }
+        }
+      },
+      context.signal
+    );
+
+    const final = latestResultForScope(this.db, job.id, 'final');
+    if (!final && total > 1) {
+      await this.#runSessionAggregate(context, job);
+    } else if (!final && total === 1) {
+      const single = latestResultForScope(this.db, job.id, 'batch:1');
+      if (!single) throw Object.assign(new Error('SESSION_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
     }
-    const startedAt = this.now();
+    this.state.set(sessionId, {
+      sessionReportDone: true,
+      stage: 'session_done',
+      sessionBatchesCompleted: total,
+      sessionBatchTotal: total,
+      batchIndex: this.state.get(sessionId)?.memoryJobId ? this.state.get(sessionId).batchIndex : total,
+      batchesCompleted: this.state.get(sessionId)?.memoryJobId ? this.state.get(sessionId).batchesCompleted : total,
+      currentRequest: null
+    });
+  }
+
+  #buildAggregatePrompt(job) {
+    const packages = getJobPackage(this.db, {jobId: job.id, stage: 'session', batchIndex: 1});
+    if (!packages) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
+    const files = readAnalysisPackage(join(this.paths.exports, packages.file_name), ['result.schema.json']);
+    const resultSchema = JSON.parse(files['result.schema.json']);
+    const rows = listResults(this.db, job.id, {includeJson: true})
+      .filter((row) => row.batchIndex !== null);
+    const latest = new Map();
+    for (const row of rows) {
+      const current = latest.get(row.batchIndex);
+      if (!current || current.resultVersion < row.resultVersion) latest.set(row.batchIndex, row);
+    }
+    const batchRows = new Map(listJobBatches(this.db, job.id).map((batch) => [batch.batchIndex, batch]));
+    const batchResults = [...latest.values()]
+      .sort((a, b) => a.batchIndex - b.batchIndex)
+      .map((row) => {
+        const batch = batchRows.get(row.batchIndex);
+        return {
+          batch_index: row.batchIndex,
+          task_id: row.taskId,
+          coverage: batch
+            ? {
+              from_seq: batch.fromSeq,
+              to_seq: batch.toSeq,
+              message_count: batch.messageCount
+            }
+            : null,
+          result: condenseBatchResult(row.result, {batchIndex: row.batchIndex})
+        };
+      });
+    if (batchResults.length === 0) {
+      throw Object.assign(new Error('AGGREGATE_NOT_READY'), {code: 'ANALYSIS_AGGREGATE_NOT_READY'});
+    }
+    const manifest = {
+      job_id: job.id,
+      session_id: job.sessionId,
+      locale: job.locale,
+      broadcaster_id: job.broadcasterId ?? null,
+      tasks: [{
+        task_id: job.aggregateTaskId ?? `${job.sessionId}-analysis-final`,
+        kind: TASK_KIND.SESSION_AGGREGATE,
+        session_id: job.sessionId
+      }]
+    };
+    const prompt = buildSessionAggregatePrompt({manifest, batchResults, resultSchema});
+    return {prompt, resultSchema};
+  }
+
+  async #runSessionAggregate(context, job) {
+    const {sessionId, provider} = context;
+    this.#setRunning(sessionId, {stage: 'session_aggregating'});
+    const {prompt} = this.#buildAggregatePrompt(job);
+    const contextLimit = Number(provider.contextLength ?? 0);
+    if (contextLimit > 0 && prompt.estimatedTokens > contextLimit - 2000) {
+      throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
+        code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
+        detail: `estimated ${prompt.estimatedTokens} input tokens, context ${contextLimit}; all batch results are preserved`
+      });
+    }
     const generated = await this.requestWithRepair({
       context,
       prompt,
-      kind: 'session'
+      kind: 'session-aggregate',
+      batchIndex: null,
+      stage: 'session_aggregating',
+      outputTokens: resolveOutputTokens({
+        desired: 8000,
+        inputTokens: prompt.estimatedTokens,
+        contextLength: provider.contextLength
+      }),
+      evaluate: (text, aggregatePrompt) => this.evaluateSessionAggregateAnswer(text, aggregatePrompt)
     });
-    this.state.set(sessionId, {
-      stage: 'session_importing',
-      batchDurationMsTotal: this.now() - startedAt,
-      batchSamples: 1
-    });
+    this.#setRunning(sessionId, {stage: 'session_importing'});
     const outcome = importAnalysisResult({
       db: this.db,
       text: generated.text,
@@ -623,16 +1098,15 @@ export class AnalysisRunner {
     this.state.set(sessionId, {
       sessionReportDone: true,
       stage: 'session_done',
-      batchIndex: 1,
-      batchTotal: 1,
-      batchesCompleted: 1,
       lastProvider: generated.providerId,
-      lastModel: generated.model
+      lastModel: generated.model,
+      currentRequest: null
     });
     this.logger?.info?.({
-      event: 'ai.analysis.session',
+      event: 'ai.analysis.session.aggregate',
       sessionId,
       jobId: job.id,
+      batches: job.batchTotal,
       provider: generated.providerId,
       model: generated.model,
       duplicate: outcome.duplicate
@@ -697,7 +1171,7 @@ export class AnalysisRunner {
   }
 
   async runMemory(context) {
-    const {sessionId, provider, signal} = context;
+    const {sessionId, provider} = context;
     const entry = this.state.get(sessionId);
     const session = getSession(this.db, sessionId);
     if (!session) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
@@ -728,6 +1202,11 @@ export class AnalysisRunner {
     let job = entry?.memoryJobId ? getJob(this.db, entry.memoryJobId) : null;
     if (!job) {
       this.#setRunning(sessionId, {stage: 'packaging_memory'});
+      const tokenBudget = resolveBatchInputTokens({
+        configured: provider.batchInputTokens,
+        contextLength: provider.contextLength,
+        outputReserve: 6000
+      });
       const created = await createViewerMemoryJob({
         db: this.db,
         sessionId,
@@ -743,6 +1222,8 @@ export class AnalysisRunner {
         pricingStatus: provider.pricingStatus,
         budget: context.budget,
         costEstimate: null,
+        tokenBudget,
+        contextLength: provider.contextLength,
         now: this.now()
       });
       if (!created) throw Object.assign(new Error('MEMORY_NO_VIEWERS'), {
@@ -754,7 +1235,16 @@ export class AnalysisRunner {
         memoryJobId: job.id,
         batchTotal: job.batchTotal,
         batchesCompleted: 0,
-        stage: 'memory_ready'
+        stage: 'memory_ready',
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+      });
+      this.logger?.info?.({
+        event: 'ai.analysis.memory.packaged',
+        sessionId,
+        jobId: job.id,
+        batches: job.batchTotal,
+        viewers: created.job.memoryViewersTotal,
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
       });
     }
     const sessionForGate = getSession(this.db, sessionId);
@@ -780,9 +1270,9 @@ export class AnalysisRunner {
         });
         await runPool(
           pending,
-          Math.max(1, Math.min(provider.concurrency ?? 3, pending.length)),
+          Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
           async (batch, _index, workerSignal) => {
-            if (workerSignal.aborted) throw abortError();
+            if (workerSignal?.aborted) throw abortError();
             const pkg = getJobPackage(this.db, {
               jobId: job.id,
               stage: 'memory',
@@ -805,7 +1295,8 @@ export class AnalysisRunner {
               const generated = await this.generateMemoryAnswer({
                 context: {...context, signal: workerSignal},
                 prompt,
-                kind: 'memory'
+                batchIndex: batch.batchIndex,
+                stage: 'memory_analyzing'
               });
               this.state.set(sessionId, {
                 stage: 'memory_importing',
@@ -860,15 +1351,32 @@ export class AnalysisRunner {
               }
             }
           },
-          signal
+          context.signal
         );
+        const updated = getJob(this.db, job.id);
+        if (!updated || !computeJobStatus(this.db, updated).complete) {
+          throw Object.assign(new Error('MEMORY_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
+        }
         this.state.set(sessionId, {memoryDone: true, stage: 'memory_done'});
       }
     );
   }
 
-  async generateMemoryAnswer({context, prompt, kind}) {
-    const generated = await this.requestOnce({context, prompt, kind});
+  async generateMemoryAnswer({context, prompt, batchIndex = null, stage = 'memory_analyzing', outputTokens = 6000}) {
+    const budgetFor = (sourcePrompt) => resolveOutputTokens({
+      desired: outputTokens,
+      inputTokens: sourcePrompt?.estimatedTokens ?? 0,
+      contextLength: context.provider?.contextLength ?? null
+    });
+    const generated = await this.requestOnce({
+      context,
+      prompt,
+      kind: 'memory',
+      batchIndex,
+      stage,
+      outputTokens: budgetFor(prompt)
+    });
+    this.#assertUsableOutput(generated);
     const object = extractJsonObject(generated.content);
     let answer = object;
     let assembled = assembleMemoryCompact({
@@ -885,7 +1393,14 @@ export class AnalysisRunner {
       const targeted = buildTargetedMemoryPrompt({prompt, missingRefs: assembled.missing});
       let supplement;
       try {
-        supplement = await this.requestOnce({context, prompt: targeted, kind: 'memory-targeted'});
+        supplement = await this.requestOnce({
+          context,
+          prompt: targeted,
+          kind: 'memory-targeted',
+          batchIndex,
+          stage,
+          outputTokens: Math.min(3000, budgetFor(targeted))
+        });
       } catch {
         supplement = null;
       }
@@ -924,8 +1439,12 @@ export class AnalysisRunner {
       const repaired = await this.requestOnce({
         context,
         prompt: {...prompt, messages: repair.messages},
-        kind: 'memory-repair'
+        kind: 'memory-repair',
+        batchIndex,
+        stage,
+        outputTokens: budgetFor(prompt)
       });
+      this.#assertUsableOutput(repaired);
       const repairedAnswer = extractJsonObject(repaired.content);
       const repairedAssembled = assembleMemoryCompact({
         answer: repairedAnswer,
@@ -950,9 +1469,38 @@ export class AnalysisRunner {
     return {...generated, text: JSON.stringify(validation.sanitized)};
   }
 
-  async requestWithRepair({context, prompt, kind}) {
-    let generated = await this.requestOnce({context, prompt, kind});
-    let evaluation = this.evaluateSessionAnswer(generated.content, prompt);
+  #assertUsableOutput(generated) {
+    if (generated?.finishReason === 'length') {
+      throw Object.assign(new Error('OUTPUT_TRUNCATED'), {
+        code: 'AUTO_OUTPUT_TRUNCATED',
+        detail: 'finish-reason-length',
+        kind: ERROR_KIND.INVALID_RESPONSE
+      });
+    }
+    if (looksDegenerate(generated?.content)) {
+      throw Object.assign(new Error('OUTPUT_DEGENERATED'), {
+        code: 'AUTO_OUTPUT_DEGENERATED',
+        detail: 'repeated-structure',
+        kind: ERROR_KIND.INVALID_RESPONSE
+      });
+    }
+  }
+
+  async requestWithRepair({
+    context,
+    prompt,
+    kind,
+    batchIndex = null,
+    stage = null,
+    outputTokens = 8000,
+    evaluate = null
+  }) {
+    const evaluateAnswer = evaluate ?? ((text, sourcePrompt) => this.evaluateSessionAnswer(text, sourcePrompt));
+    let generated = await this.requestOnce({context, prompt, kind, batchIndex, stage, outputTokens});
+    // A length-truncated or degenerate answer must not trigger a second copy of
+    // the same large request: that was the original 3× timeout/cost failure.
+    this.#assertUsableOutput(generated);
+    let evaluation = evaluateAnswer(generated.content, prompt);
     if (evaluation.ok) return {...generated, text: JSON.stringify(evaluation.sanitized)};
     const repair = buildRepairMessages({
       prompt,
@@ -960,8 +1508,16 @@ export class AnalysisRunner {
       errors: evaluation.errors,
       locale: prompt.locale
     });
-    generated = await this.requestOnce({context, prompt: {...prompt, messages: repair.messages}, kind: `${kind}-repair`});
-    evaluation = this.evaluateSessionAnswer(generated.content, prompt);
+    generated = await this.requestOnce({
+      context,
+      prompt: {...prompt, messages: repair.messages},
+      kind: `${kind}-repair`,
+      batchIndex,
+      stage,
+      outputTokens
+    });
+    this.#assertUsableOutput(generated);
+    evaluation = evaluateAnswer(generated.content, prompt);
     if (!evaluation.ok) {
       throw Object.assign(new Error('SCHEMA_INVALID'), {
         code: 'AUTO_SCHEMA_INVALID',
@@ -1001,6 +1557,18 @@ export class AnalysisRunner {
     };
   }
 
+  evaluateSessionAggregateAnswer(text, prompt) {
+    const object = extractJsonObject(text);
+    if (!object) {
+      return {ok: false, errors: [{path: '', code: 'AUTO_INVALID_JSON'}]};
+    }
+    const assembled = assembleSessionAggregateAnswer({answer: object, manifest: prompt.manifest});
+    if (!assembled.ok) return {ok: false, errors: assembled.issues};
+    const validation = this.validate(JSON.stringify(assembled.result));
+    if (!validation.ok) return {ok: false, errors: validation.errors ?? []};
+    return {ok: true, sanitized: validation.sanitized, errors: []};
+  }
+
   validate(text) {
     try {
       return validateAnalysisImport({db: this.db, text, source: 'api', now: this.now()});
@@ -1009,44 +1577,149 @@ export class AnalysisRunner {
     }
   }
 
-  async requestOnce({context, prompt, kind}) {
+  #isStreamUnsupported(error) {
+    if (!error || error.kind !== ERROR_KIND.CLIENT) return false;
+    if (![400, 404, 415, 422].includes(Number(error.status))) return false;
+    return /stream|sse|chunk|stream_options/i.test(String(error.detail ?? ''));
+  }
+
+  #retryingStage(kind, fallback) {
+    if (kind === 'session-aggregate') return 'session_aggregating';
+    if (kind.startsWith('memory')) return 'memory_analyzing';
+    if (kind.startsWith('session')) return 'session_analyzing';
+    return fallback ?? 'running';
+  }
+
+  async requestOnce({
+    context,
+    prompt,
+    kind,
+    batchIndex = null,
+    stage = null,
+    outputTokens = 8000
+  }) {
     const {provider, signal} = context;
     const scheduler = this.#schedulerFor(provider);
     await this.#ensureSafeProviderUrl(provider);
 
+    const maxAttempts = Math.min(3, Math.max(1, this.maxRetries + 1));
+    let attempt = 0;
     let lastError = null;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+    let fallbackUsed = false;
+    while (attempt < maxAttempts) {
       if (signal.aborted) throw abortError();
+      const remaining = this.#taskRemaining(context);
+      if (remaining !== null && remaining < MIN_ATTEMPT_WINDOW_MS) {
+        this.#assertTaskBudget(context);
+      }
+      const effectiveTimeout = remaining === null
+        ? provider.timeoutMs
+        : Math.max(MIN_ATTEMPT_WINDOW_MS, Math.min(provider.timeoutMs, remaining));
+      const idleTimeout = Math.max(10000, Math.min(this.idleTimeoutMs, effectiveTimeout));
+      const streaming = provider.responseMode !== 'non_streaming';
+      const mode = streaming ? 'streaming' : 'non_streaming';
       const startedAt = this.now();
+      this.#beginRequest(context, {
+        kind,
+        batchIndex,
+        attempt: attempt + 1,
+        maxAttempts,
+        mode,
+        timeoutMs: effectiveTimeout,
+        idleTimeoutMs: idleTimeout,
+        stage: stage ?? this.#retryingStage(kind)
+      });
       try {
+        const reportProgress = (patch) => {
+          if (!patch) return;
+          const stateEntry = this.state.get(context.sessionId);
+          const current = stateEntry?.currentRequest;
+          if (!current || current.attempt !== attempt + 1) return;
+          const next = {...current};
+          let changed = false;
+          if (patch.receivedHeaders === true && current.receivedHeaders !== true) {
+            next.receivedHeaders = true;
+            next.headersAt = patch.headersAt ?? this.now();
+            changed = true;
+          }
+          if (patch.receivedOutput === true && current.receivedOutput !== true) {
+            next.receivedOutput = true;
+            next.firstTokenAt = patch.firstTokenAt ?? this.now();
+            changed = true;
+          }
+          if (changed) {
+            this.#setRunning(context.sessionId, {
+              stage: stateEntry.stage,
+              currentRequest: next
+            });
+          }
+        };
         const result = await scheduler.run(() => callProvider(provider, {
           apiKey: provider.configId ? this.configStore.secret(provider.configId) : null,
           messages: prompt.messages,
-          maxTokens: kind.startsWith('session') ? 8000 : 6000,
+          maxTokens: Math.max(256, Number(outputTokens) || 8000),
           responseSchema: prompt.answerSchema ?? null,
-          responseFormat: prompt.answerSchema ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object') : 'none',
+          responseFormat: prompt.answerSchema
+            ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object')
+            : 'none',
           fetchImpl: this.fetchImpl,
           signal,
-          timeoutMs: provider.timeoutMs ?? DEFAULT_TIMEOUT_MS
+          timeoutMs: effectiveTimeout,
+          idleTimeoutMs: idleTimeout,
+          maxTotalMs: remaining ?? null,
+          streaming,
+          now: this.now,
+          onProgress: reportProgress
         }), {signal});
-        const usage = result.usage ?? {inputTokens: 0, outputTokens: 0};
+        const usage = result.usage ?? null;
         const entry = this.state.get(context.sessionId);
-        const nextUsage = addUsage(entry?.usage, usage, provider.pricing);
-        this.state.set(context.sessionId, {
-          usage: nextUsage,
-          lastProvider: result.providerId,
-          lastModel: result.model,
-          lastRoutedProvider: result.routedProvider ?? null,
-          stage: kind
-        });
-        if (entry?.memoryJobId) {
-          const job = getJob(this.db, entry.memoryJobId);
-          if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
-        } else if (entry?.sessionJobId) {
-          const job = getJob(this.db, entry.sessionJobId);
-          if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
+        const nextUsage = usage ? addUsage(entry?.usage, usage, provider.pricing) : (entry?.usage ?? null);
+        if (usage) {
+          this.state.set(context.sessionId, {
+            usage: nextUsage,
+            lastProvider: result.providerId,
+            lastModel: result.model,
+            lastRoutedProvider: result.routedProvider ?? null,
+            responseMode: result.responseMode ?? mode
+          });
+          if (entry?.memoryJobId) {
+            const job = getJob(this.db, entry.memoryJobId);
+            if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
+          } else if (entry?.sessionJobId) {
+            const job = getJob(this.db, entry.sessionJobId);
+            if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
+          }
+          this.#checkBudget(context, nextUsage);
         }
-        this.#checkBudget(context, nextUsage);
+        // A provider that ignores `stream` and returns JSON is handled by the
+        // adapter, but remember the verified mode so the next batch does not
+        // repeat the probe.
+        if (streaming && result.responseMode !== 'streaming' && provider.configId) {
+          provider.responseMode = 'non_streaming';
+          this.state.setProviderMode(provider.configId, 'non_streaming', {reason: 'provider-returned-json'});
+        } else if (streaming && result.responseMode === 'streaming' && provider.configId) {
+          this.state.setProviderMode(provider.configId, 'streaming');
+        }
+        const durationMs = this.now() - startedAt;
+        this.#recordAttempt(context, attemptRecord({
+          kind,
+          batchIndex,
+          attempt,
+          maxAttempts,
+          mode: result.responseMode ?? mode,
+          outcome: 'succeeded',
+          elapsedMs: durationMs,
+          timeoutMs: effectiveTimeout,
+          receivedHeaders: true,
+          receivedOutput: true,
+          usageKnown: Boolean(usage),
+          usage,
+          metrics: result.metrics
+        }));
+        this.state.set(context.sessionId, {
+          currentRequest: null,
+          receivedOutput: true
+        });
         return {
           content: result.text,
           text: result.text,
@@ -1054,34 +1727,120 @@ export class AnalysisRunner {
           model: result.model,
           usage,
           finishReason: result.finishReason,
-          durationMs: this.now() - startedAt
+          responseMode: result.responseMode ?? mode,
+          metrics: result.metrics ?? null,
+          durationMs
         };
       } catch (error) {
         lastError = error;
         if (error?.code === 'ANALYSIS_BUDGET_EXCEEDED') throw error;
-        if (attempt >= this.maxRetries || !isRetryable(error)) {
-          throw Object.assign(new Error(error?.code ?? 'PROVIDER_FAILED'), {
-            code: error?.code ?? 'PROVIDER_FAILED',
-            detail: error?.detail ?? error?.message,
-            status: error?.status ?? null,
-            retryAfterMs: error?.retryAfterMs ?? null
+        const canceled = isCanceledError(error) || signal.aborted;
+        const outcome = canceled ? 'canceled' : (error?.kind === ERROR_KIND.TIMEOUT ? 'timeout' : 'failed');
+        const durationMs = this.now() - startedAt;
+        const failedAttempt = attempt;
+        const recordFailure = (extra = {}) => this.#recordAttempt(context, attemptRecord({
+          kind,
+          batchIndex,
+          attempt: failedAttempt,
+          maxAttempts,
+          mode,
+          outcome,
+          error,
+          elapsedMs: durationMs,
+          timeoutMs: effectiveTimeout,
+          receivedHeaders: error?.receivedHeaders === true,
+          receivedOutput: error?.receivedOutput === true,
+          metrics: error?.metrics ?? null,
+          ...extra
+        }));
+        if (canceled) {
+          recordFailure();
+          throw abortError();
+        }
+        const budgetLeft = this.#taskRemaining(context);
+        if (String(error?.detail ?? '') === 'attempt-budget-exhausted'
+          || (budgetLeft !== null && budgetLeft < MIN_ATTEMPT_WINDOW_MS)) {
+          recordFailure();
+          throw Object.assign(new Error('TASK_TIME_BUDGET'), {
+            code: 'ANALYSIS_TASK_TIMEOUT',
+            detail: 'task-time-budget',
+            kind: ERROR_KIND.TIMEOUT
           });
         }
-        // A 429 already paused the provider scheduler for Retry-After. Sleeping
-        // the same value again would double the wait for every retry.
-        if (error.status === 429) {
+        // One verified non-streaming fallback when the provider rejects the
+        // streaming transport itself. This is not a general retry: it happens
+        // once per task, and only for a clear stream-transport rejection.
+        if (!fallbackUsed && mode === 'streaming' && this.#isStreamUnsupported(error)) {
+          recordFailure({retry: true});
+          fallbackUsed = true;
+          context.streamFallbackUsed = true;
+          provider.responseMode = 'non_streaming';
+          if (provider.configId) {
+            this.state.setProviderMode(provider.configId, 'non_streaming', {reason: 'streaming-rejected'});
+          }
+          this.logger?.warn?.({
+            event: 'ai.stream.fallback',
+            sessionId: context.sessionId,
+            kind,
+            httpStatus: error?.status ?? null,
+            reason: 'streaming-rejected'
+          });
           continue;
         }
-        const delay = retryDelayMs(attempt, {
-          baseMs: 1000,
-          maxMs: 30000,
-          random: this.random,
-          retryAfterMs: error.retryAfterMs
+        const retry = shouldRetryAttempt(error, {
+          attempt,
+          maxRetries: this.maxRetries,
+          random: this.random
+        }) && (budgetLeft === null || budgetLeft >= MIN_ATTEMPT_WINDOW_MS);
+        if (!retry || attempt + 1 >= maxAttempts) {
+          recordFailure();
+          throw this.#normalizeProviderError(error);
+        }
+        attempt += 1;
+        const retryAfter = Number(error.retryAfterMs);
+        const delay = error.kind === ERROR_KIND.RATE_LIMIT
+          ? Math.min(300000, Number.isFinite(retryAfter) ? Math.max(0, retryAfter) : 1500)
+          : retryDelayMs(attempt - 1, {
+            baseMs: 1000,
+            maxMs: 30000,
+            random: this.random,
+            retryAfterMs: error.retryAfterMs
+          });
+        const nextRetryAt = this.now() + delay;
+        this.#markRetrying(context, {
+          error,
+          attempt: attempt + 1,
+          maxAttempts,
+          nextRetryAt,
+          stage: stage ?? this.#retryingStage(kind)
         });
+        recordFailure({retry: true, nextRetryAt});
         await sleepWithSignal(delay, signal);
+        // The repeat attempt starts now; its own beginRequest replaces the
+        // "retrying" marker.
       }
     }
-    throw lastError;
+    throw this.#normalizeProviderError(lastError);
+  }
+
+  #normalizeProviderError(error) {
+    if (!error) {
+      return Object.assign(new Error('PROVIDER_FAILED'), {code: 'PROVIDER_FAILED', kind: ERROR_KIND.NETWORK});
+    }
+    if (error instanceof AnalysisPermissionError || error?.code === 'ANALYSIS_BUDGET_EXCEEDED') return error;
+    if (isCanceledError(error)) return abortError();
+    const normalized = Object.assign(new Error(error?.code ?? 'PROVIDER_FAILED'), {
+      code: error?.code ?? 'PROVIDER_FAILED',
+      detail: error?.detail ?? error?.message,
+      status: error?.status ?? null,
+      retryAfterMs: error?.retryAfterMs ?? null,
+      kind: error?.kind ?? null,
+      receivedHeaders: error?.receivedHeaders === true,
+      receivedOutput: error?.receivedOutput === true,
+      elapsedMs: error?.elapsedMs ?? null,
+      timeoutMs: error?.timeoutMs ?? null
+    });
+    return normalized;
   }
 
   #checkBudget(context, usage) {
@@ -1103,7 +1862,7 @@ export class AnalysisRunner {
   cancel(sessionId) {
     const active = this.active.get(sessionId);
     if (!active) {
-      this.state.set(sessionId, {status: 'canceled', stage: 'canceled', error: null});
+      this.state.set(sessionId, {status: 'canceled', stage: 'canceled', error: null, currentRequest: null});
       return this.getStatus(sessionId);
     }
     active.context.paused = false;
@@ -1144,7 +1903,9 @@ export class AnalysisRunner {
     if (config.pricingStatus !== PRICING_STATUS.API_FREE && confirmBilling !== true) {
       throw new AnalysisPermissionError('SPEND_CONFIRMATION_REQUIRED');
     }
-    const provider = providerFromConfig(config);
+    const provider = providerFromConfig(config, {
+      responseMode: this.state.getProviderMode(config.id)
+    });
     this.state.set(sessionId, {status: 'running', stage: 'resuming', error: null});
     return this.launch({sessionId, provider, mode: entry.mode, budget: budget ?? entry.budget, resume: true});
   }
@@ -1162,7 +1923,12 @@ export class AnalysisRunner {
     }
     for (const [sessionId, entry] of Object.entries(this.state.all())) {
       if (entry?.status === 'running') {
-        this.state.set(sessionId, {status: 'interrupted', stage: 'interrupted', error: {code: 'ANALYSIS_INTERRUPTED'}});
+        this.state.set(sessionId, {
+          status: 'interrupted',
+          stage: 'interrupted',
+          error: {code: 'ANALYSIS_INTERRUPTED'},
+          currentRequest: null
+        });
       }
     }
   }

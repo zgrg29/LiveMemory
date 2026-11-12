@@ -290,10 +290,20 @@ function header(locale, title, mode) {
 
 export function buildSessionInstructions(locale = 'en', context = {}) {
   const text = TEXT[locale] ?? TEXT.en;
+  const batchTotal = Math.max(1, Number(context.batchTotal) || 1);
+  const batchIndex = Math.min(batchTotal, Math.max(1, Number(context.batchIndex) || 1));
+  const batchScope = batchTotal > 1
+    ? (locale === 'ja'
+      ? `このパッケージは配信の第 ${batchIndex}/${batchTotal} バッチです。含まれているメッセージだけを分析し、このパッケージに存在する seq だけを引用してください。配信全体を見たかのように書かないでください。`
+      : locale === 'zh-CN'
+        ? `这是本场直播的第 ${batchIndex}/${batchTotal} 个批次。只分析本包内的消息，message_refs 只能引用本包中存在的 seq；不要声称看过整场直播。`
+        : `This is batch ${batchIndex}/${batchTotal} of the broadcast. Analyse only the messages in this package and cite only seq numbers present here. Never claim to have seen the whole broadcast.`)
+    : '';
   const lines = [
     header(locale, text.sessionTitle, ANALYSIS_MODE.SESSION),
     '',
     ...text.sessionIntro,
+    ...(batchScope ? ['', batchScope] : []),
     '',
     `## ${locale === 'ja' ? 'パッケージ内容' : locale === 'zh-CN' ? '分析包内容' : 'Package contents'}`,
     bullets(text.files),
@@ -310,6 +320,7 @@ export function buildSessionInstructions(locale = 'en', context = {}) {
     `- job_id: \`${context.jobId ?? 'aij_...'}\``,
     `- batch_id: \`${context.batchId ?? 'aij_...-b01'}\``,
     `- task_id: \`${context.taskId ?? 'ses_...-analysis'}\``,
+    `- batch: ${batchIndex}/${batchTotal}`,
     `- session_id: \`${context.session?.id ?? 'ses_...'}\``,
     `- locale: \`${locale}\``,
     `- messages: ${context.messageCount ?? 0}; platform emotes: ${context.emoteCount ?? 0}; messages with platform emotes: ${context.messagesWithEmotes ?? 0}`,

@@ -27,16 +27,40 @@ export function computeJobStatus(db, job) {
     .map((batch) => batch.batchIndex);
   const importedBatches = batches.length - missingBatches.length;
   const analysisMode = job.analysisMode ?? 'combined';
-  const aggregateRequired = analysisMode === 'combined' && job.batchTotal > 1;
+  // A multi-batch session report needs the stage-2 aggregate answer just like a
+  // legacy combined job. Memory-only jobs never need an aggregate.
+  const aggregateRequired = analysisMode !== 'memory' && job.batchTotal > 1;
   const aggregateImported = Boolean(finalResult);
   const aggregatePackageReady = Boolean(job.aggregatePackageId);
   const memoryCoverage = jobMemoryCoverage(db, job.id);
   const memoryReady = analysisMode === 'session' || memoryCoverage.total === 0 || memoryCoverage.complete;
 
   let status;
-  if (analysisMode !== 'combined') {
-    // Session and memory are independent tasks in v0.13. A session report does
-    // not need a memory aggregate; a memory job never overwrites the report.
+  if (analysisMode === 'session') {
+    if (aggregateRequired) {
+      if (finalResult) {
+        status = 'complete';
+      } else if (missingBatches.length === 0 && batches.length > 0) {
+        status = 'awaiting_aggregate';
+      } else if (importedBatches > 0) {
+        status = 'partial';
+      } else if (job.lastErrorAt) {
+        status = 'invalid';
+      } else {
+        status = 'awaiting_import';
+      }
+    } else if (job.batchTotal > 0 && importedBatches === batches.length && batches.length > 0 && memoryReady) {
+      status = 'complete';
+    } else if (importedBatches > 0) {
+      status = 'partial';
+    } else if (job.lastErrorAt) {
+      status = 'invalid';
+    } else {
+      status = 'awaiting_import';
+    }
+  } else if (analysisMode === 'memory') {
+    // Session and memory are independent tasks in v0.13. A memory job never
+    // needs an aggregate report.
     if (job.batchTotal > 0 && importedBatches === batches.length && batches.length > 0 && memoryReady) {
       status = 'complete';
     } else if (importedBatches > 0) {

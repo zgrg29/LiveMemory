@@ -12,7 +12,11 @@ test('session-only progress is indeterminate until the server completes it', () 
   });
   assert.equal(running.percent, null);
   assert.equal(running.indeterminate, true);
-  assert.deepEqual(running.parts[0], {key: 'session', done: 0, total: 1, complete: false});
+  assert.equal(running.parts[0].key, 'session');
+  assert.equal(running.parts[0].done, 0);
+  assert.equal(running.parts[0].total, 1);
+  assert.equal(running.parts[0].complete, false);
+  assert.equal(running.parts[0].aggregateRequired, false);
 
   const complete = buildAnalysisProgress({
     status: 'complete',
@@ -54,6 +58,63 @@ test('combined progress shows session and memory separately', () => {
   });
   assert.deepEqual(progress.parts.map((part) => part.key), ['session', 'memory']);
   assert.equal(progress.percent, 60);
+});
+
+test('a multi-batch session shows batch and aggregate progress instead of an indeterminate bar', () => {
+  const mid = buildAnalysisProgress({
+    status: 'running',
+    mode: 'session',
+    sessionReportDone: false,
+    sessionBatchTotal: 4,
+    sessionBatchIndex: 2,
+    sessionBatchesCompleted: 2,
+    sessionAggregateRequired: true,
+    sessionAggregateDone: false
+  });
+  assert.equal(mid.percent, 40, '(2 of 4 batches, aggregate still pending)');
+  assert.equal(mid.parts[0].batchTotal, 4);
+  assert.equal(mid.parts[0].batchDone, 2);
+  assert.equal(mid.parts[0].aggregateRequired, true);
+  assert.equal(mid.parts[0].complete, false);
+
+  const batchesDone = buildAnalysisProgress({
+    status: 'running',
+    mode: 'session',
+    sessionReportDone: false,
+    sessionBatchTotal: 4,
+    sessionBatchIndex: 4,
+    sessionAggregateRequired: true,
+    sessionAggregateDone: false
+  });
+  assert.equal(batchesDone.percent, 80, 'all batches imported still waits for the aggregate');
+
+  const complete = buildAnalysisProgress({
+    status: 'complete',
+    mode: 'session',
+    sessionReportDone: true,
+    sessionBatchTotal: 4,
+    sessionBatchIndex: 4,
+    sessionAggregateRequired: true,
+    sessionAggregateDone: true
+  });
+  assert.equal(complete.percent, 100);
+});
+
+test('combined progress counts session batches, aggregate and memory batches as real units', () => {
+  const progress = buildAnalysisProgress({
+    status: 'running',
+    mode: 'combined',
+    sessionBatchTotal: 2,
+    sessionBatchIndex: 2,
+    sessionAggregateDone: true,
+    sessionReportDone: true,
+    batchTotal: 2,
+    batchIndex: 1,
+    memoryViewersTotal: 20,
+    memoryViewersProcessed: 10
+  });
+  // Session units: 2 batches + 1 aggregate = 3 done; memory 1 of 2.
+  assert.equal(progress.percent, 80);
 });
 
 test('100 percent is reserved for the terminal complete state', () => {

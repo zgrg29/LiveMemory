@@ -1,8 +1,44 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-11 · v0.13.1 移除匿名免费 / 手动 AI，重写付费请求调度 + 七项实际使用修复 + API 配置编辑 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-12 · v0.13.1 可靠性专项：超时/重试分类、runPool 批次隔离、任务时间预算、token 分批 + final aggregate、自动流式与回退、AI 中心进度/统计、真实浏览器截图 · schema 13 · 结果 Schema 1.3.0
 
-## 0. 本轮追加：七项实际使用修复
+> 设计、边界、测试清单：`docs/AI_RELIABILITY.md`。前序根因：`docs/AI_TIMEOUT_INVESTIGATION.md`。
+> 本轮**未发真实付费 API 请求**；所有验证使用 Mock Provider、可控延迟与注入时钟。
+
+## 0. 本轮新增（v0.13.1 可靠性）
+
+### 0.1 超时与重试
+
+- `TimeoutError`、外部 `AbortError`（取消/暂停）、网络、429、5xx、4xx、无效响应、流中断现在由 adapter 分类；取消绝不重试。
+- 已发出且超时的长请求**默认不自动重发**；只有连接阶段网络错误允许一次安全重试；429/5xx 保留有界退避。
+- 任务级 20 分钟预算；超时返回 `ANALYSIS_TASK_TIMEOUT`，已完成批次保留。
+- `runPool` 失败只停止调度新批次，在途兄弟批次继续完成并导入；恢复只处理未完成批次。
+- 每次尝试写 `ai.request.attempt` 脱敏日志；状态新增 `attemptStats`、`currentRequest`、`lastRequest`、`taskDeadlineAt`、`saved`。
+
+### 0.2 Token 分批与流式
+
+- `src/ai/batching/tokens.mjs`：session 消息与 memory 观众按估算 input token 分批；默认 8k，配置 `batchInputTokens` 2k–32k，小上下文自动缩小。
+- 多批 session 需要 final aggregate；聚合 prompt 只使用已校验批结果，证据必须 `{batch, seq}`。
+- memory：同一观众不拆批，预算计入摘录/现有记忆/证据列表；超预算观众单独成批，不丢人。
+- 自动流式：OpenAI-compatible SSE + Anthropic Messages SSE；Provider 返回 JSON 或拒绝 stream 时自动回退一次并持久化响应模式。
+- 流式只缓冲，完成后仍走原校验/事务导入；中断流不写库。
+
+### 0.3 UI 与统计
+
+- AI 中心新增：单场批次 n/N、等待汇总、已收到模型输出、请求运行秒数、重试状态、已保存批次、真实失败原因。
+- 统计分开：尝试/成功/失败/取消/超时/重试；失败无 usage 显示“用量未知”。
+- ETA 需要 ≥3 个成功批次样本；含 session 的任务不再显示错误的固定“1 个请求”，改为自动分批。
+- 修复全局 `[hidden]` 被 `.callout {display:flex}` 覆盖的问题。
+- 真实浏览器（headless Edge + CDP）截图：运行中、完成、390px、设置页；见 `docs/screenshots/ai-reliability-*`。
+
+### 0.4 测试
+
+- 全量 **583 passed / 0 failed**（约 96 秒）。
+- 新增 `ai-attempts`、`ai-stream`、`ai-token-batching`、`v14-session-batching`、`v14-streaming-timeout`；更新 `ai-progress`。
+- 未验证：真实付费 API、真实 174k token 大场、真实 EXE/UAC。
+
+## 1. 上一轮：七项实际使用修复（2026-11-11）
+
 
 | # | 问题 | 结论/修复 | 验证 |
 | --- | --- | --- | --- |
@@ -29,7 +65,7 @@
 - 运行中任务：禁止编辑/删除其配置（409 `AI_PROVIDER_CONFIG_IN_USE`）；旧 job 的模型/区域变化后 `resume` 拒绝（409 `AI_PROVIDER_CONFIG_CHANGED`），新任务用新配置。
 - 测试：`v13-providers`（store 行为/重启持久化）、`v13-provider-edit`（HTTP/运行中/新模型）、`ai-settings-edit`（UI/安全静态）。
 
-## 1. 上一轮结果（v0.13.1 入口与调度）
+## 2. 上一轮结果（v0.13.1 入口与调度）
 
 | 目标 | 结论 |
 | --- | --- |
@@ -49,7 +85,7 @@
 | 真实付费 API | **阻塞**：本机没有 Provider 配置/密钥/环境变量。未伪造成功。 |
 | EXE | **已重新构建 v0.13.1**（91.5 MB / 164 assets / SHA-256 `ba917c52…` / requireAdministrator），包含七项修复与配置编辑；**未能运行**（UAC 拒绝）。 |
 
-## 2. 关键文件
+## 3. 关键文件
 
 ### 新增
 
@@ -85,7 +121,7 @@
 - `src/web/js/pages/ai-import-repair.js`。
 - 旧匿名/手动测试：`auto-analysis`、`auto-api`、`auto-compact`、`auto-client`、`auto-prompt`、`auto-assemble`、`manual-52-viewers`、`ai-import-repair`。
 
-## 3. API 变化（v0.13.1）
+## 4. API 变化（v0.13.1）
 
 保留：
 
@@ -120,7 +156,7 @@ POST /api/ai/import
 GET/POST /api/ai/auto/services|status|run|cancel
 ```
 
-## 4. 关键规则（下一轮不要破坏）
+## 5. 关键规则（下一轮不要破坏）
 
 1. 匿名免费 AI 与手动 JSON 入口已删除；不要重新加回。
 2. `session` 与 `memory` 独立保存；画像失败不覆盖单场报告。
@@ -136,20 +172,29 @@ GET/POST /api/ai/auto/services|status|run|cancel
 12. 自定义 URL 私网/元数据/DNS 检查保留；DNS 安全缓存最长 5 分钟。
 13. 历史报告与长期画像仍可只读；旧 1.0–1.2.0 结果仍可读。
 14. 三语键一致；前端禁止 `innerHTML`、`alert()`、硬编码可见文案。
+15. **已发出的长请求超时后不要自动重发；用户取消/暂停绝不重试。** 超时、截断、退化、流中断都不是“重试就能好”。
+16. **任务有 20 分钟预算；`runPool` 失败只停调度，不得 abort 在途兄弟批次。**
+17. **多批 session 必须有 final aggregate 才 complete；汇总证据必须 `{batch, seq}`。**
+18. **批次输入按 token 预算（默认 8k，可配 2k–32k）；不得丢消息或观众；同一观众不拆批。**
+19. **Streaming 由程序自动选择；只缓冲，完成后仍校验/事务导入；不兼容最多回退一次。**
+20. **统计分开成功/失败/取消/超时/重试；无 usage 显示“用量未知”，不能当零费用。**
 
-## 5. 未验证 / 边界
+## 6. 未验证 / 边界
 
 - **真实付费 API 阻塞**：本机没有 `config/ai-providers.json`、`secrets/ai-keys.json` 或环境变量 Key。
-- 真实浏览器 UI、暗色、390px、请求统计、暂停/取消未截图验收。
-- EXE 已重新构建但 UAC 拒绝运行；未验证打包后的出站请求。
-- 真实 Provider 的 429/Retry-After、1,000 观众、费用与延迟未测试。
+- 真实浏览器 UI 已用 headless Edge + CDP 验收运行中/完成/390px/设置页；截图见 `docs/screenshots/ai-reliability-*`。未用真实 Provider 点击“开始分析”（使用合成 Fixture）。
+- EXE 已重新构建但 UAC 拒绝运行；未验证打包后的流式连接与出站请求。
+- 真实 Provider 的 429/Retry-After、1,000 观众、流式 usage、费用与延迟未测试。
+- 真实 174k token 大场的 token 分批与 final aggregate 未运行；Mock 已覆盖 420 消息多批。
+- 部分 Provider 的 `stream_options.include_usage` 支持未知：流式 usage 可能缺失，界面显示“用量未知”。
+- 汇总请求仍可能因批次结果过多超过小上下文模型；会明确失败并保留批次。
 - 调度器默认 3 并发是安全起点，不是官方额度；过高可能触发 429。
 - 429 冷却上限 300 秒；更长要求会失败而不是无限等待。
 - 预算在请求后累计；并发请求可能同时越过上限。
 - 5 分钟 DNS 缓存窗口内 DNS 变化不会被立即发现。
 - `src/ai/export/job.mjs`、`package.mjs`、`prompts/instructions.mjs` 仅作为历史兼容/测试的内部构建器保留，无 UI/HTTP 入口；如后续确认无历史需求可再删除。
 
-## 6. 常用命令
+## 7. 常用命令
 
 ```bat
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
@@ -158,6 +203,6 @@ node src/launcher/launcher.mjs --no-open
 node scripts/build-windows.mjs
 ```
 
-## 7. 本轮 Commit
+## 8. 本轮 Commit
 
 - 功能/测试/文档提交：见最终答复的本地 commit hash（未 Push）。

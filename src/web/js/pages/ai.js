@@ -126,11 +126,12 @@ function viewersPerBatch(config) {
 }
 
 function estimatedRequests(config, scope, session) {
+  // Session request count depends on the real message sizes and the token
+  // budget chosen at task start; showing a made-up number is worse than saying
+  // it is automatic. Memory-only requests can be estimated from viewers.
+  if (scope !== 'memory') return null;
   const viewers = Math.max(0, Number(session?.uniqueViewerCount ?? 0));
-  const sessionRequests = scope === 'memory' ? 0 : 1;
-  if (scope === 'session') return sessionRequests;
-  const memoryRequests = Math.max(1, Math.ceil(viewers / viewersPerBatch(config)));
-  return sessionRequests + memoryRequests;
+  return Math.max(1, Math.ceil(viewers / viewersPerBatch(config)));
 }
 
 function mmss(ms) {
@@ -197,6 +198,7 @@ export const aiPage = {
     let runScope = 'session';
     let status = null;
     let timer = null;
+    let requestTicker = null;
     let busy = false;
     let statusEpoch = 0;
     let reportEpoch = 0;
@@ -317,6 +319,9 @@ export const aiPage = {
     progressBar.append(progressFill);
     const progressParts = el('div', {className: 'analysis-progress-parts'});
     const progressText = el('div', {className: 'small tertiary'});
+    const requestStatus = el('div', {className: 'small tertiary', hidden: true});
+    const requestElapsed = el('div', {className: 'small tertiary', hidden: true});
+    const savedStatus = el('div', {className: 'small tertiary', hidden: true});
     const statsHost = el('div', {className: 'def-list'});
     const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
     const errorDetailsText = el('div', {className: 'small tertiary'});
@@ -339,6 +344,9 @@ export const aiPage = {
       progressBar,
       progressText,
       progressParts,
+      requestStatus,
+      requestElapsed,
+      savedStatus,
       statusText,
       statsHost,
       el('div', {className: 'inline', style: {marginTop: '10px'}}, pauseButton, cancelButton),
@@ -426,7 +434,9 @@ export const aiPage = {
           el('span', {className: 'def-value', text: formatInteger(viewers, ctx.locale)})),
         el('div', {className: 'def-row'},
           el('span', {className: 'def-key', text: t('ai.center.scaleRequests')}),
-          el('span', {className: 'def-value', text: formatInteger(requests, ctx.locale)})),
+          el('span', {className: 'def-value', text: requests === null
+            ? t('ai.center.scaleRequestsAuto')
+            : formatInteger(requests, ctx.locale)})),
         el('div', {className: 'def-row'},
           el('span', {className: 'def-key', text: t('ai.center.scaleBudget')}),
           el('span', {className: 'def-value', text: budgetInput.value
@@ -456,10 +466,14 @@ export const aiPage = {
       const stage = current?.stage ?? 'preparing';
       const index = Math.max(0, Number(current?.batchIndex ?? 0));
       const total = Math.max(0, Number(current?.batchTotal ?? 0));
+      const sessionIndex = Math.max(0, Number(current?.sessionBatchIndex ?? 0));
+      const sessionTotal = Math.max(0, Number(current?.sessionBatchTotal ?? 0));
       const keys = {
         preparing: 'ai.v13.stage.preparing',
         packaging_session: 'ai.v13.stage.packagingSession',
         session_analyzing: 'ai.v13.stage.sessionAnalyzing',
+        session_batch_done: 'ai.v13.stage.sessionBatchDone',
+        session_aggregating: 'ai.v13.stage.sessionAggregating',
         session_importing: 'ai.v13.stage.sessionImporting',
         session_done: 'ai.v13.stage.sessionDone',
         packaging_memory: 'ai.v13.stage.packagingMemory',
@@ -472,11 +486,39 @@ export const aiPage = {
         complete: 'ai.center.complete',
         canceled: 'ai.center.canceled'
       };
-      const key = keys[stage];
+      if (stage === 'session_analyzing' && sessionTotal > 1) {
+        return t('ai.v13.stage.sessionBatchAnalyzing', {
+          index: String(sessionIndex),
+          total: String(sessionTotal)
+        });
+      }
+      if (stage === 'session_aggregating') {
+        return t('ai.v13.stage.sessionAggregating', {
+          total: String(sessionTotal)
+        });
+      }
       if (stage === 'memory_analyzing' || stage === 'memory_importing' || stage === 'memory_batch_done') {
         return t(key ?? 'ai.v13.stage.preparing', {index, total});
       }
-      return key ? t(key) : t('ai.v13.stage.preparing');
+      return keys[stage] ? t(keys[stage]) : t('ai.v13.stage.preparing');
+    }
+
+    function durationLabel(ms) {
+      const total = Math.max(0, Math.round(Number(ms) / 1000));
+      const minutes = Math.floor(total / 60);
+      const seconds = total % 60;
+      return minutes > 0
+        ? t('ai.center.request.durationMinutes', {minutes: String(minutes), seconds: String(seconds).padStart(2, '0')})
+        : t('ai.center.request.durationSeconds', {seconds: String(seconds)});
+    }
+
+    function elapsedLabel(ms) {
+      const total = Math.max(0, Math.round(Number(ms) / 1000));
+      const minutes = Math.floor(total / 60);
+      const seconds = total % 60;
+      return minutes > 0
+        ? t('ai.center.request.elapsedMinutes', {minutes: String(minutes), seconds: String(seconds).padStart(2, '0')})
+        : t('ai.center.request.elapsedSeconds', {seconds: String(seconds)});
     }
 
     function reasonText(code) {
@@ -504,11 +546,25 @@ export const aiPage = {
       }
       for (const part of progress.parts) {
         if (part.key === 'session') {
-          progressParts.append(el('div', {className: 'small tertiary'},
-            t('ai.center.progressSession', {
-              done: part.complete ? 1 : 0,
-              total: 1
-            })));
+          if (part.batchTotal > 1) {
+            progressParts.append(el('div', {className: 'small tertiary'},
+              t('ai.center.progressSessionBatches', {
+                done: formatInteger(part.batchDone, ctx.locale),
+                total: formatInteger(part.batchTotal, ctx.locale)
+              })));
+            if (part.aggregateRequired) {
+              progressParts.append(el('div', {className: 'small tertiary'},
+                part.aggregateDone
+                  ? t('ai.center.progressAggregateDone')
+                  : t('ai.center.progressAggregate')));
+            }
+          } else {
+            progressParts.append(el('div', {className: 'small tertiary'},
+              t('ai.center.progressSession', {
+                done: part.complete ? 1 : 0,
+                total: 1
+              })));
+          }
         } else if (part.skipped) {
           progressParts.append(el('div', {className: 'small tertiary'},
             t('ai.center.progressMemorySkipped', {
@@ -531,24 +587,105 @@ export const aiPage = {
       }
     }
 
+    function requestKindLabel(kind) {
+      if (!kind) return t('ai.center.request.unknown');
+      if (kind === 'session-aggregate') return t('ai.center.request.aggregate');
+      if (kind.startsWith('memory')) return t('ai.center.request.memory');
+      return t('ai.center.request.session');
+    }
+
+    function requestStateLabel(request) {
+      if (!request) return '';
+      if (request.retrying) {
+        return t('ai.center.request.retrying', {
+          attempt: String(request.attempt ?? 1),
+          max: String(request.maxAttempts ?? 1)
+        });
+      }
+      if (request.receivedOutput) return t('ai.center.request.output');
+      if (request.receivedHeaders) return t('ai.center.request.headers');
+      return t('ai.center.request.waiting');
+    }
+
+    function renderRequestDetail(current) {
+      const request = current?.currentRequest ?? null;
+      const last = current?.lastRequest ?? null;
+      if (!request && !last) {
+        requestStatus.hidden = true;
+        requestElapsed.hidden = true;
+        return;
+      }
+      requestStatus.hidden = false;
+      if (request) {
+        const batch = Number.isFinite(Number(request.batchIndex)) && request.batchIndex !== null
+          ? ` · ${t('ai.center.request.batch', {index: formatInteger(request.batchIndex, ctx.locale)})}`
+          : '';
+        requestStatus.textContent = `${requestKindLabel(request.kind)} · ${requestStateLabel(request)}${batch}`;
+        requestElapsed.hidden = false;
+        requestElapsed.dataset.startedAt = String(request.startedAt ?? '');
+        requestElapsed.textContent = elapsedLabel(Date.now() - Number(request.startedAt ?? Date.now()));
+      } else {
+        requestStatus.textContent = t('ai.center.request.last', {
+          kind: requestKindLabel(last.kind),
+          outcome: t(`ai.center.request.outcome.${last.outcome ?? 'failed'}`),
+          elapsed: durationLabel(last.elapsedMs ?? 0)
+        });
+        requestElapsed.hidden = true;
+        requestElapsed.dataset.startedAt = '';
+      }
+    }
+
+    function renderSaved(current) {
+      const saved = current?.saved;
+      if (!saved) {
+        savedStatus.hidden = true;
+        return;
+      }
+      const parts = [];
+      if (saved.sessionReport) parts.push(t('ai.center.saved.session'));
+      if (Number(saved.sessionBatches ?? 0) > 0 && Number(current.sessionBatchTotal ?? 0) > 1) {
+        parts.push(t('ai.center.saved.sessionBatches', {
+          done: formatInteger(saved.sessionBatches, ctx.locale),
+          total: formatInteger(current.sessionBatchTotal, ctx.locale)
+        }));
+      }
+      if (Number(saved.memoryBatches ?? 0) > 0) {
+        parts.push(t('ai.center.saved.memoryBatches', {
+          done: formatInteger(saved.memoryBatches, ctx.locale),
+          total: formatInteger(current.memoryBatchTotal ?? 0, ctx.locale)
+        }));
+      }
+      if (saved.memory) parts.push(t('ai.center.saved.memory'));
+      savedStatus.hidden = parts.length === 0;
+      savedStatus.textContent = parts.length > 0
+        ? `${t('ai.center.saved.label')}: ${parts.join(' · ')}`
+        : '';
+    }
+
     function renderStats(current) {
       clear(statsHost);
+      const attempts = current?.attemptStats;
       const requests = current?.requestStats;
-      if (!requests) return;
-      const rows = [
-        [t('ai.center.stats.total'), formatInteger(requests.total ?? 0, ctx.locale)],
-        [t('ai.center.stats.done'), formatInteger(requests.completed ?? 0, ctx.locale)],
-        [t('ai.center.stats.failed'), formatInteger(requests.failed ?? 0, ctx.locale)],
-        [t('ai.center.stats.active'), `${formatInteger(requests.active ?? 0, ctx.locale)} / ${formatInteger(requests.concurrency ?? 0, ctx.locale)}`],
-        [t('ai.center.stats.queued'), formatInteger(requests.waiting ?? 0, ctx.locale)],
-        [t('ai.center.stats.modelTime'), requests.averageModelMs === null
+      const rows = [];
+      if (attempts && Number(attempts.total ?? 0) > 0) {
+        rows.push([t('ai.center.stats.attempts'), formatInteger(attempts.total ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.succeeded'), formatInteger(attempts.succeeded ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.failed'), formatInteger(attempts.failed ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.canceled'), formatInteger(attempts.canceled ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.timedOut'), formatInteger(attempts.timedOut ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.retried'), formatInteger(attempts.retried ?? 0, ctx.locale)]);
+      }
+      if (requests) {
+        rows.push([t('ai.center.stats.active'), `${formatInteger(requests.active ?? 0, ctx.locale)} / ${formatInteger(requests.concurrency ?? 0, ctx.locale)}`]);
+        rows.push([t('ai.center.stats.queued'), formatInteger(requests.waiting ?? 0, ctx.locale)]);
+        rows.push([t('ai.center.stats.modelTime'), requests.averageModelMs === null
           ? '—'
-          : t('ai.center.stats.msValue', {ms: formatInteger(requests.averageModelMs, ctx.locale)})],
-        [t('ai.center.stats.queueWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.queueWaitMs ?? 0, ctx.locale)})],
-        [t('ai.center.stats.throttleWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.throttleWaitMs ?? 0, ctx.locale)})],
-        [t('ai.center.stats.rateLimited'), formatInteger(requests.rateLimited ?? 0, ctx.locale)]
-      ];
-      if (current.usage) {
+          : t('ai.center.stats.msValue', {ms: formatInteger(requests.averageModelMs, ctx.locale)})]);
+        rows.push([t('ai.center.stats.queueWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.queueWaitMs ?? 0, ctx.locale)})]);
+        rows.push([t('ai.center.stats.throttleWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.throttleWaitMs ?? 0, ctx.locale)})]);
+        rows.push([t('ai.center.stats.rateLimited'), formatInteger(requests.rateLimited ?? 0, ctx.locale)]);
+      }
+      if (current?.usage) {
         rows.push([t('ai.center.stats.tokens'), t('ai.v13.run.usageTokens', {
           input: formatInteger(current.usage.inputTokens ?? 0, ctx.locale),
           output: formatInteger(current.usage.outputTokens ?? 0, ctx.locale)
@@ -559,8 +696,12 @@ export const aiPage = {
             currency: current.usage.cost.currency
           })]);
         }
+      } else if (Number(current?.usageUnknownAttempts ?? 0) > 0) {
+        rows.push([t('ai.center.stats.usage'), t('ai.center.stats.usageUnknown')]);
       }
-      if (Number.isFinite(Number(current.estimatedRemainingMs))) {
+      if (current?.estimatedRemainingMs !== null
+        && current?.estimatedRemainingMs !== undefined
+        && Number.isFinite(Number(current.estimatedRemainingMs))) {
         rows.push([t('ai.center.stats.eta'), mmss(current.estimatedRemainingMs) ?? '—']);
       }
       statsHost.append(...rows.map(([key, value]) => el('div', {className: 'def-row'},
@@ -568,11 +709,29 @@ export const aiPage = {
         el('span', {className: 'def-value', text: value}))));
     }
 
+    function syncRequestTicker(active) {
+      if (requestTicker) {
+        window.clearInterval(requestTicker);
+        requestTicker = null;
+      }
+      if (!active) return;
+      // Local clock only: the server supplies the request start time, so the
+      // displayed "running for" value never invents progress or an ETA.
+      requestTicker = window.setInterval(() => {
+        const startedAt = Number(status?.currentRequest?.startedAt);
+        if (!Number.isFinite(startedAt) || startedAt <= 0) return;
+        requestElapsed.textContent = elapsedLabel(Date.now() - startedAt);
+      }, 1000);
+    }
+
     function renderStatus(current) {
       status = current;
       const visible = Boolean(current && current.status && current.status !== 'idle');
       statusCard.hidden = !visible;
-      if (!visible) return;
+      if (!visible) {
+        syncRequestTicker(false);
+        return;
+      }
       const running = current.status === 'running';
       const paused = current.status === 'paused';
       pauseButton.hidden = !running && !paused;
@@ -581,6 +740,9 @@ export const aiPage = {
       cancelButton.hidden = !running;
       startButton.disabled = running;
       renderProgress(current);
+      renderRequestDetail(current);
+      renderSaved(current);
+      syncRequestTicker(running && Boolean(current.currentRequest));
       errorText.hidden = true;
       errorDetails.hidden = true;
       errorText.textContent = '';
@@ -824,6 +986,7 @@ export const aiPage = {
     await Promise.all([refreshStatus(), refreshReport()]);
     return () => {
       if (timer) window.clearTimeout(timer);
+      syncRequestTicker(false);
       statusEpoch += 1;
       reportEpoch += 1;
     };
