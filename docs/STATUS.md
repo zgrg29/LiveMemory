@@ -26,7 +26,7 @@
 | commit | `87f500ebcd58b47319ea8d101677141f2c89dadb` |
 | buildId | `33ea5e659ce0` |
 | asset hash | `33ea5e659ce0295a2061` |
-| builtAt | 2026-11-12T07:19:02.385Z（15:19:02 +08） |
+| builtAt | 2026-11-12T07:31:03.200Z（15:31:03 +08） |
 | 资源 | 169 files；7 个必需模块；RT_MANIFEST requireAdministrator |
 
 本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=33ea5e659ce0`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**

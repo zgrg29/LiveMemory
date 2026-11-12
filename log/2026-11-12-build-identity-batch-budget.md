@@ -36,7 +36,7 @@
 | commit | `87f500ebcd58b47319ea8d101677141f2c89dadb` |
 | buildId | `33ea5e659ce0` |
 | assetHash | `33ea5e659ce0295a2061` |
-| builtAt | 2026-11-12T07:19:02.385Z |
+| builtAt | 2026-11-12T07:31:03.200Z |
 | 资源 | 169 files / 7 必需模块 / requireAdministrator |
 
 本会话非提升，复制 EXE 并把 RT_MANIFEST 改为 asInvoker 后实际启动：
