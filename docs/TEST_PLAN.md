@@ -70,6 +70,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
 | `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
 | `history-ui.test.mjs` | 列表与详情共用 `session-actions`、搜索端点/筛选参数/不读 events 正文、删除确认字段与勾选、DELETE 客户端、无 innerHTML、共享 modal、响应式/菜单键盘 CSS、路由与事务守卫、三语键 |
+| `identity-labels.test.mjs` | 三语标签为「可识别观众」、未识别消息警告、直播/历史/AI 字段使用、CSS 类；禁止把可识别观众写成总观众 |
 | `ai-prompts.test.mjs` | 三语提示词的批次/汇总/来源字段语义一致、提示词版本记录、Schema 1.0/1.1 兼容、未知字段拒绝、真实包元数据构造结果通过语义校验 |
 | `ai-ui.test.mjs` | AI 页面无 innerHTML/eval、完整端点、历史详情报告入口、三语 M6 键、AI 与本地统计分离、切片提示不声称视频分析 |
 
@@ -93,8 +94,20 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `history-management.test.mjs` | 三场并发停止一场其余继续、重复停止 409、同房间重启新场次、归档持久化/默认隐藏/取消归档/live 拒绝、永久删除专属数据与共享观众聚合重建、孤立 broadcaster 清理、focused 保留、导出文件删除、确认/live/adapter 守卫、数据库故障事务回滚 |
 | `history-search.test.mjs` | 主播名称/稳定 ID、中日英混合标题、观众稳定 ID/昵称/历史昵称、同名不同身份不合并、跨平台/跨主播、筛选组合、隐藏归档计数、分页、通配符字面、匿名不可检索、1200 场性能 |
 | `history-api.test.mjs` | HTTP 搜索/筛选、归档/取消、列表与详情两个停止端点、删除确认与 400/409、观众单场发言、删除后 404 与无关场次保留 |
+| `identity-stats.test.mjs` | 同一用户多弹幕、多用户、同名不同 UID、UID 缺失/空串/数字 0、数字与字符串 UID 一致、礼物/SC/大航海、跨场次全识别/部分识别、summary/history-search/serializer 三处一致、结束后计数不变 |
 
-## 4. 本轮结果（2026-11-09，v0.8.0，M6）
+## 4. 本轮结果（2026-11-12，观众身份专项）
+
+```text
+tests 610
+pass  610
+fail  0
+duration ≈ 118.6s
+```
+
+无跳过、无 todo。新增 `tests/integration/identity-stats.test.mjs`、`tests/unit/identity-labels.test.mjs`；`events.test.mjs` 增加 UID=0 防御。另用用户数据库副本启动服务，实测 `/api/sessions`、`/api/history/search`、场次详情对同一 Bilibili 场次均返回 `727 条消息 / 2 可识别观众 / 726 未识别`，重启后不变。未修改用户原库。
+
+## 4.1 历史结果（2026-11-09，v0.8.0，M6）
 
 ```text
 tests 354

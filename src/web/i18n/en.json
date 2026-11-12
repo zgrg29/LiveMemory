@@ -126,15 +126,22 @@
     },
     "stats": {
       "messages": "Messages",
-      "viewers": "Viewers",
+      "viewers": "Identified viewers",
       "support": "Support",
       "rate": "Peak rate",
       "payments": "Paid events",
       "messagesSub": "chat + Super Chat",
-      "viewersSub": "unique participants",
+      "viewersSub": "participants with a stable platform UID",
       "supportSub": "paid events, exact totals",
       "rateSub": "per minute",
       "noSupport": "—"
+    },
+    "identity": {
+      "warningTitle": "Incomplete viewer identity",
+      "warningBody": "{unidentified} of this session's {total} messages carry no platform UID. They still count as messages and appear in the timeline, but they are not counted as identified viewers and are never guessed or merged by nickname.",
+      "loginHint": "A signed-out Bilibili connection may be subject to platform risk control: nicknames become masked and the UID becomes 0. For reliable unique-viewer statistics, sign in on the Live page before starting a new recording.",
+      "short": "{n} unidentified",
+      "identifiedMessages": "Messages with an identity"
     },
     "chart": {
       "title": "Message density",
@@ -197,9 +204,9 @@
       "waitForLive": "Waiting for the stream to go live",
       "onlyLiveCanStart": "Recording can start only while the room is live. Carousel/replay rooms are not recorded.",
       "starting": "Connecting to the live room…",
-      "loginTitle": "Bilibili login (optional)",
+      "loginTitle": "Bilibili login (recommended)",
       "loginSignedIn": "Signed in as {name}",
-      "loginAnonymous": "Not signed in (public chat works anonymously)",
+      "loginAnonymous": "Not signed in (the platform may hide UIDs, so viewer statistics can be incomplete)",
       "loginButton": "Sign in by QR",
       "loginOpening": "Opening the sign-in page…",
       "logout": "Sign out",
@@ -208,9 +215,9 @@
       "loginSuccess": "Signed in",
       "loginExpired": "The QR code expired. Open the sign-in page again",
       "loginFailed": "Sign-in failed",
-      "anonymousNote": "Public chat, gifts and Super Chats work without signing in. Signing in does not change viewer identity fields.",
+      "anonymousNote": "Public chat, gifts and Super Chats work without signing in. Bilibili may apply danmaku risk control to signed-out connections, masking nicknames and setting UIDs to 0. Messages are still saved, but they cannot be counted as distinct chat viewers.",
       "moneyNote": "Amounts follow the platform: gifts at 1000 gold coins = ¥1, Super Chats quoted in yuan, and guard prices stay unbooked because their unit is unconfirmed.",
-      "identityNote": "Viewer identity uses the platform UID. Nicknames may be masked by the platform (e.g. “电***”); they are never guessed or merged.",
+      "identityNote": "Viewer identity uses the platform UID only. Nicknames may be masked by the platform (e.g. “电***”); messages without a UID are kept but create no profile and are never merged by nickname.",
       "loginScanHint": "Scan the QR code below with the Bilibili mobile app and confirm on your phone. The code is generated locally; no external page is opened.",
       "loginQrUnavailable": "Could not render the QR code. Reload the page and try again.",
       "youtubeTab": "YouTube live",
@@ -253,9 +260,15 @@
       "date": "Started",
       "duration": "Duration",
       "messages": "Messages",
-      "viewers": "Viewers",
+      "viewers": "Identified viewers",
       "support": "Support",
       "actions": "Actions"
+    },
+    "identity": {
+      "badge": "{n} unidentified",
+      "title": "Incomplete viewer identity",
+      "body": "{unidentified} of this session's {total} messages carry no platform UID. “Identified viewers” counts only participants with a stable UID. Anonymous messages still count as messages, but they cannot be attributed to a viewer.",
+      "loginHint": "A signed-out Bilibili connection may trigger platform risk control (masked nicknames, UID 0). Sign in before starting a new recording if you need more complete viewer statistics."
     },
     "ai": {
       "none": "AI pending",
@@ -371,7 +384,8 @@
       "platform": "Platform",
       "date": "Date",
       "messages": "Messages",
-      "viewers": "Viewers"
+      "viewers": "Identified viewers",
+      "unidentified": "Messages without an identity"
     },
     "actions": {
       "menu": "Session actions",
@@ -531,8 +545,10 @@
       "memorySkipped": "Long-term profiles skipped: {reason}",
       "scaleTitle": "Task size",
       "scaleMessages": "Chat messages",
-      "scaleViewers": "Identifiable viewers",
+      "scaleViewers": "Identified viewers",
+      "scaleUnidentified": "Messages without an identity",
       "scaleRequests": "Estimated requests",
+      "identityWarning": "{unidentified} of this session's {total} messages carry no platform UID. The AI report can read them, but cannot attribute them to a viewer; long-term profiles cover only the {identified} identified viewers.",
       "start": "Start AI analysis",
       "starting": "Starting…",
       "started": "AI analysis started.",

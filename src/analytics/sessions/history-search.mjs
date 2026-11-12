@@ -47,6 +47,10 @@ const SESSION_COLUMNS = `
   s.*,
   (SELECT COUNT(*) FROM viewer_sessions vs WHERE vs.session_id = s.id) AS unique_viewer_count,
   (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+  (SELECT COUNT(*) FROM events e
+    WHERE e.session_id = s.id
+      AND e.event_type IN ('chat', 'super_chat')
+      AND (e.viewer_uid IS NULL OR e.viewer_uid = '')) AS unidentified_message_count,
   (SELECT b.display_name FROM broadcasters b WHERE b.id = s.broadcaster_id) AS broadcaster_display_name,
   (SELECT b.platform_uid FROM broadcasters b WHERE b.id = s.broadcaster_id) AS broadcaster_platform_uid
 `;
@@ -191,6 +195,7 @@ function toSessionResult(row) {
     giftEventCount: Number(row.gift_event_count ?? 0),
     paymentEventCount: Number(row.payment_event_count ?? 0),
     uniqueViewerCount: Number(row.unique_viewer_count ?? 0),
+    unidentifiedMessageCount: Number(row.unidentified_message_count ?? 0),
     eventCount: Number(row.event_count ?? 0),
     aiStatus: row.ai_status
   };

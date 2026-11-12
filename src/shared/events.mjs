@@ -66,7 +66,10 @@ export function isPaymentEvent(eventType) {
 /** Viewer identity is namespaced by platform: nickname is never an identity. */
 export function buildViewerId(platform, platformUid) {
   const uid = platformUid === null || platformUid === undefined ? '' : String(platformUid).trim();
-  if (!uid) return null;
+  // Bilibili reports UID 0 when it withholds an identity (guest/risk control).
+  // Treating it as an id would put every anonymous viewer into one profile,
+  // which the product forbids. No supported platform uses 0 as a real user id.
+  if (!uid || uid === '0') return null;
   return `${platform}:${uid}`;
 }
 
@@ -113,7 +116,11 @@ export function normalizeEvent(draft, {now = Date.now(), requireSession = true} 
   const receivedAt = toEpochMs(draft.received_at ?? draft.receivedAt, now) ?? now;
   const occurredAt = toEpochMs(draft.occurred_at ?? draft.occurredAt, receivedAt) ?? receivedAt;
   const platformUid = draft.viewer_uid ?? draft.viewerUid ?? draft.viewer_id ?? draft.viewerId ?? null;
-  const uid = platformUid === null || platformUid === undefined ? '' : String(platformUid).trim();
+  const uidText = platformUid === null || platformUid === undefined ? '' : String(platformUid).trim();
+  // `0` and `"0"` are the platform's "identity withheld" marker, not a person.
+  // Keep viewer_uid NULL so a missing identity can never be aggregated as one
+  // shared viewer, and so the UI can count these messages as unidentified.
+  const uid = uidText === '0' ? '' : uidText;
 
   const giftQuantityRaw = Number(draft.gift_quantity ?? draft.giftQuantity ?? 1);
   const giftQuantity = Number.isFinite(giftQuantityRaw) && giftQuantityRaw > 0

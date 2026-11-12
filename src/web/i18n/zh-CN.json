@@ -126,15 +126,22 @@
     },
     "stats": {
       "messages": "消息",
-      "viewers": "独立观众",
+      "viewers": "可识别观众",
       "support": "经济支持",
       "rate": "峰值速度",
       "payments": "付费事件",
       "messagesSub": "弹幕与醒目留言",
-      "viewersSub": "本场参与人数",
+      "viewersSub": "有稳定平台 UID 的互动用户",
       "supportSub": "付费事件，精确累计",
       "rateSub": "每分钟",
       "noSupport": "—"
+    },
+    "identity": {
+      "warningTitle": "观众身份不完整",
+      "warningBody": "本场 {total} 条消息中有 {unidentified} 条没有平台 UID。它们计入消息数与时间线，但不会计入「可识别观众」，也不会按昵称猜测或合并。",
+      "loginHint": "Bilibili 未登录连接可能触发平台风控：弹幕用户名被打码、UID 变为 0。需要可靠的独立观众统计时，请先在「直播记录」页扫码登录，再开始新的记录。",
+      "short": "{n} 条未识别",
+      "identifiedMessages": "已识别身份的消息"
     },
     "chart": {
       "title": "消息密度",
@@ -197,9 +204,9 @@
       "waitForLive": "等待主播开播",
       "onlyLiveCanStart": "只有正在直播的直播间才能开始记录；轮播不算直播。",
       "starting": "正在连接直播间…",
-      "loginTitle": "Bilibili 登录（可选）",
+      "loginTitle": "Bilibili 登录（建议）",
       "loginSignedIn": "已登录：{name}",
-      "loginAnonymous": "未登录（匿名连接即可接收公开弹幕）",
+      "loginAnonymous": "未登录（平台可能隐藏弹幕 UID，观众统计会不完整）",
       "loginButton": "扫码登录",
       "loginOpening": "正在打开扫码页面…",
       "logout": "退出登录",
@@ -208,9 +215,9 @@
       "loginSuccess": "登录成功",
       "loginExpired": "二维码已过期，请重新打开扫码页面",
       "loginFailed": "登录失败",
-      "anonymousNote": "未登录也可以接收公开弹幕、礼物和醒目留言；登录不会改变观众的身份字段。",
+      "anonymousNote": "未登录也能接收公开弹幕、礼物和醒目留言；但 Bilibili 可能对未登录连接启用弹幕风控：用户名打码、UID 变为 0。此时消息仍会保存，但无法统计独立的弹幕观众。",
       "moneyNote": "金额按平台字段换算：礼物 1000 金瓜子 = 1 元；醒目留言以元报价；大航海的金额单位未确认，因此不记入金额。",
-      "identityNote": "观众身份使用平台 UID。昵称可能被平台打码（例如“电***”），不会被猜测或合并。",
+      "identityNote": "观众身份只使用平台 UID。昵称可能被平台打码（例如“电***”）；缺失 UID 的消息会保留，但不会创建档案，也不会按昵称合并。",
       "loginScanHint": "用 Bilibili 手机客户端（App）扫描下方二维码，并在手机上确认登录。二维码只在本地生成，不会打开外部网页。",
       "loginQrUnavailable": "无法生成二维码，请刷新页面后重试。",
       "youtubeTab": "YouTube 直播",
@@ -253,9 +260,15 @@
       "date": "开始时间",
       "duration": "时长",
       "messages": "消息",
-      "viewers": "观众",
+      "viewers": "可识别观众",
       "support": "支持",
       "actions": "操作"
+    },
+    "identity": {
+      "badge": "{n} 条未识别",
+      "title": "观众身份不完整",
+      "body": "本场 {total} 条消息中有 {unidentified} 条没有平台 UID；下方「可识别观众」只统计有稳定 UID 的互动用户。匿名消息仍会计入消息数，但无法确定是哪一个观众。",
+      "loginHint": "Bilibili 未登录连接可能被平台风控（用户名打码、UID 为 0）。需要更完整的观众统计时，请先登录再开始新的记录。"
     },
     "ai": {
       "none": "待分析",
@@ -371,7 +384,8 @@
       "platform": "平台",
       "date": "日期",
       "messages": "消息数",
-      "viewers": "观众数"
+      "viewers": "可识别观众",
+      "unidentified": "未识别身份消息"
     },
     "actions": {
       "menu": "场次操作",
@@ -532,7 +546,9 @@
       "scaleTitle": "任务规模",
       "scaleMessages": "聊天消息",
       "scaleViewers": "可识别观众",
+      "scaleUnidentified": "未识别身份消息",
       "scaleRequests": "预计请求数",
+      "identityWarning": "本场 {total} 条消息中有 {unidentified} 条没有平台 UID。AI 报告可以读到这些消息，但无法把它们归到具体观众；长期画像只覆盖 {identified} 位可识别观众。",
       "start": "开始 AI 分析",
       "starting": "正在启动…",
       "started": "AI 分析已开始。",

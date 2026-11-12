@@ -270,8 +270,12 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 ## 3. 身份规则
 
 - 稳定 UID 来自平台；缺失时 `viewer_id = NULL`，事件仍计入场次统计，但**不创建/更新观众档案**。
+- **UID=0 等同缺失**：Bilibili 用 0 表示平台隐藏了身份（未登录风控）。`buildViewerId()` 与 `normalizeEvent()` 都把 `0` / `"0"` 规范成无身份，禁止产生 `platform:0` 这种所有人共用的档案。
 - 不同平台的相同 UID 不合并（`platform` 前缀）；昵称相同也不合并。
 - 昵称变化写入 `viewer_nicknames`，更新 `viewers.nickname`，不改变主键。
+- **可识别观众** = 本场至少一条事件带稳定 UID 的去重人数（`viewer_sessions` 行数）；礼物/SC/大航海-only 的观众也算，不要求发言。
+- **未识别身份消息** = `chat` / `super_chat` 中作者 `viewer_uid` 为空的条数；从 `events` 实时派生，不落冗余列，因此历史数据可重算。
+- 打码昵称（例如 `A***`）不是身份，不能用于合并、搜索或反推；缺失 UID 的弹幕只保留消息与打码昵称。
 - **主播身份独立于观众身份**：
   - YouTube 只认 channelId，视频 ID 不是主播长期身份；
   - Bilibili 优先 anchor uid；缺失时 room id 作为 `room_fallback`；

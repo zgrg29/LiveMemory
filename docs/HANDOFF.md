@@ -1,11 +1,34 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-12 · v0.13.2 构建可验证 + 分批预算重平衡 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-12 · v0.13.2 观众身份专项审计 · schema 13 · 结果 Schema 1.3.0
 
-> 设计、边界、测试清单：`docs/AI_RELIABILITY.md`。前序根因：`docs/AI_TIMEOUT_INVESTIGATION.md`。
-> 本轮**未发真实付费 API 请求**；EXE 以 asInvoker 副本启动验证 buildId，未做真实 UAC 双击。
+> 完整审计：`docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。本轮**只读用户数据库**，未修改历史事件；未发真实付费 API 请求。
 
-## 0. 本轮（v0.13.2）
+## 0. 本轮（观众身份专项）
+
+### 0.1 结论
+
+- Bilibili 场次 `ses_01M75S69P4H0NSX87PD4`：727 条消息，726 条弹幕全部无 UID，只有 1 SC + 2 大航海带 UID，去重后 2 人。
+- 根因是平台未登录弹幕风控（昵称打码、uid=0）＋ 页面把「可识别观众」标成「独立观众 / 本场参与人数」且隐藏 726 条未识别消息。数据库、JOIN、迁移、缓存均无丢人。
+- 另一场 Bilibili 也是 206/206 条无 UID、0 可识别观众；四场 YouTube 0 条未识别。判定 B（平台特定）+ D（UI 口径），不是单场、不是全平台。
+- 历史计数可重算；726 条弹幕的真实身份不可恢复；实际观看人数未知。
+
+### 0.2 修改
+
+- `src/shared/events.mjs`：`uid=0`/`"0"` 规范为无身份，`buildViewerId` 不再生成 `platform:0`。
+- `sessions.mjs`、`history-search.mjs`、`monitor-targets.mjs`、`summary.mjs`、`serializers.mjs`、`routes.mjs`：新增 `unidentified_message_count` / `unidentifiedMessageCount` 派生指标与 `identityCoverage`。
+- `history.js`、`live.js`、`ai.js`、`session-actions.js`、`pages.css`：统一「可识别观众」标签，行内徽标、详情警告、AI 规模行与画像覆盖提示。
+- 三语 i18n：修正「登录不会改变身份字段」，改为未登录可能触发打码/UID=0 的警告；登录标题改为「建议」。
+- 新增 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`；更新 PLATFORM_INTEGRATIONS、DATA_MODEL、UI_DESIGN、STATUS、TEST_PLAN、ROADMAP、CHANGELOG 与本文件。
+
+### 0.3 测试
+
+- **610 passed / 0 failed**（约 119 秒）。
+- 新增 `tests/integration/identity-stats.test.mjs`（多消息/多用户/同名不同 UID/UID 缺失/数字 0/数字与字符串类型/礼物/SC/大航海/跨场次/跨页面一致），`tests/unit/identity-labels.test.mjs`；`events.test.mjs` 增加 UID=0。
+- 数据库副本启动实测三条 HTTP 路径均返回 `727 / 2 / 726`，重启不变。
+- 未验证：登录后是否 100% 解除 Bilibili 打码；原始帧未保存；未做浏览器截图。
+
+## 1. 上一轮：v0.13.2（构建可验证与分批预算）
 
 ### 0.1 构建/版本识别
 

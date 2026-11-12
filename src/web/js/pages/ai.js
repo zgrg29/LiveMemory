@@ -222,6 +222,7 @@ export const aiPage = {
     const configSummary = el('div', {className: 'small tertiary'});
     const pricingSummary = el('div', {className: 'small tertiary'});
     const scaleSummary = el('div', {className: 'def-list'});
+    const identityWarning = el('div', {className: 'callout callout--warn', hidden: true, style: {marginTop: '12px'}});
     const scopeHint = el('div', {className: 'callout callout--neutral', hidden: true});
     const settingsLink = el('button', {
       className: 'button button--ghost button--small',
@@ -264,6 +265,7 @@ export const aiPage = {
         el('div', {className: 'divider'}),
         el('div', {className: 'small tertiary', text: t('ai.center.scaleTitle')}),
         scaleSummary,
+        identityWarning,
         el('div', {className: 'inline', style: {marginTop: '14px'}},
           startButton,
           settingsLink)));
@@ -393,6 +395,7 @@ export const aiPage = {
       }
       const messages = Number(session?.messageCount ?? 0);
       const viewers = Number(session?.uniqueViewerCount ?? 0);
+      const unidentified = Number(session?.unidentifiedMessageCount ?? 0);
       const requests = estimatedRequests(config, runScope, session);
       scaleSummary.replaceChildren(
         el('div', {className: 'def-row'},
@@ -402,10 +405,21 @@ export const aiPage = {
           el('span', {className: 'def-key', text: t('ai.center.scaleViewers')}),
           el('span', {className: 'def-value', text: formatInteger(viewers, ctx.locale)})),
         el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.center.scaleUnidentified')}),
+          el('span', {className: 'def-value', text: formatInteger(unidentified, ctx.locale)})),
+        el('div', {className: 'def-row'},
           el('span', {className: 'def-key', text: t('ai.center.scaleRequests')}),
           el('span', {className: 'def-value', text: requests === null
             ? t('ai.center.scaleRequestsAuto')
             : formatInteger(requests, ctx.locale)})));
+      identityWarning.hidden = unidentified <= 0;
+      identityWarning.textContent = unidentified > 0
+        ? t('ai.center.identityWarning', {
+          total: formatInteger(messages, ctx.locale),
+          unidentified: formatInteger(unidentified, ctx.locale),
+          identified: formatInteger(viewers, ctx.locale)
+        })
+        : '';
       syncStartGate();
     }
 

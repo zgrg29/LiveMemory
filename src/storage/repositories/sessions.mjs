@@ -22,7 +22,11 @@ export const SESSION_STATUS = Object.freeze({
 const SESSION_SELECT = `
   SELECT s.*,
          (SELECT COUNT(*) FROM viewer_sessions vs WHERE vs.session_id = s.id) AS unique_viewer_count,
-         (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count
+         (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+         (SELECT COUNT(*) FROM events e
+           WHERE e.session_id = s.id
+             AND e.event_type IN ('chat', 'super_chat')
+             AND (e.viewer_uid IS NULL OR e.viewer_uid = '')) AS unidentified_message_count
   FROM sessions s
 `;
 

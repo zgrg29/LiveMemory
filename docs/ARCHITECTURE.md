@@ -348,10 +348,10 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 
 ## 4. 读模型
 
-- `analytics/sessions/hotness.mjs`：按场次时长选择 10s–1h 的桶；输出消息数、独立观众、按币种支付；直播中不绘制未完成的桶。
-- `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众（默认前 5，可传 `topLimit`）+ 存储统计。
+- `analytics/sessions/hotness.mjs`：按场次时长选择 10s–1h 的桶；输出消息数、按稳定 UID 的观众、按币种支付；直播中不绘制未完成的桶。
+- `analytics/sessions/summary.mjs`：场次摘要 + 时间线 + 支持 + 活跃观众（默认前 5，可传 `topLimit`）+ 存储统计；`uniqueViewerCount` 只表示可识别观众，`unidentifiedMessages` / `identityCoverage` 从 `events` 实时派生。
 - `analytics/sessions/leaderboard.mjs`：单场 Top 100 读模型；`rank` 按有效弹幕数 → `platform_uid` → `viewer_id` 稳定排序；搜索只在 Top 100 内过滤且保留原始名次。
-- `analytics/sessions/history-search.mjs`：历史搜索读模型；`scope=all|broadcaster|title|viewer`，组合平台/状态/日期/归档筛选；只查场次与身份关系表，不读聊天正文；`LIKE` 通配符转义；返回匹配原因与实际参与身份。
+- `analytics/sessions/history-search.mjs`：历史搜索读模型；`scope=all|broadcaster|title|viewer`，组合平台/状态/日期/归档筛选；只查场次与身份关系表，不读聊天正文；`LIKE` 通配符转义；返回匹配原因、实际参与身份与未识别消息数。
 - `analytics/viewers/profile.mjs`：观众档案（身份、累计、昵称历史、参与场次）。
 - `analytics/payments/totals.mjs`：按币种合并 actual/display，绝不混加。
 

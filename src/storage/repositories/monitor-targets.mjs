@@ -172,7 +172,11 @@ export function listMonitorTargetSessions(db, targetId, {limit = 20} = {}) {
   return db.prepare(`
     SELECT s.*,
            (SELECT COUNT(*) FROM viewer_sessions vs WHERE vs.session_id = s.id) AS unique_viewer_count,
-           (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count
+           (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+           (SELECT COUNT(*) FROM events e
+             WHERE e.session_id = s.id
+               AND e.event_type IN ('chat', 'super_chat')
+               AND (e.viewer_uid IS NULL OR e.viewer_uid = '')) AS unidentified_message_count
       FROM sessions s
      WHERE s.monitor_target_id = ?
      ORDER BY s.started_at DESC

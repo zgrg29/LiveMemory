@@ -45,6 +45,23 @@ test('viewer identity is namespaced per platform and never derived from a nickna
   assert.notEqual(a.viewer_id, b.viewer_id);
 });
 
+test('UID 0 means "identity withheld", never one shared viewer', () => {
+  // Bilibili uses 0 when risk control hides a guest's identity. It must not
+  // become "bilibili:0" or every anonymous viewer would merge into one person.
+  assert.equal(buildViewerId('bilibili', 0), null);
+  assert.equal(buildViewerId('bilibili', '0'), null);
+  assert.equal(buildViewerId('bilibili', ' 0 '), null);
+
+  const numeric = normalizeEvent({...base, viewer_uid: 0, external_id: 'anon-num'}, {now: 1000});
+  assert.equal(numeric.viewer_uid, null);
+  assert.equal(numeric.viewer_id, null);
+  const text = normalizeEvent({...base, viewer_uid: '0', external_id: 'anon-text'}, {now: 1000});
+  assert.equal(text.viewer_uid, null);
+  assert.equal(text.viewer_id, null);
+  // A real id that merely contains 0 stays untouched.
+  assert.equal(normalizeEvent({...base, viewer_uid: 10, external_id: 'real-10'}, {now: 1000}).viewer_id, 'bilibili:10');
+});
+
 test('gift amount is derived from unit price and quantity without float drift', () => {
   const event = normalizeEvent({
     ...base,

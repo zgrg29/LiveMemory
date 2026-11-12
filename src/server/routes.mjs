@@ -321,6 +321,7 @@ function liveRecordingOverview(deps, recording) {
     platformEndQuality: row?.platform_end_quality ?? recording.platformEndQuality ?? null,
     messageCount: Number(row?.message_count ?? 0),
     uniqueViewerCount: Number(row?.unique_viewer_count ?? 0),
+    unidentifiedMessageCount: Number(row?.unidentified_message_count ?? 0),
     paymentEventCount: Number(row?.payment_event_count ?? 0),
     lastEventAt: row?.last_event_at ?? null,
     support: groupCurrencyTotals(sessionCurrencyTotals(deps.db, recording.sessionId))

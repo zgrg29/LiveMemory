@@ -34,7 +34,10 @@ function sessionFacts(session, ctx) {
     defRow(t('history.manage.platform'), platformLabel(session.platform, t)),
     defRow(t('history.manage.date'), formatDateTime(session.startedAt, ctx.locale)),
     defRow(t('history.manage.messages'), formatInteger(session.messageCount ?? 0, ctx.locale)),
-    defRow(t('history.manage.viewers'), formatInteger(session.uniqueViewerCount ?? 0, ctx.locale)));
+    defRow(t('history.manage.viewers'), formatInteger(session.uniqueViewerCount ?? 0, ctx.locale)),
+    Number(session.unidentifiedMessageCount ?? 0) > 0
+      ? defRow(t('history.manage.unidentified'), formatInteger(session.unidentifiedMessageCount, ctx.locale))
+      : null);
 }
 
 /** Executable actions for the current state; never shows an invalid action. */

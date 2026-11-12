@@ -499,7 +499,19 @@ function buildRow(ctx, row, {onChanged}) {
             ? null
             : broadcasterIdentityChip(row.broadcasterIdentity, t)),
         el('span', {text: formatDateTime(row.startedAt, ctx.locale)}),
-        aiChip(row.aiStatus, t)),
+        aiChip(row.aiStatus, t),
+        Number(row.unidentifiedMessageCount ?? 0) > 0
+          ? el('span', {
+            className: 'history-identity-warning',
+            text: t('history.identity.badge', {n: formatInteger(row.unidentifiedMessageCount, ctx.locale)}),
+            attrs: {
+              title: t('history.identity.body', {
+                total: formatInteger(row.messageCount, ctx.locale),
+                unidentified: formatInteger(row.unidentifiedMessageCount, ctx.locale)
+              })
+            }
+          })
+          : null),
       reasonChips.length > 0 ? el('div', {className: 'history-reasons'}, reasonChips) : null,
       viewerLines.length > 0 ? el('div', {className: 'history-matched-viewers'}, viewerLines) : null),
     el('div', {className: 'history-cell', text: formatDuration(duration, t)}),
@@ -701,6 +713,16 @@ async function renderDetail(container, ctx, sessionId, query) {
           })))));
 
   const notices = [];
+  if (Number(stats.unidentifiedMessages ?? 0) > 0) {
+    notices.push(el('div', {className: 'callout callout--warn', style: {marginTop: '16px'}},
+      el('div', {},
+        el('div', {className: 'callout-title', text: t('history.identity.title')}),
+        el('div', {text: t('history.identity.body', {
+          total: formatInteger(stats.messages, ctx.locale),
+          unidentified: formatInteger(stats.unidentifiedMessages, ctx.locale)
+        })}),
+        el('p', {className: 'callout-note', text: t('history.identity.loginHint')}))));
+  }
   if (session.archived) {
     notices.push(el('div', {className: 'callout callout--neutral', style: {marginTop: '16px'}},
       el('div', {},

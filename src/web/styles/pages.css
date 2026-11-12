@@ -811,6 +811,16 @@
   flex-wrap: wrap;
 }
 
+.history-identity-warning {
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .history-ai {
   justify-self: start;
 }

@@ -27,6 +27,13 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
   const totals = groupCurrencyTotals(sessionCurrencyTotals(db, sessionId));
   const top = topSessionViewers(db, sessionId, {limit: Math.min(Math.max(Number(topLimit) || 5, 1), 100)});
   const content = contentStats(db, sessionId);
+  const messageTotal = Number(session.message_count ?? 0);
+  // Message events whose author has no stable platform id. They are real
+  // messages and stay in every count/timeline, but they cannot be attributed to
+  // a viewer profile. Never infer an identity from a (masked) nickname.
+  const unidentifiedMessages = Math.min(messageTotal, Number(session.unidentified_message_count ?? 0));
+  const identifiedMessages = Math.max(0, messageTotal - unidentifiedMessages);
+  const identityCoverage = messageTotal > 0 ? identifiedMessages / messageTotal : null;
   const durationMs = Math.max(0, endedAt - session.started_at);
   const peakPerMinute = timeline.stepMs > 0
     ? Math.round((timeline.peakMessages * (60_000 / timeline.stepMs)) * 100) / 100
@@ -60,13 +67,18 @@ export function buildSessionSummary(db, sessionId, {now = Date.now(), targetBuck
       platformEndQuality: session.platform_end_quality ?? null,
       aiStatus: session.ai_status,
       durationMs,
-      uniqueViewerCount: Number(session.unique_viewer_count ?? 0)
+      uniqueViewerCount: Number(session.unique_viewer_count ?? 0),
+      unidentifiedMessageCount: unidentifiedMessages
     },
     stats: {
-      messages: Number(session.message_count ?? 0),
+      messages: messageTotal,
       giftEvents: Number(session.gift_event_count ?? 0),
       paymentEvents: Number(session.payment_event_count ?? 0),
       activeViewers: Number(session.unique_viewer_count ?? 0),
+      identifiedMessages,
+      unidentifiedMessages,
+      identityCoverage,
+      identityComplete: unidentifiedMessages === 0,
       eventCount: Number(session.event_count ?? 0),
       averageMessagesPerMinute: timeline.averageMessagesPerMinute,
       peakMessagesPerBucket: timeline.peakMessages,

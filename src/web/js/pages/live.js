@@ -602,6 +602,14 @@ export const livePage = {
       refs.support = support.value;
       refs.rate = rate.value;
 
+      refs.identityTitle = el('div', {className: 'callout-title'});
+      refs.identityBody = el('div');
+      refs.identityNote = el('div', {className: 'callout callout--warn', hidden: true},
+        el('div', {},
+          refs.identityTitle,
+          refs.identityBody,
+          el('p', {className: 'callout-note', text: t('live.identity.loginHint')})));
+
       const canvas = el('canvas', {className: 'chart-canvas', attrs: {role: 'img'}});
       const chartCard = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
@@ -644,6 +652,7 @@ export const livePage = {
       bodyHost.append(
         hero,
         el('div', {className: 'stat-grid', style: {marginTop: '16px'}}, messages.node, viewers.node, support.node, rate.node),
+        refs.identityNote,
         chartCard,
         el('div', {className: 'grid-2', style: {marginTop: '16px'}}, feedCard, topCard)
       );
@@ -677,6 +686,17 @@ export const livePage = {
         refs.support.textContent = primary ?? t('live.stats.noSupport');
       }
       if (refs.rate) refs.rate.textContent = formatInteger(summary.stats.peakMessagesPerMinute, ctx.locale);
+      if (refs.identityNote) {
+        const unidentified = Number(summary.stats?.unidentifiedMessages ?? 0);
+        refs.identityNote.hidden = unidentified <= 0;
+        if (unidentified > 0) {
+          refs.identityTitle.textContent = t('live.identity.warningTitle');
+          refs.identityBody.textContent = t('live.identity.warningBody', {
+            total: formatInteger(summary.stats.messages, ctx.locale),
+            unidentified: formatInteger(unidentified, ctx.locale)
+          });
+        }
+      }
       if (chart) {
         chart.setData(summary.timeline, {
           tooltipBuilder: (bucket) => [
@@ -1112,7 +1132,13 @@ export const livePage = {
           el('div', {className: 'monitor-session-meta', text: `${formatDateTime(session.startedAt, ctx.locale)} · ${formatDuration(duration, t)}`})),
         el('div', {className: 'monitor-session-stats'},
           el('span', {text: `${t('live.stats.messages')} ${formatInteger(session.messageCount, ctx.locale)}`}),
-          el('span', {text: `${t('live.stats.viewers')} ${formatInteger(session.uniqueViewerCount, ctx.locale)}`}),
+          el('span', {
+            text: `${t('live.stats.viewers')} ${formatInteger(session.uniqueViewerCount, ctx.locale)}${
+              Number(session.unidentifiedMessageCount ?? 0) > 0
+                ? ` · ${t('live.identity.short', {n: formatInteger(session.unidentifiedMessageCount, ctx.locale)})}`
+                : ''
+            }`
+          }),
           statusChip(session, t))));
       }
     }
@@ -1904,7 +1930,13 @@ export const livePage = {
         el('div', {className: 'hero-sub', text: `${formatDateTime(row.startedAt, ctx.locale)} · ${formatDuration(duration, t)}`}),
         el('div', {className: 'stat-grid', style: {marginTop: '16px'}},
           statCard({label: t('live.stats.messages'), value: formatInteger(row.messageCount, ctx.locale)}),
-          statCard({label: t('live.stats.viewers'), value: formatInteger(row.uniqueViewerCount, ctx.locale)}),
+          statCard({
+            label: t('live.stats.viewers'),
+            value: formatInteger(row.uniqueViewerCount, ctx.locale),
+            sub: Number(row.unidentifiedMessageCount ?? 0) > 0
+              ? t('live.identity.short', {n: formatInteger(row.unidentifiedMessageCount, ctx.locale)})
+              : null
+          }),
           statCard({label: t('live.stats.payments'), value: formatInteger(row.paymentEventCount, ctx.locale), sub: t('live.stats.supportSub')}),
           statCard({label: t('history.aiTitle'), value: row.aiStatus === 'exported' ? '✓' : '—'}))));
       return node;

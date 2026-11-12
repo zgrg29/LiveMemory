@@ -55,6 +55,7 @@ export function serializeSessionRow(row) {
     giftEventCount: Number(row.gift_event_count ?? 0),
     paymentEventCount: Number(row.payment_event_count ?? 0),
     uniqueViewerCount: Number(row.unique_viewer_count ?? 0),
+    unidentifiedMessageCount: Number(row.unidentified_message_count ?? 0),
     eventCount: Number(row.event_count ?? 0),
     aiStatus: row.ai_status
   };

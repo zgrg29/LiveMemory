@@ -1,5 +1,27 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r4 — 2026-11-12（观众身份专项审计）
+
+### 修复
+
+- **UID=0 防御**：`buildViewerId()` 与 `normalizeEvent()` 把 `0` / `"0"` 视为平台未提供身份，禁止产生 `platform:0` 共享档案；不改变真实 UID、昵称或已有数据。
+- **未识别消息指标**：`sessions` 查询新增只读派生 `unidentified_message_count`（chat + super_chat 且 `viewer_uid` 为空）；summary 新增 `identifiedMessages` / `unidentifiedMessages` / `identityCoverage` / `identityComplete`；历史搜索、serializer、监控场次列表同步返回。
+- **统一统计口径**：直播页、历史列表/详情、AI 中心统一「可识别观众」；有未识别消息时显示「N 条未识别」徽标或警告卡，并说明消息仍计入总数、但无法归属到观众。
+- **登录文案纠错**：删除「登录不会改变观众身份字段」的错误说明；改为 Bilibili 未登录可能触发弹幕打码/UID=0，建议扫码登录后开始新记录。登录标题「可选」→「建议」。
+- **无破坏**：没有修改/合并/删除历史观众，没有回填 UID，没有按昵称合并，没有改变消息/金额/AI 逻辑。
+
+### 审计
+
+- 真实场次 `ses_01M75S69P4H0NSX87PD4`：727 条消息，726 条弹幕无 UID，只有 1 SC + 2 大航海带 UID，去重 2 人；另一场 Bilibili 206 条全部无 UID；四场 YouTube 0 条未识别。
+- 结论：Bilibili 未登录弹幕风控（平台侧）＋ UI 口径误导；不是数据库 JOIN、迁移、缓存或全局解析器故障。
+- 历史消息/计数/时间线可重算；726 条弹幕的真实身份不可恢复；实际观看人数未知。
+- 完整报告：`docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
+
+### 验证
+
+- **610 passed / 0 failed**（约 119 秒）；新增 `identity-stats`、`identity-labels` 与 UID=0 测试。
+- 数据库副本启动实测 `/api/sessions`、`/api/history/search`、场次详情均为 `727 / 2 / 726`，重启不变；未修改用户原库。
+
 ## 0.13.2-r3 — 2026-11-12（任务完成优先：删除时间/费用/总量限制）
 
 ### 修复
