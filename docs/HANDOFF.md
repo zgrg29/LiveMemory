@@ -1,11 +1,39 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-12 · v0.13.1 可靠性专项：超时/重试分类、runPool 批次隔离、任务时间预算、token 分批 + final aggregate、自动流式与回退、AI 中心进度/统计、真实浏览器截图 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-12 · v0.13.2 构建可验证 + 分批预算重平衡 · schema 13 · 结果 Schema 1.3.0
 
 > 设计、边界、测试清单：`docs/AI_RELIABILITY.md`。前序根因：`docs/AI_TIMEOUT_INVESTIGATION.md`。
-> 本轮**未发真实付费 API 请求**；所有验证使用 Mock Provider、可控延迟与注入时钟。
+> 本轮**未发真实付费 API 请求**；EXE 以 asInvoker 副本启动验证 buildId，未做真实 UAC 双击。
 
-## 0. 本轮新增（v0.13.1 可靠性）
+## 0. 本轮（v0.13.2）
+
+### 0.1 构建/版本识别
+
+- 新增 `src/shared/build-info.mjs`：开发读 `.git/HEAD`；打包读 `build-info.json` + bootstrap 环境。`buildId = <commit7>.<sourceHash8>`。
+- 构建脚本写入 commit / sourceHash（含 `scripts/sea-bootstrap.cjs`）/ assetHash / 每文件 SHA-256；断言 7 个可靠性模块存在；构建后检查 EXE 内含 buildId 与模块名。
+- bootstrap 复用缓存前逐文件校验 169 个 SHA-256；不一致 `app-root.stale` 后删除重解压；解压后再校验；结果写入 `build.identity` 日志。
+- 启动日志、`--version`、设置页「关于」、`/api/health`、`/api/bootstrap`、`/api/status` 均显示 build。
+- **最终构建**：`8ad6a51.b62882c5` / commit `8ad6a51` / SHA-256 `1724c451…` / 169 assets / requireAdministrator。asInvoker 副本实际启动后 `/api/health`、`/api/bootstrap` 返回同一 build，第二次启动 `filesVerified=169`。
+
+### 0.2 分批预算
+
+- 默认总输入预算 8k → **24k**；预算拆成 overhead / content / output reserve；内容至少 50%（且 ≥1k），不再让 6.9k 固定开销吃掉 8k。
+- 真实 889 消息包：8k=24 批、16k=11 批、24k=**6 批**、32k=4 批；每档 889/889 覆盖；不再出现 125 批。
+- 未回退 135k 单请求：上限 32k。
+- 保护：aggregate 48k 硬上限 + 上下文检查；repair 只截断上次回答并显式 `ANALYSIS_REPAIR_TOO_LARGE`；单观众硬上限 48k；上下文不足 `ANALYSIS_CONTEXT_TOO_SMALL`。
+
+### 0.3 输出/思考模式
+
+- 官方文档确认 Qwen `max_tokens` 只限回答，思考另计；qwen3.8-max 默认 `reasoning_effort=xhigh`、`thinking_budget=131072`。
+- DashScope 增加 `max_completion_tokens = 回答预算 + 8k`，不关闭思考；其他 Provider 不发送。
+- attempt 日志新增 requestBytes / estimatedInputTokens / maxTokens / maxCompletionTokens / reasoningChars / reasoningTokens。
+
+### 0.4 测试
+
+- **596 passed / 0 failed**（约 94 秒）。新增 build-info、adapter output、repair guard；batching 增加 889/124 viewer/硬上限；bootstrap 增加缓存篡改重解压。
+- 未验证：真实付费 API、真实 UAC 双击、`max_completion_tokens` 在百炼的实际接受度、889 消息真实回放。
+
+## 1. 上一轮：v0.13.1 可靠性专项
 
 ### 0.1 超时与重试
 
@@ -17,7 +45,7 @@
 
 ### 0.2 Token 分批与流式
 
-- `src/ai/batching/tokens.mjs`：session 消息与 memory 观众按估算 input token 分批；默认 8k，配置 `batchInputTokens` 2k–32k，小上下文自动缩小。
+- `src/ai/batching/tokens.mjs`：session 消息与 memory 观众按估算 input token 分批；v0.13.1 默认 8k（**v0.13.2 已改 24k，并分离固定开销**），配置 `batchInputTokens` 2k–32k，小上下文自动缩小。
 - 多批 session 需要 final aggregate；聚合 prompt 只使用已校验批结果，证据必须 `{batch, seq}`。
 - memory：同一观众不拆批，预算计入摘录/现有记忆/证据列表；超预算观众单独成批，不丢人。
 - 自动流式：OpenAI-compatible SSE + Anthropic Messages SSE；Provider 返回 JSON 或拒绝 stream 时自动回退一次并持久化响应模式。

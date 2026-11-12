@@ -1,8 +1,67 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-12（v0.13.1 可靠性专项：超时/重试分类、token 分批、自动流式、进度与费用统计；583 tests）
+最后更新：2026-11-12（v0.13.2 构建可验证 + 分批预算重平衡；596 tests；EXE 已实跑验证 buildId）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.14 v0.13.2 构建可验证与分批预算（2026-11-12）
+
+真实事故：14:17 用户启动的仍是 87bec0c 的旧 EXE；fd8aedc 的 8k 总预算把 889 条消息切成约 125 批。完整诊断见本轮日志；本节只记录修复与实测。
+
+### 0.14.1 构建标识（已实测）
+
+- `src/shared/build-info.mjs`：开发模式直接读 `.git/HEAD`（不 spawn git）；打包模式读 `build-info.json` 与 bootstrap 环境变量。
+- `scripts/build-windows.mjs`：写入 commit、`sourceHash`（含 `scripts/sea-bootstrap.cjs`）、`assetHash`、`buildId`、逐文件 SHA-256；断言 7 个可靠性模块存在；构建后检查 EXE 内确实包含 buildId 与模块名。
+- `scripts/sea-bootstrap.cjs`：复用缓存前**逐文件校验 169 个 SHA-256**；不一致记录 `app-root.stale`、删除并重新解压；解压后再次校验；把 buildId/commit/校验结果写入环境。
+- 启动日志 `startup.begin` 与 `launcher.start` 记录 build；`--version` 输出 Build / Build ID；设置页「关于」显示 Build ID、commit、构建时间；`/api/health`、`/api/bootstrap`、`/api/status` 返回 build。
+- 旧缓存不再被误用：旧目录 hash 不同；同 hash 目录被篡改会被校验发现并重建。
+
+**最终 EXE（实跑验证）**：
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | 91.6 MB |
+| SHA-256 | `1724c451b575360962cbbc4c7654bad3f80f840bf7653ecd22a1f80c32a59050` |
+| commit | `8ad6a5147a3dfba641d7362ae20316876a8b3a19` |
+| buildId | `8ad6a51.b62882c5` |
+| asset hash | `b62882c5a365d6cd2519` |
+| builtAt | 2026-11-12T07:19:02.385Z（15:19:02 +08） |
+| 资源 | 169 files；7 个必需模块；RT_MANIFEST requireAdministrator |
+
+本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=8ad6a51.b62882c5`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
+
+### 0.14.2 分批预算（真实 889 条消息离线规划）
+
+- 预算拆成三项：固定 overhead（实测 instructions + session_context + answer schema + wrapper）、内容预算、输出预留；内容至少占配置总预算的 50%，且不低于 1,000 tokens。
+- 默认总输入预算 **24,000**（原 8,000）；配置范围仍为 2,000–32,000。
+- `batch_plan` 记录 configured/effective/content/overhead/output/context，`overheadAdjusted` 与 `contextCapped` 可见。
+- 真实包（889 消息、94,137 估算消息 tokens、7,193 overhead、8,000 输出预留）实测：
+
+| 总预算 | 有效输入 | 内容预算 | 批次数 | 平均消息/批 | 最大单批估算 | 估算总输入 | 按真实 1.366 校准 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 8,000 | 11,193 | 4,000 | 24 | 37.0 | 11,192 | 266,769 | 364,406 |
+| 16,000 | 16,000 | 8,807 | 11 | 80.8 | 15,997 | 173,260 | 236,673 |
+| **24,000** | **24,000** | **16,807** | **6** | **148.2** | **23,949** | **137,295** | **187,545** |
+| 32,000 | 32,000 | 24,807 | 4 | 222.3 | 31,988 | 122,909 | 167,894 |
+
+- 覆盖：每档 889/889，消息不丢、不重；不再出现 125 批。
+- 未退回 135k 单请求：上限 32k，超出按批拆分。
+- 明确例外/保护：单条消息本身超预算可独占一批；单观众超预算可独占一批，但硬上限 48k，超过 `ANALYSIS_MEMORY_VIEWER_TOO_LARGE`；aggregate 输入硬上限 48k 且受上下文约束；repair 只截断上次回答、保留原批内容，超限 `ANALYSIS_REPAIR_TOO_LARGE`；上下文装不下 `ANALYSIS_CONTEXT_TOO_SMALL`。
+
+### 0.14.3 输出与思考模式（文档证据）
+
+- 阿里云官方文档（2026-11-10 版）确认：`max_tokens` 对 Qwen 只限制**回答**；思考内容在 `reasoning_content`，单独计费。`qwen3.8-max` 默认 `reasoning_effort=xhigh`、`thinking_budget=131072`。
+- 这解释了平台 18,684 output 与 9,936/12,734 历史单请求：`max_tokens=8000` 不是总输出上限。
+- 修复：DashScope 请求在 `max_tokens` 之外发送 `max_completion_tokens = 回答预算 + 8,000`（session 16k、memory 14k），有界但**不关闭思考**；其他 Provider 不发送该参数。
+- 观测：attempt 日志新增 `model`、`maxTokens`、`maxCompletionTokens`、`estimatedInputTokens`、`requestBytes`、`reasoningChars`、`reasoningTokens`；流式只统计 `reasoning_content` 长度，不保存内容。
+- 124 位观众：长期画像由 memory 批次保证每位恰好一条；测试覆盖 124/124。session 的 `viewer_profiles` 明确为可选、按批高亮，不再暗示完整覆盖。
+
+### 0.14.4 测试（本轮实测）
+
+- 全量：**596 passed / 0 failed**（2026-11-12，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 94 秒）。
+- 新增：`tests/unit/build-info.test.mjs`、`ai-adapter-output.test.mjs`、`ai-repair-guard.test.mjs`；`ai-token-batching.test.mjs` 增加 889 消息 / 124 观众 / 硬上限；`bootstrap.test.mjs` 增加缓存篡改重解压。
+- 未做：真实付费 API（含 `max_completion_tokens` 与思考模式行为）、真实 UAC 双击、真实 889 消息付费回放。
 
 ## 0.13 v0.13.1 可靠性专项（2026-11-12）
 
@@ -58,7 +117,7 @@
 ## 1. 当前阶段
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；M3 真实接入继续验证；M4 部分完成；M5 未完成
-- 版本：`0.13.1`（`package.json` 与 `src/shared/app-info.mjs` 一致）
+- 版本：`0.13.2`（`package.json` 与 `src/shared/app-info.mjs` 一致；构建标识见 §5）
 - 数据库 schema：**13**（本轮无迁移）
 - 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本不变
 - 分支：`main`，本地提交，未 Push
@@ -465,19 +524,21 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 5. 构建结果（如实）
 
-- **v0.13.1 已重新构建 EXE**：`node scripts/build-windows.mjs` 输出 `Built dist/LiveMemory.exe`。
-  - 大小 **95,906,304 bytes（91.5 MB）**
-  - SHA-256 `ba917c52c3b4c3cb322ea449b24a600b4de96b6399877cd9d69aa37c2d37f480`
-  - 资源 **164 个**，资源哈希 `48ade9dbebb817f08a75`
+- **v0.13.2 已构建并实际启动验证（asInvoker 副本）**：`node scripts/build-windows.mjs`。
+  - 大小 **91.6 MB**
+  - SHA-256 `1724c451b575360962cbbc4c7654bad3f80f840bf7653ecd22a1f80c32a59050`
+  - commit `8ad6a5147a3dfba641d7362ae20316876a8b3a19`
+  - buildId `8ad6a51.b62882c5`，资源哈希 `b62882c5a365d6cd2519`
+  - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
   - PE Manifest **requireAdministrator**（脚本断言通过）
-- **未能运行验收**：本机直接执行被 Windows 以“请求的操作需要提升”拒绝；未能运行
-  `--version`、启动服务、验证打包后的出站请求或 UI。
-- 因此只能声称“已构建”，不能声称“v0.13.1 EXE 已启动/已验收”。
-- 历史：v0.13.0 的构建记录不再代表当前产物。
+- **实际启动验证**：本会话非提升，使用同一二进制临时改 manifest 为 asInvoker 后启动；`/api/health`、`/api/bootstrap` 返回上面的 buildId/commit，`mode=packaged`、`verified=true`；启动日志 `startup.begin` 记录同一 build；第二次启动复用缓存并校验 169 个文件。
+- **仍不能声称**：真实 UAC 双击、提升后的出站请求、真实付费 Provider 已完成验收。
+- 历史：v0.13.1（`ba917c52…` / 164 assets）已被本次构建取代；旧 EXE 仍可能存在于用户磁盘，必须用 buildId 判断。
 
 ## 6. 未完成 / 未验证
 
-- v0.13.1 EXE 运行验收（UAC 拒绝）；如已构建见 §5。
+- 真实 UAC 双击 / 提升后的 EXE 运行未验收；asInvoker 副本已启动并验证 buildId（§5）。
+- **v0.13.2 未用真实付费 API 验证** `max_completion_tokens` 是否被 DashScope 接受、思考模式是否仍默认开启、以及 24k 预算下 889 消息的 6 批是否能全部完成。
 - **真实浏览器 UI 已在本轮补验**（headless Edge + CDP）：AI 中心运行中/完成、390px、暗色与 Provider 设置页；截图见 `docs/screenshots/ai-reliability-*`。未做真实点击“开始分析”（使用合成 Fixture 与 Mock Provider）。
 - **真实付费 API 生成**：本机没有 `config/ai-providers.json` / `ai-keys.json` / 环境变量 Key，阻塞；不得用 Mock 或历史样本冒充。
 - 真实 Provider 的 429、`Retry-After`、并发与 1,000 观众运行。

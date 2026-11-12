@@ -886,3 +886,10 @@ result.schema.json
 - 新单批 session 包格式不变；只有多批 session 会新增 final aggregate 要求。
 - 旧任务恢复时若缺少 final 且 `batchTotal > 1`，会补做 aggregate；已导入批次不重发。
 - 流式与非流式生成的回答使用同一结果协议；传输方式不写入结果 Schema。
+
+### 19.6 v0.13.2 请求字段
+
+- `batch_plan` 新增 `configured_total_tokens`、`content_budget_tokens`、`overhead_tokens`、`output_reserve_tokens`、`context_length`、`overhead_adjusted`、`context_capped`；旧字段 `input_budget_tokens`、`estimated_prompt_tokens` 保留。
+- 默认 `input_budget_tokens=24000`；`content_budget_tokens` 是留给消息/摘录的预算，固定 overhead 单独列出。
+- DashScope 请求额外发送 `max_completion_tokens`（回答预算 + 8k），限制回答+思考总量；其他 Provider 不发送。该字段的实际接受度仍需真实 Provider 验证。
+- 结果 Schema、导入协议、证据 `{batch, seq}` 规则不变。

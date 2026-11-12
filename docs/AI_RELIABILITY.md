@@ -230,3 +230,58 @@ AI 分析中心新增/明确显示：
 - 流式结构化输出兼容性因模型而异；不兼容时回退一次，绝不无限重发。
 - 汇总请求本身可能因批次结果过多超过小上下文模型；此时明确失败并保留批次，不生成不完整“整场报告”。
 - `batchInputTokens` 的估算基于 UTF-8 字节 / 3，不是精确 tokenizer；实际值记录在 `batch_plan.estimated_prompt_tokens` 与状态日志中。
+
+---
+
+## 9. v0.13.2：构建可验证与 24k 分批（2026-11-12）
+
+真实事故确认：用户 14:17 启动的 EXE 是 87bec0c（不含本文件 §1–§8 的任何修复）；同时 8k 总预算在真实 889 消息包上只剩约 807 tokens 给聊天内容，规划出约 125 批。
+
+### 9.1 构建标识
+
+- `src/shared/build-info.mjs`：开发模式读 `.git/HEAD`，打包模式读 `build-info.json` + bootstrap 环境；`buildId = <commit7>.<sourceHash8>`。
+- 构建：逐文件 SHA-256、commit、sourceHash（含 `scripts/sea-bootstrap.cjs`）、assetHash、builtAt；断言 `runner/adapters/batching/stream/attempt/scheduler/build-info` 存在；构建后检查 EXE 内 buildId 与模块名。
+- 启动：bootstrap 复用缓存前校验全部 169 个文件；不一致 `app-root.stale` → 删除重解压；解压后校验；`build.identity` 日志、`startup.begin`、`launcher.start`、`--version`、设置页关于、`/api/health`、`/api/bootstrap`、`/api/status` 全部带 build。
+- 旧缓存：hash 不同不会复用；同 hash 被污染会被逐文件校验发现。
+
+### 9.2 预算模型
+
+`planBatchBudget({totalInputTokens, overheadTokens, outputReserve, contextLength})`：
+
+- `overheadTokens`：instructions + session_context + compact answer schema + wrapper（实测）。
+- `contentTokens = max(1,000, total − overhead, 50% × total)`。
+- 实际总输入 = overhead + content；可大于配置值，并标记 `overheadAdjusted`。
+- 上下文：`total + outputReserve + 500 <= contextLength`；装不下报 `ANALYSIS_CONTEXT_TOO_SMALL`。
+- 默认 `totalInputTokens=24,000`；`batchInputTokens` 仍可配 2,000–32,000。
+
+真实 889 消息包（94,137 估算消息 tokens、7,193 overhead、8,000 output reserve）：
+
+| 总预算 | 批次数 | 内容预算 | 最大单批 | 估算总输入 | 1.366 校准 |
+| --- | --- | --- | --- | --- | --- |
+| 8k | 24 | 4,000 | 11,192 | 266,769 | 364,406 |
+| 16k | 11 | 8,807 | 15,997 | 173,260 | 236,673 |
+| 24k | 6 | 16,807 | 23,949 | 137,295 | 187,545 |
+| 32k | 4 | 24,807 | 31,988 | 122,909 | 167,894 |
+
+每档覆盖 889/889；不再出现 125 批；也没有退回 135k 单请求（上限 32k）。
+
+### 9.3 规模保护
+
+- aggregate：输入硬上限 48k 且受 `contextLength` 约束；超过 `ANALYSIS_AGGREGATE_TOO_LARGE`，批次保留。
+- repair：保留原批 prompt 与错误，只截断上次回答（2k–12k 字符）；估算超限 `ANALYSIS_REPAIR_TOO_LARGE`，不发送。
+- 单观众：可独占一批，但 `overhead + excerpt + memory > 48k` 时 `ANALYSIS_MEMORY_VIEWER_TOO_LARGE`，不丢观众。
+- 单条消息本身超内容预算时独占一批（不可拆分），日志可见。
+
+### 9.4 输出/思考模式（官方文档）
+
+- 阿里云文档（2026-11-10）：Qwen 的 `max_tokens` 只限制**回答**；思考在 `reasoning_content`，单独计费；`qwen3.8-max` 默认 `reasoning_effort=xhigh`、`thinking_budget=131072`。
+- 这解释了 18,684 output 与历史单请求 9,936/12,734 都大于 `max_tokens=8000`：8k 不是总输出上限。
+- DashScope 请求增加 `max_completion_tokens = 回答 + 8,000`（session 16k / memory 14k），不关闭思考；其他 Provider 不发送。
+- attempt 日志新增 `requestBytes`、`estimatedInputTokens`、`maxTokens`、`maxCompletionTokens`、`reasoningChars`、`reasoningTokens`；流式只统计思考字符数，不保存思考内容。
+- 124 位观众的长篇覆盖由 memory 批次保证（每位恰好一条）；session 的 `viewer_profiles` 是可选批内高亮，不承诺完整覆盖。
+
+### 9.5 验证
+
+- 596 passed / 0 failed（约 94 秒）。
+- EXE v0.13.2：`buildId 8ad6a51.b62882c5`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- **未验证**：真实付费 API 的 `max_completion_tokens` 接受度、思考模式实际行为、24k/6 批真实回放、真实 UAC 双击。

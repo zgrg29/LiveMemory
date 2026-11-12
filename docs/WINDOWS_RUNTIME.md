@@ -237,3 +237,14 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 发布 EXE 必须在新构建中重新验证 `requireAdministrator` Manifest 与非提升启动被拒绝；不能只沿用旧 EXE 的结论。
 - 管理员权限不改变“数据目录优先、位置记录、迁移 staging/回滚、清空范围”规则；同账号 UAC 不改变 `%LOCALAPPDATA%`。
 - 回滚：保留上一版本 EXE 与升级前数据库备份（M5 备份机制）。
+
+## 11. 构建标识与解压缓存（v0.13.2）
+
+版本号（0.13.1/0.13.2）不能证明实际运行的代码，因为同一版本可能有多次构建。现在每个构建有独立标识：
+
+- `buildId = <commit7>.<sourceHash8>`；`sourceHash` 覆盖全部 `src/**` 与 `scripts/sea-bootstrap.cjs`。
+- 构建产物 `build-info.json` 随 assets 打包；manifest 还包含 commit、builtAt、assetHash 与每个文件的 SHA-256。
+- bootstrap 在复用 `%LOCALAPPDATA%\LiveMemory\app\<assetHash>` 之前逐文件校验；不一致记录 `app-root.stale`、删除目录并重新解压；解压到 staging 后再校验一次，通过才 rename。
+- 启动日志 `startup.begin`/`launcher.start`、控制台 `--version`、设置页关于、`/api/health`、`/api/bootstrap`、`/api/status` 都返回 buildId/commit；`build.identity` 记录 `filesVerified`。
+- 对照方法：设置页关于的 Build ID 必须等于构建输出；旧 EXE 会显示旧 buildId（或 `dev-<commit>`），不能只看版本号。
+- 仍未验证：真实 UAC 双击与提升后的出站请求；本机以同一二进制的 asInvoker 临时副本启动验证了 buildId、HTTP 与缓存复用。

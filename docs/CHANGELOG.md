@@ -1,5 +1,27 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2 — 2026-11-12（构建可验证、分批预算重平衡、输出有界）
+
+### 修复
+
+- **构建与运行不一致**：版本号无法区分同一版本的不同构建。新增 `buildId = <commit7>.<sourceHash8>`，随 EXE 打包；启动日志、`--version`、设置页关于、`/api/health`、`/api/bootstrap`、`/api/status` 全部显示 buildId/commit。
+- **旧解压缓存复用**：bootstrap 复用缓存前逐文件校验 169 个 SHA-256；发现污染记录 `app-root.stale`、删除并重新解压，解压后再校验。
+- **8k 预算被固定开销吃掉**：真实 889 消息包固定 overhead ~7.2k，8k 只剩 ~0.8k 内容，规划出 ~125 批。改为 overhead / content / output 三项分离，内容至少 50%（且 ≥1k）；默认总输入 24k。
+- **输出无总上限**：Qwen 的 `max_tokens` 只限制回答，思考另计（qwen3.8-max 默认 xhigh/131072）。DashScope 增加 `max_completion_tokens = 回答 + 8k`，不关闭思考。
+- **无界汇总/修复/单观众请求**：aggregate 48k 硬上限 + 上下文检查；repair 只截断上次回答并显式超限；单观众 48k 硬上限；上下文装不下显式失败。
+- 尝试日志新增 requestBytes、estimatedInputTokens、maxTokens、maxCompletionTokens、reasoningChars、reasoningTokens。
+- 会话 prompt 明确 `viewer_profiles` 是可选批内高亮，不承诺完整覆盖；完整覆盖由 memory 批次保证。
+
+### 验证
+
+- 596 passed / 0 failed（约 94 秒）。
+- EXE `8ad6a51.b62882c5` / commit `8ad6a51` / SHA-256 `1724c451…`；asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- 真实 889 消息离线规划：8k=24 批、16k=11 批、24k=6 批、32k=4 批，全部 889/889 覆盖。
+
+### 未验证
+
+- 真实付费 API 的 `max_completion_tokens` 行为、24k/6 批真实回放、真实 UAC 双击。
+
 ## 0.13.1-r2 — 2026-11-12（AI 可靠性、token 分批、自动流式）
 
 ### 修复
