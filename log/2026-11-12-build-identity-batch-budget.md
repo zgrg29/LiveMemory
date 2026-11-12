@@ -32,16 +32,16 @@
 
 | 项目 | 值 |
 | --- | --- |
-| SHA-256 | `7bcc365fd95d8f20d722196328db8f85218309187d65b2fa84d425ed30fc29a1` |
-| commit | `84b54f09b40a6709af83c96a075ea78be0ef71b4` |
-| buildId | `b62882c5a365` |
-| assetHash | `b62882c5a365d6cd2519` |
+| SHA-256 | `d87722ec07b93433c6d2a2b45dc2bed217ae0b5443cacad46b7a81c6d09f6aca` |
+| commit | `87f500ebcd58b47319ea8d101677141f2c89dadb` |
+| buildId | `33ea5e659ce0` |
+| assetHash | `33ea5e659ce0295a2061` |
 | builtAt | 2026-11-12T07:19:02.385Z |
 | 资源 | 169 files / 7 必需模块 / requireAdministrator |
 
 本会话非提升，复制 EXE 并把 RT_MANIFEST 改为 asInvoker 后实际启动：
 
-- `--version`：`Build ID: b62882c5a365`；
+- `--version`：`Build ID: 33ea5e659ce0`；
 - `/api/health`、`/api/bootstrap`：同一 buildId、commit，`mode=packaged`、`verified=true`；
 - 启动日志 `startup.begin` 含同一 build；
 - 第二次启动 `app-root.reuse` + `filesVerified=169`；
@@ -95,7 +95,7 @@ node scripts/plan-batches-offline.mjs <session.zip>
 
 实现：
 
-- DashScope 请求增加 `max_completion_tokens = 回答 + 8,000`（session 16k / memory 14k），不关闭思考；
+- DashScope 请求增加 `max_completion_tokens = 回答 + 16,000`（session 24k / memory 22k），不关闭思考；
 - 其他 Provider 不发送该参数；
 - 流式只统计 `reasoning_content` 长度，不保存内容；
 - attempt 日志新增 requestBytes / estimatedInputTokens / maxTokens / maxCompletionTokens / reasoningChars / reasoningTokens；
@@ -103,7 +103,7 @@ node scripts/plan-batches-offline.mjs <session.zip>
 
 ## 4. 测试
 
-- 全量 **596 passed / 0 failed**（约 94 秒）。
+- 全量 **597 passed / 0 failed**（约 93 秒）。
 - 新增：`build-info`、`ai-adapter-output`、`ai-repair-guard`；`ai-token-batching` 增加 889/124/硬上限；`bootstrap` 增加缓存篡改重解压。
 - 已有超时/流式/恢复/回退测试全部通过：超时不重发、流中断不导入、已完成批次恢复、流式回退一次且可观察。
 

@@ -919,11 +919,11 @@ duration ≈ 25.0s
 
 ### 31.5 v0.13.2 构建与分批（2026-11-12）
 
-- 全量：**596 passed / 0 failed**（约 94 秒）。
+- 全量：**597 passed / 0 failed**（约 93 秒）。
 - `tests/unit/build-info.test.mjs`：开发读 `.git/HEAD`；打包 env 优先；`build-info.json` 回退；`buildSummary` 不泄露 appRoot。
 - `tests/unit/ai-adapter-output.test.mjs`：DashScope 发送 `max_completion_tokens`，其他 Provider 不发送；`requestBytes`；`reasoning_tokens`/`reasoning_content` 只计数。
 - `tests/unit/ai-repair-guard.test.mjs`：repair 保留原批 prompt，只截断上次回答；估算不超限。
 - `tests/unit/ai-token-batching.test.mjs`：889 消息在 8/16/24/32k 下分别 24/11/6/4 批，覆盖 889/889；8k 不再 125 批；124 观众恰好一次；单观众 48k 硬上限显式失败。
 - `tests/unit/bootstrap.test.mjs`：篡改缓存文件后 `app-root.stale` 并重新解压；marker 含 buildId。
-- EXE：`buildId b62882c5a365`；asInvoker 副本实际启动，`/api/health`、`/api/bootstrap` 返回同一 build；第二次启动 `filesVerified=169`。
+- EXE：`buildId 33ea5e659ce0`；asInvoker 副本实际启动，`/api/health`、`/api/bootstrap` 返回同一 build；第二次启动 `filesVerified=169`。
 - 未做：真实付费 API、真实 UAC 双击、889 消息真实付费回放。

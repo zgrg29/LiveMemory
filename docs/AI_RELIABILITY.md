@@ -276,12 +276,12 @@ AI 分析中心新增/明确显示：
 
 - 阿里云文档（2026-11-10）：Qwen 的 `max_tokens` 只限制**回答**；思考在 `reasoning_content`，单独计费；`qwen3.8-max` 默认 `reasoning_effort=xhigh`、`thinking_budget=131072`。
 - 这解释了 18,684 output 与历史单请求 9,936/12,734 都大于 `max_tokens=8000`：8k 不是总输出上限。
-- DashScope 请求增加 `max_completion_tokens = 回答 + 8,000`（session 16k / memory 14k），不关闭思考；其他 Provider 不发送。
+- DashScope 请求增加 `max_completion_tokens = 回答 + 16,000`（session 24k / memory 22k），不关闭思考；其他 Provider 不发送。
 - attempt 日志新增 `requestBytes`、`estimatedInputTokens`、`maxTokens`、`maxCompletionTokens`、`reasoningChars`、`reasoningTokens`；流式只统计思考字符数，不保存思考内容。
 - 124 位观众的长篇覆盖由 memory 批次保证（每位恰好一条）；session 的 `viewer_profiles` 是可选批内高亮，不承诺完整覆盖。
 
 ### 9.5 验证
 
 - 596 passed / 0 failed（约 94 秒）。
-- EXE v0.13.2：`buildId b62882c5a365`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- EXE v0.13.2：`buildId 33ea5e659ce0`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
 - **未验证**：真实付费 API 的 `max_completion_tokens` 接受度、思考模式实际行为、24k/6 批真实回放、真实 UAC 双击。

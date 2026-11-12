@@ -891,5 +891,5 @@ result.schema.json
 
 - `batch_plan` 新增 `configured_total_tokens`、`content_budget_tokens`、`overhead_tokens`、`output_reserve_tokens`、`context_length`、`overhead_adjusted`、`context_capped`；旧字段 `input_budget_tokens`、`estimated_prompt_tokens` 保留。
 - 默认 `input_budget_tokens=24000`；`content_budget_tokens` 是留给消息/摘录的预算，固定 overhead 单独列出。
-- DashScope 请求额外发送 `max_completion_tokens`（回答预算 + 8k），限制回答+思考总量；其他 Provider 不发送。该字段的实际接受度仍需真实 Provider 验证。
+- DashScope 请求额外发送 `max_completion_tokens`（回答预算 + 16k），限制回答+思考总量；其他 Provider 不发送。该字段的实际接受度仍需真实 Provider 验证。
 - 结果 Schema、导入协议、证据 `{batch, seq}` 规则不变。
