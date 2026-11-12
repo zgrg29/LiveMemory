@@ -1,22 +1,45 @@
 /**
  * Token-budget batching.
  *
- * Message-count batches are a poor proxy for request size: 500 short messages
- * and 500 long messages differ by an order of magnitude, and a whole-session
- * request can silently reach hundreds of thousands of tokens. The planners here
- * pack by *estimated input tokens* instead, while still honouring the existing
- * message/viewer/excerpt caps and the rule that one viewer is never split
- * across memory batches.
+ * Three quantities are deliberately kept separate:
  *
- * The budget is intentionally configurable and derived from the model's declared
- * context window when the user has not set one. It is not an exact tokenizer:
- * the estimate is deliberately conservative (UTF-8 bytes / 3) and every request
- * records its own estimate so an operator can see the real numbers.
+ *   - `overheadTokens`  fixed prompt cost measured from the real instructions,
+ *                       session context and answer schema;
+ *   - `contentTokens`   the budget actually available for chat messages or
+ *                       viewer excerpts;
+ *   - `outputReserve`   completion budget that must also fit the model context
+ *                       but never consumes input budget.
+ *
+ * Earlier versions subtracted the full overhead from the configured total. With
+ * the real 889-message Japanese package the fixed overhead is ~6.9k tokens, so an
+ * 8k total left only ~0.8k for chat and produced ~125 tiny requests. The planner
+ * now guarantees that at least half of the configured total (and at least
+ * `MIN_CONTENT_TOKENS`) is available for content, and reports the effective
+ * total when fixed overhead forces it upward.
+ *
+ * The budget is still an estimate, not a tokenizer: UTF-8 bytes / 3 is
+ * optimistic for mixed Japanese/ASCII JSON and conservative for dense CJK. The
+ * runner records both the estimate and the provider-reported usage so the
+ * calibration can be checked against real data.
  */
 
 export const MIN_BATCH_INPUT_TOKENS = 2000;
 export const MAX_BATCH_INPUT_TOKENS = 32000;
-export const DEFAULT_BATCH_INPUT_TOKENS = 8000;
+
+/**
+ * 24k input + 8k output fits a 32k-context model with a small safety margin and
+ * is the smallest default that keeps a large session at a handful of requests.
+ */
+export const DEFAULT_BATCH_INPUT_TOKENS = 24000;
+
+/** Absolute floor for chat/excerpt content in one request. */
+export const MIN_CONTENT_TOKENS = 1000;
+
+/** At least this share of the configured total must be usable for content. */
+export const MIN_CONTENT_SHARE = 0.5;
+
+/** Safety margin between input + output and the declared context window. */
+export const CONTEXT_SAFETY_TOKENS = 500;
 
 /** Rough cost of the system prompt + wrapper lines (not the instructions). */
 const PROMPT_WRAPPER_TOKENS = 200;
@@ -42,12 +65,12 @@ function clamp(value, min, max) {
 }
 
 /**
- * Pick the per-request input budget.
+ * Pick the configured *total input* target.
  *
- * `configured` wins when it is a positive number (the settings UI exposes it).
- * Otherwise the budget stays at the documented default unless the model's
- * context window is small enough that 8k input + output budget would not fit;
- * in that case it shrinks, never below 2k.
+ * `configured` wins when it is a positive number. Otherwise the default is 24k,
+ * shrunk only when the declared context cannot fit the default input plus the
+ * output reserve. The returned value is the target, not the final content
+ * budget; `planBatchBudget` separates the fixed overhead afterwards.
  */
 export function resolveBatchInputTokens({
   configured = null,
@@ -56,15 +79,76 @@ export function resolveBatchInputTokens({
   fallback = DEFAULT_BATCH_INPUT_TOKENS
 } = {}) {
   const input = Number(configured);
-  if (Number.isFinite(input) && input > 0) {
-    return clamp(Math.floor(input), MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS);
-  }
-  const base = clamp(Math.floor(Number(fallback) || DEFAULT_BATCH_INPUT_TOKENS),
-    MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS);
+  const base = (Number.isFinite(input) && input > 0)
+    ? clamp(Math.floor(input), MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS)
+    : clamp(Math.floor(Number(fallback) || DEFAULT_BATCH_INPUT_TOKENS),
+      MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS);
   const context = Number(contextLength);
   if (!Number.isFinite(context) || context <= 0) return base;
-  const affordable = context - Math.max(1024, Number(outputReserve) || 8000) - 1500;
+  const affordable = context - Math.max(1024, Number(outputReserve) || 8000) - CONTEXT_SAFETY_TOKENS;
   return clamp(affordable, MIN_BATCH_INPUT_TOKENS, Math.min(base, MAX_BATCH_INPUT_TOKENS));
+}
+
+/**
+ * Split a total input target into fixed overhead and usable content.
+ *
+ * @returns {{
+ *   configuredTotalTokens:number,
+ *   totalInputTokens:number,
+ *   contentTokens:number,
+ *   overheadTokens:number,
+ *   outputReserve:number,
+ *   contextLength:number|null,
+ *   overheadAdjusted:boolean,
+ *   contextCapped:boolean,
+ *   fitsContext:boolean
+ * }}
+ */
+export function planBatchBudget({
+  totalInputTokens = DEFAULT_BATCH_INPUT_TOKENS,
+  overheadTokens = 0,
+  outputReserve = 8000,
+  contextLength = null
+} = {}) {
+  const target = clamp(
+    Math.floor(Number(totalInputTokens) || DEFAULT_BATCH_INPUT_TOKENS),
+    MIN_BATCH_INPUT_TOKENS,
+    MAX_BATCH_INPUT_TOKENS
+  );
+  const overhead = Math.max(0, Math.ceil(Number(overheadTokens) || 0));
+  const reserve = Math.max(512, Math.ceil(Number(outputReserve) || 8000));
+  const shareFloor = Math.ceil(target * MIN_CONTENT_SHARE);
+  let content = Math.max(MIN_CONTENT_TOKENS, target - overhead, shareFloor);
+  let total = overhead + content;
+  let contextCapped = false;
+  let fitsContext = true;
+  const context = Number(contextLength);
+  if (Number.isFinite(context) && context > 0) {
+    const maxTotal = context - reserve - CONTEXT_SAFETY_TOKENS;
+    if (total > maxTotal) {
+      contextCapped = true;
+      total = maxTotal;
+      content = total - overhead;
+      if (content < MIN_CONTENT_TOKENS) {
+        // The fixed overhead alone nearly fills the context. Still send the
+        // minimum content and flag it; callers can log/refuse before spending.
+        content = MIN_CONTENT_TOKENS;
+        total = overhead + content;
+        fitsContext = total + reserve + CONTEXT_SAFETY_TOKENS <= context;
+      }
+    }
+  }
+  return {
+    configuredTotalTokens: target,
+    totalInputTokens: total,
+    contentTokens: content,
+    overheadTokens: overhead,
+    outputReserve: reserve,
+    contextLength: Number.isFinite(context) && context > 0 ? context : null,
+    overheadAdjusted: total > target,
+    contextCapped,
+    fitsContext
+  };
 }
 
 /** Bound the output budget so input + output can fit the declared context. */
@@ -72,27 +156,31 @@ export function resolveOutputTokens({desired = 8000, inputTokens = 0, contextLen
   const wanted = clamp(Math.floor(Number(desired) || 8000), 512, 32000);
   const context = Number(contextLength);
   if (!Number.isFinite(context) || context <= 0) return wanted;
-  const room = Math.floor(context - Math.max(0, Number(inputTokens) || 0) - 500);
+  const room = Math.floor(context - Math.max(0, Number(inputTokens) || 0) - CONTEXT_SAFETY_TOKENS);
   return clamp(room, 512, wanted);
 }
 
 /**
- * Split a session into contiguous message batches under a token budget.
+ * Split a session into contiguous message batches under a *content* budget.
  *
  * @param messageTokens per-message estimated tokens, in chronological order
+ * @param contentBudget tokens available for messages (overhead already removed)
+ * @param overheadTokens fixed prompt cost, added back only for reporting
  * @returns [{startIndex, endIndex, messageCount, messageTokens, estimatedTokens}]
  */
 export function planSessionMessageBatches({
   messageTokens,
+  contentBudget = null,
   overheadTokens = 0,
-  inputBudget = DEFAULT_BATCH_INPUT_TOKENS,
+  inputBudget = null,
   maxMessages = 5000
 }) {
   const tokens = Array.isArray(messageTokens) ? messageTokens.map((value) => Math.max(1, Number(value) || 1)) : [];
   if (tokens.length === 0) return [];
-  const budget = clamp(Math.floor(Number(inputBudget) || DEFAULT_BATCH_INPUT_TOKENS),
-    MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS);
-  const available = Math.max(500, budget - Math.max(0, Number(overheadTokens) || 0));
+  const overhead = Math.max(0, Number(overheadTokens) || 0);
+  const available = contentBudget !== null && contentBudget !== undefined
+    ? Math.max(500, Math.floor(Number(contentBudget) || 0))
+    : Math.max(500, Math.floor(Number(inputBudget) || DEFAULT_BATCH_INPUT_TOKENS) - overhead);
   const cap = Math.max(1, Math.floor(Number(maxMessages) || 5000));
   const batches = [];
   let start = 0;
@@ -105,7 +193,7 @@ export function planSessionMessageBatches({
       endIndex: end,
       messageCount: count,
       messageTokens: used,
-      estimatedTokens: used + Math.max(0, Number(overheadTokens) || 0)
+      estimatedTokens: used + overhead
     });
     start = end;
     count = 0;
@@ -119,7 +207,8 @@ export function planSessionMessageBatches({
     used += size;
   }
   flush(tokens.length);
-  return batches;
+  const covered = batches.reduce((total, batch) => total + batch.messageCount, 0);
+  return batches.map((batch) => ({...batch, coveredMessages: covered}));
 }
 
 function viewerCost(viewer) {
@@ -133,25 +222,31 @@ function viewerCost(viewer) {
  * Assign viewers to memory batches.
  *
  * A viewer is never split and never dropped. When one viewer alone exceeds the
- * batch budget it is placed alone: a larger request is preferable to losing its
- * long-term memory coverage, and the runner reports the real prompt size.
+ * content budget it is placed alone; `maxSingleViewerTokens` is a hard request
+ * cap, and exceeding it fails explicitly instead of silently dropping excerpts
+ * or sending an unbounded request.
  */
 export function planMemoryViewerBatches({
   viewers = [],
   viewerCap = 10,
   excerptCap = 600,
+  contentBudget = null,
   overheadTokens = 0,
-  inputBudget = DEFAULT_BATCH_INPUT_TOKENS,
-  maxBatches = 2001
+  inputBudget = null,
+  maxBatches = 2001,
+  maxSingleViewerTokens = null
 } = {}) {
   const cap = Math.max(1, Math.floor(Number(viewerCap) || 10));
   const excerptLimit = Math.max(1, Math.floor(Number(excerptCap) || 600));
-  const budget = clamp(Math.floor(Number(inputBudget) || DEFAULT_BATCH_INPUT_TOKENS),
-    MIN_BATCH_INPUT_TOKENS, MAX_BATCH_INPUT_TOKENS);
-  const available = Math.max(500, budget - Math.max(0, Number(overheadTokens) || 0));
+  const overhead = Math.max(0, Number(overheadTokens) || 0);
+  const available = contentBudget !== null && contentBudget !== undefined
+    ? Math.max(500, Math.floor(Number(contentBudget) || 0))
+    : Math.max(500, Math.floor(Number(inputBudget) || DEFAULT_BATCH_INPUT_TOKENS) - overhead);
+  const singleLimit = Number(maxSingleViewerTokens);
   const batches = [];
   let current = null;
   let oversized = false;
+  let oversizedViewerCount = 0;
   const flush = () => {
     if (current && current.viewerIds.length > 0) batches.push(current);
     current = null;
@@ -159,33 +254,42 @@ export function planMemoryViewerBatches({
   for (const viewer of viewers) {
     const excerptCount = Math.max(0, Number(viewer?.excerptCount ?? 0));
     const cost = viewerCost(viewer);
+    if (Number.isFinite(singleLimit) && singleLimit > 0 && overhead + cost > singleLimit) {
+      throw Object.assign(new Error('MEMORY_VIEWER_TOO_LARGE'), {
+        code: 'ANALYSIS_MEMORY_VIEWER_TOO_LARGE',
+        detail: `one viewer needs ${Math.ceil(overhead + cost)} input tokens; limit ${singleLimit}`,
+        estimatedTokens: Math.ceil(overhead + cost),
+        limit: singleLimit
+      });
+    }
     if (!current) {
       current = {
         viewerIds: [],
         excerptCount: 0,
-        estimatedTokens: Math.max(0, Number(overheadTokens) || 0),
+        estimatedTokens: overhead,
         oversized: false
       };
     }
     const nextExcerpts = current.excerptCount + excerptCount;
     const nextTokens = current.estimatedTokens + cost;
     const wouldOverflow = current.viewerIds.length >= cap
-      || (current.viewerIds.length > 0 && (nextExcerpts > excerptLimit || nextTokens > available));
+      || (current.viewerIds.length > 0 && (nextExcerpts > excerptLimit || nextTokens > available + overhead));
     if (wouldOverflow) {
       flush();
       current = {
         viewerIds: [],
         excerptCount: 0,
-        estimatedTokens: Math.max(0, Number(overheadTokens) || 0),
+        estimatedTokens: overhead,
         oversized: false
       };
     }
     current.viewerIds.push(viewer?.viewerId ?? viewer?.viewer_id);
     current.excerptCount += excerptCount;
     current.estimatedTokens += cost;
-    if (current.estimatedTokens > available && current.viewerIds.length === 1) {
+    if (current.estimatedTokens > overhead + available && current.viewerIds.length === 1) {
       current.oversized = true;
       oversized = true;
+      oversizedViewerCount += 1;
     }
   }
   flush();
@@ -196,7 +300,14 @@ export function planMemoryViewerBatches({
       limit: Math.max(1, Number(maxBatches) || 2001)
     });
   }
-  return {batches, oversized, inputBudget: budget, availableTokens: available};
+  return {
+    batches,
+    oversized,
+    oversizedViewerCount,
+    contentBudget: available,
+    overheadTokens: overhead,
+    totalViewers: viewers.length
+  };
 }
 
 /**
@@ -209,4 +320,12 @@ export function promptOverheadTokens({instructions = '', context = null, schema 
     + estimateTokens(instructions)
     + estimateJsonTokens(context)
     + schemaTokens;
+}
+
+/** True when a planning result is the pathological many-tiny-batches shape. */
+export function isFragmentedPlan(plan, {maxBatches = 24, minMessagesPerBatch = 8} = {}) {
+  if (!Array.isArray(plan) || plan.length === 0) return false;
+  if (plan.length > maxBatches) return true;
+  const average = plan.reduce((total, batch) => total + batch.messageCount, 0) / plan.length;
+  return average < minMessagesPerBatch;
 }

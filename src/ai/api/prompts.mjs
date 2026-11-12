@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {readZipEntry, readZipIndex} from '../../shared/zip.mjs';
 import {estimateTokensFromText} from '../providers/pricing.mjs';
 import {buildMemoryRefs, buildMemoryCompactSchema, buildSessionAnswerSchema} from './compact.mjs';
-import {estimateJsonTokens} from '../batching/tokens.mjs';
+import {estimateJsonTokens, estimateTokens} from '../batching/tokens.mjs';
 
 /**
  * Prompt construction for the paid/configured-provider path.
@@ -69,6 +69,8 @@ export function buildSessionPrompt(files) {
     '## AUTOMATIC PROVIDER MODE — LOCAL TASK METADATA',
     'Ignore any instruction above that asks you to output protocol, schema_version, analysis_scope, job_id, batch_id, task_id, session_id or locale. In this mode the local program owns and injects all of them.',
     'Return only one JSON object with `session_topics` and, optionally, `viewer_profiles`.',
+    'Keep the JSON compact: short summaries, no repeated chat lines, no verbose restatement of the input.',
+    'If `viewer_profiles` is included, include only viewers with direct evidence in this package and keep each profile short. It is a per-batch highlight, not the complete long-term profile set; complete viewer coverage is produced by the separate memory stage.',
     block('session_context.json', compactJson(files['session_context.json'])),
     block('messages.jsonl', files['messages.jsonl']),
     block('compact answer schema', JSON.stringify(answerSchema)),
@@ -302,7 +304,22 @@ export function aggregatePromptTokens(batchResults, resultSchema) {
   return estimateJsonTokens(batchResults) + estimateJsonTokens(resultSchema) + 500;
 }
 
-export function buildRepairMessages({prompt, previousText, errors, locale}) {
+const MIN_REPAIR_PREVIOUS_CHARS = 2000;
+const MAX_REPAIR_PREVIOUS_CHARS = 12000;
+
+/**
+ * A repair request re-sends the whole batch prompt plus the previous answer.
+ * With a large batch this can double the input. When `maxInputTokens` is given,
+ * shrink only the previous-answer text (never the batch content or the error
+ * list) so the correction still refers to the same evidence.
+ */
+export function buildRepairMessages({
+  prompt,
+  previousText,
+  errors,
+  locale,
+  maxInputTokens = null
+}) {
   const labels = {
     'zh-CN': '上一次回答未通过 LiveMemory 校验。根据下面的错误修正，重新输出完整 JSON。不要新增 ref，不要遗漏观众。',
     ja: '前回の回答は LiveMemory の検証に合格しませんでした。下のエラーを修正し、完全な JSON を再出力してください。ref を追加せず、視聴者を省略しないでください。',
@@ -311,12 +328,32 @@ export function buildRepairMessages({prompt, previousText, errors, locale}) {
   const errorText = (errors ?? []).slice(0, 20).map((error) => (
     `- ${error.path || '(root)'}: ${error.code}${error.params ? ` ${JSON.stringify(error.params)}` : ''}`
   )).join('\n');
+  const previous = String(previousText ?? '');
+  let previousChars = MAX_REPAIR_PREVIOUS_CHARS;
+  const maxInput = Number(maxInputTokens);
+  if (Number.isFinite(maxInput) && maxInput > 0) {
+    const base = Math.max(0, Number(prompt?.estimatedTokens) || 0);
+    const errorsTokens = estimateTokens(errorText) + 100;
+    const allowedTokens = Math.max(0, maxInput - base - errorsTokens - 200);
+    previousChars = Math.max(
+      MIN_REPAIR_PREVIOUS_CHARS,
+      Math.min(MAX_REPAIR_PREVIOUS_CHARS, allowedTokens * 3)
+    );
+  }
+  const truncated = previous.length > previousChars;
+  const kept = truncated ? previous.slice(0, previousChars) : previous;
+  const messages = [
+    ...prompt.messages,
+    {role: 'assistant', content: kept},
+    {role: 'user', content: `${labels[locale] ?? labels.en}\n${errorText}\nReturn only the JSON object.`}
+  ];
   return {
-    messages: [
-      ...prompt.messages,
-      {role: 'assistant', content: String(previousText ?? '').slice(0, 12000)},
-      {role: 'user', content: `${labels[locale] ?? labels.en}\n${errorText}\nReturn only the JSON object.`}
-    ]
+    messages,
+    truncated,
+    previousChars: kept.length,
+    estimatedInputTokens: Math.max(0, Number(prompt?.estimatedTokens) || 0)
+      + estimateTokens(kept)
+      + estimateTokens(errorText)
   };
 }
 

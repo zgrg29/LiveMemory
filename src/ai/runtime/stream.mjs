@@ -182,7 +182,10 @@ export function createStreamAccumulator({protocol = 'openai'} = {}) {
     contentType: 'text',
     error: null,
     routedProvider: null,
-    sawDelta: false
+    sawDelta: false,
+    // Thinking text is counted, never buffered: the importer only receives the
+    // final JSON answer, while the attempt log can show that thinking happened.
+    reasoningChars: 0
   };
   const appendText = (value) => {
     if (typeof value !== 'string' || value === '') return;
@@ -199,6 +202,9 @@ export function createStreamAccumulator({protocol = 'openai'} = {}) {
     const choice = payload.choices?.[0];
     if (choice) {
       const delta = choice.delta ?? choice.message ?? {};
+      if (typeof delta.reasoning_content === 'string') {
+        state.reasoningChars += delta.reasoning_content.length;
+      }
       const content = delta.content ?? choice.text;
       if (typeof content === 'string') appendText(content);
       else if (Array.isArray(content)) {

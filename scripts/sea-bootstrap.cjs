@@ -18,6 +18,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const {pathToFileURL} = require('node:url');
 
 const MARKER_NAME = '.livememory-app.json';
@@ -143,6 +144,43 @@ function markerMatches(marker, manifest, {exists = fs.existsSync, root = null} =
       return false;
     }
   });
+}
+
+function sha256File(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+/**
+ * Verify the extracted tree against the hashes embedded in the manifest.
+ *
+ * A marker with the right hash is not enough: an older extraction directory can
+ * be partially overwritten, and a reused directory was exactly how a previous
+ * build kept loading stale modules. Any mismatch forces a clean re-extraction.
+ */
+function verifyTree(root, manifest) {
+  if (!root || !manifest) return {ok: false, checked: 0, mismatches: ['missing-manifest']};
+  if (!manifest.fileHashes || typeof manifest.fileHashes !== 'object') {
+    // Older manifests have no hashes; fall back to existence checking only.
+    return {ok: true, checked: 0, mismatches: [], legacy: true};
+  }
+  const mismatches = [];
+  let checked = 0;
+  for (const file of manifest.files ?? []) {
+    const expected = manifest.fileHashes[file];
+    if (!expected) continue;
+    checked += 1;
+    let actual = null;
+    try {
+      actual = sha256File(path.join(root, file));
+    } catch {
+      actual = null;
+    }
+    if (actual !== expected) {
+      mismatches.push(file);
+      if (mismatches.length >= 8) break;
+    }
+  }
+  return {ok: mismatches.length === 0, checked, mismatches};
 }
 
 function createEarlyLog({env = process.env, home, now = () => new Date()} = {}) {
@@ -301,8 +339,18 @@ async function extractAtomically({target, manifest, getAsset, now = Date.now}) {
       hash: manifest.hash,
       version: manifest.version ?? null,
       files: manifest.files.length,
+      buildId: manifest.build?.buildId ?? null,
+      commit: manifest.build?.commit ?? null,
+      sourceHash: manifest.build?.sourceHash ?? null,
       extractedAt: new Date(now()).toISOString()
     }, null, 2)}\n`, 'utf8');
+    const verified = verifyTree(staging, manifest);
+    if (!verified.ok) {
+      const error = new Error(`extracted assets do not match manifest: ${verified.mismatches.join(', ')}`);
+      error.code = 'ASSET_HASH_MISMATCH';
+      error.mismatches = verified.mismatches;
+      throw error;
+    }
     try {
       await fs.promises.rm(target, {recursive: true, force: true});
     } catch {
@@ -326,13 +374,43 @@ async function ensureAppRoot({candidates, manifest, getAsset, log, now = Date.no
   for (const candidate of candidates) {
     const marker = readMarker(candidate);
     if (markerMatches(marker, manifest, {root: candidate})) {
-      log.record('app-root.reuse', {ok: true, path: candidate, hash: manifest.hash});
-      return {appRoot: candidate, reused: true, failures};
+      const verified = verifyTree(candidate, manifest);
+      if (verified.ok) {
+        log.record('app-root.reuse', {
+          ok: true,
+          path: candidate,
+          hash: manifest.hash,
+          buildId: manifest.build?.buildId ?? null,
+          filesVerified: verified.checked
+        });
+        return {appRoot: candidate, reused: true, failures, verified};
+      }
+      log.record('app-root.stale', {
+        ok: false,
+        path: candidate,
+        hash: manifest.hash,
+        mismatchCount: verified.mismatches.length,
+        mismatches: verified.mismatches
+      });
+      // Contaminated or partially overwritten cache: remove it and re-extract.
+      try {
+        await fs.promises.rm(candidate, {recursive: true, force: true});
+      } catch {
+        /* extractAtomically will report the real failure */
+      }
     }
     try {
       await extractAtomically({target: candidate, manifest, getAsset, now});
-      log.record('app-root.extract', {ok: true, path: candidate, files: manifest.files.length, hash: manifest.hash});
-      return {appRoot: candidate, reused: false, failures};
+      const verified = verifyTree(candidate, manifest);
+      log.record('app-root.extract', {
+        ok: true,
+        path: candidate,
+        files: manifest.files.length,
+        hash: manifest.hash,
+        buildId: manifest.build?.buildId ?? null,
+        filesVerified: verified.checked
+      });
+      return {appRoot: candidate, reused: false, failures, verified};
     } catch (error) {
       failures.push({path: candidate, code: error?.code ?? 'UNKNOWN', step: 'extract'});
       log.record('app-root.extract', {
@@ -443,9 +521,17 @@ async function main() {
       error.code = 'ASSET_INVALID';
       throw error;
     }
-    log.record('manifest.loaded', {ok: true, hash: manifest.hash, version: manifest.version ?? null, files: manifest.files.length});
+    log.record('manifest.loaded', {
+      ok: true,
+      hash: manifest.hash,
+      version: manifest.version ?? null,
+      files: manifest.files.length,
+      buildId: manifest.build?.buildId ?? null,
+      commit: manifest.build?.commit ?? null,
+      builtAt: manifest.build?.builtAt ?? null
+    });
 
-    const {appRoot: extracted, reused, failures} = await ensureAppRoot({
+    const {appRoot: extracted, reused, failures, verified} = await ensureAppRoot({
       candidates: appRootCandidates({home, hash: manifest.hash, env}),
       manifest,
       getAsset: (name) => sea.getAsset(name),
@@ -456,9 +542,34 @@ async function main() {
     if (failures.length > 0) {
       log.record('app-root.fallback', {ok: true, target: appRoot, failures});
     }
-    log.record('app-root.ready', {ok: true, path: appRoot, reused});
+    log.record('app-root.ready', {
+      ok: true,
+      path: appRoot,
+      reused,
+      filesVerified: verified?.checked ?? 0,
+      legacyManifest: verified?.legacy === true
+    });
 
+    const build = manifest.build && typeof manifest.build === 'object' ? manifest.build : {};
     process.env.LIVE_MEMORY_APP_ROOT = appRoot;
+    process.env.LIVE_MEMORY_BUILD_ID = build.buildId ?? '';
+    process.env.LIVE_MEMORY_BUILD_COMMIT = build.commit ?? '';
+    process.env.LIVE_MEMORY_BUILD_SHORT = build.shortCommit ?? '';
+    process.env.LIVE_MEMORY_BUILD_VERSION = build.version ?? manifest.version ?? '';
+    process.env.LIVE_MEMORY_BUILD_TIME = build.builtAt ?? '';
+    process.env.LIVE_MEMORY_BUILD_SOURCE_HASH = build.sourceHash ?? '';
+    process.env.LIVE_MEMORY_ASSET_HASH = build.assetHash ?? manifest.hash ?? '';
+    process.env.LIVE_MEMORY_BUILD_VERIFY = verified?.ok === false ? 'failed' : 'ok';
+    log.record('build.identity', {
+      ok: verified?.ok !== false,
+      buildId: build.buildId ?? null,
+      commit: build.commit ?? null,
+      shortCommit: build.shortCommit ?? null,
+      builtAt: build.builtAt ?? null,
+      assetHash: build.assetHash ?? manifest.hash,
+      filesVerified: verified?.checked ?? 0
+    });
+
     // The intended default is a *preference*: if this folder turns out to be
     // read-only the launcher falls back to another writable location and says so.
     process.env.LIVE_MEMORY_DEFAULT_DATA_DIR = home;
@@ -496,6 +607,8 @@ module.exports = {
   ensureAppRoot,
   extractAtomically,
   markerMatches,
+  sha256File,
+  verifyTree,
   messagesFor,
   normalizeLocale,
   pickLocale,

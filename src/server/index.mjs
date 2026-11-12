@@ -59,6 +59,7 @@ export async function startServer({
   youtubeWebBase = null,
   beginLockMove = null,
   auto = null,
+  buildInfo = null,
   env = process.env
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
@@ -196,6 +197,7 @@ export async function startServer({
     hub,
     logger,
     startedAt,
+    buildInfo,
     webRoot: webRoot ?? resolveWebRoot(),
     getPort: () => state.port,
     systemLocale: systemLocale ?? detectSystemLocale(),
@@ -243,7 +245,9 @@ export async function startServer({
     pid: process.pid,
     port: state.port,
     url,
-    version: APP_VERSION,
+    version: buildInfo?.version ?? APP_VERSION,
+    buildId: buildInfo?.buildId ?? null,
+    commit: buildInfo?.commit ?? null,
     startedAt: isoFromEpochMs(startedAt)
   });
   logger?.info({
@@ -252,7 +256,11 @@ export async function startServer({
     url,
     dataDir: deps.paths.root,
     schemaVersion: runtime.migration.to,
-    recoveredSessions: runtime.recovered.length
+    recoveredSessions: runtime.recovered.length,
+    version: buildInfo?.version ?? APP_VERSION,
+    buildId: buildInfo?.buildId ?? null,
+    commit: buildInfo?.commit ?? null,
+    buildMode: buildInfo?.mode ?? null
   });
 
   // Restore persisted automatic-monitoring targets. Checks are staggered, so a

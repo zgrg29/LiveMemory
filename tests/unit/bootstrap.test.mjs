@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {createHash} from 'node:crypto';
 import {join} from 'node:path';
-import {writeFileSync, mkdirSync, existsSync} from 'node:fs';
+import {writeFileSync, mkdirSync, existsSync, readFileSync} from 'node:fs';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 
 const require = createRequire(import.meta.url);
@@ -104,4 +105,48 @@ test('locale selection prefers env, then saved settings, then the OS locale', ()
   assert.equal(bootstrap.pickLocale({env: {}, settingsText: JSON.stringify({locale: 'en'})}), 'en');
   assert.equal(bootstrap.pickLocale({env: {}, settingsText: 'not json', intlLocale: 'zh-CN'}), 'zh-CN');
   assert.equal(bootstrap.pickLocale({env: {}, intlLocale: 'de-DE'}), 'en');
+});
+
+test('a reused extraction with modified files is detected and re-extracted', async () => {
+  const temp = createTempDir();
+  const target = join(temp.dir, 'app', 'hash');
+  const assets = new Map([
+    ['src/a.mjs', 'export const a = 1;'],
+    ['src/ai/batching/tokens.mjs', 'export const budget = 24000;']
+  ]);
+  const manifest = {
+    hash: 'hash',
+    version: '0.13.2',
+    files: ['src/a.mjs', 'src/ai/batching/tokens.mjs'],
+    fileHashes: {},
+    build: {buildId: 'abc1234.12345678', commit: 'abc1234'}
+  };
+  for (const [name, value] of assets) {
+    manifest.fileHashes[name] = createHash('sha256').update(Buffer.from(value)).digest('hex');
+  }
+  const getAsset = (name) => {
+    if (!assets.has(name)) throw new Error(`missing asset ${name}`);
+    return Buffer.from(assets.get(name));
+  };
+  await bootstrap.extractAtomically({target, manifest, getAsset});
+  assert.equal(bootstrap.verifyTree(target, manifest).ok, true);
+  // Simulate the old build's module surviving in a cache directory.
+  writeFileSync(join(target, 'src', 'ai', 'batching', 'tokens.mjs'), 'export const budget = 8000;');
+  assert.equal(bootstrap.verifyTree(target, manifest).ok, false);
+  const records = [];
+  const result = await bootstrap.ensureAppRoot({
+    candidates: [target],
+    manifest,
+    getAsset,
+    log: {record: (step, detail) => records.push({step, detail})}
+  });
+  assert.equal(result.reused, false);
+  assert.ok(records.some((entry) => entry.step === 'app-root.stale'));
+  assert.equal(
+    readFileSync(join(target, 'src', 'ai', 'batching', 'tokens.mjs'), 'utf8'),
+    'export const budget = 24000;'
+  );
+  const marker = bootstrap.readMarker(target);
+  assert.equal(marker.buildId, 'abc1234.12345678');
+  temp.cleanup();
 });

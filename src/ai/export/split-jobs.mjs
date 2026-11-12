@@ -47,6 +47,7 @@ import {buildSessionInstructions, buildMemoryInstructions} from '../prompts/spli
 import {
   estimateJsonTokens,
   estimateTokens,
+  planBatchBudget,
   planMemoryViewerBatches,
   planSessionMessageBatches,
   promptOverheadTokens,
@@ -60,6 +61,12 @@ const SCHEMA_FILE = fileURLToPath(new URL('../schemas/analysis-result-v1.3.schem
 const SESSION_OUTPUT_TOKENS = 8000;
 /** Budget for one memory batch output. */
 const MEMORY_OUTPUT_TOKENS = 6000;
+/**
+ * A single viewer is never split or dropped, but one request must stay bounded.
+ * Above this hard cap the job fails explicitly instead of sending an unbounded
+ * prompt; 48k leaves room for the 600-excerpt cap plus memory context.
+ */
+const MAX_SINGLE_VIEWER_INPUT_TOKENS = 48000;
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -155,7 +162,7 @@ export async function createSessionAnalysisJob({
     throw Object.assign(new Error('ANALYSIS_TOO_MANY_VIEWERS'), {code: 'ANALYSIS_TOO_MANY_VIEWERS'});
   }
 
-  const inputBudget = resolveBatchInputTokens({
+  const inputBudgetTarget = resolveBatchInputTokens({
     configured: tokenBudget,
     contextLength,
     outputReserve: SESSION_OUTPUT_TOKENS
@@ -198,10 +205,22 @@ export async function createSessionAnalysisJob({
     },
     schema: sessionAnswerSchemaEstimate(schemaText)
   });
+  const batchBudget = planBatchBudget({
+    totalInputTokens: inputBudgetTarget,
+    overheadTokens: overheadTokens + 250,
+    outputReserve: SESSION_OUTPUT_TOKENS,
+    contextLength
+  });
+  if (!batchBudget.fitsContext) {
+    throw Object.assign(new Error('CONTEXT_TOO_SMALL'), {
+      code: 'ANALYSIS_CONTEXT_TOO_SMALL',
+      detail: `fixed prompt overhead ${batchBudget.overheadTokens} + minimum content ${batchBudget.contentTokens} + output ${batchBudget.outputReserve} does not fit context ${contextLength}`
+    });
+  }
   const plan = planSessionMessageBatches({
     messageTokens,
-    overheadTokens: overheadTokens + 250,
-    inputBudget,
+    contentBudget: batchBudget.contentTokens,
+    overheadTokens: batchBudget.overheadTokens,
     maxMessages: MAX_ANALYSIS_MESSAGES
   });
   if (plan.length === 0) return null;
@@ -324,7 +343,14 @@ export async function createSessionAnalysisJob({
           emote_kinds: emoteEntries.length
         },
         batch_plan: {
-          input_budget_tokens: inputBudget,
+          input_budget_tokens: batchBudget.totalInputTokens,
+          configured_total_tokens: batchBudget.configuredTotalTokens,
+          content_budget_tokens: batchBudget.contentTokens,
+          overhead_tokens: batchBudget.overheadTokens,
+          output_reserve_tokens: batchBudget.outputReserve,
+          context_length: batchBudget.contextLength,
+          overhead_adjusted: batchBudget.overheadAdjusted,
+          context_capped: batchBudget.contextCapped,
           estimated_prompt_tokens: slice.estimatedTokens,
           batches_total: batchTotal
         },
@@ -442,7 +468,10 @@ export async function createSessionAnalysisJob({
         batchTotal: entries.length,
         totalMessages,
         aggregateTaskId: aggregateId,
-        inputBudgetTokens: inputBudget,
+        inputBudgetTokens: batchBudget.totalInputTokens,
+        contentBudgetTokens: batchBudget.contentTokens,
+        overheadTokens: batchBudget.overheadTokens,
+        batchPlan: batchBudget,
         createdAt: now
       },
       packages: entries.map((entry) => ({
@@ -486,7 +515,8 @@ export function assignMemoryOnlyBatches({
   maxBatches = 30,
   viewerCosts = null,
   overheadTokens = 0,
-  inputBudget = null
+  inputBudget = null,
+  contentBudget = null
 }) {
   if (viewerCosts) {
     const plan = planMemoryViewerBatches({
@@ -505,7 +535,8 @@ export function assignMemoryOnlyBatches({
       viewerCap,
       excerptCap,
       overheadTokens,
-      inputBudget: inputBudget ?? undefined,
+      contentBudget: contentBudget ?? undefined,
+      inputBudget: contentBudget === null ? (inputBudget ?? undefined) : undefined,
       maxBatches
     });
     return plan.batches.map((batch) => ({
@@ -618,7 +649,7 @@ export async function createViewerMemoryJob({
     });
   }
 
-  const inputBudget = resolveBatchInputTokens({
+  const inputBudgetTarget = resolveBatchInputTokens({
     configured: tokenBudget,
     contextLength,
     outputReserve: MEMORY_OUTPUT_TOKENS
@@ -648,6 +679,18 @@ export async function createViewerMemoryJob({
     },
     schema: memoryAnswerSchemaEstimate(schemaText)
   });
+  const batchBudget = planBatchBudget({
+    totalInputTokens: inputBudgetTarget,
+    overheadTokens: overheadTokens + 250,
+    outputReserve: MEMORY_OUTPUT_TOKENS,
+    contextLength
+  });
+  if (!batchBudget.fitsContext) {
+    throw Object.assign(new Error('CONTEXT_TOO_SMALL'), {
+      code: 'ANALYSIS_CONTEXT_TOO_SMALL',
+      detail: `fixed prompt overhead ${batchBudget.overheadTokens} + minimum content ${batchBudget.contentTokens} + output ${batchBudget.outputReserve} does not fit context ${contextLength}`
+    });
+  }
   const plan = planMemoryViewerBatches({
     viewers: allViewers.map((viewer) => ({
       viewerId: viewer.viewer_id,
@@ -660,9 +703,10 @@ export async function createViewerMemoryJob({
     })),
     viewerCap: viewersPerBatch,
     excerptCap,
-    overheadTokens: overheadTokens + 250,
-    inputBudget,
-    maxBatches
+    contentBudget: batchBudget.contentTokens,
+    overheadTokens: batchBudget.overheadTokens,
+    maxBatches,
+    maxSingleViewerTokens: MAX_SINGLE_VIEWER_INPUT_TOKENS
   });
   const batches = plan.batches;
   const jobId = createId('aij');
@@ -805,7 +849,14 @@ export async function createViewerMemoryJob({
           events: summary.stats.eventCount
         },
         batch_plan: {
-          input_budget_tokens: inputBudget,
+          input_budget_tokens: batchBudget.totalInputTokens,
+          configured_total_tokens: batchBudget.configuredTotalTokens,
+          content_budget_tokens: batchBudget.contentTokens,
+          overhead_tokens: batchBudget.overheadTokens,
+          output_reserve_tokens: batchBudget.outputReserve,
+          context_length: batchBudget.contextLength,
+          overhead_adjusted: batchBudget.overheadAdjusted,
+          context_capped: batchBudget.contextCapped,
           estimated_prompt_tokens: batch.estimatedTokens,
           batches_total: batches.length,
           viewerOversized: batch.oversized === true
@@ -933,7 +984,11 @@ export async function createViewerMemoryJob({
         analysisMode: ANALYSIS_MODE.MEMORY,
         batchTotal: entries.length,
         memoryViewersTotal: allViewers.length,
-        inputBudgetTokens: inputBudget,
+        inputBudgetTokens: batchBudget.totalInputTokens,
+        contentBudgetTokens: batchBudget.contentTokens,
+        overheadTokens: batchBudget.overheadTokens,
+        batchPlan: batchBudget,
+        oversizedViewerCount: plan.oversizedViewerCount ?? 0,
         createdAt: now
       },
       packages: entries.map((entry) => ({

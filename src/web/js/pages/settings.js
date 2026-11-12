@@ -254,11 +254,15 @@ export const settingsPage = {
     /* --------------------------------------------------------------- about */
 
     const about = ctx.state.bootstrap?.app ?? {};
+    const build = about.build ?? null;
     const aboutCard = el('section', {className: 'card card--wide'},
       el('div', {className: 'card-head'}, el('div', {className: 'card-title', text: t('settings.about.title')})),
       el('div', {className: 'card-body'},
         el('div', {className: 'def-list'},
           defRow(t('settings.about.version'), `v${about.version ?? ctx.state.version}`),
+          defRow(t('settings.about.buildId'), build?.buildId ?? t('settings.about.buildUnknown')),
+          defRow(t('settings.about.commit'), build?.shortCommit ?? t('settings.about.buildUnknown')),
+          defRow(t('settings.about.builtAt'), build?.builtAt ?? t('settings.about.buildUnknown')),
           defRow(t('settings.about.license'), 'MIT'),
           defRow(t('settings.about.repo'), el('a', {
             href: about.homepage ?? 'https://github.com/zgrg29/LiveMemory',

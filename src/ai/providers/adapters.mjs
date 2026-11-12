@@ -90,18 +90,36 @@ function finishFromOpenAI(payload) {
   return reason === 'max_tokens' ? 'length' : reason;
 }
 
+/**
+ * Count (never store) reasoning text. DashScope returns thinking in
+ * `reasoning_content`; keeping only the length makes the default thinking mode
+ * observable in the attempt log without ever persisting model reasoning.
+ */
+export function reasoningCharsFromPayload(payload) {
+  const reasoning = payload?.choices?.[0]?.message?.reasoning_content;
+  return typeof reasoning === 'string' ? reasoning.length : 0;
+}
+
 export function normalizeUsage(payload) {
   const usage = payload?.usage ?? {};
   const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0);
   const output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0);
   if (!Number.isFinite(input) && !Number.isFinite(output)) return null;
+  const reasoning = Number(
+    usage.completion_tokens_details?.reasoning_tokens
+    ?? usage.output_tokens_details?.reasoning_tokens
+    ?? usage.reasoning_tokens
+    ?? 0
+  );
   return {
     inputTokens: Number.isFinite(input) ? input : 0,
     outputTokens: Number.isFinite(output) ? output : 0,
+    reasoningTokens: Number.isFinite(reasoning) ? reasoning : 0,
     totalTokens: Number(usage.total_tokens ?? (input + output)) || 0,
     raw: {
       input_tokens: Number.isFinite(input) ? input : 0,
-      output_tokens: Number.isFinite(output) ? output : 0
+      output_tokens: Number.isFinite(output) ? output : 0,
+      reasoning_tokens: Number.isFinite(reasoning) ? reasoning : 0
     }
   };
 }
@@ -334,6 +352,7 @@ export async function callOpenAICompatible({
   apiKey,
   messages,
   maxTokens = 4096,
+  maxCompletionTokens = null,
   responseSchema = null,
   responseFormat = 'json_schema',
   fetchImpl = globalThis.fetch,
@@ -360,6 +379,18 @@ export async function callOpenAICompatible({
     max_tokens: Math.max(64, Math.min(Number(maxTokens) || 4096, 32000)),
     temperature: 0
   };
+  // DashScope models that support thinking treat `max_tokens` as the answer
+  // limit only; Chain-of-Thought is billed separately and its default can be
+  // very large. `max_completion_tokens` bounds the whole output. It is sent only
+  // where the provider documents support, so other OpenAI-compatible endpoints
+  // never receive an unknown parameter.
+  const completionLimit = Number(maxCompletionTokens);
+  if (Number.isFinite(completionLimit) && completionLimit > 0 && config.providerId === 'dashscope') {
+    body.max_completion_tokens = Math.max(
+      body.max_tokens,
+      Math.min(Math.floor(completionLimit), 96000)
+    );
+  }
   const structured = responseSchema && responseFormat !== 'none';
   if (structured && responseFormat === 'json_schema') {
     body.response_format = {
@@ -381,6 +412,8 @@ export async function callOpenAICompatible({
   }
 
   const startedAt = now();
+  const bodyText = JSON.stringify(body);
+  const requestBytes = Buffer.byteLength(bodyText, 'utf8');
   const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs, maxTotalMs});
   let response;
   try {
@@ -392,18 +425,20 @@ export async function callOpenAICompatible({
         ...auth,
         ...headers
       },
-      body: JSON.stringify(body),
+      body: bodyText,
       signal: control.signal
     });
   } catch (error) {
     control.cleanup();
-    throw transportError(error, {
+    const failure = transportError(error, {
       providerId: config.providerId,
       control,
       startedAt,
       now,
       timeoutMs
     });
+    failure.requestBytes = requestBytes;
+    throw failure;
   }
   const headersAt = now();
   control.markHeaders();
@@ -416,6 +451,7 @@ export async function callOpenAICompatible({
     control.cleanup();
     const failure = errorFromResponse(response, payload, config.providerId);
     failure.elapsedMs = now() - startedAt;
+    failure.requestBytes = requestBytes;
     throw failure;
   }
 
@@ -536,6 +572,8 @@ export async function callOpenAICompatible({
       responseMode: 'streaming',
       routedProvider: result.routedProvider ?? null,
       rawCost: result.usage?.cost ?? null,
+      reasoningChars: result.reasoningChars ?? 0,
+      requestBytes,
       metrics,
       raw: null
     };
@@ -594,6 +632,8 @@ export async function callOpenAICompatible({
     responseMode: 'non_streaming',
     routedProvider: payload?.provider ?? null,
     rawCost: payload?.usage?.cost ?? null,
+    reasoningChars: reasoningCharsFromPayload(payload),
+    requestBytes,
     metrics,
     raw: null
   };
@@ -644,6 +684,8 @@ export async function callAnthropic({
   // Anthropic Messages has no portable json_schema parameter across models;
   // the prompt builder includes the schema and asks for JSON only.
   const startedAt = now();
+  const bodyText = JSON.stringify(body);
+  const requestBytes = Buffer.byteLength(bodyText, 'utf8');
   const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs, maxTotalMs});
   let response;
   try {
@@ -655,18 +697,20 @@ export async function callAnthropic({
         'x-api-key': apiKey,
         'anthropic-version': getProvider('anthropic')?.anthropicVersion ?? '2023-06-01'
       },
-      body: JSON.stringify(body),
+      body: bodyText,
       signal: control.signal
     });
   } catch (error) {
     control.cleanup();
-    throw transportError(error, {
+    const failure = transportError(error, {
       providerId: config.providerId,
       control,
       startedAt,
       now,
       timeoutMs
     });
+    failure.requestBytes = requestBytes;
+    throw failure;
   }
   const headersAt = now();
   control.markHeaders();
@@ -679,6 +723,7 @@ export async function callAnthropic({
     control.cleanup();
     const failure = errorFromResponse(response, payload, config.providerId);
     failure.elapsedMs = now() - startedAt;
+    failure.requestBytes = requestBytes;
     throw failure;
   }
 
@@ -787,6 +832,8 @@ export async function callAnthropic({
       responseMode: 'streaming',
       routedProvider: null,
       rawCost: null,
+      reasoningChars: result.reasoningChars ?? 0,
+      requestBytes,
       metrics,
       raw: null
     };
@@ -848,6 +895,8 @@ export async function callAnthropic({
     responseMode: 'non_streaming',
     routedProvider: null,
     rawCost: null,
+    reasoningChars: 0,
+    requestBytes,
     metrics,
     raw: null
   };

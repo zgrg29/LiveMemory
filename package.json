@@ -1,6 +1,6 @@
 {
   "name": "livememory",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "private": true,
   "description": "LiveMemory — local-first livestream memory system for Bilibili Live and YouTube Live.",
   "license": "MIT",
@@ -16,6 +16,7 @@
     "test:single": "node --test --test-isolation=none \"tests/unit/*.test.mjs\" \"tests/integration/*.test.mjs\"",
     "test:unit": "node --test tests/unit",
     "test:integration": "node --test tests/integration",
+    "plan:batches": "node scripts/plan-batches-offline.mjs",
     "build:windows": "node scripts/build-windows.mjs"
   }
 }

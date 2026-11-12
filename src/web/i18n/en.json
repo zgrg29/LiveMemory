@@ -606,6 +606,9 @@
         "ANALYSIS_TASK_TIMEOUT": "The task time budget was reached and later requests were stopped. Completed batches are preserved.",
         "AUTO_OUTPUT_DEGENERATED": "The model output degenerated into repetition and is incomplete, so nothing was saved.",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "There are too many batch results to merge in one request. Batch results are preserved; lower the batch budget or use a model with a larger context.",
+        "ANALYSIS_CONTEXT_TOO_SMALL": "The model context is too small for the fixed prompt plus the minimum batch content; use a larger-context model or raise the batch budget.",
+        "ANALYSIS_MEMORY_VIEWER_TOO_LARGE": "One viewer's excerpts exceed the hard per-request cap; the viewer was not dropped. Lower the excerpt cap or use a larger-context model.",
+        "ANALYSIS_REPAIR_TOO_LARGE": "The repair request would exceed the per-request limit and was not sent; batch results are preserved.",
         "ANALYSIS_INCOMPLETE": "The task did not finish, so no complete report was saved.",
         "ANALYSIS_AGGREGATE_NOT_READY": "Some batch results are still missing, so the merge cannot run yet.",
         "ANALYSIS_PACKAGE_MISSING": "A local analysis package is missing, so this batch cannot continue.",
@@ -1173,8 +1176,8 @@
         "timeoutHint": "Longest wait for response headers or streaming data. A stream that keeps producing output is not cut off by total duration. Default 180s.",
         "timeoutShort": "timeout {seconds}s",
         "batchInput": "Input per batch (tokens, blank = automatic)",
-        "batchInputHint": "Blank selects a value from the model context (about 2,000–32,000). This is the input budget per request, not the output budget.",
-        "batchInputAuto": "Automatic"
+        "batchInputHint": "Blank means 24,000 (input + output must fit the model context). Fixed prompt overhead is budgeted separately and chat content keeps at least half of the budget; this is not the output budget.",
+        "batchInputAuto": "Automatic (24,000)"
       },
       "capability": {
         "memory": "Capability: session + long-term profiles",
@@ -1318,6 +1321,10 @@
     "about": {
       "title": "About",
       "version": "Version",
+      "buildId": "Build ID",
+      "commit": "Commit",
+      "builtAt": "Built at",
+      "buildUnknown": "Unknown (source run)",
       "license": "License",
       "repo": "Project",
       "runtime": "Local server",

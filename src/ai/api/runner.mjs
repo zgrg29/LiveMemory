@@ -30,6 +30,7 @@ import {
   taskBudgetRemaining
 } from '../runtime/attempt.mjs';
 import {
+  estimateTokens,
   resolveBatchInputTokens,
   resolveOutputTokens
 } from '../batching/tokens.mjs';
@@ -85,6 +86,23 @@ const MAX_CONCURRENCY = 8;
  * never silently truncated.
  */
 const MAX_MEMORY_BATCHES = Math.ceil(MAX_ANALYSIS_VIEWERS / 10) + 1;
+
+/**
+ * Thinking-mode guard for DashScope. Their documented `max_tokens` limits only
+ * the answer, while Chain-of-Thought is billed separately and qwen3.8-max
+ * defaults to a very large thinking budget. Sending `max_completion_tokens`
+ * bounds answer+thinking without disabling thinking; 8k leaves enough room for
+ * JSON extraction while keeping a single request bounded.
+ */
+const THINKING_RESERVE_TOKENS = 8000;
+const MAX_COMPLETION_TOKENS = 96000;
+/** Repair and aggregate must never recreate an unbounded prompt. */
+const MAX_REPAIR_INPUT_TOKENS = 48000;
+const MAX_AGGREGATE_INPUT_TOKENS = 48000;
+const AGGREGATE_OUTPUT_TOKENS = 8000;
+/** Minimum previous-answer text kept when a repair request is tightened. */
+const MIN_REPAIR_PREVIOUS_CHARS = 2000;
+const MAX_REPAIR_PREVIOUS_CHARS = 12000;
 
 export class AnalysisPermissionError extends Error {
   constructor(code, details = {}) {
@@ -611,7 +629,11 @@ export class AnalysisRunner {
     mode = null,
     timeoutMs = null,
     idleTimeoutMs = null,
-    stage = null
+    stage = null,
+    model = null,
+    maxTokens = null,
+    maxCompletionTokens = null,
+    estimatedInputTokens = null
   }) {
     const currentRequest = {
       kind,
@@ -620,6 +642,11 @@ export class AnalysisRunner {
       maxAttempts,
       mode,
       streaming: mode === 'streaming',
+      model,
+      maxTokens,
+      maxCompletionTokens,
+      estimatedInputTokens,
+      requestBytes: null,
       startedAt: this.now(),
       timeoutMs,
       idleTimeoutMs,
@@ -680,6 +707,13 @@ export class AnalysisRunner {
       receivedOutput: record.receivedOutput === true,
       timeToFirstByteMs: record.timeToFirstByteMs ?? null,
       usageKnown: record.usageKnown === true,
+      model: record.model ?? null,
+      maxTokens: record.maxTokens ?? null,
+      maxCompletionTokens: record.maxCompletionTokens ?? null,
+      estimatedInputTokens: record.estimatedInputTokens ?? null,
+      requestBytes: record.requestBytes ?? null,
+      reasoningChars: record.reasoningChars ?? 0,
+      reasoningTokens: record.reasoningTokens ?? null,
       at: this.now()
     };
     this.state.set(context.sessionId, {
@@ -705,7 +739,15 @@ export class AnalysisRunner {
       receivedOutput: record.receivedOutput === true,
       retry: record.retry === true,
       usageKnown: record.usageKnown === true,
-      timeToFirstByteMs: record.timeToFirstByteMs ?? null
+      timeToFirstByteMs: record.timeToFirstByteMs ?? null,
+      timeToFirstTokenMs: record.timeToFirstTokenMs ?? null,
+      model: record.model ?? null,
+      maxTokens: record.maxTokens ?? null,
+      maxCompletionTokens: record.maxCompletionTokens ?? null,
+      estimatedInputTokens: record.estimatedInputTokens ?? null,
+      requestBytes: record.requestBytes ?? null,
+      reasoningChars: record.reasoningChars ?? 0,
+      reasoningTokens: record.reasoningTokens ?? null
     });
   }
 
@@ -833,6 +875,31 @@ export class AnalysisRunner {
     });
   }
 
+  /**
+   * Hard input ceiling for requests that are not planned batches (aggregate and
+   * repair). Batch planning already keeps normal requests within the configured
+   * budget; these two paths previously had no ceiling when `contextLength` was
+   * unknown.
+   */
+  #maxRequestInputTokens(provider, outputReserve) {
+    const context = Number(provider.contextLength ?? 0);
+    const byContext = context > 0
+      ? context - Math.max(1024, Number(outputReserve) || 8000) - 500
+      : MAX_AGGREGATE_INPUT_TOKENS;
+    return Math.max(2000, Math.min(MAX_AGGREGATE_INPUT_TOKENS, byContext));
+  }
+
+  /**
+   * DashScope `max_tokens` limits the answer only; thinking is billed on top.
+   * A bounded `max_completion_tokens` keeps a single attempt from silently
+   * generating tens of thousands of thinking tokens at 36 CNY/M.
+   */
+  #maxCompletionTokens(provider, answerTokens) {
+    if (provider.providerId !== 'dashscope') return null;
+    const answer = Math.max(64, Number(answerTokens) || 8000);
+    return Math.min(MAX_COMPLETION_TOKENS, answer + THINKING_RESERVE_TOKENS);
+  }
+
   async runSession(context) {
     const {sessionId, provider} = context;
     const entry = this.state.get(sessionId);
@@ -869,14 +936,22 @@ export class AnalysisRunner {
         sessionBatchesCompleted: 0,
         batchTotal: job.batchTotal,
         batchIndex: 0,
-        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget,
+        contentBudgetTokens: created.job.contentBudgetTokens ?? null,
+        overheadTokens: created.job.overheadTokens ?? null,
+        batchPlan: created.job.batchPlan ?? null
       });
       this.logger?.info?.({
         event: 'ai.analysis.session.packaged',
         sessionId,
         jobId: job.id,
         batches: job.batchTotal,
-        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+        totalMessages: job.totalMessages ?? null,
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget,
+        contentBudgetTokens: created.job.contentBudgetTokens ?? null,
+        overheadTokens: created.job.overheadTokens ?? null,
+        overheadAdjusted: created.job.batchPlan?.overheadAdjusted === true,
+        contextCapped: created.job.batchPlan?.contextCapped === true
       });
     }
     const batches = listJobBatches(this.db, job.id);
@@ -1068,13 +1143,23 @@ export class AnalysisRunner {
     const {sessionId, provider} = context;
     this.#setRunning(sessionId, {stage: 'session_aggregating'});
     const {prompt} = this.#buildAggregatePrompt(job);
-    const contextLimit = Number(provider.contextLength ?? 0);
-    if (contextLimit > 0 && prompt.estimatedTokens > contextLimit - 2000) {
+    const limit = this.#maxRequestInputTokens(provider, AGGREGATE_OUTPUT_TOKENS);
+    if (prompt.estimatedTokens > limit) {
       throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
         code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
-        detail: `estimated ${prompt.estimatedTokens} input tokens, context ${contextLimit}; all batch results are preserved`
+        detail: `estimated ${prompt.estimatedTokens} input tokens, limit ${limit}, batches ${job.batchTotal}; all batch results are preserved`,
+        estimatedTokens: prompt.estimatedTokens,
+        limit
       });
     }
+    this.logger?.info?.({
+      event: 'ai.analysis.session.aggregate.request',
+      sessionId,
+      jobId: job.id,
+      batches: job.batchTotal,
+      estimatedInputTokens: prompt.estimatedTokens,
+      inputLimit: limit
+    });
     const generated = await this.requestWithRepair({
       context,
       prompt,
@@ -1082,7 +1167,7 @@ export class AnalysisRunner {
       batchIndex: null,
       stage: 'session_aggregating',
       outputTokens: resolveOutputTokens({
-        desired: 8000,
+        desired: AGGREGATE_OUTPUT_TOKENS,
         inputTokens: prompt.estimatedTokens,
         contextLength: provider.contextLength
       }),
@@ -1236,7 +1321,11 @@ export class AnalysisRunner {
         batchTotal: job.batchTotal,
         batchesCompleted: 0,
         stage: 'memory_ready',
-        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget,
+        contentBudgetTokens: created.job.contentBudgetTokens ?? null,
+        overheadTokens: created.job.overheadTokens ?? null,
+        batchPlan: created.job.batchPlan ?? null,
+        oversizedViewerCount: created.job.oversizedViewerCount ?? 0
       });
       this.logger?.info?.({
         event: 'ai.analysis.memory.packaged',
@@ -1244,7 +1333,10 @@ export class AnalysisRunner {
         jobId: job.id,
         batches: job.batchTotal,
         viewers: created.job.memoryViewersTotal,
-        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget
+        inputBudgetTokens: created.job.inputBudgetTokens ?? tokenBudget,
+        contentBudgetTokens: created.job.contentBudgetTokens ?? null,
+        overheadTokens: created.job.overheadTokens ?? null,
+        oversizedViewerCount: created.job.oversizedViewerCount ?? 0
       });
     }
     const sessionForGate = getSession(this.db, sessionId);
@@ -1430,19 +1522,40 @@ export class AnalysisRunner {
     }
     let validation = this.validate(JSON.stringify(assembled.result));
     if (!validation.ok) {
+      const outputTokens = budgetFor(prompt);
+      const repairLimit = this.#maxRequestInputTokens(context.provider, outputTokens);
       const repair = buildRepairMessages({
         prompt,
         previousText: generated.content,
         errors: validation.errors,
-        locale: prompt.locale
+        locale: prompt.locale,
+        maxInputTokens: repairLimit
       });
+      if (repair.truncated) {
+        this.logger?.warn?.({
+          event: 'ai.repair.truncated',
+          sessionId: context.sessionId,
+          kind: 'memory-repair',
+          batchIndex,
+          previousChars: repair.previousChars,
+          inputLimit: repairLimit
+        });
+      }
+      if (repair.estimatedInputTokens > repairLimit) {
+        throw Object.assign(new Error('REPAIR_TOO_LARGE'), {
+          code: 'ANALYSIS_REPAIR_TOO_LARGE',
+          detail: `estimated ${repair.estimatedInputTokens} input tokens, limit ${repairLimit}`,
+          estimatedTokens: repair.estimatedInputTokens,
+          limit: repairLimit
+        });
+      }
       const repaired = await this.requestOnce({
         context,
-        prompt: {...prompt, messages: repair.messages},
+        prompt: {...prompt, messages: repair.messages, estimatedTokens: repair.estimatedInputTokens},
         kind: 'memory-repair',
         batchIndex,
         stage,
-        outputTokens: budgetFor(prompt)
+        outputTokens
       });
       this.#assertUsableOutput(repaired);
       const repairedAnswer = extractJsonObject(repaired.content);
@@ -1502,15 +1615,35 @@ export class AnalysisRunner {
     this.#assertUsableOutput(generated);
     let evaluation = evaluateAnswer(generated.content, prompt);
     if (evaluation.ok) return {...generated, text: JSON.stringify(evaluation.sanitized)};
+    const repairLimit = this.#maxRequestInputTokens(context.provider, outputTokens);
     const repair = buildRepairMessages({
       prompt,
       previousText: generated.content,
       errors: evaluation.errors,
-      locale: prompt.locale
+      locale: prompt.locale,
+      maxInputTokens: repairLimit
     });
+    if (repair.truncated) {
+      this.logger?.warn?.({
+        event: 'ai.repair.truncated',
+        sessionId: context.sessionId,
+        kind,
+        batchIndex,
+        previousChars: repair.previousChars,
+        inputLimit: repairLimit
+      });
+    }
+    if (repair.estimatedInputTokens > repairLimit) {
+      throw Object.assign(new Error('REPAIR_TOO_LARGE'), {
+        code: 'ANALYSIS_REPAIR_TOO_LARGE',
+        detail: `estimated ${repair.estimatedInputTokens} input tokens, limit ${repairLimit}`,
+        estimatedTokens: repair.estimatedInputTokens,
+        limit: repairLimit
+      });
+    }
     generated = await this.requestOnce({
       context,
-      prompt: {...prompt, messages: repair.messages},
+      prompt: {...prompt, messages: repair.messages, estimatedTokens: repair.estimatedInputTokens},
       kind: `${kind}-repair`,
       batchIndex,
       stage,
@@ -1601,6 +1734,9 @@ export class AnalysisRunner {
     const {provider, signal} = context;
     const scheduler = this.#schedulerFor(provider);
     await this.#ensureSafeProviderUrl(provider);
+    const answerTokens = Math.max(256, Number(outputTokens) || 8000);
+    const maxCompletionTokens = this.#maxCompletionTokens(provider, answerTokens);
+    const estimatedInputTokens = Math.max(0, Number(prompt?.estimatedTokens) || 0);
 
     const maxAttempts = Math.min(3, Math.max(1, this.maxRetries + 1));
     let attempt = 0;
@@ -1627,7 +1763,11 @@ export class AnalysisRunner {
         mode,
         timeoutMs: effectiveTimeout,
         idleTimeoutMs: idleTimeout,
-        stage: stage ?? this.#retryingStage(kind)
+        stage: stage ?? this.#retryingStage(kind),
+        model: provider.modelId,
+        maxTokens: answerTokens,
+        maxCompletionTokens,
+        estimatedInputTokens
       });
       try {
         const reportProgress = (patch) => {
@@ -1657,7 +1797,8 @@ export class AnalysisRunner {
         const result = await scheduler.run(() => callProvider(provider, {
           apiKey: provider.configId ? this.configStore.secret(provider.configId) : null,
           messages: prompt.messages,
-          maxTokens: Math.max(256, Number(outputTokens) || 8000),
+          maxTokens: answerTokens,
+          maxCompletionTokens,
           responseSchema: prompt.answerSchema ?? null,
           responseFormat: prompt.answerSchema
             ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object')
@@ -1714,7 +1855,14 @@ export class AnalysisRunner {
           receivedOutput: true,
           usageKnown: Boolean(usage),
           usage,
-          metrics: result.metrics
+          metrics: result.metrics,
+          model: result.model ?? provider.modelId,
+          maxTokens: answerTokens,
+          maxCompletionTokens,
+          estimatedInputTokens,
+          requestBytes: result.requestBytes ?? null,
+          reasoningChars: result.reasoningChars ?? 0,
+          reasoningTokens: usage?.reasoningTokens ?? null
         }));
         this.state.set(context.sessionId, {
           currentRequest: null,
@@ -1751,6 +1899,12 @@ export class AnalysisRunner {
           receivedHeaders: error?.receivedHeaders === true,
           receivedOutput: error?.receivedOutput === true,
           metrics: error?.metrics ?? null,
+          model: provider.modelId,
+          maxTokens: answerTokens,
+          maxCompletionTokens,
+          estimatedInputTokens,
+          requestBytes: error?.requestBytes ?? null,
+          reasoningChars: 0,
           ...extra
         }));
         if (canceled) {

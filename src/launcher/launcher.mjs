@@ -5,6 +5,7 @@ import {createPaths, ensureDirectories} from '../server/paths.mjs';
 import {AppError} from '../shared/errors.mjs';
 import {detectSystemLocale, normalizeLocale} from '../shared/locale.mjs';
 import {APP_NAME, APP_VERSION} from '../shared/app-info.mjs';
+import {readBuildInfo, buildSummary, describeBuild} from '../shared/build-info.mjs';
 import {SettingsStore} from '../server/settings-store.mjs';
 import {createLogger} from '../server/logger.mjs';
 import {resolveDataDir, probeWritable} from './data-dir.mjs';
@@ -207,7 +208,13 @@ export async function runLauncher({
     return 2;
   }
 
-  const startupLog = createStartupLog({env, argv, version: APP_VERSION});
+  const buildInfo = readBuildInfo({env, appRoot: env.LIVE_MEMORY_APP_ROOT || null});
+  const startupLog = createStartupLog({
+    env,
+    argv,
+    version: buildInfo.version ?? APP_VERSION,
+    build: buildSummary(buildInfo)
+  });
   const utf8 = enableUtf8Console({stdout});
   const systemLocale = detectSystemLocale(env);
   // The launcher console defaults to English and does not depend on the web
@@ -329,8 +336,10 @@ export async function runLauncher({
   try {
     installProcessHandlers();
     if (options.version) {
-      stdout.write(`${APP_NAME} ${APP_VERSION}\n`);
-      startupLog.record('version', {ok: true});
+      stdout.write(`${APP_NAME} ${buildInfo.version}\n`);
+      stdout.write(`Build: ${describeBuild(buildInfo)}\n`);
+      stdout.write(`Build ID: ${buildInfo.buildId}\n`);
+      startupLog.record('version', {ok: true, build: buildSummary(buildInfo)});
       return 0;
     }
     if (options.help) {
@@ -492,7 +501,18 @@ export async function runLauncher({
     ui = createConsole({locale, stdout, stderr, unicode});
 
     logger = createSafeLogger({dir: paths.logs, startupLog});
-    logger.info({event: 'launcher.start', version: APP_VERSION, dataDir: paths.root, locale, system: systemLocale});
+    logger.info({
+      event: 'launcher.start',
+      version: buildInfo.version ?? APP_VERSION,
+      buildId: buildInfo.buildId,
+      commit: buildInfo.commit,
+      builtAt: buildInfo.builtAt,
+      buildMode: buildInfo.mode,
+      buildVerified: buildInfo.verified,
+      dataDir: paths.root,
+      locale,
+      system: systemLocale
+    });
 
     // The manifest normally guarantees elevation before this point. This check
     // covers manifest bypass/filtered-token environments and gives a localized
@@ -522,7 +542,8 @@ export async function runLauncher({
       }
     }
 
-    ui.banner({name: APP_NAME, version: APP_VERSION, productLine: t(locale, 'productLine')});
+    ui.banner({name: APP_NAME, version: buildInfo.version ?? APP_VERSION, productLine: t(locale, 'productLine')});
+    ui.info(`build: ${describeBuild(buildInfo)}`);
     ui.info(t(locale, 'checkingEnvironment'));
     ui.info(t(locale, 'environmentOk'));
     if (dataDirInfo.fallback) {
@@ -648,6 +669,7 @@ export async function runLauncher({
         now,
         systemLocale,
         env,
+        buildInfo,
         // Relocation changes the data folder while the process keeps running.
         // Move the single-instance lock with it so a second launch cannot write
         // the new folder at the same time.
@@ -674,7 +696,9 @@ export async function runLauncher({
                   pid: process.pid,
                   port: server?.port ?? null,
                   url: server?.url ?? null,
-                  version: APP_VERSION,
+                  version: buildInfo.version ?? APP_VERSION,
+                  buildId: buildInfo.buildId,
+                  commit: buildInfo.commit,
                   startedAt: new Date(now()).toISOString()
                 }, null, 2)}\n`, 'utf8');
               } catch {

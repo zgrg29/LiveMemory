@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
+import {readGitCommit} from '../src/shared/build-info.mjs';
 import {manifestLevel, setManifestLevel} from './pe-manifest.mjs';
 
 /**
@@ -61,19 +62,87 @@ async function walk(directory) {
 await walk('src');
 files.sort();
 
-const hash = createHash('sha256');
+/**
+ * These modules are the reliability fix. A build that does not contain them
+ * must fail here instead of producing another "version looks right" EXE.
+ */
+const REQUIRED_MODULES = [
+  'src/ai/api/runner.mjs',
+  'src/ai/providers/adapters.mjs',
+  'src/ai/batching/tokens.mjs',
+  'src/ai/runtime/stream.mjs',
+  'src/ai/runtime/attempt.mjs',
+  'src/ai/runtime/scheduler.mjs',
+  'src/shared/build-info.mjs'
+];
+for (const required of REQUIRED_MODULES) {
+  if (!files.includes(required)) throw new Error(`required module missing from build: ${required}`);
+}
+
+const fileHashes = {};
+const bootstrapFile = 'scripts/sea-bootstrap.cjs';
+const bootstrapData = await readFile(bootstrapFile);
+const bootstrapHash = createHash('sha256')
+  .update(bootstrapFile)
+  .update(bootstrapData)
+  .digest('hex');
+const sourceHash = createHash('sha256');
+for (const file of files) {
+  const data = await readFile(file);
+  fileHashes[file] = createHash('sha256').update(data).digest('hex');
+  sourceHash.update(file).update(data);
+}
+sourceHash.update(bootstrapFile).update(bootstrapData);
+const sourceDigest = sourceHash.digest('hex');
+const assetHash = sourceDigest.slice(0, 20);
+const commit = readGitCommit(root);
+const shortCommit = commit ? commit.slice(0, 7) : null;
+const builtAt = new Date().toISOString();
+const buildId = `${shortCommit ?? 'nogit'}.${sourceDigest.slice(0, 8)}`;
+const buildInfo = {
+  version: APP_VERSION,
+  commit,
+  shortCommit,
+  builtAt,
+  sourceHash: sourceDigest,
+  bootstrapHash,
+  assetHash,
+  buildId,
+  node: process.versions.node,
+  files: files.length + 1,
+  requiredModules: REQUIRED_MODULES
+};
+await writeFile('build/build-info.json', `${JSON.stringify(buildInfo, null, 2)}\n`);
+fileHashes['build-info.json'] = createHash('sha256')
+  .update(await readFile('build/build-info.json'))
+  .digest('hex');
+files.push('build-info.json');
+
 const assets = {};
 for (const file of files) {
-  hash.update(file).update(await readFile(file));
+  if (file === 'build-info.json') continue;
   assets[file] = path.resolve(file);
 }
 const manifest = {
   version: APP_VERSION,
-  hash: hash.digest('hex').slice(0, 20),
-  files
+  hash: assetHash,
+  files,
+  fileHashes,
+  build: {
+    version: APP_VERSION,
+    commit,
+    shortCommit,
+    builtAt,
+    sourceHash: sourceDigest,
+    bootstrapHash,
+    assetHash,
+    buildId,
+    requiredModules: REQUIRED_MODULES
+  }
 };
 await writeFile('build/manifest.json', JSON.stringify(manifest));
 assets['manifest'] = path.resolve('build/manifest.json');
+assets['build-info.json'] = path.resolve('build/build-info.json');
 
 await writeFile('build/sea-config.json', JSON.stringify({
   main: 'scripts/sea-bootstrap.cjs',
@@ -124,9 +193,26 @@ await copyFile('LICENSE', 'dist/LICENSE');
 await copyFile('README.md', 'dist/README.md');
 
 const {size} = await stat(exe);
-const sha256 = createHash('sha256').update(await readFile(exe)).digest('hex');
+const exeBytes = await readFile(exe);
+const sha256 = createHash('sha256').update(exeBytes).digest('hex');
+/**
+ * Prove the injected blob actually carries this build, not just that the build
+ * script ran. The manifest and the required module names are plain strings in
+ * the SEA asset table; both must be present in the final EXE.
+ */
+for (const needle of [buildId, 'src/ai/batching/tokens.mjs', 'src/ai/runtime/stream.mjs']) {
+  if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {
+    throw new Error(`built EXE does not contain expected build marker: ${needle}`);
+  }
+}
 console.log(`Built ${exe}`);
-console.log(`  size:   ${(size / 1024 / 1024).toFixed(1)} MB`);
-console.log(`  sha256: ${sha256}`);
-console.log(`  assets: ${files.length} files, hash ${manifest.hash}`);
-console.log(`  manifest: ${manifestLevel(await readFile(exe))}`);
+console.log(`  size:    ${(size / 1024 / 1024).toFixed(1)} MB`);
+console.log(`  sha256:  ${sha256}`);
+console.log(`  buildId: ${buildId}`);
+console.log(`  commit:  ${commit ?? 'unknown'}`);
+console.log(`  builtAt: ${builtAt}`);
+console.log(`  source:  ${sourceDigest}`);
+console.log(`  assets:  ${files.length} files, asset hash ${assetHash}`);
+console.log(`  modules: ${REQUIRED_MODULES.length} required reliability modules present`);
+console.log(`  embedded build marker: verified`);
+console.log(`  manifest: ${manifestLevel(exeBytes)}`);

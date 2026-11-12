@@ -115,7 +115,14 @@ export function attemptRecord({
   retry = false,
   nextRetryAt = null,
   usage = null,
-  metrics = null
+  metrics = null,
+  model = null,
+  maxTokens = null,
+  maxCompletionTokens = null,
+  estimatedInputTokens = null,
+  requestBytes = null,
+  reasoningChars = 0,
+  reasoningTokens = null
 } = {}) {
   return {
     kind: kind ?? null,
@@ -134,6 +141,17 @@ export function attemptRecord({
     retry: retry === true,
     nextRetryAt: nextRetryAt ?? null,
     usageKnown: Boolean(usage),
+    model: model ?? null,
+    maxTokens: maxTokens === null ? null : Math.max(0, Math.round(Number(maxTokens))),
+    maxCompletionTokens: maxCompletionTokens === null
+      ? null
+      : Math.max(0, Math.round(Number(maxCompletionTokens))),
+    estimatedInputTokens: estimatedInputTokens === null
+      ? null
+      : Math.max(0, Math.round(Number(estimatedInputTokens))),
+    requestBytes: requestBytes === null ? null : Math.max(0, Math.round(Number(requestBytes))),
+    reasoningChars: Math.max(0, Math.round(Number(reasoningChars) || 0)),
+    reasoningTokens: reasoningTokens === null ? null : Math.max(0, Math.round(Number(reasoningTokens) || 0)),
     timeToFirstByteMs: metrics?.timeToFirstByteMs ?? null,
     timeToFirstTokenMs: metrics?.timeToFirstTokenMs ?? null,
     streamDurationMs: metrics?.streamDurationMs ?? null,

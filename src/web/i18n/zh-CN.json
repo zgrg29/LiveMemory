@@ -606,6 +606,9 @@
         "ANALYSIS_TASK_TIMEOUT": "任务已达到总时间预算，后续请求已停止；已完成批次已保留。",
         "AUTO_OUTPUT_DEGENERATED": "模型输出重复退化且不完整，未保存结果。",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "批次结果太多，无法一次汇总；批次结果已保留。请降低批次上限或改用上下文更大的模型。",
+        "ANALYSIS_CONTEXT_TOO_SMALL": "模型上下文太小，固定提示词与最低批次内容放不下；请换用上下文更大的模型或提高批次上限。",
+        "ANALYSIS_MEMORY_VIEWER_TOO_LARGE": "有观众的长篇摘录超过单次请求硬上限；观众未被丢弃，请降低摘录上限或换用上下文更大的模型。",
+        "ANALYSIS_REPAIR_TOO_LARGE": "修正请求会超过单次请求上限，未发送；批次结果已保留。",
         "ANALYSIS_INCOMPLETE": "任务未完成，未保存完整报告。",
         "ANALYSIS_AGGREGATE_NOT_READY": "还有批次结果未完成，暂不能汇总。",
         "ANALYSIS_PACKAGE_MISSING": "本地分析包缺失，无法继续该批次。",
@@ -1173,8 +1176,8 @@
         "timeoutHint": "等待响应头或流式数据的最长时间；持续有输出时不会因总时长被截断。默认 180 秒。",
         "timeoutShort": "超时 {seconds}s",
         "batchInput": "单批输入上限（tokens，留空自动）",
-        "batchInputHint": "留空时按模型上下文自动选择（约 2,000–32,000）。这是每个请求的输入预算，不是输出预算。",
-        "batchInputAuto": "自动"
+        "batchInputHint": "留空时为 24,000（输入 + 输出需放进模型上下文）。固定提示词开销会单独计算，聊天内容至少占一半预算；这不是输出预算。",
+        "batchInputAuto": "自动（24,000）"
       },
       "capability": {
         "memory": "能力：单场 + 长期画像",
@@ -1318,6 +1321,10 @@
     "about": {
       "title": "关于",
       "version": "版本",
+      "buildId": "构建标识",
+      "commit": "代码提交",
+      "builtAt": "构建时间",
+      "buildUnknown": "未知（开发运行）",
       "license": "许可证",
       "repo": "项目主页",
       "runtime": "本地服务",

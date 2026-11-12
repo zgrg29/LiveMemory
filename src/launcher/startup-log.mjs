@@ -68,6 +68,7 @@ export function createStartupLog({
   dataDir = null,
   now = () => new Date(),
   version = null,
+  build = null,
   platform = process.platform,
   arch = process.arch,
   exePath = process.execPath,
@@ -159,6 +160,7 @@ export function createStartupLog({
 
   record('startup.begin', {
     version,
+    build,
     platform,
     arch,
     node: process.versions.node,
@@ -231,6 +233,7 @@ export function createStartupLog({
         writeFileSync(reportFile, `${JSON.stringify(redactValue({
           at: now().toISOString(),
           version,
+          build,
           platform,
           arch,
           node: process.versions.node,

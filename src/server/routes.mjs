@@ -120,7 +120,13 @@ function statusPayload(deps) {
   return {
     server: {
       name: APP_NAME,
-      version: APP_VERSION,
+      version: deps.buildInfo?.version ?? APP_VERSION,
+      buildId: deps.buildInfo?.buildId ?? null,
+      commit: deps.buildInfo?.commit ?? null,
+      shortCommit: deps.buildInfo?.shortCommit ?? null,
+      builtAt: deps.buildInfo?.builtAt ?? null,
+      buildMode: deps.buildInfo?.mode ?? null,
+      buildVerified: deps.buildInfo?.verified ?? null,
       port: deps.getPort(),
       startedAt,
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000)
@@ -418,7 +424,9 @@ export function buildRoutes() {
         sendJson(res, 200, {
           status: 'ok',
           name: APP_NAME,
-          version: APP_VERSION,
+          version: deps.buildInfo?.version ?? APP_VERSION,
+          buildId: deps.buildInfo?.buildId ?? null,
+          commit: deps.buildInfo?.commit ?? null,
           port: deps.getPort(),
           startedAt: deps.startedAt
         });
@@ -431,9 +439,19 @@ export function buildRoutes() {
         sendJson(res, 200, {
           app: {
             name: APP_NAME,
-            version: APP_VERSION,
+            version: deps.buildInfo?.version ?? APP_VERSION,
             homepage: APP_HOMEPAGE,
-            startedAt: deps.startedAt
+            startedAt: deps.startedAt,
+            build: deps.buildInfo ? {
+              buildId: deps.buildInfo.buildId,
+              commit: deps.buildInfo.commit,
+              shortCommit: deps.buildInfo.shortCommit,
+              builtAt: deps.buildInfo.builtAt,
+              assetHash: deps.buildInfo.assetHash,
+              sourceHash: deps.buildInfo.sourceHash,
+              mode: deps.buildInfo.mode,
+              verified: deps.buildInfo.verified
+            } : null
           },
           ...effectiveSettings(deps),
           status: statusPayload(deps),
