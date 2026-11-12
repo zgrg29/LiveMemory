@@ -41,6 +41,35 @@ export const MIN_CONTENT_SHARE = 0.5;
 /** Safety margin between input + output and the declared context window. */
 export const CONTEXT_SAFETY_TOKENS = 500;
 
+/** DashScope thinking headroom; see resolveMaxCompletionTokens. */
+export const THINKING_RESERVE_TOKENS = 16000;
+export const MAX_COMPLETION_TOKENS = 96000;
+
+/**
+ * Total output cap (answer + thinking) for providers whose `max_tokens` only
+ * limits the answer. qwen3.8-max defaults to a 131k thinking budget, so an
+ * explicit total cap is required to keep one attempt bounded. The cap never
+ * disables thinking; a provider that still needs more reports
+ * `finish_reason=length` instead of generating indefinitely.
+ */
+export function resolveMaxCompletionTokens({
+  providerId = null,
+  answerTokens = 8000,
+  estimatedInputTokens = 0,
+  contextLength = null,
+  thinkingReserve = THINKING_RESERVE_TOKENS,
+  maxCompletionTokens = MAX_COMPLETION_TOKENS
+} = {}) {
+  if (providerId !== 'dashscope') return null;
+  const answer = Math.max(64, Number(answerTokens) || 8000);
+  const desired = answer + Math.max(0, Number(thinkingReserve) || 0);
+  const context = Number(contextLength);
+  const byContext = Number.isFinite(context) && context > 0
+    ? context - Math.max(0, Number(estimatedInputTokens) || 0) - CONTEXT_SAFETY_TOKENS
+    : maxCompletionTokens;
+  return Math.max(answer, Math.min(desired, byContext, maxCompletionTokens));
+}
+
 /** Rough cost of the system prompt + wrapper lines (not the instructions). */
 const PROMPT_WRAPPER_TOKENS = 200;
 

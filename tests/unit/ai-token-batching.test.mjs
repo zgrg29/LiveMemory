@@ -8,6 +8,7 @@ import {
   planSessionMessageBatches,
   promptOverheadTokens,
   resolveBatchInputTokens,
+  resolveMaxCompletionTokens,
   resolveOutputTokens
 } from '../../src/ai/batching/tokens.mjs';
 import {assignMemoryOnlyBatches} from '../../src/ai/export/split-jobs.mjs';
@@ -255,4 +256,24 @@ test('a single viewer above the hard request cap fails explicitly instead of bei
     overheadTokens: 5000,
     maxSingleViewerTokens: 48000
   }), (error) => error.code === 'ANALYSIS_MEMORY_VIEWER_TOO_LARGE');
+});
+
+test('DashScope total completion is bounded without disabling thinking', () => {
+  assert.equal(resolveMaxCompletionTokens({
+    providerId: 'dashscope',
+    answerTokens: 8000,
+    estimatedInputTokens: 24000,
+    contextLength: null
+  }), 24000);
+  assert.equal(resolveMaxCompletionTokens({
+    providerId: 'custom',
+    answerTokens: 8000
+  }), null);
+  // A declared 32k context still fits the cap to the remaining room.
+  assert.equal(resolveMaxCompletionTokens({
+    providerId: 'dashscope',
+    answerTokens: 8000,
+    estimatedInputTokens: 24000,
+    contextLength: 32000
+  }), 8000);
 });

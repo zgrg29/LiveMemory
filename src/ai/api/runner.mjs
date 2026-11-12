@@ -32,6 +32,7 @@ import {
 import {
   estimateTokens,
   resolveBatchInputTokens,
+  resolveMaxCompletionTokens,
   resolveOutputTokens
 } from '../batching/tokens.mjs';
 import {
@@ -87,15 +88,6 @@ const MAX_CONCURRENCY = 8;
  */
 const MAX_MEMORY_BATCHES = Math.ceil(MAX_ANALYSIS_VIEWERS / 10) + 1;
 
-/**
- * Thinking-mode guard for DashScope. Their documented `max_tokens` limits only
- * the answer, while Chain-of-Thought is billed separately and qwen3.8-max
- * defaults to a very large thinking budget. Sending `max_completion_tokens`
- * bounds answer+thinking without disabling thinking; 8k leaves enough room for
- * JSON extraction while keeping a single request bounded.
- */
-const THINKING_RESERVE_TOKENS = 8000;
-const MAX_COMPLETION_TOKENS = 96000;
 /** Repair and aggregate must never recreate an unbounded prompt. */
 const MAX_REPAIR_INPUT_TOKENS = 48000;
 const MAX_AGGREGATE_INPUT_TOKENS = 48000;
@@ -887,17 +879,6 @@ export class AnalysisRunner {
       ? context - Math.max(1024, Number(outputReserve) || 8000) - 500
       : MAX_AGGREGATE_INPUT_TOKENS;
     return Math.max(2000, Math.min(MAX_AGGREGATE_INPUT_TOKENS, byContext));
-  }
-
-  /**
-   * DashScope `max_tokens` limits the answer only; thinking is billed on top.
-   * A bounded `max_completion_tokens` keeps a single attempt from silently
-   * generating tens of thousands of thinking tokens at 36 CNY/M.
-   */
-  #maxCompletionTokens(provider, answerTokens) {
-    if (provider.providerId !== 'dashscope') return null;
-    const answer = Math.max(64, Number(answerTokens) || 8000);
-    return Math.min(MAX_COMPLETION_TOKENS, answer + THINKING_RESERVE_TOKENS);
   }
 
   async runSession(context) {
@@ -1735,8 +1716,13 @@ export class AnalysisRunner {
     const scheduler = this.#schedulerFor(provider);
     await this.#ensureSafeProviderUrl(provider);
     const answerTokens = Math.max(256, Number(outputTokens) || 8000);
-    const maxCompletionTokens = this.#maxCompletionTokens(provider, answerTokens);
     const estimatedInputTokens = Math.max(0, Number(prompt?.estimatedTokens) || 0);
+    const maxCompletionTokens = resolveMaxCompletionTokens({
+      providerId: provider.providerId,
+      answerTokens,
+      estimatedInputTokens,
+      contextLength: provider.contextLength
+    });
 
     const maxAttempts = Math.min(3, Math.max(1, this.maxRetries + 1));
     let attempt = 0;
