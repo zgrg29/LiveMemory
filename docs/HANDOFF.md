@@ -13,7 +13,7 @@
 - 构建脚本写入 commit / sourceHash（含 `scripts/sea-bootstrap.cjs`）/ assetHash / 每文件 SHA-256；断言 7 个可靠性模块存在；构建后检查 EXE 内含 buildId 与模块名。
 - bootstrap 复用缓存前逐文件校验 169 个 SHA-256；不一致 `app-root.stale` 后删除重解压；解压后再校验；结果写入 `build.identity` 日志。
 - 启动日志、`--version`、设置页「关于」、`/api/health`、`/api/bootstrap`、`/api/status` 均显示 build。
-- **最终构建**：`f5bbd685abe2` / commit `090aadf` / SHA-256 `06e7ecb…` / 169 assets / requireAdministrator。asInvoker 副本实际启动后 `/api/health`、`/api/bootstrap` 返回同一 build，第二次启动 `filesVerified=169`。
+- **最终构建**：`89bf47ac620e` / commit `b101bd0` / SHA-256 `aa3d4110…` / 169 assets / requireAdministrator。asInvoker 副本实际启动后 `/api/health`、`/api/bootstrap` 返回同一 build，第二次启动 `filesVerified=169`。
 
 ### 0.2 分批预算
 
@@ -33,13 +33,14 @@
 - **597 passed / 0 failed**（约 93 秒）。新增 build-info、adapter output、repair guard；batching 增加 889/124 viewer/硬上限；bootstrap 增加缓存篡改重解压。
 - 未验证：真实付费 API、真实 UAC 双击、`max_completion_tokens` 在百炼的实际接受度、889 消息真实回放。
 
-### 0.5 任务时间预算（真实测试后）
+### 0.5 任务完成优先（最终修订）
 
 - 真实路径：15:48:40 第 7/7 批后已发出 aggregate；15:55:58 aggregate 在 435,770 ms 被 `maxTotalMs`（剩余任务预算）中止，20:00 标记 `ANALYSIS_TASK_TIMEOUT`。不是阻止汇总启动。
-- 默认 60 分钟；45 分钟软提醒；60 分钟只停止启动新批次，在途流式与 aggregate 按首响应/空闲超时继续并保存。
-- `ANALYSIS_TASK_PAUSED` + `paused` 可恢复；用户取消仍立即 `canceled`；单请求不再用任务剩余时间缩短超时；已发送超时不重发。
-- 7/7 后 resume 只发 aggregate；状态/UI 增加 `taskElapsedMs`、`taskBudgetState`、`waitingAggregate`、`pending*Batches`、`resumeReason` 与预算提示。
-- 测试 **603 passed / 0 failed**；新增 `v14-task-budget.test.mjs`（20m/45m/60m、在途保存、7/7 后汇总、汇总-only 恢复）。
+- **删除任务时间上限**：`createTaskBudget`、soft/hard deadline、`maxTotalMs`、按剩余时间缩短请求全部移除；任务可任意久运行。
+- **删除费用预算**：预算输入/校验/确认、累计费用停止、价格未知阻止、免费/付费分类全部移除；价格仅可选展示。
+- 单请求只保留首响应 `timeoutMs` 与 60 秒流空闲；超时/401/402/404/429/5xx/网络 → `needs_action`，已完成批次保留，可继续；用户取消立即 `canceled`。
+- 规模：删除总批次/总消息/总观众拒绝；按单批 Token 自动拆分；仅保留单批 32k、单观众 48k、1M 消息/200k 观众极端内存保护。
+- 测试 **603 passed / 0 failed**；新增可选价格与 2500 观众无总批次上限；`v14-task-budget` 改为无时间上限 + timeout needs_action + 汇总-only 恢复。
 
 ## 1. 上一轮：v0.13.1 可靠性专项
 
@@ -47,7 +48,7 @@
 
 - `TimeoutError`、外部 `AbortError`（取消/暂停）、网络、429、5xx、4xx、无效响应、流中断现在由 adapter 分类；取消绝不重试。
 - 已发出且超时的长请求**默认不自动重发**；只有连接阶段网络错误允许一次安全重试；429/5xx 保留有界退避。
-- 任务级 20 分钟预算（**v0.13.2-r2 已改为 60 分钟、45 分钟软提醒**）；超时不再中止在途请求。
+- 任务级 20 分钟预算（**最终修订已彻底移除**；现在只有单请求首响应/空闲超时）。
 - `runPool` 失败只停止调度新批次，在途兄弟批次继续完成并导入；恢复只处理未完成批次。
 - 每次尝试写 `ai.request.attempt` 脱敏日志；状态新增 `attemptStats`、`currentRequest`、`lastRequest`、`taskDeadlineAt`、`saved`。
 
@@ -209,7 +210,7 @@ GET/POST /api/ai/auto/services|status|run|cancel
 13. 历史报告与长期画像仍可只读；旧 1.0–1.2.0 结果仍可读。
 14. 三语键一致；前端禁止 `innerHTML`、`alert()`、硬编码可见文案。
 15. **已发出的长请求超时后不要自动重发；用户取消/暂停绝不重试。** 超时、截断、退化、流中断都不是“重试就能好”。
-16. **任务默认 60 分钟、45 分钟软提醒；达到后只停止启动新批次，在途请求与 final aggregate 按自身超时完成；未完成时进入可恢复 paused；`runPool` 失败只停调度，不得 abort 在途兄弟批次。**
+16. **任务完成优先：没有任务时间/费用/批次总量上限；只有单请求首响应/空闲超时、单批 Token 上限与极端内存保护。错误进入 needs_action 并保留已完成批次；用户取消立即生效；`runPool` 失败只停调度，不得 abort 在途兄弟批次。**
 17. **多批 session 必须有 final aggregate 才 complete；汇总证据必须 `{batch, seq}`。**
 18. **批次输入按 token 预算（默认 8k，可配 2k–32k）；不得丢消息或观众；同一观众不拆批。**
 19. **Streaming 由程序自动选择；只缓冲，完成后仍校验/事务导入；不兼容最多回退一次。**

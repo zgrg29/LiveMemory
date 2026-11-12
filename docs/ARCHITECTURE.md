@@ -521,18 +521,16 @@ node.exe (官方运行时，含 node:sqlite)
     -> AnalysisRunner -> session job -> provider -> validate -> import
     -> 不允许 mode=memory/both
 
-付费模型
-  POST /api/ai/analyze/run {mode:session|memory|both, configId, optInMemory, confirmBilling, budget}
-    -> 权限门：
-       session 需要 capabilities.session
-       memory 还需要 paid + pricing + capabilities.memory + optInMemory
-       paid/unknown 需要 confirmBilling
+已配置模型（最终修订）
+  POST /api/ai/analyze/run {mode:session|memory|both, configId}
+    -> 权限门：session 需要 capabilities.session；memory 还需要 capabilities.memory
+       价格、免费/付费、optInMemory、confirmBilling、budget 不参与
     -> session job 先执行/保存
     -> memory job：createViewerMemoryJob() 每批：
        memory_context + viewer_excerpts -> 模型返回 ref -> 本地映射稳定 ID
        -> validate -> import -> ai_results.analysis_mode=memory
     -> 报告读模型排除 memory-only 结果
-    -> 暂停/继续/取消；已导入批次跳过；失败保留已保存结果
+    -> 暂停/继续/取消；已导入批次跳过；needs_action 保留已保存结果
 
 Provider 配置
   config/ai-providers.json（无密钥）

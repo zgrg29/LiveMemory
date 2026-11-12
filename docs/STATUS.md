@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-12（v0.13.2：构建可验证、分批预算、60/45 分钟任务时间预算；603 tests；EXE 已实跑验证 buildId）
+最后更新：2026-11-12（v0.13.2：构建可验证、分批预算、任务完成优先；无任务时间/费用上限；603 tests；EXE 已实跑验证 buildId）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -22,14 +22,14 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | 91.6 MB |
-| SHA-256 | `06e7ecb29e835378d65d94c193158392a06a9c646e67e3bdb46c0d4030ba640c` |
-| commit | `090aadf8cf51c54ebd56557f887d547338b780be` |
-| buildId | `f5bbd685abe2` |
-| asset hash | `f5bbd685abe2032b237b` |
-| builtAt | 2026-11-12T09:41:52.970Z（17:41:52 +08） |
+| SHA-256 | `aa3d41105af90eeed8608bb49caf018f17b5f0dbaa1aef0c9b297a3b870ba61d` |
+| commit | `b101bd01bc227fd85abaa862873eb0ce61e792cd` |
+| buildId | `89bf47ac620e` |
+| asset hash | `89bf47ac620eed9ed26c` |
+| builtAt | 2026-11-12T10:47:20.675Z（18:47:20 +08） |
 | 资源 | 169 files；7 个必需模块；RT_MANIFEST requireAdministrator |
 
-本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=f5bbd685abe2`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
+本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=89bf47ac620e`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
 
 ### 0.14.2 分批预算（真实 889 条消息离线规划）
 
@@ -63,7 +63,7 @@
 - 新增：`tests/unit/build-info.test.mjs`、`ai-adapter-output.test.mjs`、`ai-repair-guard.test.mjs`；`ai-token-batching.test.mjs` 增加 889 消息 / 124 观众 / 硬上限；`bootstrap.test.mjs` 增加缓存篡改重解压。
 - 未做：真实付费 API（含 `max_completion_tokens` 与思考模式行为）、真实 UAC 双击、真实 889 消息付费回放。
 
-### 0.14.5 任务时间预算（2026-11-12 真实测试后）
+### 0.14.5 任务完成优先（2026-11-12 最终修订）
 
 **真实触发路径（已确认）**：
 
@@ -71,16 +71,17 @@
 - 不是“阻止启动汇总”：汇总已经启动；是 `requestOnce` 把 `maxTotalMs` 设为剩余任务预算（当时约 438 秒），在途流式请求被任务预算中止。
 - 7/7 批次全部保存；只有 final aggregate 丢失。
 
-**修复**：
+**最终语义（取代 r2 的 60/45 分钟）**：
 
-- 默认任务预算 **60 分钟**；**45 分钟**软提醒；60 分钟停止启动**新批次**，在途请求与 final aggregate 按自身首响应/空闲超时继续并保存。
-- 单请求不再使用 `maxTotalMs`，只保留 provider `timeoutMs`（首响应）与 60 秒流空闲；已发出的超时请求仍不自动重发。
-- 到达预算且仍有未完成批次 → `ANALYSIS_TASK_PAUSED` + `status=paused`，可恢复；用户取消仍是 `canceled`，立即 abort。
-- 只剩 final aggregate 时不受硬预算阻断；7/7 后 resume 只发 aggregate。
-- 状态新增 `taskElapsedMs`、`taskSoftDeadlineAt`、`taskBudgetState`（normal/soft/hard/paused）、`taskSoftBudgetReached`、`taskBudgetReached`、`waitingAggregate`、`pendingSessionBatches`、`pendingMemoryBatches`、`resumeReason`。
-- UI 显示已运行时间、阶段、批次、等待汇总、时间预算状态与“可继续”；暂停态显示“继续不会重复已完成批次”。
+- **删除任务级时间上限**：不再有 `createTaskBudget`、`taskTimeoutMs`、soft/hard deadline、`maxTotalMs`、按剩余时间缩短请求；任务可运行任意久。
+- **删除费用预算**：删除预算输入、预算校验、预算确认、按累计费用停止、价格未知阻止分析、免费/付费模型分类。
+- **只保留单请求技术超时**：首响应 `timeoutMs`（默认 180 秒）与流式 60 秒空闲；单请求超时不再让整个任务不可恢复，而是进入 `needs_action`，已完成批次保留，可继续重试未完成批次。
+- **错误分类**：401/403/402/404/429/5xx/超时/网络 → `needs_action`（保留进度、可继续）；用户取消 → `canceled`（立即 abort）；Schema/导入错误 → `failed`（已完成批次仍保留）。
+- **规模**：删除 `MAX_MEMORY_BATCHES`、`ANALYSIS_TOO_MANY_VIEWERS`、`ANALYSIS_TOO_LARGE` 等产品总量拒绝；消息/观众/批次按单请求 Token 预算自动拆分。仅保留 1,000,000 消息 / 200,000 观众的极端内存保护，以及单批 32k 输入、单观众 48k 硬上限等技术限制。
+- **价格可选**：`pricing` 为空或只填一项 → 正常分析、只统计 Token、不计算总费用；完整填写 → 按实际 usage 计算并展示。价格不参与任何 gate。
+- **状态/UI**：`needs_action`、`canResume`、`taskElapsedMs`、`waitingAggregate`、`pending*Batches`；UI 移除预算/费用确认/免费付费提示，显示已运行时间、阶段、批次、等待汇总、需要处理与继续。
 
-**测试**：603 passed / 0 failed；新增 `tests/integration/v14-task-budget.test.mjs`（20 分钟仍运行、45 分钟软提醒、60 分钟停机、在途完成保存、7/7 后汇总、汇总-only 恢复），`tests/unit/ai-attempts.test.mjs` 增加 soft/hard 状态。
+**测试**：603 passed / 0 failed；新增 `v14-pricing-optional`（空/完整/部分价格）、`v14-task-budget` 改为“无时间上限 + timeout needs_action + 汇总-only 恢复”、2500 观众无总批次上限。
 
 ## 0.13 v0.13.1 可靠性专项（2026-11-12）
 
@@ -94,7 +95,7 @@
 | B1 超时被当成可重试，自动重发 2 次 | `timeout` 明确 `retryable:false`；已发出的长请求超时后默认**不自动重试** |
 | B2 `AbortError`/`TimeoutError` 合并 | adapter 区分 `canceled` / `timeout` / `network` / `rate_limit` / `server` / `client` / `invalid_response` / `stream_interrupted`；取消绝不重试 |
 | B3 超时不降速 | 超时不再触发同批重发脉冲；429/5xx 仍按各自的退避与 `Retry-After` |
-| B4 无任务级总时限 | 新增 20 分钟任务预算（v0.13.2-r2 已改为 60 分钟、45 分钟软提醒）；达到后停止新批次并保留已完成批次 |
+| B4 无任务级总时限 | 历史 20 分钟预算已在最终修订中**彻底删除**；任务只受单请求首响应/空闲超时约束 |
 | B5 无 attempt 级状态/日志 | 每次尝试写 `ai.request.attempt`（脱敏：attempt、耗时、错误类型、HTTP status、是否收到响应头/输出、是否重试、usage 是否存在）；状态含 `attemptStats`、`currentRequest`、`lastRequest` |
 | B6 `runPool` 首个失败中止其他请求 | 失败只停止调度新批次；在途兄弟批次继续完成并导入；最后抛第一个错误 |
 | B7 统计按配置/进程 | 任务级 `attemptStats` 与按 `configId` 的 `requestStats` 并存；成功/失败/取消/超时/重试分开 |
@@ -252,8 +253,7 @@
 | --- | --- | --- | --- |
 | 手动 AI | 导出单场包 → 任意 AI → 导入 | 单场总结/话题/情绪/互动/精彩片段/建议 | 不需要 Key；禁止 `viewer_memory_updates` |
 | 匿名免费 AI | OVHcloud `gpt-oss-20b` | 单场报告 | 实验性；限流/超时/格式失败独立显示；不自动切换付费 |
-| API Key 免费模型 | 用户配置的 `api_free` 模型 | 单场报告 | 即使有 Key 也不解锁长期画像 |
-| 付费模型 | 已配置且通过能力验证 | 单场 + 长期画像 | 必须付费状态、价格已知、用户明确 opt-in、预算/确认 |
+| 任意已配置模型 | 已配置且通过能力验证 | 单场 + 长期画像（若 memory 能力通过） | 最终修订：价格、免费/付费分类、预算均不参与；只要求技术能力 |
 
 - 新增 `session` 与 `memory` 两种独立任务；`both` 先保存单场报告，再执行画像。单场失败不影响画像，画像失败不覆盖单场报告。
 - 手动单场包不再包含 `memory_context.json`、`viewer_excerpts.jsonl`、全量 `viewer_context.json`，也不要求 `viewer_profiles` / `viewer_memory_updates`。
@@ -271,8 +271,9 @@
 
 - 能力检测层级：network → auth → text → json → session → memory；只有 memory 探针通过（多观众 ref、证据归属、零发言、多语言）才写 `capabilities.memory=true`。
 - OpenRouter 价格按官方 `pricing.prompt/completion` 换算；未知价格保持 unknown，不按 Provider 名称推断。
-- 费用未知/付费模型请求前必须 `confirmBilling`；长期画像另需 `optInMemory`、付费状态、价格与能力验证。
-- 单任务预算：请求前估算、请求后累计 usage；达到上限停止后续请求；不自动切换到更贵模型。
+- 价格完全可选；费用未知、部分价格、免费/付费分类、预算、`confirmBilling`、`optInMemory` 均不再阻止请求或长期画像。
+- 长期画像只要求 `capabilities.memory=true`（以及 session 能力）。
+- 没有任务时间/费用/总批次上限；只有单请求超时与单批 Token 技术限制（最终修订）。
 - 能力检测结果写入配置并追加 `ai_provider_tests` 审计表（provider/region/model/time/type）。
 
 ### 0.4 手动单场
@@ -545,9 +546,9 @@ POST /api/ai/auto/cancel      {sessionId}
 
 - **v0.13.2 已构建并实际启动验证（asInvoker 副本）**：`node scripts/build-windows.mjs`。
   - 大小 **91.6 MB**
-  - SHA-256 `06e7ecb29e835378d65d94c193158392a06a9c646e67e3bdb46c0d4030ba640c`
-  - commit `090aadf8cf51c54ebd56557f887d547338b780be`
-  - buildId `f5bbd685abe2`，资源哈希 `f5bbd685abe2032b237b`
+  - SHA-256 `aa3d41105af90eeed8608bb49caf018f17b5f0dbaa1aef0c9b297a3b870ba61d`
+  - commit `b101bd01bc227fd85abaa862873eb0ce61e792cd`
+  - buildId `89bf47ac620e`，资源哈希 `89bf47ac620eed9ed26c`
   - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **实际启动验证**：本会话非提升，使用同一二进制临时改 manifest 为 asInvoker 后启动；`/api/health`、`/api/bootstrap` 返回上面的 buildId/commit，`mode=packaged`、`verified=true`；启动日志 `startup.begin` 记录同一 build；第二次启动复用缓存并校验 169 个文件。
@@ -591,7 +592,7 @@ POST /api/ai/auto/cancel      {sessionId}
 20. 运行失败只写状态/错误码；不删除已完成结果、不覆盖已有记忆；单场报告成功时画像失败只标 partial。
 21. 手动导入失败不再由 UI 修复；历史结果仍可只读，重复导入仍幂等。
 22. **超时/取消语义**：`TimeoutError` 与 `AbortError` 必须分开；已发出的长请求超时后默认不自动重发；用户取消/暂停绝不重试。
-23. **任务级时间预算**：默认 60 分钟、45 分钟软提醒；到达后停止启动新批次，但在途请求与 final aggregate 按自身超时完成并保存；未完成时进入可恢复 `paused`，不得无限重试。
+23. **任务完成优先**：没有任务时间/费用/批次总量上限；只有单请求首响应/空闲超时、单批 Token 上限与极端内存保护。错误进入 `needs_action`，保留已完成批次并可继续；用户取消立即生效。
 24. **批次隔离**：任何批次失败不得 abort 同批其他在途请求；已完成批次必须继续导入；恢复只处理未完成批次。
 25. **Token 分批**：单场与画像按 input token 预算分批；默认 8k、可配 2k–32k；不得静默丢消息/观众；多批 session 必须有 final aggregate 才 complete。
 26. **自动流式**：普通用户不选择 Streaming；流式只缓冲，完成后仍走同一校验/事务导入；不兼容时最多回退一次并持久化响应模式。

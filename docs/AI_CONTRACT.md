@@ -745,7 +745,7 @@ result.schema.json
 - **本场观众画像**：来自单场结果的 `viewer_profiles`；v1.3 session-only 任务通常为空。
 - **长期观众画像**：来自 `viewer_memories` / `memory_facts`，是独立 memory 任务写入的数据；只显示当前主播范围，按 `last_update_at` 排序，最多 50 位。
 
-没有长期画像时，报告明确说明「需要在 AI 分析中心选择长期画像任务，并使用通过能力检测的付费模型」，而不是显示成“没有导入观众画像”让用户误以为导入失败。
+没有长期画像时，报告明确说明「需要在 AI 分析中心选择长期画像任务，并使用通过 memory 能力检测的模型」，而不是显示成“没有导入观众画像”让用户误以为导入失败。价格/免费付费不参与该判断。
 
 `GET /api/ai/sessions/:id/report` 新增只读 `longTermProfiles`：
 
@@ -829,7 +829,7 @@ result.schema.json
 - `TimeoutError`（已发出的请求）默认**不自动重试**。理由：Provider 可能仍在执行，重发会重复推理与计费。
 - 外部 `AbortError`（用户取消、暂停、退出）与超时分开，归类为 `canceled`，永不重试；终态为 `canceled` / `paused`。
 - 连接阶段网络错误最多一次安全重试；429 遵守 `Retry-After`（含 0）；5xx/408/425 指数退避 + 抖动，最多 3 次尝试；4xx、空响应、流中断不重试。
-- 任务级 60 分钟预算（45 分钟软提醒）；达到后停止启动新批次，在途请求与 final aggregate 按自身超时完成并保存；仍有未完成批次时进入可恢复 `paused`（`ANALYSIS_TASK_PAUSED`），用户取消仍立即 `canceled`。
+- 没有任务级时间/费用/批次总量上限；只有单请求首响应 `timeoutMs` 与 60 秒流空闲。超时/鉴权/余额/限流/5xx/网络进入可恢复 `needs_action`，保留已完成批次；用户取消立即 `canceled`。
 - 一次 Schema 校验失败仍可发一次 repair；`finish_reason=length`、退化检测、流中断不触发 repair/重发。
 
 ### 19.2 Token 分批
