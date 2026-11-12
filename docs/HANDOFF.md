@@ -47,7 +47,7 @@
 
 - `TimeoutError`、外部 `AbortError`（取消/暂停）、网络、429、5xx、4xx、无效响应、流中断现在由 adapter 分类；取消绝不重试。
 - 已发出且超时的长请求**默认不自动重发**；只有连接阶段网络错误允许一次安全重试；429/5xx 保留有界退避。
-- 任务级 20 分钟预算；超时返回 `ANALYSIS_TASK_TIMEOUT`，已完成批次保留。
+- 任务级 20 分钟预算（**v0.13.2-r2 已改为 60 分钟、45 分钟软提醒**）；超时不再中止在途请求。
 - `runPool` 失败只停止调度新批次，在途兄弟批次继续完成并导入；恢复只处理未完成批次。
 - 每次尝试写 `ai.request.attempt` 脱敏日志；状态新增 `attemptStats`、`currentRequest`、`lastRequest`、`taskDeadlineAt`、`saved`。
 

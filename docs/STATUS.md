@@ -94,7 +94,7 @@
 | B1 超时被当成可重试，自动重发 2 次 | `timeout` 明确 `retryable:false`；已发出的长请求超时后默认**不自动重试** |
 | B2 `AbortError`/`TimeoutError` 合并 | adapter 区分 `canceled` / `timeout` / `network` / `rate_limit` / `server` / `client` / `invalid_response` / `stream_interrupted`；取消绝不重试 |
 | B3 超时不降速 | 超时不再触发同批重发脉冲；429/5xx 仍按各自的退避与 `Retry-After` |
-| B4 无任务级总时限 | 新增 20 分钟任务预算（可注入时钟测试）；达到后 `ANALYSIS_TASK_TIMEOUT`，已完成批次保留 |
+| B4 无任务级总时限 | 新增 20 分钟任务预算（v0.13.2-r2 已改为 60 分钟、45 分钟软提醒）；达到后停止新批次并保留已完成批次 |
 | B5 无 attempt 级状态/日志 | 每次尝试写 `ai.request.attempt`（脱敏：attempt、耗时、错误类型、HTTP status、是否收到响应头/输出、是否重试、usage 是否存在）；状态含 `attemptStats`、`currentRequest`、`lastRequest` |
 | B6 `runPool` 首个失败中止其他请求 | 失败只停止调度新批次；在途兄弟批次继续完成并导入；最后抛第一个错误 |
 | B7 统计按配置/进程 | 任务级 `attemptStats` 与按 `configId` 的 `requestStats` 并存；成功/失败/取消/超时/重试分开 |
