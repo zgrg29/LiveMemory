@@ -22,14 +22,14 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | 91.6 MB |
-| SHA-256 | `1724c451b575360962cbbc4c7654bad3f80f840bf7653ecd22a1f80c32a59050` |
-| commit | `8ad6a5147a3dfba641d7362ae20316876a8b3a19` |
-| buildId | `8ad6a51.b62882c5` |
+| SHA-256 | `7bcc365fd95d8f20d722196328db8f85218309187d65b2fa84d425ed30fc29a1` |
+| commit | `84b54f09b40a6709af83c96a075ea78be0ef71b4` |
+| buildId | `b62882c5a365` |
 | asset hash | `b62882c5a365d6cd2519` |
 | builtAt | 2026-11-12T07:19:02.385Z（15:19:02 +08） |
 | 资源 | 169 files；7 个必需模块；RT_MANIFEST requireAdministrator |
 
-本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=8ad6a51.b62882c5`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
+本机非提升会话用同一二进制的 asInvoker 副本实际启动：`/api/health` 与 `/api/bootstrap` 返回 `buildId=b62882c5a365`、`mode=packaged`、`verified=true`；启动日志 `startup.begin` 含同一 build；第二次启动复用缓存并 `filesVerified=169`。**不是只看版本号。**
 
 ### 0.14.2 分批预算（真实 889 条消息离线规划）
 
@@ -526,9 +526,9 @@ POST /api/ai/auto/cancel      {sessionId}
 
 - **v0.13.2 已构建并实际启动验证（asInvoker 副本）**：`node scripts/build-windows.mjs`。
   - 大小 **91.6 MB**
-  - SHA-256 `1724c451b575360962cbbc4c7654bad3f80f840bf7653ecd22a1f80c32a59050`
-  - commit `8ad6a5147a3dfba641d7362ae20316876a8b3a19`
-  - buildId `8ad6a51.b62882c5`，资源哈希 `b62882c5a365d6cd2519`
+  - SHA-256 `7bcc365fd95d8f20d722196328db8f85218309187d65b2fa84d425ed30fc29a1`
+  - commit `84b54f09b40a6709af83c96a075ea78be0ef71b4`
+  - buildId `b62882c5a365`，资源哈希 `b62882c5a365d6cd2519`
   - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
   - PE Manifest **requireAdministrator**（脚本断言通过）
 - **实际启动验证**：本会话非提升，使用同一二进制临时改 manifest 为 asInvoker 后启动；`/api/health`、`/api/bootstrap` 返回上面的 buildId/commit，`mode=packaged`、`verified=true`；启动日志 `startup.begin` 记录同一 build；第二次启动复用缓存并校验 169 个文件。

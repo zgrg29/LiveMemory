@@ -15,7 +15,7 @@
 ### 验证
 
 - 596 passed / 0 failed（约 94 秒）。
-- EXE `8ad6a51.b62882c5` / commit `8ad6a51` / SHA-256 `1724c451…`；asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- EXE `b62882c5a365` / commit `84b54f0` / SHA-256 `7bcc365f…`；asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
 - 真实 889 消息离线规划：8k=24 批、16k=11 批、24k=6 批、32k=4 批，全部 889/889 覆盖。
 
 ### 未验证

@@ -283,5 +283,5 @@ AI 分析中心新增/明确显示：
 ### 9.5 验证
 
 - 596 passed / 0 failed（约 94 秒）。
-- EXE v0.13.2：`buildId 8ad6a51.b62882c5`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
+- EXE v0.13.2：`buildId b62882c5a365`，asInvoker 副本实际启动并返回同一 build；第二次启动 `filesVerified=169`。
 - **未验证**：真实付费 API 的 `max_completion_tokens` 接受度、思考模式实际行为、24k/6 批真实回放、真实 UAC 双击。

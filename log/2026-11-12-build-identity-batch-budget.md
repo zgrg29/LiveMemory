@@ -32,16 +32,16 @@
 
 | 项目 | 值 |
 | --- | --- |
-| SHA-256 | `1724c451b575360962cbbc4c7654bad3f80f840bf7653ecd22a1f80c32a59050` |
-| commit | `8ad6a5147a3dfba641d7362ae20316876a8b3a19` |
-| buildId | `8ad6a51.b62882c5` |
+| SHA-256 | `7bcc365fd95d8f20d722196328db8f85218309187d65b2fa84d425ed30fc29a1` |
+| commit | `84b54f09b40a6709af83c96a075ea78be0ef71b4` |
+| buildId | `b62882c5a365` |
 | assetHash | `b62882c5a365d6cd2519` |
 | builtAt | 2026-11-12T07:19:02.385Z |
 | 资源 | 169 files / 7 必需模块 / requireAdministrator |
 
 本会话非提升，复制 EXE 并把 RT_MANIFEST 改为 asInvoker 后实际启动：
 
-- `--version`：`Build ID: 8ad6a51.b62882c5`；
+- `--version`：`Build ID: b62882c5a365`；
 - `/api/health`、`/api/bootstrap`：同一 buildId、commit，`mode=packaged`、`verified=true`；
 - 启动日志 `startup.begin` 含同一 build；
 - 第二次启动 `app-root.reuse` + `filesVerified=169`；
