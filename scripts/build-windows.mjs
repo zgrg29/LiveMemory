@@ -98,7 +98,12 @@ const assetHash = sourceDigest.slice(0, 20);
 const commit = readGitCommit(root);
 const shortCommit = commit ? commit.slice(0, 7) : null;
 const builtAt = new Date().toISOString();
-const buildId = `${shortCommit ?? 'nogit'}.${sourceDigest.slice(0, 8)}`;
+/**
+ * The build identity is the content hash, not the commit prefix: a later docs
+ * commit must not make an existing binary look like a different build. The Git
+ * commit is still recorded separately for traceability.
+ */
+const buildId = sourceDigest.slice(0, 12);
 const buildInfo = {
   version: APP_VERSION,
   commit,
