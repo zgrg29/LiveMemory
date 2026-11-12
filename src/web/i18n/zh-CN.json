@@ -548,6 +548,15 @@
       "errorDetails": "查看技术详情",
       "cancel": "取消分析",
       "eta": "预计剩余 {time}",
+      "budget": {
+        "elapsed": "已运行 {elapsed}",
+        "soft": "分析时间较长，但任务仍在进行",
+        "hard": "已达到任务时间预算：不再启动新批次，正在等待在途请求或最终汇总",
+        "paused": "任务已因时间预算暂停；已完成批次已保存，可继续",
+        "pausedTitle": "分析已暂停（时间预算），可继续未完成部分",
+        "waitingAggregate": "正在等待最终汇总",
+        "resumeHint": "继续不会重复已完成批次"
+      },
       "consentTitle": "发送分析数据前确认",
       "consentBody": "本次分析会把当前场次的聊天、统计和（如选择）相关观众记忆发送给你配置的 AI 服务。数据不经过 LiveMemory 开发者服务器。",
       "consentHint": "只发送当前任务所需的数据；不发送数据库文件、登录凭据或不相关的直播记录。",
@@ -604,6 +613,7 @@
         "PROVIDER_STREAM_INTERRUPTED": "模型输出中断，本次结果未保存；可恢复未完成批次。",
         "PROVIDER_STREAM_ERROR": "模型流式响应报错，本次结果未保存。",
         "ANALYSIS_TASK_TIMEOUT": "任务已达到总时间预算，后续请求已停止；已完成批次已保留。",
+        "ANALYSIS_TASK_PAUSED": "任务已达到时间预算并暂停；已完成批次已保存，可继续未完成部分。",
         "AUTO_OUTPUT_DEGENERATED": "模型输出重复退化且不完整，未保存结果。",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "批次结果太多，无法一次汇总；批次结果已保留。请降低批次上限或改用上下文更大的模型。",
         "ANALYSIS_CONTEXT_TOO_SMALL": "模型上下文太小，固定提示词与最低批次内容放不下；请换用上下文更大的模型或提高批次上限。",

@@ -83,16 +83,54 @@ export function shouldRetryAttempt(error, {attempt = 0, maxRetries = 2, random =
   return true;
 }
 
-/** Timing budget for one whole analysis task (all batches and the aggregate). */
-export function createTaskBudget({now = Date.now, taskTimeoutMs = 20 * 60 * 1000} = {}) {
+export const DEFAULT_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+export const DEFAULT_SOFT_TASK_BUDGET_MS = 45 * 60 * 1000;
+
+/**
+ * Timing budget for one whole analysis task.
+ *
+ * The hard deadline is a *scheduling* deadline, not an in-flight abort: new
+ * batches stop at the deadline, while requests already running keep their own
+ * header/idle timeouts and are allowed to finish and save. `softBudgetMs` is
+ * the point where the UI starts warning that the task is taking long.
+ */
+export function createTaskBudget({
+  now = Date.now,
+  taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+  softBudgetMs = DEFAULT_SOFT_TASK_BUDGET_MS
+} = {}) {
   const startedAt = now();
-  const ms = Math.max(60000, Number(taskTimeoutMs) || 20 * 60 * 1000);
-  return {startedAt, deadlineAt: startedAt + ms, taskTimeoutMs: ms};
+  const ms = Math.max(60000, Number(taskTimeoutMs) || DEFAULT_TASK_TIMEOUT_MS);
+  const soft = Math.max(60000, Math.min(ms, Number(softBudgetMs) || DEFAULT_SOFT_TASK_BUDGET_MS));
+  return {
+    startedAt,
+    deadlineAt: startedAt + ms,
+    softDeadlineAt: startedAt + soft,
+    taskTimeoutMs: ms,
+    softBudgetMs: soft
+  };
 }
 
 export function taskBudgetRemaining(budget, now = Date.now()) {
   if (!budget) return null;
   return Math.max(0, Number(budget.deadlineAt) - now);
+}
+
+export function taskBudgetElapsed(budget, now = Date.now()) {
+  if (!budget) return null;
+  return Math.max(0, now - Number(budget.startedAt));
+}
+
+/**
+ * `normal` → `soft` (warning only) → `hard` (no new batches; in-flight work
+ * and the final aggregate may finish).
+ */
+export function taskBudgetState(budget, now = Date.now()) {
+  if (!budget) return 'normal';
+  const elapsed = taskBudgetElapsed(budget, now);
+  if (elapsed >= budget.taskTimeoutMs) return 'hard';
+  if (elapsed >= budget.softBudgetMs) return 'soft';
+  return 'normal';
 }
 
 /**

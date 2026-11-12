@@ -548,6 +548,15 @@
       "errorDetails": "Technical details",
       "cancel": "Cancel analysis",
       "eta": "about {time} remaining",
+      "budget": {
+        "elapsed": "Running for {elapsed}",
+        "soft": "This analysis is taking a while, but it is still running",
+        "hard": "Task time budget reached: no new batches will start; waiting for in-flight requests or the final merge",
+        "paused": "Paused at the time budget; completed batches are saved and can be resumed",
+        "pausedTitle": "Analysis paused at the time budget; unfinished work can continue",
+        "waitingAggregate": "Waiting for the final merge",
+        "resumeHint": "Resuming will not repeat completed batches"
+      },
       "consentTitle": "Confirm data transmission",
       "consentBody": "This analysis sends the selected broadcast's chat, statistics and (if chosen) related viewer memories to the AI service you configured. Data does not pass through a LiveMemory developer server.",
       "consentHint": "Only data needed for this task is sent. The database file, login credentials and unrelated broadcasts are never sent.",
@@ -604,6 +613,7 @@
         "PROVIDER_STREAM_INTERRUPTED": "The model output was interrupted, so this result was not saved. Unfinished batches can be resumed.",
         "PROVIDER_STREAM_ERROR": "The model stream reported an error, so this result was not saved.",
         "ANALYSIS_TASK_TIMEOUT": "The task time budget was reached and later requests were stopped. Completed batches are preserved.",
+        "ANALYSIS_TASK_PAUSED": "The task reached its time budget and paused. Completed batches are saved; unfinished work can be resumed.",
         "AUTO_OUTPUT_DEGENERATED": "The model output degenerated into repetition and is incomplete, so nothing was saved.",
         "ANALYSIS_AGGREGATE_TOO_LARGE": "There are too many batch results to merge in one request. Batch results are preserved; lower the batch budget or use a model with a larger context.",
         "ANALYSIS_CONTEXT_TOO_SMALL": "The model context is too small for the fixed prompt plus the minimum batch content; use a larger-context model or raise the batch budget.",

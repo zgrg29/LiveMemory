@@ -22,12 +22,16 @@ import {
 } from '../runtime/json.mjs';
 import {ProviderRequestScheduler, retryDelayMs} from '../runtime/scheduler.mjs';
 import {
+  DEFAULT_SOFT_TASK_BUDGET_MS,
+  DEFAULT_TASK_TIMEOUT_MS,
   ERROR_KIND,
   attemptRecord,
   createTaskBudget,
   isCanceledError,
   shouldRetryAttempt,
-  taskBudgetRemaining
+  taskBudgetElapsed,
+  taskBudgetRemaining,
+  taskBudgetState
 } from '../runtime/attempt.mjs';
 import {
   estimateTokens,
@@ -76,7 +80,6 @@ import {
  */
 
 const DEFAULT_TIMEOUT_MS = 180000;
-const DEFAULT_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_IDLE_TIMEOUT_MS = 60000;
 const MIN_ATTEMPT_WINDOW_MS = 15000;
 const MAX_CONCURRENCY = 8;
@@ -107,6 +110,21 @@ export class AnalysisPermissionError extends Error {
 
 function abortError() {
   return cancellationError();
+}
+
+/**
+ * A resumable pause, deliberately distinct from user cancel and from a failed
+ * provider request. Completed batches stay saved; the next resume starts a new
+ * task clock and only requests unfinished work.
+ */
+function taskPausedError(detail = 'task-time-budget', extra = {}) {
+  return Object.assign(new Error('TASK_TIME_BUDGET_PAUSED'), {
+    code: 'ANALYSIS_TASK_PAUSED',
+    detail,
+    kind: ERROR_KIND.TIMEOUT,
+    resumable: true,
+    ...extra
+  });
 }
 
 function emptyAttemptStats() {
@@ -168,10 +186,11 @@ function schedulerKey(provider) {
  * for. Only user cancel/pause/shutdown aborts in-flight work, through the
  * external signal. The first error is re-thrown after every worker settles.
  */
-async function runPool(items, limit, worker, signal) {
+async function runPool(items, limit, worker, signal, {canStart = null} = {}) {
   let nextIndex = 0;
   let firstError = null;
   let stopped = false;
+  const control = {budgetStopped: false, completed: 0};
   const maxWorkers = Math.max(1, Math.min(Number(limit) || 1, items.length));
   const workers = Array.from({length: maxWorkers}, async () => {
     for (;;) {
@@ -180,11 +199,18 @@ async function runPool(items, limit, worker, signal) {
         return;
       }
       if (stopped) return;
+      if (canStart && !canStart()) {
+        // The task deadline stops *scheduling*; requests already running keep
+        // their own timeouts and finish below.
+        control.budgetStopped = true;
+        return;
+      }
       const index = nextIndex;
       nextIndex += 1;
       if (index >= items.length) return;
       try {
         await worker(items[index], index, signal);
+        control.completed += 1;
       } catch (error) {
         if (!firstError) {
           firstError = signal?.aborted ? abortError() : error;
@@ -196,6 +222,7 @@ async function runPool(items, limit, worker, signal) {
   });
   await Promise.allSettled(workers);
   if (firstError) throw firstError;
+  return control;
 }
 
 export class AnalysisRunner {
@@ -209,6 +236,7 @@ export class AnalysisRunner {
     maxRetries = 2,
     random = Math.random,
     taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+    softBudgetMs = DEFAULT_SOFT_TASK_BUDGET_MS,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
   }) {
     this.db = db;
@@ -220,6 +248,10 @@ export class AnalysisRunner {
     this.maxRetries = Math.max(0, Math.min(5, Number(maxRetries) || 0));
     this.random = random;
     this.taskTimeoutMs = Math.max(60000, Number(taskTimeoutMs) || DEFAULT_TASK_TIMEOUT_MS);
+    this.softBudgetMs = Math.max(
+      60000,
+      Math.min(this.taskTimeoutMs, Number(softBudgetMs) || DEFAULT_SOFT_TASK_BUDGET_MS)
+    );
     this.idleTimeoutMs = Math.max(10000, Number(idleTimeoutMs) || DEFAULT_IDLE_TIMEOUT_MS);
     this.active = new Map();
     this.schedulers = new Map();
@@ -405,13 +437,20 @@ export class AnalysisRunner {
 
   launch({sessionId, provider, mode, budget, resume}) {
     const controller = new AbortController();
-    const timeBudget = createTaskBudget({now: this.now, taskTimeoutMs: this.taskTimeoutMs});
+    const timeBudget = createTaskBudget({
+      now: this.now,
+      taskTimeoutMs: this.taskTimeoutMs,
+      softBudgetMs: this.softBudgetMs
+    });
     const previous = this.state.get(sessionId);
     this.state.set(sessionId, {
       status: 'running',
       taskStartedAt: timeBudget.startedAt,
       taskDeadlineAt: timeBudget.deadlineAt,
+      taskSoftDeadlineAt: timeBudget.softDeadlineAt,
       taskTimeoutMs: timeBudget.taskTimeoutMs,
+      taskSoftBudgetMs: timeBudget.softBudgetMs,
+      taskPausedAt: null,
       currentRequest: null,
       attemptStats: resume
         ? (previous?.attemptStats ?? emptyAttemptStats())
@@ -508,6 +547,31 @@ export class AnalysisRunner {
       ?? (entry.taskStartedAt && entry.taskTimeoutMs
         ? entry.taskStartedAt + entry.taskTimeoutMs
         : null);
+    const taskTimeoutMs = entry.taskTimeoutMs ?? this.taskTimeoutMs;
+    const taskSoftBudgetMs = entry.taskSoftBudgetMs ?? this.softBudgetMs;
+    const taskSoftDeadlineAt = entry.taskSoftDeadlineAt
+      ?? (entry.taskStartedAt ? entry.taskStartedAt + taskSoftBudgetMs : null);
+    const taskElapsedMs = entry.taskStartedAt
+      ? Math.max(0, (entry.taskPausedAt ?? entry.completedAt ?? this.now()) - entry.taskStartedAt)
+      : null;
+    const taskBudgetPhase = (status === 'paused' && error?.code === 'ANALYSIS_TASK_PAUSED')
+      ? 'paused'
+      : taskBudgetState(
+        entry.taskStartedAt ? {
+          startedAt: entry.taskStartedAt,
+          taskTimeoutMs,
+          softBudgetMs: taskSoftBudgetMs
+        } : null,
+        entry.taskPausedAt ?? entry.completedAt ?? this.now()
+      );
+    const sessionAggregateRequired = Boolean(sessionJob && sessionJob.batchTotal > 1);
+    const sessionAggregateDone = Boolean(sessionStatus?.aggregateImported);
+    const waitingAggregate = sessionAggregateRequired
+      && !sessionAggregateDone
+      && sessionBatchesCompleted >= sessionBatchTotal
+      && sessionBatchTotal > 0;
+    const pendingSessionBatches = Math.max(0, sessionBatchTotal - sessionBatchesCompleted);
+    const pendingMemoryBatches = Math.max(0, memoryBatchTotal - memoryBatchesCompleted);
     return {
       sessionId,
       status,
@@ -532,8 +596,11 @@ export class AnalysisRunner {
       sessionBatchIndex: sessionBatchesCompleted,
       sessionBatchTotal,
       sessionBatchesCompleted,
-      sessionAggregateRequired: Boolean(sessionJob && sessionJob.batchTotal > 1),
-      sessionAggregateDone: Boolean(sessionStatus?.aggregateImported),
+      sessionAggregateRequired,
+      sessionAggregateDone,
+      waitingAggregate,
+      pendingSessionBatches,
+      pendingMemoryBatches,
       memoryBatchIndex: memoryBatchesCompleted,
       memoryBatchTotal,
       memoryBatchesCompleted,
@@ -565,8 +632,18 @@ export class AnalysisRunner {
       outputReceived: currentRequest?.receivedOutput === true,
       taskStartedAt: entry.taskStartedAt ?? null,
       taskDeadlineAt,
+      taskSoftDeadlineAt,
       taskRemainingMs: taskDeadlineAt === null ? null : Math.max(0, taskDeadlineAt - this.now()),
-      taskTimeoutMs: entry.taskTimeoutMs ?? this.taskTimeoutMs,
+      taskElapsedMs,
+      taskTimeoutMs,
+      taskSoftBudgetMs,
+      taskBudgetState: taskBudgetPhase,
+      taskBudgetReached: taskBudgetPhase === 'hard' || taskBudgetPhase === 'paused',
+      taskSoftBudgetReached: ['soft', 'hard', 'paused'].includes(taskBudgetPhase),
+      taskPausedAt: entry.taskPausedAt ?? null,
+      resumeReason: entry.error?.code === 'ANALYSIS_TASK_PAUSED'
+        ? (entry.error?.detail ?? 'task-time-budget')
+        : null,
       saved: {
         sessionReport: sessionReportDone,
         sessionBatches: sessionBatchesCompleted,
@@ -601,16 +678,20 @@ export class AnalysisRunner {
     return taskBudgetRemaining(context.timeBudget, this.now());
   }
 
-  #assertTaskBudget(context, {minWindowMs = MIN_ATTEMPT_WINDOW_MS} = {}) {
+  #taskBudgetPhase(context) {
+    if (!context?.timeBudget) return 'normal';
+    return taskBudgetState(context.timeBudget, this.now());
+  }
+
+  /**
+   * Only a *new batch* is gated by the deadline. Repair/aggregate requests that
+   * belong to work already started are allowed to finish, otherwise a task at
+   * 7/7 batches would throw away a paid-for report.
+   */
+  #canStartBatch(context) {
     const remaining = this.#taskRemaining(context);
-    if (remaining === null) return;
-    if (remaining < minWindowMs) {
-      throw Object.assign(new Error('TASK_TIME_BUDGET'), {
-        code: 'ANALYSIS_TASK_TIMEOUT',
-        detail: 'task-time-budget',
-        kind: ERROR_KIND.TIMEOUT
-      });
-    }
+    if (remaining === null) return true;
+    return remaining >= MIN_ATTEMPT_WINDOW_MS && this.#taskBudgetPhase(context) !== 'hard';
   }
 
   #beginRequest(context, {
@@ -810,6 +891,32 @@ export class AnalysisRunner {
         });
         return;
       }
+      if (error?.code === 'ANALYSIS_TASK_PAUSED') {
+        this.state.set(sessionId, {
+          status: 'paused',
+          stage: 'paused',
+          error: {
+            code: error.code,
+            detail: error.detail ?? 'task-time-budget',
+            kind: error.kind ?? ERROR_KIND.TIMEOUT
+          },
+          taskPausedAt: this.now(),
+          taskBudgetState: 'paused',
+          currentRequest: null
+        });
+        this.logger?.warn?.({
+          event: 'ai.analysis.paused',
+          sessionId,
+          mode,
+          reason: error.detail ?? 'task-time-budget',
+          pendingBatches: error.pendingBatches ?? null,
+          completedBatches: error.completedBatches ?? null,
+          elapsedMs: context.timeBudget
+            ? taskBudgetElapsed(context.timeBudget, this.now())
+            : null
+        });
+        return;
+      }
       this.fail(context, error);
     }
   }
@@ -951,7 +1058,7 @@ export class AnalysisRunner {
       activeBatches: 0
     });
     let active = 0;
-    await runPool(
+    const control = await runPool(
       pending,
       Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
       async (batch, _index, workerSignal) => {
@@ -1051,8 +1158,21 @@ export class AnalysisRunner {
           }
         }
       },
-      context.signal
+      context.signal,
+      {canStart: () => this.#canStartBatch(context)}
     );
+
+    if (control.budgetStopped) {
+      const stillPending = listJobBatches(this.db, job.id).filter((batch) => (
+        !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
+      ));
+      if (stillPending.length > 0) {
+        throw taskPausedError('task-time-budget-session', {
+          pendingBatches: stillPending.length,
+          completedBatches: total - stillPending.length
+        });
+      }
+    }
 
     const final = latestResultForScope(this.db, job.id, 'final');
     if (!final && total > 1) {
@@ -1341,7 +1461,7 @@ export class AnalysisRunner {
           batchesCompleted: completed,
           activeBatches: 0
         });
-        await runPool(
+        const control = await runPool(
           pending,
           Math.max(1, Math.min(provider.concurrency ?? 3, pending.length || 1)),
           async (batch, _index, workerSignal) => {
@@ -1424,8 +1544,20 @@ export class AnalysisRunner {
               }
             }
           },
-          context.signal
+          context.signal,
+          {canStart: () => this.#canStartBatch(context)}
         );
+        if (control.budgetStopped) {
+          const stillPending = listJobBatches(this.db, job.id).filter((batch) => (
+            !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
+          ));
+          if (stillPending.length > 0) {
+            throw taskPausedError('task-time-budget-memory', {
+              pendingBatches: stillPending.length,
+              completedBatches: total - stillPending.length
+            });
+          }
+        }
         const updated = getJob(this.db, job.id);
         if (!updated || !computeJobStatus(this.db, updated).complete) {
           throw Object.assign(new Error('MEMORY_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
@@ -1730,13 +1862,10 @@ export class AnalysisRunner {
     let fallbackUsed = false;
     while (attempt < maxAttempts) {
       if (signal.aborted) throw abortError();
-      const remaining = this.#taskRemaining(context);
-      if (remaining !== null && remaining < MIN_ATTEMPT_WINDOW_MS) {
-        this.#assertTaskBudget(context);
-      }
-      const effectiveTimeout = remaining === null
-        ? provider.timeoutMs
-        : Math.max(MIN_ATTEMPT_WINDOW_MS, Math.min(provider.timeoutMs, remaining));
+      // The task deadline never shortens an attempt that has already started.
+      // A single request is bounded only by its own header/idle timeout, so an
+      // active stream can finish and be saved.
+      const effectiveTimeout = provider.timeoutMs;
       const idleTimeout = Math.max(10000, Math.min(this.idleTimeoutMs, effectiveTimeout));
       const streaming = provider.responseMode !== 'non_streaming';
       const mode = streaming ? 'streaming' : 'non_streaming';
@@ -1793,7 +1922,6 @@ export class AnalysisRunner {
           signal,
           timeoutMs: effectiveTimeout,
           idleTimeoutMs: idleTimeout,
-          maxTotalMs: remaining ?? null,
           streaming,
           now: this.now,
           onProgress: reportProgress
@@ -1897,16 +2025,11 @@ export class AnalysisRunner {
           recordFailure();
           throw abortError();
         }
-        const budgetLeft = this.#taskRemaining(context);
-        if (String(error?.detail ?? '') === 'attempt-budget-exhausted'
-          || (budgetLeft !== null && budgetLeft < MIN_ATTEMPT_WINDOW_MS)) {
-          recordFailure();
-          throw Object.assign(new Error('TASK_TIME_BUDGET'), {
-            code: 'ANALYSIS_TASK_TIMEOUT',
-            detail: 'task-time-budget',
-            kind: ERROR_KIND.TIMEOUT
-          });
-        }
+        const retry = shouldRetryAttempt(error, {
+          attempt,
+          maxRetries: this.maxRetries,
+          random: this.random
+        });
         // One verified non-streaming fallback when the provider rejects the
         // streaming transport itself. This is not a general retry: it happens
         // once per task, and only for a clear stream-transport rejection.
@@ -1927,11 +2050,6 @@ export class AnalysisRunner {
           });
           continue;
         }
-        const retry = shouldRetryAttempt(error, {
-          attempt,
-          maxRetries: this.maxRetries,
-          random: this.random
-        }) && (budgetLeft === null || budgetLeft >= MIN_ATTEMPT_WINDOW_MS);
         if (!retry || attempt + 1 >= maxAttempts) {
           recordFailure();
           throw this.#normalizeProviderError(error);
@@ -1963,6 +2081,14 @@ export class AnalysisRunner {
     throw this.#normalizeProviderError(lastError);
   }
 
+  #checkBudget(context, usage) {
+    if (!context.budget) return;
+    const remaining = budgetRemaining(context.budget, usage);
+    if (remaining?.exceeded) {
+      throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
+    }
+  }
+
   #normalizeProviderError(error) {
     if (!error) {
       return Object.assign(new Error('PROVIDER_FAILED'), {code: 'PROVIDER_FAILED', kind: ERROR_KIND.NETWORK});
@@ -1981,14 +2107,6 @@ export class AnalysisRunner {
       timeoutMs: error?.timeoutMs ?? null
     });
     return normalized;
-  }
-
-  #checkBudget(context, usage) {
-    if (!context.budget) return;
-    const remaining = budgetRemaining(context.budget, usage);
-    if (remaining?.exceeded) {
-      throw Object.assign(new Error('BUDGET_EXCEEDED'), {code: 'ANALYSIS_BUDGET_EXCEEDED'});
-    }
   }
 
   pause(sessionId) {

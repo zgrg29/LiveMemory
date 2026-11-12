@@ -322,6 +322,7 @@ export const aiPage = {
     const requestStatus = el('div', {className: 'small tertiary', hidden: true});
     const requestElapsed = el('div', {className: 'small tertiary', hidden: true});
     const savedStatus = el('div', {className: 'small tertiary', hidden: true});
+    const budgetStatus = el('div', {className: 'small tertiary', hidden: true});
     const statsHost = el('div', {className: 'def-list'});
     const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
     const errorDetailsText = el('div', {className: 'small tertiary'});
@@ -347,6 +348,7 @@ export const aiPage = {
       requestStatus,
       requestElapsed,
       savedStatus,
+      budgetStatus,
       statusText,
       statsHost,
       el('div', {className: 'inline', style: {marginTop: '10px'}}, pauseButton, cancelButton),
@@ -662,6 +664,23 @@ export const aiPage = {
         : '';
     }
 
+    function renderBudget(current) {
+      const elapsed = Number(current?.taskElapsedMs);
+      if (!Number.isFinite(elapsed)) {
+        budgetStatus.hidden = true;
+        budgetStatus.textContent = '';
+        return;
+      }
+      const parts = [t('ai.center.budget.elapsed', {elapsed: elapsedLabel(elapsed)})];
+      if (current.taskBudgetState === 'soft') parts.push(t('ai.center.budget.soft'));
+      if (current.taskBudgetState === 'hard') parts.push(t('ai.center.budget.hard'));
+      if (current.taskBudgetState === 'paused') parts.push(t('ai.center.budget.paused'));
+      if (current.waitingAggregate) parts.push(t('ai.center.budget.waitingAggregate'));
+      if (current.canResume && current.status !== 'running') parts.push(t('ai.center.budget.resumeHint'));
+      budgetStatus.hidden = false;
+      budgetStatus.textContent = parts.join(' · ');
+    }
+
     function renderStats(current) {
       clear(statsHost);
       const attempts = current?.attemptStats;
@@ -733,15 +752,16 @@ export const aiPage = {
         return;
       }
       const running = current.status === 'running';
-      const paused = current.status === 'paused';
-      pauseButton.hidden = !running && !paused;
-      pauseButton.disabled = !running && !paused;
-      pauseButton.textContent = paused ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
+      const canResume = current.canResume === true && !running;
+      pauseButton.hidden = !running && !canResume;
+      pauseButton.disabled = !running && !canResume;
+      pauseButton.textContent = canResume ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
       cancelButton.hidden = !running;
       startButton.disabled = running;
       renderProgress(current);
       renderRequestDetail(current);
       renderSaved(current);
+      renderBudget(current);
       syncRequestTicker(running && Boolean(current.currentRequest));
       errorText.hidden = true;
       errorDetails.hidden = true;
@@ -770,7 +790,9 @@ export const aiPage = {
       } else if (current.status === 'canceled') {
         statusText.textContent = t('ai.center.canceled');
       } else if (current.status === 'paused') {
-        statusText.textContent = t('ai.v13.stage.paused');
+        statusText.textContent = current.error?.code === 'ANALYSIS_TASK_PAUSED'
+          ? t('ai.center.budget.pausedTitle')
+          : t('ai.v13.stage.paused');
       } else if (current.status === 'partial') {
         statusText.textContent = t('ai.v13.run.partial');
         errorText.hidden = false;
@@ -927,7 +949,7 @@ export const aiPage = {
 
     async function pauseOrResume() {
       if (!selectedId) return;
-      if (status?.status === 'paused') {
+      if (status?.canResume === true && status?.status !== 'running') {
         try {
           const current = await api.post('/api/ai/analyze/resume', {
             sessionId: selectedId,

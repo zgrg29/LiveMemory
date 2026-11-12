@@ -388,15 +388,15 @@ test('streaming works for the Anthropic Messages protocol too', async (t) => {
   });
 });
 
-test('the task-level time budget stops a long task and keeps that reason visible', async (t) => {
+test('an in-flight request past the task deadline keeps its own timeout instead of being task-aborted', async (t) => {
   await withServer(t, async (server) => {
     const session = seedSession(server.db, {id: 'ses_task_budget', messageCount: 6, viewerCount: 2, startedAt: T0});
     let fakeNow = Date.now();
     server.analysisRunner.now = () => fakeNow;
     server.analysisRunner.fetchImpl = async () => {
-      // Simulate a slow provider that consumed the entire task budget before
-      // returning anything. The runner must stop instead of starting another
-      // 3-minute attempt.
+      // The task clock crosses the 60-minute deadline while this request is
+      // already in flight. It must be bounded by its own timeout, not by the
+      // task budget; the provider timeout is the real failure here.
       fakeNow += server.analysisRunner.taskTimeoutMs + 1000;
       throw Object.assign(new Error('timeout'), {name: 'TimeoutError'});
     };
@@ -410,10 +410,11 @@ test('the task-level time budget stops a long task and keeps that reason visible
       confirmBilling: true
     });
     const status = await waitFor(server.analysisRunner, session.id, (value) => value.status === 'failed');
-    assert.equal(status.error.code, 'ANALYSIS_TASK_TIMEOUT');
+    assert.equal(status.error.code, 'PROVIDER_TIMEOUT', 'the in-flight request keeps its own timeout');
     assert.equal(status.attemptStats.total, 1);
     assert.equal(status.attemptStats.timedOut, 1);
     assert.equal(status.taskRemainingMs, 0);
+    assert.equal(status.taskBudgetState, 'hard');
   });
 });
 

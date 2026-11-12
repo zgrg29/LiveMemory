@@ -7,7 +7,9 @@ import {
   createTaskBudget,
   isCanceledError,
   shouldRetryAttempt,
-  taskBudgetRemaining
+  taskBudgetElapsed,
+  taskBudgetRemaining,
+  taskBudgetState
 } from '../../src/ai/runtime/attempt.mjs';
 
 function error(kind, {retryable = false, status = null, phase = ATTEMPT_PHASE.HEADERS} = {}) {
@@ -87,4 +89,24 @@ test('the task budget is finite and uses the injected clock', () => {
   assert.equal(taskBudgetRemaining(budget, 999999), 0);
   const floored = createTaskBudget({now: () => 0, taskTimeoutMs: 1});
   assert.equal(floored.taskTimeoutMs, 60000, 'a task budget can never be effectively zero');
+  assert.equal(budget.softBudgetMs, 120000, 'the soft warning cannot exceed the hard deadline');
+  const withSoft = createTaskBudget({now: () => 0, taskTimeoutMs: 120000, softBudgetMs: 60000});
+  assert.equal(withSoft.softBudgetMs, 60000);
+  assert.equal(withSoft.softDeadlineAt, 60000);
+});
+
+test('the task budget moves through normal, soft and hard states', () => {
+  const budget = createTaskBudget({
+    now: () => 0,
+    taskTimeoutMs: 60 * 60 * 1000,
+    softBudgetMs: 45 * 60 * 1000
+  });
+  assert.equal(taskBudgetState(budget, 20 * 60 * 1000), 'normal');
+  assert.equal(taskBudgetState(budget, 45 * 60 * 1000), 'soft');
+  assert.equal(taskBudgetState(budget, 59 * 60 * 1000), 'soft');
+  assert.equal(taskBudgetState(budget, 60 * 60 * 1000), 'hard');
+  assert.equal(taskBudgetElapsed(budget, 61 * 60 * 1000), 61 * 60 * 1000);
+  const defaultBudget = createTaskBudget({now: () => 0});
+  assert.equal(defaultBudget.taskTimeoutMs, 60 * 60 * 1000);
+  assert.equal(defaultBudget.softBudgetMs, 45 * 60 * 1000);
 });
