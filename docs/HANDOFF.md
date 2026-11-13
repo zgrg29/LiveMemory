@@ -31,7 +31,7 @@
 
 - 全量 **683 passed / 0 failed**（约 163 秒）。
 - 生产任务只读副本：原任务 32/32 → 2 个局部节点 + 1 次 final → complete；final 引用 32/32 批次；0 次 batch 重发；节点 usage 计入任务统计。
-- 正式 EXE：buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / requireAdministrator。asInvoker 测试副本实跑：health 同 buildId；旧任务状态 `resume-aggregate`；Resume 后 complete、32/32、2 节点、3 次汇总请求、final 32/32 refs、无 batch 重发。
+- 正式 EXE：buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a6…` / 91.9 MB / 176 assets / requireAdministrator。asInvoker 测试副本实跑：health 同 buildId；旧任务状态 `resume-aggregate`；Resume 后 complete、32/32、2 节点、3 次汇总请求、final 32/32 refs、无 batch 重发。
 - 未验证：真实付费 DeepSeek 分层请求质量、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击（沙箱限制）。
 
 ### 0.4 生产恢复步骤

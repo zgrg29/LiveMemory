@@ -33,7 +33,7 @@
 ### 0.20.3 真实数据与 EXE 验证
 
 - 生产 DB/runtime/exports 只读副本（schema 14→15）：原任务 32/32 批次、0 次批次重发；2 个局部节点 + 1 次 final；完成，final 引用 32/32 批次；节点 usage 计入任务统计。
-- **正式 EXE 重建**：`dist/LiveMemory.exe` buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / `requireAdministrator`。
+- **正式 EXE 重建**：`dist/LiveMemory.exe` buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a6…` / 91.9 MB / 176 assets / `requireAdministrator`。
 - asInvoker 测试副本（仅测试 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）+ 本地 Mock Provider + 生产数据副本实际启动：`/api/health` 返回同一 buildId；`/api/ai/analyze/status` 对旧任务显示 `resume-aggregate`；点击 Resume 后 `complete`、32/32、2 个节点、3 次汇总请求、final 引用 32/32，未重发任何 batch。
 - 未验证：真实付费 DeepSeek 的 32 批分层请求质量、真实 UAC 双击、真实浏览器点击（沙箱仍阻止浏览器命名管道）。
 

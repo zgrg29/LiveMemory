@@ -21,7 +21,7 @@
 - 全量 **683 passed / 0 failed**（约 163 秒）。
 - 新增 `tests/unit/ai-hierarchy.test.mjs`（10）、`tests/integration/ai-hierarchy.test.mjs`（3）；重写 `ai-aggregate-recovery`（3）。
 - 生产 DB/runtime/exports 只读副本：原任务 32/32 → 2 节点 + final，0 次 batch 重发，final 32/32 refs。
-- 正式 EXE buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / `requireAdministrator`；asInvoker 测试副本 + 本地 Mock Provider 实跑完成 32/32，日志只有 2 digest + 1 final。
+- 正式 EXE buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a6…` / 91.9 MB / 176 assets / `requireAdministrator`；asInvoker 测试副本 + 本地 Mock Provider 实跑完成 32/32，日志只有 2 digest + 1 final。
 - 未做：真实付费 DeepSeek、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
 
 ## 0.13.2-r8 — 2026-11-13（最终汇总截断与「继续最终汇总」恢复）
