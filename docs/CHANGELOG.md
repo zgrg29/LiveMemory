@@ -18,7 +18,8 @@
 
 - **628 passed / 0 failed**（约 120 秒）；新增 `tests/unit/ai-compact-memory.test.mjs`、`tests/integration/ai-memory-reliability.test.mjs`，更新 `ai-ui`。
 - 隔离 Mock Provider 验证 A–M：正常导入、完整 ref 但非法、自动修复成功/失败、伪造身份、跨观众证据、4 批并发仅 b02 失败、重启只补 b02、重复提交幂等、日语事实、combined partial、usage 归属、礼物-only 观众。
-- 未做：真实付费 API、真实浏览器截图（沙箱拒绝浏览器命名管道）、生产任务 Resume、EXE 构建。
+- **`AI_IMPORT_INVALID` 专项验收**：旧代码 `3fccba1` 用 392/37/4 结构复现（三个变体均失败、27/37、无详情、无 repair）；新代码同条件全部 37/37（一次 repair）；修复仍失败时详情/批次/Resume 正确；隔离 EXE（buildId `c51819b2f3f3`）同样通过。证据见 `log/2026-11-13-ai-import-invalid-acceptance.md`。
+- 未做：真实付费 API、真实浏览器截图（沙箱拒绝浏览器命名管道）、生产任务 Resume、真实 UAC 双击。
 
 ## 0.13.2-r4 — 2026-11-12（观众身份专项审计）
 

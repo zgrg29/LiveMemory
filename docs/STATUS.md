@@ -44,6 +44,17 @@
 - 关键命令与结果见 HANDOFF §5。
 - 隔离启动冒烟：`node src/launcher/launcher.mjs --no-open --port 48300 --data-dir D:\LiveMemory\tests\.tmp\smoke2` → `/api/health` 返回 `buildId=dev-e67677a`、`commit=e67677a`；`/api/bootstrap` 返回 schema 13 与临时数据目录。结束后删除临时目录。端口 49666 在本机被系统/沙箱拒绝（EACCES），换 48300 成功，不是应用代码错误。
 
+### 0.16.4 `AI_IMPORT_INVALID` 专项端到端验收（2026-11-13）
+
+完整证据：`log/2026-11-13-ai-import-invalid-acceptance.md`。
+
+- **旧代码 3fccba1**：392 条合成消息 / 37 观众 / 4 批（10/10/10/7），3 个变体（伪造 `viewer_id`、stated 缺证据、跨观众证据）全部复现 `AI_IMPORT_INVALID`；错误只有裸代码、无 stage/字段错误、无 repair；b02 仅 1 次请求；覆盖 27/37；后续成功批次清空 `last_error_*`。
+- **新代码 e67677a**：同数据同变体全部 `complete` 37/37。伪造身份变体无需 repair（本地 ID 不被覆盖）；缺证据/跨观众证据变体 b02 发起一次 repair 后成功。
+- **修复仍失败**：新代码显示 `AI_IMPORT_INVALID` + `MEMORY_EVIDENCE_REQUIRED` + stage=validation + batchIndex=2 + `batchErrors=[2]`；27/37 保留，facts 3。重启后 Resume 只发 1 次 b02，完成 37/37，facts 4。
+- **隔离 EXE**：独立构建（buildId `c51819b2f3f3`，SHA-256 `9b8832…`，requireAdministrator；测试副本 asInvoker）通过本地 Mock Provider 实测：repair 场景 complete 37/37；always-invalid 场景显示精确错误、27/37；EXE 内 Resume 只发 b02 一次并完成 37/37。正式 EXE 未替换。
+- 未验证：真实付费 API、原始 392 条聊天内容、真实生产任务 Resume、UAC 双击。
+
+
 ## 0.15 v0.13.2 观众身份专项审计（2026-11-12）
 
 完整报告：`docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。**只读审计用户数据库，未修改任何历史事件。**
