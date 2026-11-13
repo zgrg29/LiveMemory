@@ -42,7 +42,10 @@
 - 全量：**698 passed / 0 failed**（2026-11-13，约 196 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - 新增：`tests/unit/ai-adapter-output.test.mjs` 3 项；`tests/unit/ai-token-batching.test.mjs` 4 项；`tests/integration/ai-memory-output-recovery.test.mjs` 9 项（含 975/975、异常多消息观众、批次 2 失败/1&3 已保存、重复继续幂等）。
 - 迁移断言更新到 schema 16，新增 split 列断言。
-- **EXE**：待构建结果填入本节（buildId/commit/SHA-256/大小/assets/Manifest）与 HANDOFF。
+- **EXE**：`dist/LiveMemory.exe` buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18d6856a8d79df56673ac4e6fff76d56ccd15521020860247631855b44` / 91.9 MB / 176 assets / `requireAdministrator`。
+  - asInvoker 测试副本 + 本地 Mock Provider + 生产数据副本：`/api/health` 同 buildId/commit；`/api/status` schema 16；旧任务显示 `17/100`、`153/975`、`resume-memory`、`canResume=true`、`lastFinishReason=null`；
+  - `POST /api/ai/analyze/resume` 后 `complete`、`100/100`、`975/975`、85 次 Provider 请求、b12 自动拆 `12.1/12.2`、旧 17 条结果保留、facts 252。
+  - 未验证：真实付费 DeepSeek、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击。
 
 ### 0.21.5 用户安全继续步骤
 

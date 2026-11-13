@@ -1188,4 +1188,9 @@ duration ≈ 155s
 
 ### 36.4 EXE
 
-- 构建完成后填入：buildId / commit / SHA-256 / 大小 / assets / Manifest；asInvoker 测试副本 + Mock 实跑结果。
+- `dist/LiveMemory.exe`：buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18…` / 91.9 MB / 176 assets / `requireAdministrator`。
+- asInvoker 测试副本 + 本地 Mock Provider（OpenAI-compatible SSE）+ 生产数据副本：
+  - `/api/health` 返回同一 buildId/commit；`/api/status` schema 16；
+  - 旧任务 `partial`、`17/100`、`153/975`、`resume-memory`、`canResume=true`、`lastFinishReason=null`；
+  - `POST /api/ai/analyze/resume` 后 `complete`、`100/100`、`975/975`、85 次 Provider 请求、b12 自动拆 `12.1/12.2`、旧 17 条结果保留、facts 252。
+- 未做：真实付费 DeepSeek、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。

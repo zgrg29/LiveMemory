@@ -141,3 +141,17 @@
 2. 不要重新分析已保存的 17 个批次/153 位观众。
 3. 若仍出现空响应，最多自动重试 1 次；若出现截断，系统会先拆批次/提高单观众预算，不会重发相同大请求。
 4. 若最终仍失败，保留「继续未完成画像」；技术详情会给出 `AUTO_OUTPUT_TRUNCATED` 或 `PROVIDER_RESPONSE_EMPTY`、批次、子批次路径与结束原因。
+
+### 4.4 正式 EXE 实跑
+
+- `dist/LiveMemory.exe`：buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18d6856a8d79df56673ac4e6fff76d56ccd15521020860247631855b44` / 91.9 MB / 176 assets / `requireAdministrator`。
+- 非提升会话使用 asInvoker 测试副本（仅测试 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）+ 本地 OpenAI-compatible Mock Provider（SSE）+ 生产数据副本：
+  - `/api/health` 返回同一 buildId/commit；`/api/status` schema 16。
+  - 旧任务：`partial`、`17/100`、`153/975`、`resume-memory`、`canResume=true`、`lastFinishReason=null`（不再显示上一子任务的 length）。
+  - `POST /api/ai/analyze/resume` 后 `complete`、`100/100`、`975/975`、pending 0、failed 0、splits 2、85 次 Provider 请求；b12 首次空+length → `12.1`/`12.2`；旧 17 条结果保留，facts 252。
+- 未做：真实付费 DeepSeek、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
+
+## 6. 交付提交
+
+- 本地 commit `ab32386`（`fix: bound memory output recovery and viewer checkpoints`），未 Push。
+- 文档中的 EXE 构建指标来自该 commit；文档更新另一次提交。

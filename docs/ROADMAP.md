@@ -2,7 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-13）：长期画像输出预算与动态分批、`finish_reason=length` 与空响应分类、有界拆分/预算提升、观众级 `split_path` 断点恢复（schema 16）、UI/统计；真实 975 人任务只读副本回放 975/975，698 自动化测试。完整说明见 `docs/STATUS.md` §0.21 与 `docs/HANDOFF.md` §0。
+> v0.13.2（2026-11-13）：长期画像输出预算与动态分批、`finish_reason=length` 与空响应分类、有界拆分/预算提升、观众级 `split_path` 断点恢复（schema 16）、UI/统计；真实 975 人任务只读副本回放 975/975；正式 EXE buildId `4b697b2cb227` 实跑同一任务 100/100、975/975；698 自动化测试。完整说明见 `docs/STATUS.md` §0.21 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-13）：可扩展分层汇总；schema 15 `ai_aggregate_nodes`；32 批真实任务只读副本恢复为 2 个局部节点 + final；正式 EXE buildId `58362fa30b5f` 实跑验证；683 自动化测试。完整说明见 `docs/STATUS.md` §0.20 与 `docs/HANDOFF.md` §0.6。
 > v0.13.2（2026-11-13）：最终汇总截断修复、独立 12k–16k 汇总预算、有界汇总契约、`recovery` 状态与「继续最终汇总」恢复面板、API/输出统计分离；668 自动化测试。完整说明见 `docs/STATUS.md` §0.19 与 `docs/HANDOFF.md` §0.6。
 > v0.13.2（2026-11-13）：AI 分析输出语言与已保存报告翻译；新增 schema 14 翻译缓存、段落级按需翻译/重试、长期画像多语言展示；649 自动化测试。完整说明见 `docs/STATUS.md` §0.18 与 `docs/HANDOFF.md` §0.7。

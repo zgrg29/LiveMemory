@@ -34,7 +34,7 @@
 
 - 全量 **698 passed / 0 failed**（约 196 秒）。
 - 真实任务只读副本 + Mock：17/100、153/975 → complete 100/100、975/975；只请求 b12、19–100；b12 自动拆 12.1/12.2；旧 17 条结果 id/version 全部保留；再次继续 0 请求。
-- EXE：见 §0.4（构建完成后填入 buildId/commit/SHA-256/大小/assets）。
+- EXE：`dist/LiveMemory.exe` buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18d6856a8d79df56673ac4e6fff76d56ccd15521020860247631855b44` / 91.9 MB / 176 assets / `requireAdministrator`。asInvoker 测试副本 + 本地 Mock Provider + 生产数据副本实跑：health 同 build；旧任务 `17/100`、`153/975`、`resume-memory`；Resume 后 `complete`、`100/100`、`975/975`、85 次 Provider 请求、b12 自动拆 `12.1/12.2`、旧 17 条结果保留、facts 252。
 - 未验证：真实付费 DeepSeek Flash、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击；b12 原始 finish_reason 未保存。
 
 ### 0.4 生产恢复步骤

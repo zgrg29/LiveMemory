@@ -21,7 +21,7 @@
 - 全量 **698 passed / 0 failed**（约 196 秒）。
 - 新增 `tests/unit/ai-adapter-output.test.mjs` 3 项、`tests/unit/ai-token-batching.test.mjs` 4 项、`tests/integration/ai-memory-output-recovery.test.mjs` 9 项。
 - 生产数据只读副本 + Mock：17/100、153/975 → complete 100/100、975/975；只请求 b12、19–100；b12 自动拆 12.1/12.2；旧 17 条结果保留；重复继续 0 请求。
-- EXE 构建结果见 STATUS §0.21.4 / HANDOFF §0.3。
+- 正式 EXE：buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18…` / 91.9 MB / 176 assets / `requireAdministrator`；asInvoker 测试副本 + 本地 Mock + 生产数据副本实跑旧任务，17/100、153/975 → complete 100/100、975/975，85 次 Provider 请求，旧 17 条结果保留。
 
 ## 0.13.2-r9 — 2026-11-13（可扩展分层汇总与真实 32 批恢复）
 
