@@ -42,7 +42,7 @@
   - `tests/integration/ai-memory-reliability.test.mjs`（10）：A 正常导入、B 完整 ref 但证据缺失、C 一次修复成功、D 修复仍失败可恢复、E 伪造 viewer_id、F 跨观众证据、G 四批并发仅第 2 批失败且错误不被清除、H 重启只补 b02、I 重复提交幂等、J 日语事实、K combined partial、L usage 归属、M 礼物-only 客观处理。
   - `tests/unit/ai-ui.test.mjs` 新增：诊断/统计三语键、技术详情只渲染本地字段、无 HTML 注入。
 - 关键命令与结果见 HANDOFF §5。
-
+- 隔离启动冒烟：`node src/launcher/launcher.mjs --no-open --port 48300 --data-dir D:\LiveMemory\tests\.tmp\smoke2` → `/api/health` 返回 `buildId=dev-e67677a`、`commit=e67677a`；`/api/bootstrap` 返回 schema 13 与临时数据目录。结束后删除临时目录。端口 49666 在本机被系统/沙箱拒绝（EACCES），换 48300 成功，不是应用代码错误。
 
 ## 0.15 v0.13.2 观众身份专项审计（2026-11-12）
 
