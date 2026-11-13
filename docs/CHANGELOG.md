@@ -1,5 +1,29 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r9 — 2026-11-13（可扩展分层汇总与真实 32 批恢复）
+
+### 新增
+
+- **分层汇总**：`src/ai/aggregate/hierarchy.mjs`、`ai_aggregate_nodes`（schema 15）、预算动态分组、单组超预算二分、受控层数、final unit 上限、确定性 digest/final 与覆盖/证据/时间去重校验。
+- **可恢复局部节点**：level 0 final + level≥1 partial 独立持久化；source hash 复用；重启只补缺失节点，不重算已完成节点。
+- **证据修复**：final 对 ≤96 批逐批检查；模型漏引/引用无效 seq 时，从已保存批次/局部节点补回真实 ref，不伪造；32 批真实副本 final 引用 32/32。
+- **有界重试/兜底**：截断/结构错误最多 2 次；仍失败用已保存结果确定性完成，节点标记 `deterministic`；Provider 错误保持可恢复。
+- **恢复语义**：`ANALYSIS_AGGREGATE_TOO_LARGE` 不再 `change-model`；32/32 已保存 → `resume-aggregate`。
+- **UI/统计**：分层节点进度、确定性兜底提示；节点 usage 计入任务统计。
+
+### 修复
+
+- **真实 32 批故障根因**：`contextLength=null` + 旧 48,000 单请求硬上限 + 全量拼接；compact 后 64,471 token，请求未发出。累计 token 不是单次汇总输入；37 次成功请求中无 aggregate。
+- **AUTO_OUTPUT_TRUNCATED**：保留独立 12k–16k 输出预算与有界 schema，并新增一次有界重试；两次截断后确定性兜底，不再永久失败。
+
+### 验证
+
+- 全量 **683 passed / 0 failed**（约 163 秒）。
+- 新增 `tests/unit/ai-hierarchy.test.mjs`（10）、`tests/integration/ai-hierarchy.test.mjs`（3）；重写 `ai-aggregate-recovery`（3）。
+- 生产 DB/runtime/exports 只读副本：原任务 32/32 → 2 节点 + final，0 次 batch 重发，final 32/32 refs。
+- 正式 EXE buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / `requireAdministrator`；asInvoker 测试副本 + 本地 Mock Provider 实跑完成 32/32，日志只有 2 digest + 1 final。
+- 未做：真实付费 DeepSeek、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
+
 ## 0.13.2-r8 — 2026-11-13（最终汇总截断与「继续最终汇总」恢复）
 
 ### 修复

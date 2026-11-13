@@ -669,6 +669,8 @@
       },
       "progressSessionBatches": "単場バッチ {done}/{total}",
       "progressAggregate": "全体の集約待ち",
+      "progressAggregateNodes": "階層集約 {done}/{total} ノード（レベル {level}）",
+      "progressAggregateFallback": "一部の要約はローカルの決定的フォールバックを使用しました。バッチ・タイムライン・有効な証拠は破棄していません。",
       "progressAggregateDone": "全体の集約が完了",
       "request": {
         "unknown": "リクエスト",
@@ -710,7 +712,7 @@
         "resumeMemory": "未完了のプロファイルを続行",
         "changeModel": "設定でモデルを変更",
         "resumed": "未完了の分析を続行しました。",
-        "noteAggregate": "続行すると未完了の最終集約だけを処理します。保存済みの {saved}/{total} 件の単場バッチは再分析しません。",
+        "noteAggregate": "続行すると未完了の最終集約と部分要約だけを処理します。保存済みの {saved}/{total} 件の単場バッチは再分析しません。",
         "noteSession": "続行すると未保存のバッチだけを処理します。保存済みバッチは再送しません。",
         "noteMemory": "続行すると未完了のプロファイルバッチまたは視聴者だけを処理します。保存済みの事実は再書き込みしません。",
         "noteConfig": "現在のモデル/設定ではリクエストを完了できません。設定を変更しても保存済みバッチは削除されません。配信全体を再分析しないでください。"

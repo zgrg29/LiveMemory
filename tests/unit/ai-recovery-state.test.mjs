@@ -84,10 +84,23 @@ test('a combined task with a saved report and unfinished profiles offers profile
   assert.equal(recovery.action, 'resume-memory');
 });
 
-test('too large for the current model does not fake a working Continue', () => {
+test('an aggregate that was too large is resumable through the hierarchy', () => {
   const recovery = buildRecovery({
     status: 'failed',
     errorCode: 'ANALYSIS_AGGREGATE_TOO_LARGE',
+    sessionJobId: 'job-session',
+    sessionStatus: sessionStatus(),
+    memoryStatus: null
+  });
+  assert.equal(recovery.kind, 'aggregate');
+  assert.equal(recovery.action, 'resume-aggregate');
+  assert.equal(recovery.canResume, true);
+});
+
+test('a context that cannot fit a report still offers model change, not a fake Continue', () => {
+  const recovery = buildRecovery({
+    status: 'failed',
+    errorCode: 'ANALYSIS_CONTEXT_TOO_SMALL',
     sessionJobId: 'job-session',
     sessionStatus: sessionStatus(),
     memoryStatus: null

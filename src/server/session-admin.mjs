@@ -113,6 +113,7 @@ function assertNoResidue(db, sessionId) {
     ['ai_packages', 'session_id'],
     ['ai_jobs', 'session_id'],
     ['ai_results', 'session_id'],
+    ['ai_aggregate_nodes', 'session_id'],
     ['ai_translations', 'session_id'],
     ['ai_translation_runs', 'session_id'],
     ['memory_jobs', 'session_id'],
@@ -194,6 +195,7 @@ export async function deleteSessionRecord({deps, sessionId, confirm = false, now
     // and evidence all disappear with their source broadcast; an imported
     // analysis can never outlive the chat it cites.
     db.prepare('DELETE FROM ai_results WHERE session_id = ?').run(id);
+    db.prepare('DELETE FROM ai_aggregate_nodes WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_translations WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_translation_runs WHERE session_id = ?').run(id);
     db.prepare('DELETE FROM ai_jobs WHERE session_id = ?').run(id);

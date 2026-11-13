@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openDatabase, closeDatabase} from '../../src/storage/database/connection.mjs';
@@ -20,7 +20,7 @@ import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
 
 /**
- * Broadcaster identity and the broadcaster × viewer interaction context.
+ * Broadcaster identity and the broadcaster 脳 viewer interaction context.
  *
  * These tests use the real repositories and ingest pipeline. They prove that a
  * single platform account can appear for two channels while every counter,
@@ -307,8 +307,8 @@ test('legacy history is attributed conservatively during the v5 migration', () =
   `).run(T0, T0);
 
   const result = migrate(db, {now: T0 + 3 * HOUR});
-  assert.deepEqual(result.applied, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
-  assert.equal(currentSchemaVersion(db), 14);
+  assert.deepEqual(result.applied, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.equal(currentSchemaVersion(db), 15);
   const bili = db.prepare('SELECT broadcaster_id, broadcaster_identity FROM sessions WHERE id = ?').get('ses_bili_room');
   assert.equal(bili.broadcaster_id, 'bilibili:room:5050');
   assert.equal(bili.broadcaster_identity, 'room_fallback');

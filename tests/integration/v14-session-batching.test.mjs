@@ -33,19 +33,30 @@ function sessionAnswer(refSeq = 1) {
 }
 
 function aggregateAnswer(batchTotal) {
+  const topics = [];
+  const topicCount = Math.min(24, Math.max(1, Math.ceil(batchTotal / 4)));
+  const chunkSize = Math.max(1, Math.ceil(batchTotal / topicCount));
+  for (let batch = 1; batch <= batchTotal; batch += chunkSize) {
+    const chunk = [];
+    for (let index = batch; index < Math.min(batchTotal + 1, batch + chunkSize); index += 1) {
+      chunk.push({batch: index, seq: 1});
+    }
+    topics.push({
+      title: `Merged topic ${batch}-${chunk[chunk.length - 1].batch}`,
+      started_at: iso(T0 + 1000),
+      ended_at: iso(T0 + 2000),
+      summary: 'One merged topic.',
+      key_points: ['merged'],
+      confidence: 0.7,
+      evidence: 'observed',
+      message_refs: chunk
+    });
+  }
   return JSON.stringify({
+    covered_batches: Array.from({length: batchTotal}, (_, index) => index + 1),
     session_topics: {
       summary: 'Merged whole-session summary.',
-      topics: [{
-        title: 'Merged topic',
-        started_at: iso(T0 + 1000),
-        ended_at: iso(T0 + 2000),
-        summary: 'One merged topic.',
-        key_points: ['merged'],
-        confidence: 0.7,
-        evidence: 'observed',
-        message_refs: [{batch: 1, seq: 1}, {batch: batchTotal, seq: 1}]
-      }],
+      topics,
       sentiment: [],
       disputes: [],
       highlights: []

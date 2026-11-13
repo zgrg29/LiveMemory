@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openDatabase, closeDatabase} from '../../src/storage/database/connection.mjs';
 import {
@@ -49,8 +49,8 @@ test('a schema v7 database upgrades to v8 without losing sessions or package pro
   assert.ok(!columnsBefore.includes('job_id'));
 
   const result = migrate(db, {now: T + 1000});
-  assert.deepEqual(result.applied, [8, 9, 10, 11, 12, 13, 14]);
-  assert.equal(currentSchemaVersion(db), 14);
+  assert.deepEqual(result.applied, [8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.equal(currentSchemaVersion(db), 15);
 
   const columnsAfter = db.prepare('PRAGMA table_info(ai_packages)').all().map((row) => row.name);
   for (const column of ['job_id', 'batch_index', 'stage', 'prompt_version']) {
@@ -73,7 +73,7 @@ test('a schema v7 database upgrades to v8 without losing sessions or package pro
 test('a fresh database starts at the current schema and AI results cascade with their session', () => {
   const db = openDatabase({memory: true});
   migrate(db);
-  assert.equal(currentSchemaVersion(db), 14);
+  assert.equal(currentSchemaVersion(db), 15);
   db.prepare(`
     INSERT INTO sessions (id, platform, status, storage_mode, started_at, created_at, updated_at)
     VALUES ('ses_cascade', 'mock', 'ended', 'compact', ?, ?, ?)

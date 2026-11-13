@@ -1090,7 +1090,7 @@ answer  = resolveOutputTokens({desired, inputTokens: 完整提示词估算, cont
   - 不包含 `viewer_profiles`。
 - 三语汇总提示词增加：合并优先、不要逐批拼接/重复证据、覆盖全部批次的 seq 范围、时间线覆盖最早到最晚批次。
 - `condenseBatchResult(..., {limits})` 可做第二遍 compact：每批 topics ≤16、sentiment ≤8、disputes ≤8、highlights ≤8、message_refs ≤6；**全部批次与证据引用保留**，不丢后面的批次。
-- 输入在 compact 后仍超限 → `ANALYSIS_AGGREGATE_TOO_LARGE`，恢复状态为 `change-model` / `canResume=false`；不得伪造可用的“继续”。
+- 输入在 compact 后仍超限时**不再直接失败**：v0.13.2 起进入分层汇总（见 §24）；只有“单个批次/单个节点自身仍无法压缩”才是真正的程序上限。
 
 ### 23.3 汇总失败状态与恢复
 
@@ -1122,3 +1122,53 @@ savedResults
 - `attemptStats.succeeded` 只表示 HTTP/Provider 请求成功；`outputStats.rejected` 表示成功响应但被截断/退化/JSON/Schema/覆盖校验拒绝。
 - 两者必须同时展示；不得用“20 次请求成功”表示“AI 分析完成”。
 - 旧任务没有 `outputRejected` 时，依据最终错误码保守显示至少 1 条拒绝输出；未知 usage 仍为未知，不当作零。
+
+## 24. v0.13.2 分层汇总（2026-11-13）
+
+### 24.1 预算
+
+```text
+context = configured contextLength > 0 ? contextLength : 64000（保守默认）
+digestInputLimit = clamp(context - 8000 - 500, 1000, 192000)
+finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
+```
+
+- `contextLength=null` 是常见真实状态，不代表模型只有 64k；64k 只是**单请求规划预算**，超过就加层。
+- 单请求输入硬上限 192,000，避免在 1M 模型上生成无界请求；输出预留仍由 `resolveAggregateOutputTokens`/`resolveDigestOutputTokens` 决定。
+
+### 24.2 结构
+
+- 全部已保存 batch result 按连续区间分组；每片 ≤72 个 batch（覆盖能力 12 topic × 6 ref），按实际 token 预算切分，单组超预算自动二分。
+- 每个 leaf 节点输出有界 `covered_batches + session_topics`，schema 限 topics ≤12、sentiment ≤8、disputes ≤6、highlights ≤6、summary ≤800、每项 refs ≤6。
+- 如果 final 仍装不下，节点作为下一层输入继续汇总；`MAX_AGGREGATE_DEPTH=6`，final 前最多 24 个 unit，超过继续加层而不是失败。
+- final 使用有界 Schema 1.3.0 输出；`covered_batches` 可选（旧答案兼容），但本地确定性覆盖检查始终执行。
+- 不要求局部汇总重复完整原始 JSON、完整证据或无关字段；必须保留关键话题、时间线、情绪变化、事件、片段与有效 ref。
+
+### 24.3 持久化/恢复
+
+- schema 15 `ai_aggregate_nodes`：`job_id + level + node_index` 唯一；保存 `source_hash`、`covered_batches`、digest、usage、coverage、fallback、error。
+- level 0 是 final；level ≥1 是局部节点。source hash 包含子批次 checksum 或子节点 digest，批次结果/摘要变化时旧节点不会被误用。
+- 节点在通过校验后立即写入；中断/重启后只补缺失节点与 final，已完成节点不重算、不重付费。
+- final 节点已保存但 `ai_results.final` 缺失时，恢复只重新组装/导入 final，不再调用 Provider。
+
+### 24.4 确定性校验
+
+- 每个节点 `covered_batches` 必须精确等于输入批次；unit 覆盖要求每个可报告 batch/child unit 至少有一个有效 ref（或时间窗口重叠，仅当该单元确实没有可引用证据）。
+- `message_refs` 只能引用输入中该批次已有的 seq；伪造/越界 ref 被过滤，不计入覆盖。
+- 时间必须可解析且结束不早于开始；事件按标题/时间确定性去重，时间线排序。
+- final 对 ≤96 批逐批检查；被模型漏掉或使用了无效 ref 的批次，会从已保存的批次/局部节点补回**真实** ref。超过 96 批时按 unit 覆盖，局部节点已逐批校验。
+- 仍无法覆盖（例如批次结果本身没有可用证据且时间缺失）时明确失败；不得静默丢批次、伪造证据或降低报告完整性。
+
+### 24.5 重试/兜底
+
+- 每个局部/final 输出最多 2 次：首次正常 schema；截断或结构/覆盖失败后用 TIGHT caps 再试一次。
+- 两次仍失败：用已保存 batch result / local digest 生成确定性 digest/final（保留 refs、时间线与批次覆盖），任务可完成；节点 `fallback=deterministic`，状态与 UI 可见。
+- Provider/网络/取消错误不做确定性兜底，保留已完成节点并进入既有 needs_action/resume 语义；无无限重试。
+- 所有节点请求的 usage 写入节点并计入 job usage；`GET /api/ai/analyze/status` 的 `aggregate.requests/inputTokens/outputTokens` 与任务 `usage` 都包含分层请求。
+
+### 24.6 错误与恢复
+
+- `ANALYSIS_AGGREGATE_TOO_LARGE`：仅当单批/单节点仍无法装下或无可用覆盖信息时出现；不再因为 32 批全量拼不下一请求而出现。32/32 已保存 + final 缺失时恢复动作仍是 `resume-aggregate`。
+- `ANALYSIS_CONTEXT_TOO_SMALL`：上下文不足以容纳最终输出预留，恢复为 `change-model`。
+- `ANALYSIS_AGGREGATE_LIMIT`：层级/节点数超过受控上限；已完成节点保留。
+- `AUTO_OUTPUT_TRUNCATED`：有界重试 + 确定性兜底后不应成为永久失败；仍失败时保留已保存批次与节点。

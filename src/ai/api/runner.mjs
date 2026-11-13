@@ -7,6 +7,12 @@ import {
   setJobUsage
 } from '../../storage/repositories/ai-jobs.mjs';
 import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
+import {
+  aggregateNodeSummary,
+  getAggregateNode,
+  listAggregateNodes,
+  upsertAggregateNode
+} from '../../storage/repositories/ai-aggregate-nodes.mjs';
 import {latestResultForScope, listResults} from '../../storage/repositories/ai-results.mjs';
 import {getSession} from '../../storage/repositories/sessions.mjs';
 import {listSessionViewers} from '../../storage/repositories/viewers.mjs';
@@ -35,16 +41,54 @@ import {
 } from '../runtime/attempt.mjs';
 import {
   MIN_AGGREGATE_OUTPUT_TOKENS,
+  DEFAULT_BATCH_INPUT_TOKENS,
+  DIGEST_OUTPUT_TOKENS,
+  MAX_AGGREGATE_DEPTH,
+  MAX_AGGREGATE_NODES,
   estimateJsonTokens,
   estimateTokens,
+  resolveAggregateContextBudget,
+  resolveAggregateInputLimit,
   resolveAggregateOutputTokens,
   resolveBatchInputTokens,
+  resolveDigestOutputTokens,
   resolveMaxCompletionTokens,
   resolveOutputTokens
 } from '../batching/tokens.mjs';
 import {
+  AGGREGATE_NODE_PROTOCOL,
+  AGGREGATE_NODE_VERSION,
+  AGGREGATE_PLAN_VERSION,
+  DIGEST_AGGREGATE_LIMITS,
+  FINAL_AGGREGATE_LIMITS,
+  MAX_DIGEST_UNITS,
+  MAX_FINAL_UNITS,
+  TIGHT_AGGREGATE_LIMITS,
+  canonicalJson,
+  checkBatchCoverage,
+  collectDigestRefs,
+  collectResultRefs,
+  coverageLedger,
+  deterministicDigest,
+  deterministicFinal,
+  digestHash,
+  digestSchema,
+  ensureFinalBatchEvidence,
+  finalEnvelopeSchema,
+  groupBatchesContiguously,
+  groupSourceHash,
+  normalizeDigestAnswer,
+  normalizeFinalAnswer,
+  partialReportsForPrompt,
+  resultIsReportable,
+  schemaIssuesFor,
+  splitGroup,
+  uniqueIntegers
+} from '../aggregate/hierarchy.mjs';
+import {
   SESSION_FILES,
   MEMORY_FILES,
+  buildAggregateDigestPrompt,
   buildSessionPrompt,
   buildMemoryPrompt,
   buildTargetedMemoryPrompt,
@@ -657,6 +701,9 @@ export class AnalysisRunner {
       sessionStatus,
       memoryStatus
     });
+    const aggregateSummary = entry.sessionJobId
+      ? aggregateNodeSummary(this.db, entry.sessionJobId)
+      : null;
     // Old tasks did not persist the rejection counter. A truncation/schema
     // failure still proves at least one successful response was unusable, so
     // report a conservative 1 instead of zero for backward compatibility.
@@ -666,7 +713,8 @@ export class AnalysisRunner {
       'AUTO_SCHEMA_INVALID',
       'AUTO_INVALID_JSON',
       'AI_IMPORT_INVALID',
-      'AUTO_VIEWER_COVERAGE_INCOMPLETE'
+      'AUTO_VIEWER_COVERAGE_INCOMPLETE',
+      'AGGREGATE_COVERAGE_INCOMPLETE'
     ]);
     const outputRejected = Math.max(
       Number(attemptStats.outputRejected ?? 0),
@@ -718,6 +766,30 @@ export class AnalysisRunner {
       sessionAggregateRequired,
       sessionAggregateDone,
       waitingAggregate,
+      aggregate: {
+        mode: aggregateSummary?.mode ?? entry.aggregateMode ?? null,
+        level: entry.aggregateLevel ?? aggregateSummary?.levels ?? null,
+        levelCount: entry.aggregateLevelCount ?? aggregateSummary?.levels ?? null,
+        levels: aggregateSummary?.levels ?? entry.aggregateLevelCount ?? 0,
+        nodeTotal: Math.max(
+          Number(aggregateSummary?.nodeTotal ?? 0),
+          Number(entry.aggregateNodeTotal ?? 0)
+        ),
+        nodesComplete: Math.max(
+          Number(aggregateSummary?.nodesComplete ?? 0),
+          Number(entry.aggregateNodesComplete ?? 0)
+        ),
+        nodesFailed: Math.max(
+          Number(aggregateSummary?.nodesFailed ?? 0),
+          Number(entry.aggregateNodesFailed ?? 0)
+        ),
+        requests: Number(aggregateSummary?.requests ?? 0),
+        inputTokens: Number(aggregateSummary?.inputTokens ?? 0),
+        outputTokens: Number(aggregateSummary?.outputTokens ?? 0),
+        fallback: aggregateSummary?.fallback ?? entry.aggregateFallback ?? null,
+        coverage: aggregateSummary?.coverage ?? null,
+        finalSaved: aggregateSummary?.finalSaved === true || sessionAggregateDone
+      },
       pendingSessionBatches,
       pendingMemoryBatches,
       analysisOutcome,
@@ -1391,51 +1463,8 @@ export class AnalysisRunner {
     });
   }
 
-  #buildAggregatePrompt(job, provider) {
-    const packages = getJobPackage(this.db, {jobId: job.id, stage: 'session', batchIndex: 1});
-    if (!packages) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
-    const files = readAnalysisPackage(join(this.paths.exports, packages.file_name), ['result.schema.json']);
-    const resultSchema = JSON.parse(files['result.schema.json']);
-    const rows = listResults(this.db, job.id, {includeJson: true})
-      .filter((row) => row.batchIndex !== null);
-    const latest = new Map();
-    for (const row of rows) {
-      const current = latest.get(row.batchIndex);
-      if (!current || current.resultVersion < row.resultVersion) latest.set(row.batchIndex, row);
-    }
-    const batchRows = new Map(listJobBatches(this.db, job.id).map((batch) => [batch.batchIndex, batch]));
-    const buildBatchResults = (limits) => [...latest.values()]
-      .sort((a, b) => a.batchIndex - b.batchIndex)
-      .map((row) => {
-        const batch = batchRows.get(row.batchIndex);
-        const topics = row.result?.session_topics ?? {};
-        const times = [
-          ...(topics.topics ?? []),
-          ...(topics.disputes ?? []),
-          ...(topics.highlights ?? [])
-        ].flatMap((entry) => [entry?.started_at, entry?.ended_at])
-          .filter((value) => typeof value === 'string' && !Number.isNaN(Date.parse(value)))
-          .sort();
-        return {
-          batch_index: row.batchIndex,
-          task_id: row.taskId,
-          coverage: batch
-            ? {
-              from_seq: batch.fromSeq,
-              to_seq: batch.toSeq,
-              message_count: batch.messageCount,
-              from_at: times[0] ?? null,
-              to_at: times[times.length - 1] ?? null
-            }
-            : null,
-          result: condenseBatchResult(row.result, {batchIndex: row.batchIndex, limits})
-        };
-      });
-    let batchResults = buildBatchResults(null);
-    if (batchResults.length === 0) {
-      throw Object.assign(new Error('AGGREGATE_NOT_READY'), {code: 'ANALYSIS_AGGREGATE_NOT_READY'});
-    }
-    const manifest = {
+  #aggregateManifest(job) {
+    return {
       job_id: job.id,
       session_id: job.sessionId,
       locale: job.locale,
@@ -1446,105 +1475,1075 @@ export class AnalysisRunner {
         session_id: job.sessionId
       }]
     };
-    const build = () => buildSessionAggregatePrompt({manifest, batchResults, resultSchema});
-    let prompt = build();
-    let batchResultTokens = estimateJsonTokens(batchResults);
-    let outputTokens = resolveAggregateOutputTokens({
-      batchResultTokens,
-      inputTokens: prompt.estimatedTokens,
-      contextLength: provider.contextLength
-    });
-    let inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
-    let compacted = false;
-    const assertAggregateBudget = () => {
-      if (outputTokens >= MIN_AGGREGATE_OUTPUT_TOKENS) return;
-      throw Object.assign(new Error('AGGREGATE_BUDGET_TOO_SMALL'), {
-        code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
-        detail: `context leaves only ${outputTokens} aggregate output tokens (minimum ${MIN_AGGREGATE_OUTPUT_TOKENS}); estimated ${prompt.estimatedTokens} input tokens, batches ${job.batchTotal}`,
-        estimatedTokens: prompt.estimatedTokens,
-        limit: inputLimit,
-        outputTokens,
-        batches: job.batchTotal,
-        contextLength: provider.contextLength ?? null
+  }
+
+  #aggregateResultSchema(job) {
+    const packages = getJobPackage(this.db, {jobId: job.id, stage: 'session', batchIndex: 1});
+    if (!packages) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
+    const files = readAnalysisPackage(join(this.paths.exports, packages.file_name), ['result.schema.json']);
+    return JSON.parse(files['result.schema.json']);
+  }
+
+  /**
+   * Latest validated result of every saved batch, with the exact metadata the
+   * hierarchy needs. This function never reads raw chat and never calls the
+   * provider: a resumed task consumes these rows directly.
+   */
+  #aggregateEntries(job) {
+    const rows = listResults(this.db, job.id, {includeJson: true})
+      .filter((row) => row.batchIndex !== null);
+    const latest = new Map();
+    for (const row of rows) {
+      const current = latest.get(row.batchIndex);
+      if (!current || current.resultVersion < row.resultVersion) latest.set(row.batchIndex, row);
+    }
+    const batchRows = new Map(listJobBatches(this.db, job.id).map((batch) => [batch.batchIndex, batch]));
+    const session = getSession(this.db, job.sessionId);
+    const fallbackStart = Number(session?.started_at ?? job.createdAt ?? this.now());
+    const fallbackEnd = Number(session?.ended_at ?? session?.last_event_at ?? fallbackStart);
+    const entries = [];
+    for (const row of [...latest.values()].sort((a, b) => a.batchIndex - b.batchIndex)) {
+      const batch = batchRows.get(row.batchIndex);
+      const topics = row.result?.session_topics ?? {};
+      const times = [
+        ...(topics.topics ?? []),
+        ...(topics.disputes ?? []),
+        ...(topics.highlights ?? [])
+      ].flatMap((entry) => [entry?.started_at, entry?.ended_at])
+        .filter((value) => typeof value === 'string' && !Number.isNaN(Date.parse(value)))
+        .sort();
+      const fromAt = batch?.fromAt ?? (times[0] ? Date.parse(times[0]) : fallbackStart);
+      const toAt = batch?.toAt ?? (times.length > 0 ? Date.parse(times[times.length - 1]) : fallbackEnd);
+      const result = row.result;
+      const condensed = condenseBatchResult(result, {batchIndex: row.batchIndex});
+      const coverage = {
+        from_seq: batch?.fromSeq ?? null,
+        to_seq: batch?.toSeq ?? null,
+        message_count: batch?.messageCount ?? null,
+        from_at: fromAt ? new Date(fromAt).toISOString() : null,
+        to_at: toAt ? new Date(toAt).toISOString() : null
+      };
+      entries.push({
+        batchIndex: row.batchIndex,
+        batchId: batch?.batchId ?? null,
+        taskId: row.taskId,
+        checksum: row.checksum,
+        resultVersion: row.resultVersion,
+        fromSeq: batch?.fromSeq ?? null,
+        toSeq: batch?.toSeq ?? null,
+        fromAt,
+        toAt,
+        messageCount: batch?.messageCount ?? 0,
+        result,
+        coverage,
+        reportable: resultIsReportable(result),
+        validRefs: collectResultRefs(result, row.batchIndex),
+        condensedTokens: estimateJsonTokens({
+          batch_index: row.batchIndex,
+          task_id: row.taskId,
+          coverage,
+          result: condensed
+        }) + 250
       });
+    }
+    if (entries.length === 0) {
+      throw Object.assign(new Error('AGGREGATE_NOT_READY'), {code: 'ANALYSIS_AGGREGATE_NOT_READY'});
+    }
+    return entries;
+  }
+
+  #coverageForBatches(entries, batches) {
+    const byBatch = new Map(entries.map((entry) => [entry.batchIndex, entry]));
+    return uniqueIntegers(batches).map((batch) => {
+      const entry = byBatch.get(batch);
+      return {
+        batch,
+        from_seq: entry?.fromSeq ?? null,
+        to_seq: entry?.toSeq ?? null,
+        messages: entry?.messageCount ?? null,
+        from_at: entry?.fromAt ? new Date(entry.fromAt).toISOString() : null,
+        to_at: entry?.toAt ? new Date(entry.toAt).toISOString() : null
+      };
+    });
+  }
+
+  #aggregateContext(job, entries) {
+    const batchMeta = new Map();
+    const reportable = new Map();
+    const validRefs = new Map();
+    for (const entry of entries) {
+      batchMeta.set(entry.batchIndex, {
+        fromAt: entry.fromAt,
+        toAt: entry.toAt,
+        messageCount: entry.messageCount
+      });
+      reportable.set(entry.batchIndex, entry.reportable);
+      validRefs.set(entry.batchIndex, entry.validRefs);
+    }
+    return {
+      manifest: this.#aggregateManifest(job),
+      batchMeta,
+      reportable,
+      validRefs,
+      allBatches: entries.map((entry) => entry.batchIndex)
     };
-    assertAggregateBudget();
-    // The actual 18-batch task was ~34k input tokens. A smaller-context model
-    // cannot merge that plus a real report in one request. Retry the planning
-    // with lower per-batch cardinality (all batches, all evidence preserved)
-    // before declaring the input too large.
-    if (prompt.estimatedTokens > inputLimit) {
-      compacted = true;
-      batchResults = buildBatchResults(COMPACT_AGGREGATE_LIMITS);
-      prompt = build();
-      batchResultTokens = estimateJsonTokens(batchResults);
-      outputTokens = resolveAggregateOutputTokens({
+  }
+
+  /**
+   * Fast path: all saved batch results still fit one final request.
+   *
+   * The input budget is now explicit (context minus answer reserve), and when it
+   * is exceeded the caller moves to the hierarchy instead of throwing
+   * ANALYSIS_AGGREGATE_TOO_LARGE. A compact second pass is still attempted
+   * before adding a level, because it is cheaper for the user.
+   */
+  #directFinalPlan(job, provider, entries, resultSchema) {
+    const context = this.#aggregateContext(job, entries);
+    const build = (limits) => {
+      const batchResults = entries.map((entry) => ({
+        batch_index: entry.batchIndex,
+        task_id: entry.taskId,
+        coverage: entry.coverage,
+        result: condenseBatchResult(entry.result, {batchIndex: entry.batchIndex, limits})
+      }));
+      const answerSchema = finalEnvelopeSchema(resultSchema);
+      const prompt = buildSessionAggregatePrompt({
+        manifest: context.manifest,
+        batchResults,
+        coverage: coverageLedger({
+          batchEntries: entries,
+          nodes: [],
+          batchTotal: job.batchTotal
+        }),
+        resultSchema,
+        answerSchema,
+        requireCoverage: true
+      });
+      const batchResultTokens = estimateJsonTokens(batchResults);
+      const outputTokens = resolveAggregateOutputTokens({
         batchResultTokens,
         inputTokens: prompt.estimatedTokens,
         contextLength: provider.contextLength
       });
-      inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
-      assertAggregateBudget();
+      const budget = resolveAggregateInputLimit({
+        contextLength: provider.contextLength,
+        outputReserve: outputTokens
+      });
+      return {prompt, batchResults, batchResultTokens, outputTokens, budget, limits};
+    };
+    let plan = build(null);
+    let compacted = false;
+    if (plan.prompt.estimatedTokens > plan.budget.inputLimit) {
+      compacted = true;
+      plan = build(COMPACT_AGGREGATE_LIMITS);
     }
+    const fits = plan.prompt.estimatedTokens <= plan.budget.inputLimit
+      && plan.outputTokens >= MIN_AGGREGATE_OUTPUT_TOKENS
+      // A direct final cites batches inside bounded 4-ref topics. More than
+      // 24 × 4 batches would make "every batch cited" impossible; use the
+      // hierarchy so every batch is covered at a lower level instead.
+      && entries.length <= MAX_FINAL_UNITS * 4;
+    return {...plan, fits, compacted};
+  }
+
+  #buildDirectFinalPrompt({job, provider, entries, resultSchema, limits = null, retryNote = null}) {
+    const context = this.#aggregateContext(job, entries);
+    const condenseLimits = limits === TIGHT_AGGREGATE_LIMITS
+      ? TIGHT_AGGREGATE_LIMITS
+      : (limits ? COMPACT_AGGREGATE_LIMITS : null);
+    const batchResults = entries.map((entry) => ({
+      batch_index: entry.batchIndex,
+      task_id: entry.taskId,
+      coverage: entry.coverage,
+      result: condenseBatchResult(entry.result, {batchIndex: entry.batchIndex, limits: condenseLimits})
+    }));
+    const answerSchema = finalEnvelopeSchema(resultSchema, {limits});
+    const prompt = buildSessionAggregatePrompt({
+      manifest: context.manifest,
+      batchResults,
+      coverage: coverageLedger({
+        batchEntries: entries,
+        nodes: [],
+        batchTotal: job.batchTotal
+      }),
+      resultSchema,
+      answerSchema,
+      requireCoverage: true,
+      retryNote
+    });
+    const batchResultTokens = estimateJsonTokens(batchResults);
+    const outputTokens = resolveAggregateOutputTokens({
+      batchResultTokens,
+      inputTokens: prompt.estimatedTokens,
+      contextLength: provider.contextLength
+    });
+    return {prompt, outputTokens, limits};
+  }
+
+  /**
+   * Normalize a final answer and, for sessions small enough to cite every
+   * batch, add back only already-validated evidence refs that the model omitted.
+   * This keeps a bounded report honest: prose is untouched, fake refs are still
+   * rejected, and every reportable batch ends up with one real ref.
+   */
+  #normalizeFinalReport({answer, allBatches, nodes, entries, contextData, fallbackTime = null}) {
+    const unitCoverage = nodes.length > 0
+      ? nodes.map((node) => node.coveredBatches)
+      : allBatches.map((batch) => [batch]);
+    const perBatch = allBatches.length <= MAX_FINAL_UNITS * 4;
+    let normalized = normalizeFinalAnswer(answer, {
+      allBatches,
+      units: unitCoverage,
+      batchMeta: contextData.batchMeta,
+      reportable: contextData.reportable,
+      validRefs: contextData.validRefs,
+      fallbackTime
+    });
+    if (!normalized.ok || !perBatch) return normalized;
+    const repaired = ensureFinalBatchEvidence({
+      envelope: normalized.envelope,
+      allBatches,
+      batchEntries: entries,
+      nodes
+    });
+    return normalizeFinalAnswer(repaired, {
+      allBatches,
+      units: null,
+      batchMeta: contextData.batchMeta,
+      reportable: contextData.reportable,
+      validRefs: contextData.validRefs,
+      fallbackTime
+    });
+  }
+
+  #finalPlanFromNodes({job, provider, entries, resultSchema, nodes, limits = null}) {
+    const context = this.#aggregateContext(job, entries);
+    const partialReports = partialReportsForPrompt(nodes);
+    const coverage = coverageLedger({
+      batchEntries: entries,
+      nodes,
+      batchTotal: job.batchTotal
+    });
+    const answerSchema = finalEnvelopeSchema(resultSchema, {limits});
+    const prompt = buildSessionAggregatePrompt({
+      manifest: context.manifest,
+      batchResults: [],
+      partialReports,
+      coverage,
+      resultSchema,
+      answerSchema,
+      requireCoverage: true
+    });
+    const outputTokens = resolveAggregateOutputTokens({
+      batchResultTokens: estimateJsonTokens(partialReports),
+      inputTokens: prompt.estimatedTokens,
+      contextLength: provider.contextLength
+    });
+    const budget = resolveAggregateInputLimit({
+      contextLength: provider.contextLength,
+      outputReserve: outputTokens
+    });
     return {
       prompt,
-      resultSchema,
-      batchResults,
-      batchResultTokens,
       outputTokens,
-      inputLimit,
-      compacted
+      budget,
+      partialReports,
+      coverage,
+      answerSchema,
+      limits,
+      fits: prompt.estimatedTokens <= budget.inputLimit
+        && outputTokens >= MIN_AGGREGATE_OUTPUT_TOKENS
+        && nodes.length <= MAX_FINAL_UNITS
     };
+  }
+
+  #buildFinalFromNodesPrompt({job, provider, entries, resultSchema, nodes, limits = null, retryNote = null}) {
+    const plan = this.#finalPlanFromNodes({job, provider, entries, resultSchema, nodes, limits});
+    // Rebuild only the small retry note on top of the same bounded payload.
+    if (!retryNote) return {prompt: plan.prompt, outputTokens: plan.outputTokens, limits};
+    const context = this.#aggregateContext(job, entries);
+    const prompt = buildSessionAggregatePrompt({
+      manifest: context.manifest,
+      batchResults: [],
+      partialReports: plan.partialReports,
+      coverage: plan.coverage,
+      resultSchema,
+      answerSchema: plan.answerSchema,
+      requireCoverage: true,
+      retryNote
+    });
+    const outputTokens = resolveAggregateOutputTokens({
+      batchResultTokens: estimateJsonTokens(plan.partialReports),
+      inputTokens: prompt.estimatedTokens,
+      contextLength: provider.contextLength
+    });
+    return {prompt, outputTokens, limits};
+  }
+
+  #emptyDigestPromptTokens({job, resultSchema, sourceKind = 'batches'}) {
+    try {
+      return buildAggregateDigestPrompt({
+        manifest: this.#aggregateManifest(job),
+        level: 1,
+        nodeIndex: 1,
+        sourceKind,
+        childItems: [],
+        coverage: [],
+        limits: DIGEST_AGGREGATE_LIMITS,
+        resultSchema
+      }).estimatedTokens;
+    } catch {
+      return 4000;
+    }
   }
 
   async #runSessionAggregate(context, job) {
     const {sessionId, provider} = context;
     this.#setRunning(sessionId, {stage: 'session_aggregating'});
-    const aggregate = this.#buildAggregatePrompt(job, provider);
-    const {prompt, outputTokens, inputLimit: limit} = aggregate;
-    if (prompt.estimatedTokens > limit) {
-      throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
-        code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
-        detail: `estimated ${prompt.estimatedTokens} input tokens, limit ${limit}, batches ${job.batchTotal}, aggregate output ${outputTokens}; all batch results are preserved`,
-        estimatedTokens: prompt.estimatedTokens,
-        limit,
-        aggregateOutputTokens: outputTokens,
-        batches: job.batchTotal
+    if (latestResultForScope(this.db, job.id, 'final')) {
+      this.#setRunning(sessionId, {sessionReportDone: true, stage: 'session_done'});
+      return;
+    }
+    const resultSchema = this.#aggregateResultSchema(job);
+    const entries = this.#aggregateEntries(job);
+    if (entries.length !== Number(job.batchTotal)) {
+      throw Object.assign(new Error('AGGREGATE_NOT_READY'), {
+        code: 'ANALYSIS_AGGREGATE_NOT_READY',
+        detail: `saved batches ${entries.length}/${job.batchTotal}`
       });
     }
+    const direct = this.#directFinalPlan(job, provider, entries, resultSchema);
     this.logger?.info?.({
-      event: 'ai.analysis.session.aggregate.request',
+      event: 'ai.analysis.session.aggregate.plan',
       sessionId,
       jobId: job.id,
       batches: job.batchTotal,
-      estimatedInputTokens: prompt.estimatedTokens,
-      inputLimit: limit,
-      batchResultTokens: aggregate.batchResultTokens,
-      aggregateOutputTokens: outputTokens,
-      compacted: aggregate.compacted
+      mode: direct.fits ? 'single' : 'hierarchical',
+      estimatedInputTokens: direct.prompt.estimatedTokens,
+      inputLimit: direct.budget.inputLimit,
+      outputTokens: direct.outputTokens,
+      contextTokens: direct.budget.contextTokens,
+      contextSource: direct.budget.source,
+      compacted: direct.compacted
     });
-    const generated = await this.requestWithRepair({
-      context,
-      prompt,
-      kind: 'session-aggregate',
-      batchIndex: null,
-      stage: 'session_aggregating',
-      outputTokens,
-      evaluate: (text, aggregatePrompt) => this.evaluateSessionAggregateAnswer(text, aggregatePrompt)
+    if (direct.fits) {
+      this.#setRunning(sessionId, {
+        aggregateMode: 'single',
+        aggregateLevel: 1,
+        aggregateLevelCount: 1,
+        aggregateNodeTotal: 0,
+        aggregateNodesComplete: 0,
+        aggregateNodesFailed: 0
+      });
+      const sourceKeys = entries.map((entry) => `batch:${entry.batchIndex}:${entry.checksum}`);
+      await this.#runFinalSynthesis(context, job, {
+        provider,
+        resultSchema,
+        entries,
+        mode: 'single',
+        nodes: [],
+        sourceKeys,
+        sourceHash: groupSourceHash({kind: 'final', level: 0, sources: sourceKeys}),
+        buildPrompt: ({limits, retryNote}) => this.#buildDirectFinalPrompt({
+          job,
+          provider,
+          entries,
+          resultSchema,
+          limits,
+          retryNote
+        })
+      });
+      return;
+    }
+    await this.#runHierarchical(context, job, {
+      provider,
+      resultSchema,
+      entries
     });
-    this.#setRunning(sessionId, {stage: 'session_importing'});
-    const outcome = importAnalysisResult({
-      db: this.db,
-      text: generated.text,
-      source: 'api',
+  }
+
+  async #runHierarchical(context, job, {provider, resultSchema, entries}) {
+    const {sessionId} = context;
+    const batchBudget = resolveAggregateInputLimit({
+      contextLength: provider.contextLength,
+      outputReserve: DIGEST_OUTPUT_TOKENS
+    });
+    let fixedOverhead = this.#emptyDigestPromptTokens({job, resultSchema, sourceKind: 'batches'});
+    let level = 1;
+    let items = entries.map((entry) => ({
+      kind: 'batch',
+      entry,
+      node: null,
+      nodeIndex: entry.batchIndex,
+      coveredBatches: [entry.batchIndex],
+      tokens: entry.condensedTokens
+    }));
+    let nodes = [];
+    while (level <= MAX_AGGREGATE_DEPTH) {
+      const groups = groupBatchesContiguously(items, {
+        budgetTokens: batchBudget.inputLimit,
+        fixedOverhead,
+        maxItems: level === 1 ? MAX_DIGEST_UNITS : MAX_FINAL_UNITS
+      });
+      this.#setRunning(sessionId, {
+        aggregateMode: 'hierarchical',
+        aggregateLevel: level,
+        aggregateNodeTotal: groups.length,
+        aggregateNodesComplete: 0,
+        aggregateNodesFailed: 0,
+        aggregateInputLimit: batchBudget.inputLimit,
+        aggregateContextTokens: batchBudget.contextTokens,
+        aggregateContextSource: batchBudget.source
+      });
+      const levelNodes = [];
+      for (const group of groups) {
+        const produced = await this.#runDigestGroup(context, job, {
+          level,
+          group,
+          resultSchema,
+          entries,
+          leafBudget: batchBudget.inputLimit
+        });
+        levelNodes.push(...produced);
+        this.#setRunning(sessionId, {
+          aggregateLevel: level,
+          aggregateNodeTotal: Math.max(
+            Number(this.state.get(sessionId)?.aggregateNodeTotal ?? groups.length),
+            groups.length + (levelNodes.length - produced.length)
+          ),
+          aggregateNodesComplete: levelNodes.length
+        });
+      }
+      nodes = levelNodes.sort((a, b) => (
+        Number(a.coveredBatches?.[0] ?? 0) - Number(b.coveredBatches?.[0] ?? 0)
+      ));
+      this.#setRunning(sessionId, {
+        aggregateLevel: level,
+        aggregateNodeTotal: nodes.length,
+        aggregateNodesComplete: nodes.length
+      });
+      if (nodes.length > MAX_AGGREGATE_NODES) {
+        throw Object.assign(new Error('AGGREGATE_TOO_MANY_NODES'), {
+          code: 'ANALYSIS_AGGREGATE_LIMIT',
+          detail: `partial summary nodes ${nodes.length} exceed ${MAX_AGGREGATE_NODES}`,
+          nodes: nodes.length,
+          limit: MAX_AGGREGATE_NODES
+        });
+      }
+      const plan = this.#finalPlanFromNodes({job, provider, entries, resultSchema, nodes});
+      this.logger?.info?.({
+        event: 'ai.analysis.session.aggregate.level',
+        sessionId,
+        jobId: job.id,
+        level,
+        nodes: nodes.length,
+        finalInputTokens: plan.prompt.estimatedTokens,
+        finalInputLimit: plan.budget.inputLimit,
+        finalFits: plan.fits
+      });
+      if (plan.fits) {
+        const sourceKeys = nodes.map((node) => `node:${node.id}:${digestHash(node.digest)}`);
+        await this.#runFinalSynthesis(context, job, {
+          provider,
+          resultSchema,
+          entries,
+          mode: 'hierarchical',
+          nodes,
+          sourceKeys,
+          sourceHash: groupSourceHash({kind: 'final', level: 0, sources: sourceKeys}),
+          buildPrompt: ({limits, retryNote}) => this.#buildFinalFromNodesPrompt({
+            job,
+            provider,
+            entries,
+            resultSchema,
+            nodes,
+            limits,
+            retryNote
+          })
+        });
+        return;
+      }
+      if (nodes.length === 1) {
+        // One bounded digest should always fit a final request. Try the tighter
+        // final contract once; if even that cannot fit, the model's context is
+        // genuinely too small for a report, not a batching bug.
+        const tight = this.#finalPlanFromNodes({
+          job,
+          provider,
+          entries,
+          resultSchema,
+          nodes,
+          limits: TIGHT_AGGREGATE_LIMITS
+        });
+        if (tight.fits) {
+          const sourceKeys = nodes.map((node) => `node:${node.id}:${digestHash(node.digest)}`);
+          await this.#runFinalSynthesis(context, job, {
+            provider,
+            resultSchema,
+            entries,
+            mode: 'hierarchical',
+            nodes,
+            sourceKeys,
+            sourceHash: groupSourceHash({kind: 'final', level: 0, sources: sourceKeys}),
+            buildPrompt: ({limits, retryNote}) => this.#buildFinalFromNodesPrompt({
+              job,
+              provider,
+              entries,
+              resultSchema,
+              nodes,
+              limits,
+              retryNote
+            })
+          });
+          return;
+        }
+        throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
+          code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
+          detail: `one partial summary still needs ${tight.prompt.estimatedTokens} input tokens, limit ${tight.budget.inputLimit}, output reserve ${tight.outputTokens}; all ${job.batchTotal} batch results are preserved`,
+          estimatedTokens: tight.prompt.estimatedTokens,
+          limit: tight.budget.inputLimit,
+          outputTokens: tight.outputTokens,
+          batches: job.batchTotal,
+          contextLength: provider.contextLength ?? null,
+          splittable: false
+        });
+      }
+      const nextSourceKind = 'nodes';
+      fixedOverhead = this.#emptyDigestPromptTokens({job, resultSchema, sourceKind: nextSourceKind});
+      items = nodes.map((node) => ({
+        kind: 'node',
+        node,
+        entry: null,
+        nodeIndex: node.nodeIndex,
+        coveredBatches: node.coveredBatches,
+        tokens: estimateJsonTokens(node.digest) + 300
+      }));
+      // The next level uses the same per-request input budget; the local
+      // prompt overhead for node input is measured on the real schema.
+      level += 1;
+      if (level <= MAX_AGGREGATE_DEPTH) {
+        this.#setRunning(sessionId, {
+          aggregateLevel: level,
+          aggregateNextLevelOverhead: fixedOverhead
+        });
+      }
+    }
+    throw Object.assign(new Error('AGGREGATE_DEPTH_EXCEEDED'), {
+      code: 'ANALYSIS_AGGREGATE_LIMIT',
+      detail: `hierarchy depth ${MAX_AGGREGATE_DEPTH} exhausted; all ${job.batchTotal} batch results are preserved`,
+      batches: job.batchTotal,
+      depth: MAX_AGGREGATE_DEPTH
+    });
+  }
+
+  async #runDigestGroup(context, job, {
+    level,
+    group,
+    resultSchema,
+    entries,
+    leafBudget
+  }) {
+    const {sessionId, provider} = context;
+    const entriesByBatch = new Map(entries.map((entry) => [entry.batchIndex, entry]));
+    const coveredBatches = uniqueIntegers(group.flatMap((item) => item.coveredBatches));
+    const nodeIndex = coveredBatches[0];
+    const sourceKind = group[0]?.kind === 'node' ? 'nodes' : 'batches';
+    const sourceKeys = group.map((item) => (sourceKind === 'batches'
+      ? `batch:${item.entry.batchIndex}:${item.entry.checksum}`
+      : `node:${item.node.id}:${digestHash(item.node.digest)}`));
+    const sourceHash = groupSourceHash({kind: sourceKind, level, sources: sourceKeys});
+    const existing = getAggregateNode(this.db, {jobId: job.id, level, nodeIndex});
+    if (existing?.status === 'complete' && existing.sourceHash === sourceHash && existing.digest) {
+      this.logger?.info?.({
+        event: 'ai.analysis.session.aggregate.node.reused',
+        sessionId,
+        jobId: job.id,
+        level,
+        nodeIndex,
+        coveredBatches
+      });
+      return [existing];
+    }
+    const coverage = this.#coverageForBatches(entries, coveredBatches);
+    const build = (limits, retryNote, condenseLimits = null) => {
+      const childItems = sourceKind === 'batches'
+        ? group.map((item) => ({
+          batch_index: item.entry.batchIndex,
+          task_id: item.entry.taskId,
+          coverage: item.entry.coverage,
+          result: condenseBatchResult(item.entry.result, {
+            batchIndex: item.entry.batchIndex,
+            limits: condenseLimits
+          })
+        }))
+        : partialReportsForPrompt(group.map((item) => item.node));
+      const prompt = buildAggregateDigestPrompt({
+        manifest: this.#aggregateManifest(job),
+        level,
+        nodeIndex,
+        sourceKind,
+        childItems,
+        coverage,
+        limits,
+        resultSchema,
+        retryNote
+      });
+      return {prompt, childItems, limits};
+    };
+    let first = build(DIGEST_AGGREGATE_LIMITS, null);
+    if (first.prompt.estimatedTokens > leafBudget) {
+      if (group.length > 1) {
+        const [left, right] = splitGroup(group);
+        const leftNodes = await this.#runDigestGroup(context, job, {
+          level, group: left, resultSchema, entries, leafBudget
+        });
+        const rightNodes = await this.#runDigestGroup(context, job, {
+          level, group: right, resultSchema, entries, leafBudget
+        });
+        return [...leftNodes, ...rightNodes];
+      }
+      // A single saved batch is already the smallest unit. Condense only its
+      // redundant fields; never drop the batch or its evidence refs.
+      first = build(TIGHT_AGGREGATE_LIMITS, null, TIGHT_AGGREGATE_LIMITS);
+      if (first.prompt.estimatedTokens > leafBudget) {
+        throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
+          code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
+          detail: `a single saved batch needs ${first.prompt.estimatedTokens} input tokens, limit ${leafBudget}; nothing is dropped, but this model cannot summarize it`,
+          estimatedTokens: first.prompt.estimatedTokens,
+          limit: leafBudget,
+          batches: coveredBatches,
+          contextLength: provider.contextLength ?? null,
+          splittable: false
+        });
+      }
+    }
+    const RETRY_NOTE = [
+      'The previous answer was truncated or failed validation.',
+      'Return a shorter JSON object. Keep every covered batch, keep valid batch-qualified evidence refs, and obey the schema limits exactly.',
+      'Do not omit later batches and do not invent evidence.'
+    ].join(' ');
+    let digest = null;
+    let coverageResult = null;
+    let fallback = null;
+    let attempts = 0;
+    let usageTotal = null;
+    let lastError = null;
+    for (let attemptNo = 0; attemptNo < 2; attemptNo += 1) {
+      const built = attemptNo === 0
+        ? first
+        : build(TIGHT_AGGREGATE_LIMITS, RETRY_NOTE, sourceKind === 'batches' ? TIGHT_AGGREGATE_LIMITS : null);
+      const outputTokens = Math.max(2000, resolveDigestOutputTokens({
+        childTokens: estimateJsonTokens(built.childItems),
+        inputTokens: built.prompt.estimatedTokens,
+        contextLength: provider.contextLength
+      }));
+      const generated = await this.requestOnce({
+        context,
+        prompt: built.prompt,
+        kind: `session-aggregate-l${level}`,
+        batchIndex: nodeIndex,
+        stage: 'session_aggregating',
+        outputTokens
+      });
+      attempts += 1;
+      if (generated.usage) usageTotal = addUsage(usageTotal, generated.usage, provider.pricing);
+      try {
+        this.#assertUsableOutput(generated, {
+          context,
+          kind: `session-aggregate-l${level}`,
+          batchIndex: nodeIndex,
+          stage: 'session_aggregating'
+        });
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+      const answer = extractJsonObject(generated.content);
+      if (!answer) {
+        this.#recordOutputRejected(context, {
+          code: 'AUTO_INVALID_JSON',
+          kind: `session-aggregate-l${level}`,
+          batchIndex: nodeIndex,
+          stage: 'session_aggregating',
+          finishReason: generated.finishReason ?? null
+        });
+        lastError = Object.assign(new Error('AGGREGATE_INVALID_JSON'), {code: 'AUTO_INVALID_JSON'});
+        continue;
+      }
+      const schemaErrors = schemaIssuesFor(answer, digestSchema(resultSchema, {limits: built.limits}));
+      if (schemaErrors.length > 0) {
+        this.#recordOutputRejected(context, {
+          code: schemaErrors[0].code ?? 'AUTO_SCHEMA_INVALID',
+          kind: `session-aggregate-l${level}`,
+          batchIndex: nodeIndex,
+          stage: 'session_aggregating'
+        });
+        lastError = Object.assign(new Error('AGGREGATE_SCHEMA_INVALID'), {
+          code: 'AUTO_SCHEMA_INVALID',
+          errors: schemaErrors
+        });
+        continue;
+      }
+      const digestContext = this.#aggregateContext(job, entries);
+      const coverageUnits = sourceKind === 'nodes'
+        ? group.map((item) => item.coveredBatches)
+        : coveredBatches.map((batch) => [batch]);
+      const normalized = normalizeDigestAnswer(answer, {
+        groupBatches: coveredBatches,
+        units: coverageUnits,
+        batchMeta: digestContext.batchMeta,
+        reportable: digestContext.reportable,
+        validRefs: digestContext.validRefs,
+        limits: built.limits,
+        fallbackTime: entriesByBatch.get(nodeIndex)?.coverage?.from_at ?? null
+      });
+      if (!normalized.ok) {
+        this.#recordOutputRejected(context, {
+          code: normalized.issues[0]?.code ?? 'AGGREGATE_COVERAGE_INCOMPLETE',
+          kind: `session-aggregate-l${level}`,
+          batchIndex: nodeIndex,
+          stage: 'session_aggregating'
+        });
+        lastError = Object.assign(new Error('AGGREGATE_COVERAGE_INCOMPLETE'), {
+          code: 'AGGREGATE_COVERAGE_INCOMPLETE',
+          errors: normalized.issues
+        });
+        continue;
+      }
+      digest = normalized.digest;
+      coverageResult = normalized.coverage;
+      break;
+    }
+    if (!digest) {
+      fallback = 'deterministic';
+      digest = deterministicDigest({
+        batchEntries: entries,
+        groupBatches: coveredBatches,
+        limits: DIGEST_AGGREGATE_LIMITS,
+        fallbackTime: entriesByBatch.get(nodeIndex)?.coverage?.from_at ?? null
+      });
+      coverageResult = checkBatchCoverage({
+        digest,
+        batchBatches: coveredBatches,
+        batchMeta: this.#aggregateContext(job, entries).batchMeta,
+        reportable: this.#aggregateContext(job, entries).reportable,
+        validRefs: this.#aggregateContext(job, entries).validRefs
+      });
+    }
+    const node = upsertAggregateNode(this.db, {
+      id: `agg_${job.id}_${level}_${nodeIndex}`,
+      jobId: job.id,
+      sessionId: job.sessionId,
+      level,
+      nodeIndex,
+      sourceKind,
+      sourceKeys,
+      sourceHash,
+      coveredBatches,
+      status: 'complete',
+      digest,
+      fallback,
+      attempts,
+      inputTokensEstimated: first.prompt.estimatedTokens,
+      outputTokens: Number(usageTotal?.outputTokens ?? 0),
+      usage: usageTotal,
+      coverage: coverageResult,
+      lastError: lastError
+        ? {
+          code: lastError.code ?? 'AGGREGATE_NODE_INVALID',
+          detail: String(lastError.detail ?? lastError.message ?? '').slice(0, 300)
+        }
+        : null,
       now: this.now()
     });
-    this.state.set(sessionId, {
+    this.logger?.info?.({
+      event: 'ai.analysis.session.aggregate.node',
+      sessionId,
+      jobId: job.id,
+      level,
+      nodeIndex,
+      coveredBatches,
+      fallback,
+      attempts,
+      estimatedInputTokens: first.prompt.estimatedTokens,
+      usage: usageTotal
+    });
+    return [node];
+  }
+
+  async #runFinalSynthesis(context, job, {
+    provider,
+    resultSchema,
+    entries,
+    mode,
+    nodes,
+    sourceKeys,
+    sourceHash,
+    buildPrompt
+  }) {
+    const {sessionId} = context;
+    if (latestResultForScope(this.db, job.id, 'final')) {
+      this.#setRunning(sessionId, {sessionReportDone: true, stage: 'session_done'});
+      return;
+    }
+    const existingNode = getAggregateNode(this.db, {jobId: job.id, level: 0, nodeIndex: 0});
+    if (existingNode?.status === 'complete'
+      && existingNode.sourceHash === sourceHash
+      && existingNode.digest) {
+      this.logger?.info?.({
+        event: 'ai.analysis.session.aggregate.final.reused',
+        sessionId,
+        jobId: job.id,
+        fallback: existingNode.fallback ?? null
+      });
+      try {
+        await this.#importFinalEnvelope(context, job, existingNode.digest);
+      } catch (error) {
+        upsertAggregateNode(this.db, {
+          id: existingNode.id,
+          jobId: job.id,
+          sessionId: job.sessionId,
+          level: 0,
+          nodeIndex: 0,
+          sourceKind: 'final',
+          sourceKeys,
+          sourceHash,
+          coveredBatches: entries.map((entry) => entry.batchIndex),
+          status: 'failed',
+          digest: existingNode.digest,
+          fallback: existingNode.fallback ?? null,
+          attempts: existingNode.attempts,
+          inputTokensEstimated: existingNode.inputTokensEstimated,
+          outputTokens: existingNode.outputTokens,
+          usage: existingNode.usage,
+          coverage: existingNode.coverage,
+          lastError: {code: error?.code ?? 'AGGREGATE_IMPORT_FAILED'},
+          now: this.now()
+        });
+        throw error;
+      }
+      this.#setRunning(sessionId, {
+        sessionReportDone: true,
+        stage: 'session_done',
+        aggregateLevelCount: Number(this.state.get(sessionId)?.aggregateLevel ?? 1),
+        aggregateFallback: existingNode.fallback ?? null,
+        currentRequest: null
+      });
+      return;
+    }
+    const allBatches = entries.map((entry) => entry.batchIndex);
+    const contextData = this.#aggregateContext(job, entries);
+    const RETRY_NOTE = [
+      'The previous final answer was truncated or failed validation.',
+      'Return a shorter JSON object. Keep every covered batch, keep valid batch-qualified evidence refs, and obey the schema limits exactly.',
+      'Merge the partial reports instead of concatenating them; do not drop later batches and do not invent evidence.'
+    ].join(' ');
+    let envelope = null;
+    let coverageResult = null;
+    let fallback = null;
+    let attempts = 0;
+    let usageTotal = null;
+    let lastError = null;
+    let finalInputTokens = 0;
+    for (let attemptNo = 0; attemptNo < 2; attemptNo += 1) {
+      const built = attemptNo === 0
+        ? buildPrompt({limits: null, retryNote: null})
+        : buildPrompt({limits: TIGHT_AGGREGATE_LIMITS, retryNote: RETRY_NOTE});
+      finalInputTokens = Number(built.prompt?.estimatedTokens ?? 0);
+      const outputTokens = Number(built.outputTokens ?? 0);
+      if (outputTokens < MIN_AGGREGATE_OUTPUT_TOKENS) {
+        throw Object.assign(new Error('CONTEXT_TOO_SMALL'), {
+          code: 'ANALYSIS_CONTEXT_TOO_SMALL',
+          detail: `context leaves only ${outputTokens} output tokens for the final report (minimum ${MIN_AGGREGATE_OUTPUT_TOKENS})`,
+          outputTokens,
+          contextLength: provider.contextLength ?? null
+        });
+      }
+      const generated = await this.requestOnce({
+        context,
+        prompt: built.prompt,
+        kind: 'session-aggregate',
+        batchIndex: null,
+        stage: 'session_aggregating',
+        outputTokens
+      });
+      attempts += 1;
+      if (generated.usage) usageTotal = addUsage(usageTotal, generated.usage, provider.pricing);
+      try {
+        this.#assertUsableOutput(generated, {
+          context,
+          kind: 'session-aggregate',
+          batchIndex: null,
+          stage: 'session_aggregating'
+        });
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+      const answer = extractJsonObject(generated.content);
+      if (!answer) {
+        this.#recordOutputRejected(context, {
+          code: 'AUTO_INVALID_JSON',
+          kind: 'session-aggregate',
+          batchIndex: null,
+          stage: 'session_aggregating',
+          finishReason: generated.finishReason ?? null
+        });
+        lastError = Object.assign(new Error('AGGREGATE_INVALID_JSON'), {code: 'AUTO_INVALID_JSON'});
+        continue;
+      }
+      const schemaErrors = schemaIssuesFor(answer, finalEnvelopeSchema(resultSchema, {
+        limits: built.limits
+      }));
+      if (schemaErrors.length > 0) {
+        this.#recordOutputRejected(context, {
+          code: schemaErrors[0].code ?? 'AUTO_SCHEMA_INVALID',
+          kind: 'session-aggregate',
+          batchIndex: null,
+          stage: 'session_aggregating'
+        });
+        lastError = Object.assign(new Error('AGGREGATE_SCHEMA_INVALID'), {
+          code: 'AUTO_SCHEMA_INVALID',
+          errors: schemaErrors
+        });
+        continue;
+      }
+      const normalized = this.#normalizeFinalReport({
+        answer,
+        allBatches,
+        nodes,
+        entries,
+        contextData,
+        fallbackTime: entries[0]?.coverage?.from_at ?? null
+      });
+      if (!normalized.ok) {
+        this.#recordOutputRejected(context, {
+          code: normalized.issues[0]?.code ?? 'AGGREGATE_COVERAGE_INCOMPLETE',
+          kind: 'session-aggregate',
+          batchIndex: null,
+          stage: 'session_aggregating'
+        });
+        lastError = Object.assign(new Error('AGGREGATE_COVERAGE_INCOMPLETE'), {
+          code: 'AGGREGATE_COVERAGE_INCOMPLETE',
+          errors: normalized.issues
+        });
+        continue;
+      }
+      envelope = normalized.envelope;
+      coverageResult = normalized.coverage;
+      break;
+    }
+    if (!envelope) {
+      fallback = 'deterministic';
+      const finalFallbackLimits = FINAL_AGGREGATE_LIMITS;
+      const fallbackDigests = nodes.length > 0
+        ? nodes.map((node) => node.digest)
+        : [deterministicDigest({
+          batchEntries: entries,
+          groupBatches: allBatches,
+          limits: finalFallbackLimits,
+          fallbackTime: entries[0]?.coverage?.from_at ?? null
+        })];
+      envelope = deterministicFinal({
+        childDigests: fallbackDigests,
+        allBatches,
+        batchEntries: entries,
+        resultSchema,
+        limits: finalFallbackLimits,
+        fallbackTime: entries[0]?.coverage?.from_at ?? null
+      });
+      const normalized = this.#normalizeFinalReport({
+        answer: envelope,
+        allBatches,
+        nodes,
+        entries,
+        contextData,
+        fallbackTime: entries[0]?.coverage?.from_at ?? null
+      });
+      if (!normalized.ok) {
+        throw Object.assign(new Error('AGGREGATE_INVALID'), {
+          code: 'ANALYSIS_AGGREGATE_INVALID',
+          detail: `deterministic final report failed coverage: ${(normalized.issues ?? []).map((item) => `${item.code}${item.params?.missing ? ` missing ${item.params.missing}` : ''}`).join(', ')}`,
+          errors: normalized.issues,
+          batches: job.batchTotal,
+          splittable: false
+        });
+      }
+      envelope = normalized.envelope;
+      coverageResult = normalized.coverage;
+    }
+    const node = upsertAggregateNode(this.db, {
+      id: `agg_${job.id}_0_0`,
+      jobId: job.id,
+      sessionId: job.sessionId,
+      level: 0,
+      nodeIndex: 0,
+      sourceKind: 'final',
+      sourceKeys,
+      sourceHash,
+      coveredBatches: allBatches,
+      status: 'complete',
+      digest: envelope,
+      fallback,
+      attempts,
+      inputTokensEstimated: finalInputTokens,
+      outputTokens: Number(usageTotal?.outputTokens ?? 0),
+      usage: usageTotal,
+      coverage: coverageResult,
+      lastError: lastError
+        ? {
+          code: lastError.code ?? 'AGGREGATE_FINAL_INVALID',
+          detail: String(lastError.detail ?? lastError.message ?? '').slice(0, 300)
+        }
+        : null,
+      now: this.now()
+    });
+    this.logger?.info?.({
+      event: 'ai.analysis.session.aggregate.final',
+      sessionId,
+      jobId: job.id,
+      mode,
+      batches: job.batchTotal,
+      partialNodes: nodes.length,
+      fallback,
+      attempts,
+      usage: usageTotal
+    });
+    try {
+      await this.#importFinalEnvelope(context, job, envelope);
+    } catch (error) {
+      upsertAggregateNode(this.db, {
+        id: node.id,
+        jobId: job.id,
+        sessionId: job.sessionId,
+        level: 0,
+        nodeIndex: 0,
+        sourceKind: 'final',
+        sourceKeys,
+        sourceHash,
+        coveredBatches: allBatches,
+        status: 'failed',
+        digest: envelope,
+        fallback,
+        attempts,
+        inputTokensEstimated: finalInputTokens,
+        outputTokens: Number(usageTotal?.outputTokens ?? 0),
+        usage: usageTotal,
+        coverage: coverageResult,
+        lastError: {code: error?.code ?? 'AGGREGATE_IMPORT_FAILED'},
+        now: this.now()
+      });
+      throw error;
+    }
+    this.#setRunning(sessionId, {
       sessionReportDone: true,
       stage: 'session_done',
       recovery: null,
-      lastProvider: generated.providerId,
-      lastModel: generated.model,
+      aggregateMode: mode,
+      aggregateLevelCount: mode === 'hierarchical' ? Math.max(1, nodes[0]?.level ?? 1) : 1,
+      aggregateFallback: fallback,
+      lastProvider: provider.providerId,
+      lastModel: provider.modelId,
       currentRequest: null
     });
     this.logger?.info?.({
@@ -1552,11 +2551,42 @@ export class AnalysisRunner {
       sessionId,
       jobId: job.id,
       batches: job.batchTotal,
-      provider: generated.providerId,
-      model: generated.model,
-      duplicate: outcome.duplicate,
-      aggregateOutputTokens: outputTokens
+      provider: provider.providerId,
+      model: provider.modelId,
+      partialNodes: nodes.length,
+      fallback,
+      aggregateOutputTokens: Number(usageTotal?.outputTokens ?? 0)
     });
+    void node;
+  }
+
+  async #importFinalEnvelope(context, job, envelope) {
+    const {sessionId} = context;
+    this.#setRunning(sessionId, {stage: 'session_importing'});
+    const assembled = assembleSessionAggregateAnswer({
+      answer: envelope,
+      manifest: this.#aggregateManifest(job)
+    });
+    if (!assembled.ok) {
+      throw Object.assign(new Error('AGGREGATE_INVALID'), {
+        code: 'ANALYSIS_AGGREGATE_INVALID',
+        detail: (assembled.issues ?? []).map((item) => item.code).join(', ') || 'assembly failed',
+        errors: assembled.issues
+      });
+    }
+    const outcome = importAnalysisResult({
+      db: this.db,
+      text: JSON.stringify(assembled.result),
+      source: 'api',
+      now: this.now()
+    });
+    this.#setRunning(sessionId, {
+      sessionReportDone: true,
+      stage: 'session_done',
+      recovery: null,
+      currentRequest: null
+    });
+    return outcome;
   }
 
   #broadcasterGateKey(broadcasterId) {
@@ -2228,7 +3258,7 @@ export class AnalysisRunner {
     const evaluateAnswer = evaluate ?? ((text, sourcePrompt) => this.evaluateSessionAnswer(text, sourcePrompt));
     let generated = await this.requestOnce({context, prompt, kind, batchIndex, stage, outputTokens});
     // A length-truncated or degenerate answer must not trigger a second copy of
-    // the same large request: that was the original 3× timeout/cost failure.
+    // the same large request: that was the original 3脳 timeout/cost failure.
     this.#assertUsableOutput(generated, {context, kind, batchIndex, stage});
     let evaluation = evaluateAnswer(generated.content, prompt);
     if (evaluation.ok) return {...generated, text: JSON.stringify(evaluation.sanitized)};
@@ -2349,7 +3379,9 @@ export class AnalysisRunner {
   }
 
   #retryingStage(kind, fallback) {
-    if (kind === 'session-aggregate') return 'session_aggregating';
+    if (kind === 'session-aggregate' || String(kind).startsWith('session-aggregate-l')) {
+      return 'session_aggregating';
+    }
     if (kind.startsWith('memory')) return 'memory_analyzing';
     if (kind.startsWith('session')) return 'session_analyzing';
     return fallback ?? 'running';

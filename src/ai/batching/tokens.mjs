@@ -211,6 +211,72 @@ export function resolveOutputTokens({desired = 8000, inputTokens = 0, contextLen
 export const MIN_AGGREGATE_OUTPUT_TOKENS = 12000;
 export const MAX_AGGREGATE_OUTPUT_TOKENS = 16000;
 
+/**
+ * Hierarchical aggregation budgets.
+ *
+ * `contextLength` is a user/provider fact, not a model guess. When it is
+ * unknown (the real DeepSeek config stored `null`), the planner uses a
+ * deliberate conservative context assumption of 64k. This is still a *request*
+ * budget: crossing it no longer fails the task, it makes the planner add a
+ * level. The model's advertised 1M window is therefore not required for a
+ * 32-batch session to finish, and no batch result is dropped.
+ *
+ * `MAX_AGGREGATE_REQUEST_INPUT_TOKENS` is a sanity ceiling for a single
+ * request even on a million-token model; it bounds latency and the blast radius
+ * of one malformed answer instead of silently turning into an unbounded prompt.
+ */
+export const UNKNOWN_AGGREGATE_CONTEXT_TOKENS = 64000;
+export const MAX_AGGREGATE_REQUEST_INPUT_TOKENS = 192000;
+export const DIGEST_OUTPUT_TOKENS = 8000;
+export const MAX_AGGREGATE_DEPTH = 6;
+export const MAX_AGGREGATE_NODES = 2001;
+
+/** Effective context used for one aggregate request. */
+export function resolveAggregateContextBudget({contextLength = null} = {}) {
+  const context = Number(contextLength);
+  if (Number.isFinite(context) && context > 0) {
+    return {contextTokens: context, source: 'configured'};
+  }
+  return {contextTokens: UNKNOWN_AGGREGATE_CONTEXT_TOKENS, source: 'conservative-default'};
+}
+
+/** Input ceiling for one request, after reserving its answer budget. */
+export function resolveAggregateInputLimit({
+  contextLength = null,
+  outputReserve = DIGEST_OUTPUT_TOKENS
+} = {}) {
+  const {contextTokens, source} = resolveAggregateContextBudget({contextLength});
+  const reserve = Math.max(1024, Math.ceil(Number(outputReserve) || DIGEST_OUTPUT_TOKENS));
+  const limit = contextTokens - reserve - CONTEXT_SAFETY_TOKENS;
+  return {
+    contextTokens,
+    source,
+    outputReserve: reserve,
+    inputLimit: clamp(limit, MIN_CONTENT_TOKENS, MAX_AGGREGATE_REQUEST_INPUT_TOKENS)
+  };
+}
+
+/**
+ * Output budget for one partial summary.
+ *
+ * Partial summaries are bounded by their own schema (12 topics etc.), so 8k is
+ * enough; the budget still shrinks when the configured context is small.
+ */
+export function resolveDigestOutputTokens({
+  childTokens = 0,
+  inputTokens = 0,
+  contextLength = null
+} = {}) {
+  const children = Math.max(0, Number(childTokens) || 0);
+  const desired = clamp(Math.ceil(children * 0.5) + 2500, 4000, DIGEST_OUTPUT_TOKENS);
+  return resolveOutputTokens({desired, inputTokens, contextLength});
+}
+
+/** True when a planned aggregate request must be split into another level. */
+export function aggregateInputFits({estimatedInputTokens = 0, inputLimit = 0} = {}) {
+  return Number(estimatedInputTokens) <= Number(inputLimit);
+}
+
 export function resolveAggregateOutputTokens({
   batchResultTokens = 0,
   inputTokens = 0,

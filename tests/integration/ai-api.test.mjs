@@ -49,7 +49,7 @@ test('analysis jobs validate, import, aggregate and report through shared servic
     assert.equal(payload.ai.automated, true);
     assert.equal(payload.ai.import, false);
     assert.equal(payload.ai.schemaVersion, '1.3.0');
-    assert.equal(payload.database.schemaVersion, 14);
+    assert.equal(payload.database.schemaVersion, 15);
   });
 
   let job;

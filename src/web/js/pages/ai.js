@@ -670,11 +670,32 @@ export const aiPage = {
           }
         }
       }
+      // Hierarchical aggregate progress is a separate, real unit. It is only
+      // shown after the planner has actually created partial-summary nodes, so
+      // the console never implies a hierarchy when a single final request fits.
+      const aggregate = current?.aggregate ?? null;
+      if (aggregate?.mode === 'hierarchical'
+        && Number(aggregate.levelCount ?? 0) > 0
+        && Number(aggregate.nodeTotal ?? 0) > 0
+        && aggregate.finalSaved !== true) {
+        progressParts.append(el('div', {className: 'small tertiary'},
+          t('ai.center.progressAggregateNodes', {
+            done: formatInteger(aggregate.nodesComplete ?? 0, ctx.locale),
+            total: formatInteger(aggregate.nodeTotal ?? 0, ctx.locale),
+            level: formatInteger(aggregate.level ?? 1, ctx.locale)
+          })));
+      }
+      if (aggregate?.fallback === 'deterministic') {
+        progressParts.append(el('div', {className: 'small tertiary'},
+          t('ai.center.progressAggregateFallback')));
+      }
     }
 
     function requestKindLabel(kind) {
       if (!kind) return t('ai.center.request.unknown');
-      if (kind === 'session-aggregate') return t('ai.center.request.aggregate');
+      if (kind === 'session-aggregate' || kind.startsWith('session-aggregate-l')) {
+        return t('ai.center.request.aggregate');
+      }
       if (kind.startsWith('memory')) return t('ai.center.request.memory');
       return t('ai.center.request.session');
     }

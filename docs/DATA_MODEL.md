@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**14**
+Schema 版本：**15**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -662,4 +662,41 @@ CREATE INDEX idx_ai_translations_target
 - 只新增两张表与三个索引；不 `ALTER`、不重写任何历史行。
 - 旧库升级后，已有报告/画像仍按原语言显示；首次切换语言时才生成缓存。
 - 测试：`tests/integration/ai-translation-migration.test.mjs`（v13→v14、重复迁移无操作、场次级联）。
+
+## 18. 分层汇总节点（schema 15 / v0.13.2）
+
+### 18.1 表
+
+```text
+ai_aggregate_nodes
+  id TEXT PRIMARY KEY
+  job_id TEXT NOT NULL REFERENCES ai_jobs(id) ON DELETE CASCADE
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE
+  level INTEGER NOT NULL              -- 0 = final; 1..N = partial summary
+  node_index INTEGER NOT NULL         -- deterministic first batch index
+  source_kind TEXT NOT NULL           -- batches | nodes | final
+  source_keys_json TEXT NOT NULL      -- child checksums / node ids + digests
+  source_hash TEXT NOT NULL           -- reuse only when sources are unchanged
+  covered_batches_json TEXT NOT NULL  -- exact batch ledger
+  status TEXT NOT NULL                -- pending | complete | failed
+  digest_json TEXT                    -- bounded partial/final session_topics
+  fallback TEXT                       -- null | deterministic
+  attempts INTEGER NOT NULL
+  input_tokens_estimated INTEGER
+  output_tokens INTEGER
+  usage_json TEXT
+  coverage_json TEXT
+  last_error_json TEXT
+  created_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL
+  UNIQUE (job_id, level, node_index)
+```
+
+### 18.2 约束
+
+- `level=0,node_index=0` 唯一表示 final；level>0 是局部节点，`node_index` 取该组第一个原批次号，保证同一输入得到同一节点身份。
+- 节点先校验（schema/覆盖/ref/时间）再写入；`source_hash` 不匹配则不复用。
+- `digest_json` 不是 `ai_results`：不会进入报告读模型，只有 final 经 `assembleSessionAggregateAnswer()` 组装成 Schema 1.3.0 后走正常导入。
+- 删除场次/清空数据包含该表；`assertNoResidue` 检查 `session_id`。
+- v14→v15 只新增表与两个索引，不改写任何历史行；测试覆盖 v13→v15、重复迁移、场次级联。
 

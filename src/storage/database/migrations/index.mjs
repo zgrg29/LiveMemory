@@ -955,6 +955,52 @@ export const MIGRATIONS = Object.freeze([
           ON ai_translations (target_kind, target_id, target_locale);
       `);
     }
+  },
+  {
+    version: 15,
+    name: 'hierarchical-aggregate-nodes',
+    up(db) {
+      // Large sessions no longer have to fit every saved batch result into one
+      // aggregate request. Each level of the hierarchy is one bounded partial
+      // summary over a contiguous slice of the session. Level 0 is the final
+      // whole-session summary, kept so a crash after a successful provider
+      // answer can re-import it without paying for the same aggregate again.
+      //
+      // These rows are internal aggregation state, not analysis results: only
+      // the final node is assembled into Schema 1.3.0 and imported. The
+      // source/coverage/checksum fields make reuse and invalidation explicit.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_aggregate_nodes (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL REFERENCES ai_jobs (id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          level INTEGER NOT NULL,
+          node_index INTEGER NOT NULL,
+          source_kind TEXT NOT NULL,
+          source_keys_json TEXT NOT NULL,
+          source_hash TEXT NOT NULL,
+          covered_batches_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'complete'
+            CHECK (status IN ('pending', 'complete', 'failed')),
+          digest_json TEXT,
+          fallback TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          input_tokens_estimated INTEGER NOT NULL DEFAULT 0,
+          output_tokens INTEGER NOT NULL DEFAULT 0,
+          usage_json TEXT,
+          coverage_json TEXT,
+          last_error_json TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (job_id, level, node_index)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ai_aggregate_nodes_job
+          ON ai_aggregate_nodes (job_id, level, node_index);
+        CREATE INDEX IF NOT EXISTS idx_ai_aggregate_nodes_status
+          ON ai_aggregate_nodes (job_id, status);
+      `);
+    }
   }
 ]);
 

@@ -2,7 +2,8 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-13）：最终汇总截断修复、独立 12k–16k 汇总预算、有界汇总契约、`recovery` 状态与「继续最终汇总」恢复面板、API/输出统计分离；668 自动化测试。完整说明见 `docs/STATUS.md` §0.19 与 `docs/HANDOFF.md` §0。
+> v0.13.2（2026-11-13）：可扩展分层汇总；schema 15 `ai_aggregate_nodes`；32 批真实任务只读副本恢复为 2 个局部节点 + final；正式 EXE buildId `58362fa30b5f` 实跑验证；683 自动化测试。完整说明见 `docs/STATUS.md` §0.20 与 `docs/HANDOFF.md` §0。
+> v0.13.2（2026-11-13）：最终汇总截断修复、独立 12k–16k 汇总预算、有界汇总契约、`recovery` 状态与「继续最终汇总」恢复面板、API/输出统计分离；668 自动化测试。完整说明见 `docs/STATUS.md` §0.19 与 `docs/HANDOFF.md` §0.6。
 > v0.13.2（2026-11-13）：AI 分析输出语言与已保存报告翻译；新增 schema 14 翻译缓存、段落级按需翻译/重试、长期画像多语言展示；649 自动化测试。完整说明见 `docs/STATUS.md` §0.18 与 `docs/HANDOFF.md` §0.7。
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
@@ -393,6 +394,22 @@
 - ⬜ 真实浏览器窄屏截图（本机沙箱限制）
 - ⬜ 正式 EXE 重建（当前 `dist/LiveMemory.exe` 仍为 schema 13）
 
+## P17 可扩展分层汇总与 32 批恢复（v0.13.2，2026-11-13）✅
+
+- ✅ 真实任务只读定位：`contextLength=null` + 单请求 48k 硬上限 + compact 后 64,471 token → 请求未发出，非模型上下文超限
+- ✅ 动态 token 分组：连续批次按真实估算切分，单组超预算自动二分，不再固定批次数
+- ✅ 有界局部汇总：topics ≤12、sentiment ≤8、disputes ≤6、highlights ≤6、每项 refs ≤6；不重复完整原始 JSON
+- ✅ 受控多层：depth ≤6，final 前最多 24 个 unit；超出继续加层，不静默丢批次
+- ✅ schema 15 `ai_aggregate_nodes`：局部/final 节点独立持久化，source hash 复用，重启只补缺失节点
+- ✅ 确定性校验：covered_batches、unit/batch 覆盖、有效 ref、时间顺序、事件去重；final 对 ≤96 批逐批补真实 ref
+- ✅ 有界重试：截断/结构错误最多 2 次；仍失败用已保存结果确定性兜底；Provider 错误保留可恢复
+- ✅ 恢复：`ANALYSIS_AGGREGATE_TOO_LARGE` 不再 change-model；32/32 已保存 → resume-aggregate
+- ✅ 统计/UI：节点 usage 计入任务；AI 中心显示分层进度与兜底提示
+- ✅ 683 自动化测试；生产副本 32/32 → 2 节点 + final（32/32 refs）；正式 EXE `58362fa30b5f` asInvoker 实跑验证
+- ⬜ 真实付费 DeepSeek 32 批分层请求质量与费用（本机无 Key）
+- ⬜ 真实生产任务 Resume（需用户授权）
+- ⬜ 真实 UAC 双击与浏览器点击
+
 ## P16 最终汇总截断与恢复（v0.13.2，2026-11-13）✅
 
 - ✅ 真实 18/18 任务只读定位：汇总 8k 输出预算 + 无界汇总契约 + `finish_reason=length`，输入 34k 未超限
@@ -446,7 +463,7 @@
 ## 依赖关系
 
 ```text
-M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 → P7 ✅ → P8 ✅ → P9 ✅ → P10 ✅ → P11 ✅ → P12 ✅ → P13 ✅ → P14 ✅ → P15 ✅
+M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 → P7 ✅ → P8 ✅ → P9 ✅ → P10 ✅ → P11 ✅ → P12 ✅ → P13 ✅ → P14 ✅ → P15 ✅ → P16 ✅ → P17 ✅
                      ↘ M5 ⬜（可与 M3/M4 并行设计）
 所有 → M8 ⬜
 ```

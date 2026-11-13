@@ -682,3 +682,21 @@ AI 分析未完成
 - 三语键：`ai.center.incomplete`、`ai.center.recovery.*`、`ai.center.errorMeta.aggregateStage|finishReason|actionResume*|actionChangeModel`、`ai.center.stats.outputRejected|finishReason|savedResults|apiNotAnalysis`。
 - 颜色/间距只用 tokens；明亮/黑暗分别适配；≤860px 面板纵向排列，按钮换行不溢出；无 `innerHTML`、无 `alert()`。
 
+### 7.20 v0.13.2 分层汇总进度（2026-11-13）
+
+```text
+单场批次 32/32
+等待整场汇总
+分层汇总 2/2 组（第 1 层）
+局部汇总使用了本地确定性兜底；未丢弃批次、时间线或有效证据。
+```
+
+**规则**
+
+- 只有 `status.aggregate.mode=hierarchical` 且 `nodeTotal>0` 时显示节点进度；direct final 不显示虚假层级。
+- 节点完成数/总数来自持久化 `ai_aggregate_nodes`，不是前端自增；刷新/重启后保持一致。
+- `aggregate.fallback=deterministic` 时显示兜底提示；不把兜底说成“AI 完整成功”，也不隐藏。
+- 恢复面板 `noteAggregate` 文案改为“只处理未完成 final 与局部汇总，不重新分析已保存批次”。
+- 新增三语键：`ai.center.progressAggregateNodes`、`ai.center.progressAggregateFallback`；全部使用 `textContent` 与 tokens。
+- 窄屏下与既有进度 parts 一样纵向排列，不横向溢出。
+

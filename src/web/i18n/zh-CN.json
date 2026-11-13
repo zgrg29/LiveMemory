@@ -669,6 +669,8 @@
       },
       "progressSessionBatches": "单场批次 {done}/{total}",
       "progressAggregate": "等待整场汇总",
+      "progressAggregateNodes": "分层汇总 {done}/{total} 组（第 {level} 层）",
+      "progressAggregateFallback": "局部汇总使用了本地确定性兜底；未丢弃批次、时间线或有效证据。",
       "progressAggregateDone": "整场汇总已完成",
       "request": {
         "unknown": "请求",
@@ -710,7 +712,7 @@
         "resumeMemory": "继续未完成画像",
         "changeModel": "前往设置更换模型",
         "resumed": "已继续未完成的分析。",
-        "noteAggregate": "继续后只处理尚未完成的最终汇总，不会重新分析已保存的 {saved}/{total} 个单场批次。",
+        "noteAggregate": "继续后只处理尚未完成的最终汇总与局部汇总，不会重新分析已保存的 {saved}/{total} 个单场批次。",
         "noteSession": "继续后只处理尚未保存的批次；已保存批次不会重复请求。",
         "noteMemory": "继续后只处理尚未完成的画像批次或观众；已保存事实不会重复写入。",
         "noteConfig": "当前模型或配置无法完成请求。更改配置不会删除已保存批次；请勿重新分析整场直播。"

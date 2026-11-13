@@ -1,10 +1,56 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 最终汇总截断修复、「继续最终汇总」恢复与统计口径 · schema 14 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-13 · v0.13.2 可扩展分层汇总与真实 32 批恢复 · schema 15 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮使用 `tests/.tmp` 隔离数据与 Mock Provider；**只读检查生产状态/日志/数据库副本，未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集、未重建正式 EXE**。
+> 本轮使用生产 DB/runtime/exports 的**只读副本**与本地 Mock Provider；未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。正式 EXE 已重建并用 asInvoker 测试副本实跑验证。
 
-## 0. 本轮（最终汇总截断与恢复）
+## 0. 本轮（分层汇总与 32 批恢复）
+
+完整证据：`log/2026-11-13-ai-hierarchical-aggregate.md`。
+
+### 0.1 真实根因
+
+- 任务 `aij_01M7AD29G42TSN0DCFXA`：DeepSeek Flash，32/32 批次已保存，final 缺失，`ANALYSIS_AGGREGATE_TOO_LARGE`。
+- 失败详情 `estimated 64471 input tokens, limit 48000`；`contextLength=null`。旧代码把全部 32 个 batch results 放进一个 final 请求，compact 后仍 64,471 > 程序硬上限 48,000，**请求从未发出**。
+- 累计 1,123,093 输入是任务级 usage（32 批 + 5 次批次修复 + 更早子任务），不是单次汇总输入。模型实际 1M 上下文并未被使用；这是程序保守预算与“单请求汇总”设计的问题。
+- 旧恢复把该错误归为 `change-model`，32/32 已保存任务无法继续。
+
+### 0.2 实现
+
+- `src/ai/aggregate/hierarchy.mjs`：预算/连续分组、单组超预算二分、level 1..N、final unit 上限、确定性 digest/final、batch/unit 覆盖、证据 ref 校验、事件去重与时间排序、`ensureFinalBatchEvidence()`。
+- `src/ai/batching/tokens.mjs`：`resolveAggregateContextBudget`（已知 context 或保守 64k）、`resolveAggregateInputLimit`（输出预留 + 500，单请求 ≤192k）、`resolveDigestOutputTokens`。
+- `src/ai/api/compact.mjs`：`buildAggregateDigestSchema`（有界局部汇总）与 `buildAggregateFinalEnvelopeSchema`（final 必须/可带 covered_batches）。
+- `src/ai/api/prompts.mjs`：三语 `buildAggregateDigestPrompt`；`buildSessionAggregatePrompt` 支持 partial reports、coverage ledger、retry note。
+- `src/ai/api/runner.mjs`：`#runSessionAggregate` 先判断 direct final 是否装得下；否则 `#runHierarchical`；`#runDigestGroup` 每个节点独立持久化、source hash 复用、最多 2 次输出尝试、确定性兜底；`#runFinalSynthesis` 同样有界重试/兜底/导入；`aggregate` 状态进入 `/api/ai/analyze/status`。
+- `src/storage/repositories/ai-aggregate-nodes.mjs` + migration 15：`ai_aggregate_nodes`（level 0 final，level>0 局部节点），usage/coverage/fallback 全部持久化。
+- `src/ai/tasks/recovery.mjs`：`ANALYSIS_AGGREGATE_TOO_LARGE` 不再 `change-model`，32/32 + final 缺失提供 `resume-aggregate`。
+- `src/web/js/pages/ai.js` + 三语 i18n：分层节点进度、确定性兜底提示、恢复文案“只处理未完成 final/局部汇总”。
+- 清理路径：删场次/清空数据包含 `ai_aggregate_nodes`；`assertNoResidue` 覆盖。
+
+### 0.3 验证
+
+- 全量 **683 passed / 0 failed**（约 163 秒）。
+- 生产任务只读副本：原任务 32/32 → 2 个局部节点 + 1 次 final → complete；final 引用 32/32 批次；0 次 batch 重发；节点 usage 计入任务统计。
+- 正式 EXE：buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / requireAdministrator。asInvoker 测试副本实跑：health 同 buildId；旧任务状态 `resume-aggregate`；Resume 后 complete、32/32、2 节点、3 次汇总请求、final 32/32 refs、无 batch 重发。
+- 未验证：真实付费 DeepSeek 分层请求质量、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击（沙箱限制）。
+
+### 0.4 生产恢复步骤
+
+1. 完全退出 LiveMemory；备份整个数据目录。
+2. 替换为 buildId `58362fa30b5f` 的 EXE，设置页「关于」核对。
+3. AI 分析中心选择 `ses_01M77TP9QYPFRE4H9NCH`；应显示 32/32、最终汇总未完成、「继续最终汇总」。
+4. 点击继续；只做局部汇总 + final，不会重新分析 32 个 batch。
+5. 成功后 final 保存、任务 complete；若局部输出仍截断，程序会做一次有界重试并确定性兜底，不新建整场分析、不清空数据。
+
+### 0.5 下一轮注意
+
+1. 不要为“让汇总成功”恢复单请求全量拼接；超过预算必须分组/加层。
+2. 节点 source hash 是复用边界；修改 digest schema、prompt 或 batch condense 必须使旧节点失效。
+3. final 的 `ensureFinalBatchEvidence` 只补已保存结果中的真实 ref，不允许填充不存在的 seq/批次。
+4. 新增失败码时同步更新 `recovery.mjs`、`ai.js`、三语 i18n 与测试。
+5. 正式 EXE 已更新；后续改代码必须重建，旧 EXE 没有分层汇总。
+
+## 0.6 上一轮（最终汇总截断与恢复）
 
 完整证据：`log/2026-11-13-ai-aggregate-recovery.md`。
 

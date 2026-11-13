@@ -143,8 +143,96 @@ export function buildSessionAggregateAnswerSchema(resultSchema, {
   };
 }
 
-export function assembleSessionAnswer({answer, manifest}) {
-  const topics = answer?.session_topics;
+/**
+ * Limits for one bounded partial summary node.
+ *
+ * A node is deliberately smaller than the whole-session report: it covers one
+ * contiguous slice, so it can preserve every reportable batch while staying far
+ * below a single request. The final request merges these nodes and has its own
+ * (larger) limits.
+ */
+export const DIGEST_AGGREGATE_LIMITS = Object.freeze({
+  topics: 12,
+  sentiment: 8,
+  disputes: 6,
+  highlights: 6,
+  summaryChars: 800,
+  topicSummaryChars: 300,
+  keyPoints: 4,
+  keyPointChars: 140,
+  noteChars: 160,
+  messageRefs: 6
+});
+
+/** A second, tighter pass used only for a bounded retry. */
+export const TIGHT_AGGREGATE_LIMITS = Object.freeze({
+  topics: 10,
+  sentiment: 6,
+  disputes: 5,
+  highlights: 5,
+  summaryChars: 600,
+  topicSummaryChars: 240,
+  keyPoints: 3,
+  keyPointChars: 120,
+  noteChars: 140,
+  messageRefs: 5
+});
+
+function coveredBatchesSchema({required = false, maxItems = 2001} = {}) {
+  return {
+    type: 'array',
+    ...(required ? {minItems: 1} : {}),
+    maxItems,
+    items: {type: 'integer', minimum: 1}
+  };
+}
+
+/**
+ * Intermediate partial-summary answer.
+ *
+ * It uses the same evidence shape as a session report (`message_refs` are
+ * batch-qualified objects) but caps cardinality to what one slice needs. It is
+ * validated by the local program before it is persisted, so a later final
+ * request only ever consumes complete nodes.
+ */
+export function buildAggregateDigestSchema(resultSchema, {limits = DIGEST_AGGREGATE_LIMITS} = {}) {
+  const aggregate = buildSessionAggregateAnswerSchema(resultSchema, limits);
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['covered_batches', 'session_topics'],
+    properties: {
+      covered_batches: coveredBatchesSchema({required: true}),
+      session_topics: aggregate.properties.session_topics
+    }
+  };
+}
+
+/**
+ * Final synthesis answer.
+ *
+ * `covered_batches` is optional for backward compatibility with tests/tasks
+ * created before the hierarchy, but the current prompt asks for it and the
+ * local validator checks it when present. Coverage is also derived
+ * deterministically from the saved batch ledger, so a model cannot gain
+ * coverage by simply claiming it.
+ */
+export function buildAggregateFinalEnvelopeSchema(resultSchema, {limits = null} = {}) {
+  const aggregate = limits
+    ? buildSessionAggregateAnswerSchema(resultSchema, limits)
+    : buildSessionAggregateAnswerSchema(resultSchema);
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['session_topics'],
+    properties: {
+      covered_batches: coveredBatchesSchema({required: false}),
+      session_topics: aggregate.properties.session_topics
+    }
+  };
+}
+
+export function assembleSessionAnswer({answer, manifest}) {  const topics = answer?.session_topics;
   if (!topics || typeof topics !== 'object' || Array.isArray(topics)) {
     return {
       ok: false,

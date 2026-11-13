@@ -669,6 +669,8 @@
       },
       "progressSessionBatches": "Session batches {done}/{total}",
       "progressAggregate": "Waiting for the final merge",
+      "progressAggregateNodes": "Hierarchical merge {done}/{total} nodes (level {level})",
+      "progressAggregateFallback": "Some partial summaries used the local deterministic fallback; no batch, timeline or valid evidence was dropped.",
       "progressAggregateDone": "Final merge complete",
       "request": {
         "unknown": "Request",
@@ -710,7 +712,7 @@
         "resumeMemory": "Continue unfinished profiles",
         "changeModel": "Open settings to change the model",
         "resumed": "Continuing the unfinished analysis.",
-        "noteAggregate": "Continuing only retries the unfinished final merge. The {saved}/{total} saved session batches are not analysed again.",
+        "noteAggregate": "Continuing only retries the unfinished final merge and partial summaries. The {saved}/{total} saved session batches are not analysed again.",
         "noteSession": "Continuing only retries unsaved batches; saved batches are not requested again.",
         "noteMemory": "Continuing only retries unfinished profile batches or viewers; saved facts are not written again.",
         "noteConfig": "The current model or configuration cannot complete the request. Changing it does not delete saved batches; do not re-analyse the whole broadcast."

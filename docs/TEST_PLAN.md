@@ -1114,3 +1114,43 @@ duration ≈ 155s
   - 打包后的 `/js/pages/ai.js` 含 `recoveryPanel`/`activateRecovery`/`resumeAggregate`；`/i18n/zh-CN.json` 的 `ai.center.recovery.resumeAggregate=继续最终汇总`。
   - 对生产 DB/runtime **只读副本**（18/18 真实失败任务）调用 `/api/ai/analyze/status`：`recovery.action=resume-aggregate`、`canResume=true`、`error.batchIndex=null`、`outputStats.responses=20/rejected=1`、`savedResults=18`、`analysisOutcome=incomplete`。
 - 未在 EXE 中点击「继续」以避免真实付费 API 请求；真实 UAC 双击与真实浏览器点击仍未验收。
+
+## 35. 分层汇总与真实 32 批恢复（v0.13.2，2026-11-13）
+
+### 35.1 自动测试
+
+| 场景 | 测试 |
+| --- | --- |
+| 1/8/18/32/64/128 批连续分组、无丢失/重复 | `tests/unit/ai-hierarchy.test.mjs` |
+| 单组超预算自动拆分、最小单元保留 | 同上 |
+| 三语局部 digest / final partial prompt | 同上 |
+| 确定性 digest 覆盖/上限/证据 ref | 同上 |
+| 缺失批次、伪造 seq 被拒绝 | 同上 |
+| 32 批 final 有界、去重、时间排序 | 同上 |
+| 32 批真实形状分层 + final 失败重启恢复 | `tests/integration/ai-hierarchy.test.mjs` |
+| 单组截断只重试该组 | 同上 |
+| 64/128 批请求数/深度上限 | 同上 |
+| 截断一次有界重试后完成 | `tests/integration/ai-aggregate-recovery.test.mjs` |
+| Provider 硬错误重启后只续 final | 同上 |
+| 无效 final 计入 rejected 并确定性完成 | 同上 |
+
+### 35.2 生产只读副本（本轮实测）
+
+- 任务 `aij_01M7AD29G42TSN0DCFXA`：32/32 已保存，final 缺失，旧错误 `ANALYSIS_AGGREGATE_TOO_LARGE`（64,471 input / 48,000 limit）。
+- 在新代码 + 本地 Mock Provider 下 Resume：2 个局部节点 + 1 次 final，**0 次 batch 重发**；完成；final 引用 32/32 批次。
+- 节点 source hash/covered_batches/digest 持久化；任务 usage 包含 3 次汇总请求。
+
+### 35.3 正式 EXE 实跑
+
+- `dist/LiveMemory.exe`：buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7d9caee14925700218613b031da3f32db05c4dbabbb820ebd5e2e` / 91.9 MB / 176 assets / `requireAdministrator`。
+- asInvoker 测试副本 + 生产数据副本 + 本地 Mock Provider：
+  - `/api/health` 返回同一 buildId；
+  - 旧任务 `/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、32/32、`canResume=true`；
+  - `POST /api/ai/analyze/resume` 后 `complete`、`sessionAggregateDone=true`、`aggregate.mode=hierarchical`、`nodeTotal=2`、`attemptStats.failed=0`、`usage.requests` 包含汇总请求；
+  - Mock 日志只有 2 次 digest + 1 次 final，**没有 batch 请求**；
+  - 最终报告 8 个 topics、32 个 refs、覆盖 32/32 批次。
+- 未做：真实付费 DeepSeek 请求、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
+
+### 35.4 全量结果
+
+- **683 passed / 0 failed**（2026-11-13，约 163 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。

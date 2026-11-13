@@ -68,6 +68,7 @@ files.sort();
  */
 const REQUIRED_MODULES = [
   'src/ai/api/runner.mjs',
+  'src/ai/aggregate/hierarchy.mjs',
   'src/ai/providers/adapters.mjs',
   'src/ai/batching/tokens.mjs',
   'src/ai/runtime/stream.mjs',
@@ -76,6 +77,7 @@ const REQUIRED_MODULES = [
   'src/ai/translation/service.mjs',
   'src/ai/translation/fields.mjs',
   'src/storage/repositories/ai-translations.mjs',
+  'src/storage/repositories/ai-aggregate-nodes.mjs',
   'src/shared/build-info.mjs'
 ];
 for (const required of REQUIRED_MODULES) {

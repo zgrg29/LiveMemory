@@ -1,8 +1,58 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-13（v0.13.2：最终汇总截断修复、「继续最终汇总」恢复与统计口径；668 tests；schema 14；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-13（v0.13.2：可扩展分层汇总、真实 32 批恢复、schema 15；683 tests；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.20 v0.13.2 可扩展分层汇总与真实 32 批恢复（2026-11-13）
+
+完整证据与根因：`log/2026-11-13-ai-hierarchical-aggregate.md`。**未修改生产数据库、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。** 只用生产数据只读副本 + 本地 Mock Provider 验证。
+
+### 0.20.1 真实根因（已确认）
+
+- 任务 `aij_01M7AD29G42TSN0DCFXA`（`ses_01M77TP9QYPFRE4H9NCH`，DeepSeek Flash，zh-CN）：32/32 批次已保存，final 缺失。
+- 失败在 `session_aggregating`，错误 `ANALYSIS_AGGREGATE_TOO_LARGE`，详情 `estimated 64471 input tokens, limit 48000, batches 32, aggregate output 16000`。
+- 这 **不是模型上下文超限**：该配置的 `contextLength` 为 `null`，程序使用旧的硬上限 `MAX_AGGREGATE_INPUT_TOKENS=48000`；真实 batch results 压缩后 64,471 token，因此请求在发出前就被程序拒绝。日志中没有该任务的 aggregate 请求。
+- 原算法把所有 32 个批次结果塞进 **一个** final 请求，只在装不下时做一次 compact；compact 后仍 64,471 > 48,000，于是直接失败。累计输入 1,123,093（任务级 usage）不等于单次汇总输入；任务是 37 次成功请求（32 批 + 5 次批次修复），单次汇总从未发生。
+- 旧恢复逻辑把 `ANALYSIS_AGGREGATE_TOO_LARGE` 归入 `change-model`，导致 32/32 已保存的任务没有可用的「继续最终汇总」。
+
+### 0.20.2 新算法
+
+- **预算**：`resolveAggregateContextBudget()` 优先使用配置的 `contextLength`；未知时使用保守的 64,000 token 请求预算（不是声称模型只有 64k）。单请求输入上限 = 上下文 − 输出预留 − 500，且不超过 192,000；未知 context 下 digest 输入约 55.5k、final 输入约 47.5k。
+- **动态分组**：`groupBatchesContiguously()` 按真实 JSON token 估算切分连续区间，而不是固定批次数；每片最多 72 个 batch（12 topic × 6 ref 的覆盖能力），单组超预算时自动二分。
+- **分层**：leaf 节点（批次→有界局部汇总）→ 需要时继续上层节点 → final。`MAX_AGGREGATE_DEPTH=6`，final 前最多 24 个 unit；超过则继续加层，而不是失败。
+- **有界局部汇总**：`DIGEST_AGGREGATE_LIMITS`（topics 12、sentiment 8、disputes 6、highlights 6、summary 800、refs 6），只保留关键话题、时间线、情绪、事件、回看片段和有效证据索引；不重复完整原始 JSON。
+- **独立持久化**：schema 15 新增 `ai_aggregate_nodes`（job/session/level/node_index/source_hash/covered_batches/digest/usage/coverage/fallback）。节点通过 source hash 复用；重启/重试只补缺失节点，不重做已完成节点。
+- **确定性校验**：每级检查 `covered_batches`、unit/batch 覆盖、证据 ref 必须来自该批次已保存结果、时间顺序、事件去重；final 对 ≤96 批次逐批检查，并在证据被过滤后从已保存结果补回真实 ref（不伪造）。
+- **有界重试**：截断/结构错误最多 2 次输出尝试（第二次使用 TIGHT caps）；仍失败则用已保存批次/局部汇总生成确定性兜底节点。Provider 错误不兜底，保留可恢复状态。
+- **恢复**：`ANALYSIS_AGGREGATE_TOO_LARGE` 不再要求换模型；32/32 已保存时提供 `resume-aggregate`。旧任务在同一个 job、同一批结果上直接进入新分层流程。
+- **统计**：每个节点保存 usage，`aggregate.requests/inputTokens/outputTokens` 与任务 `usage` 都包含额外请求；不会把汇总请求漏计。
+- **UI**：AI 中心显示分层节点进度；确定性兜底明确提示；恢复面板文案改为「只处理未完成 final/局部汇总，不重新分析已保存批次」。
+- **AUTO_OUTPUT_TRUNCATED**：原有独立 12k–16k 输出预算与有界 schema 仍在；本轮新增一次有界重试，第二次仍截断时确定性兜底完成，不再让任务永久失败。
+
+### 0.20.3 真实数据与 EXE 验证
+
+- 生产 DB/runtime/exports 只读副本（schema 14→15）：原任务 32/32 批次、0 次批次重发；2 个局部节点 + 1 次 final；完成，final 引用 32/32 批次；节点 usage 计入任务统计。
+- **正式 EXE 重建**：`dist/LiveMemory.exe` buildId `58362fa30b5f` / commit `6083375` / SHA-256 `0aca3c895fe7…` / 91.9 MB / 176 assets / `requireAdministrator`。
+- asInvoker 测试副本（仅测试 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）+ 本地 Mock Provider + 生产数据副本实际启动：`/api/health` 返回同一 buildId；`/api/ai/analyze/status` 对旧任务显示 `resume-aggregate`；点击 Resume 后 `complete`、32/32、2 个节点、3 次汇总请求、final 引用 32/32，未重发任何 batch。
+- 未验证：真实付费 DeepSeek 的 32 批分层请求质量、真实 UAC 双击、真实浏览器点击（沙箱仍阻止浏览器命名管道）。
+
+### 0.20.4 测试（本轮实测）
+
+- 全量：**683 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 163 秒）。
+- 新增：
+  - `tests/unit/ai-hierarchy.test.mjs`（10）：预算/未知 context、1/8/18/32/64/128 分组、超预算拆分、三语 digest prompt、final partial prompt、确定性 digest 覆盖/上限、缺失批次与伪造 ref 拒绝、32 批 final、去重/排序、TIGHT schema。
+  - `tests/integration/ai-hierarchy.test.mjs`（3）：32 批真实形状分层 + final 失败后重启恢复（节点逐字节复用、0 batch/0 digest 重发、只发 final）；单组截断只重试该组；64/128 批请求数量上限。
+  - `tests/integration/ai-aggregate-recovery.test.mjs` 重写（3）：截断一次有界重试后完成、Provider 硬错误重启后只续 final、无效汇总计入 rejected 并确定性完成。
+- 更新：schema 14→15 断言、`v14-session-batching`/`v14-task-budget` 的 final 覆盖答案、`ai-recovery-state` 的 aggregate-too-large 语义。
+
+### 0.20.5 用户安全恢复步骤
+
+1. 完全退出 LiveMemory，备份整个数据目录（不要在运行时复制写入中的 SQLite）。
+2. 替换为 buildId `58362fa30b5f` 的 EXE；设置页「关于」核对。
+3. AI 分析中心选择该场次：应显示「AI 分析未完成」、32/32 批次、最终汇总失败、「继续最终汇总」。
+4. 点击继续；只执行分层局部汇总 + final，不会重发 32 个 batch。
+5. 成功后 final 保存、任务 complete；若局部汇总仍被截断，程序会做有界重试并用已保存结果确定性兜底，不应新建整场分析或清空数据。
 
 ## 0.19 v0.13.2 最终汇总截断与「继续最终汇总」恢复（2026-11-13）
 
@@ -372,7 +422,7 @@ POST /api/ai/sessions/:id/translation                 按需翻译未完成段�
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；v0.13.2 完成 P13–P16（画像校验、多语言、观众级容错、最终汇总恢复）；M3 真实接入继续验证；M4 部分完成；M5 未完成
 - 版本：`0.13.2`（`package.json` 与 `src/shared/app-info.mjs` 一致；构建标识见 §5）
-- 数据库 schema：**14**（v13→v14 只新增 `ai_translations` / `ai_translation_runs` 与索引）
+- 数据库 schema：**15**（v14→v15 只新增 `ai_aggregate_nodes` 与索引）
 - 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本 **v13.2**（旧任务保留原版本号）
 - 分支：`main`，本地提交，未 Push
 - 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
