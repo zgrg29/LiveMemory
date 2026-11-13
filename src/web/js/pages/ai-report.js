@@ -1,8 +1,10 @@
 import {
   chip,
+  clear,
   el,
   emptyState,
   formatDateTime,
+  formatDecimal,
   formatInteger,
   formatTime
 } from '../ui.js';
@@ -314,13 +316,239 @@ function renderReportBody(ctx, report) {
     sectionCard(t('ai.report.highlightsTitle'), {body: renderHighlights(ctx, report)}));
 }
 
+function localeName(t, locale) {
+  if (locale === 'zh-CN') return t('settings.language.zh');
+  if (locale === 'ja') return t('settings.language.ja');
+  if (locale === 'en') return t('settings.language.en');
+  return t('ai.report.languageSourceUnknown');
+}
+
+function formatCost(ctx, cost) {
+  if (!cost || !Number.isFinite(Number(cost.amount)) || !cost.currency) return null;
+  try {
+    return new Intl.NumberFormat(ctx.locale, {
+      maximumFractionDigits: 4
+    }).format(Number(cost.amount));
+  } catch {
+    return String(Number(cost.amount));
+  }
+}
+
+function translationReason(t, code) {
+  if (!code) return t('ai.report.translationReasonUnknown');
+  const key = `ai.report.translationReason.${code}`;
+  const value = t(key);
+  // Stable error codes are acceptable diagnostics; raw provider prose is not.
+  return value === key ? code : value;
+}
+
+function translationUsageLine(ctx, usage) {  const t = ctx.t;
+  if (!usage) return null;
+  const tokens = t('ai.report.translationUsage', {
+    input: formatInteger(usage.inputTokens ?? 0, ctx.locale),
+    output: formatInteger(usage.outputTokens ?? 0, ctx.locale)
+  });
+  const cost = formatCost(ctx, usage.cost);
+  return `${tokens} · ${cost
+    ? t('ai.report.translationCost', {
+      amount: cost,
+      currency: String(usage.cost.currency ?? '').toUpperCase()
+    })
+    : t('ai.report.translationUnknownCost')}`;
+}
+
+/**
+ * Translation controls. This is intentionally a small, local panel:
+ *   - cached translation: explain that reading is free/cached;
+ *   - missing/partial/failed: explicit provider, consent and retry;
+ *   - running: real progress from the local run row.
+ * It never claims that translation re-runs the analysis.
+ */
+function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, error = null}) {
+  const t = ctx.t;
+  const translation = payload.translation ?? {};
+  const status = translation.status ?? 'unavailable';
+  const target = translation.targetLocale ?? payload.displayLocale ?? null;
+  const nodes = [];
+
+  if (status === 'unavailable' || translation.total === 0) {
+    return el('div', {className: 'report-translation report-translation--muted'},
+      el('div', {className: 'small tertiary', text: t('ai.report.languageUnavailable')}));
+  }
+
+  if (status === 'original') {
+    // Reading the stored original needs no provider, no cache note and no action.
+    return null;
+  }
+
+  if (status === 'complete') {
+    nodes.push(el('div', {className: 'report-translation-status'},
+      chip(t('ai.report.translationComplete'), 'accent')));
+    const usage = translation.run?.usage;
+    if (usage) nodes.push(el('div', {className: 'small tertiary', text: translationUsageLine(ctx, usage)}));
+    nodes.push(el('div', {className: 'small tertiary', text: t('ai.report.translationCacheReuse')}));
+    return el('div', {className: 'report-translation'}, nodes);
+  }
+
+  if (status === 'running') {
+    const run = translation.run ?? {};
+    const progress = translation.progress ?? {};
+    const done = Number(progress.itemsDone ?? ((run.translatedItems ?? 0) + (run.failedItems ?? 0)));
+    const total = Number(progress.itemsTotal ?? run.totalItems ?? translation.total ?? 0);
+    nodes.push(el('div', {className: 'report-translation-status'},
+      chip(t('ai.report.translationRunning', {
+        done: formatInteger(done, ctx.locale),
+        total: formatInteger(total, ctx.locale)
+      }), 'neutral')));
+    nodes.push(el('div', {className: 'small tertiary', text: t('ai.report.translationRunningHint')}));
+    return el('div', {className: 'report-translation'}, nodes);
+  }
+
+  // missing / partial / failed
+  const notice = el('div', {className: 'callout callout--neutral'},
+    el('div', {className: 'callout-title', text: t('ai.report.translationNoticeTitle')}),
+    el('div', {text: t('ai.report.translationNotice')}));
+  nodes.push(notice);
+
+  if (status === 'partial' || status === 'failed') {
+    nodes.push(el('div', {className: 'report-translation-status'},
+      chip(t('ai.report.translationPartial', {
+        missing: formatInteger(translation.missing ?? 0, ctx.locale),
+        failed: formatInteger(translation.failed ?? 0, ctx.locale)
+      }), 'warn')));
+  }
+  if (error) {
+    nodes.push(el('div', {className: 'callout callout--danger', attrs: {role: 'alert'}},
+      el('div', {text: t('ai.report.translationFailed', {reason: error})})));
+  } else if (translation.run?.error?.code) {
+    nodes.push(el('div', {className: 'callout callout--danger', attrs: {role: 'alert'}},
+      el('div', {text: t('ai.report.translationFailed', {
+        reason: translationReason(t, translation.run.error.code)
+      })})));
+  }
+
+  const providers = (translation.providers ?? []).filter((provider) => provider.hasCredential);
+  if (providers.length === 0) {
+    nodes.push(el('div', {className: 'callout callout--warn'},
+      el('div', {text: t('ai.report.translationNoProvider')}),
+      onOpenSettings
+        ? el('div', {className: 'inline', style: {marginTop: '10px'}},
+          el('button', {
+            className: 'button button--secondary button--small',
+            type: 'button',
+            text: t('ai.report.translationSettings'),
+            onClick: onOpenSettings
+          }))
+        : null));
+    return el('div', {className: 'report-translation'}, nodes);
+  }
+
+  const providerSelect = el('select', {
+    className: 'select',
+    attrs: {'aria-label': t('ai.report.translationProvider')}
+  }, providers.map((provider) => el('option', {
+    value: provider.id,
+    text: `${provider.name || provider.modelId || provider.providerId} · ${provider.modelId ?? '—'}`
+  })));
+  const preferred = providers.find((provider) => provider.isDefault) ?? providers[0];
+  providerSelect.value = preferred.id;
+
+  const costLine = el('div', {className: 'small tertiary'});
+  const updateCostLine = () => {
+    const selected = providers.find((provider) => provider.id === providerSelect.value) ?? preferred;
+    if (selected.pricingStatus === 'paid' && selected.pricing) {
+      costLine.textContent = t('ai.v13.price.paidValue', {
+        input: formatDecimal(selected.pricing.inputPerMillion ?? 0, ctx.locale, 4),
+        output: formatDecimal(selected.pricing.outputPerMillion ?? 0, ctx.locale, 4),
+        currency: String(selected.pricing.currency ?? '').toUpperCase()
+      });
+    } else {
+      costLine.textContent = t('ai.report.translationUnknownCost');
+    }
+  };
+  updateCostLine();
+  providerSelect.addEventListener('change', updateCostLine);
+
+  const consent = el('input', {type: 'checkbox'});
+  const consentLabel = el('label', {className: 'checkbox-row'},
+    consent,
+    el('span', {text: t('ai.report.translationConsent')}));
+  const action = el('button', {
+    className: 'button button--primary button--small',
+    type: 'button',
+    text: status === 'missing'
+      ? t('ai.report.translationStart', {language: localeName(t, target)})
+      : t('ai.report.translationRetry')
+  });
+  action.disabled = true;
+  consent.addEventListener('change', () => {
+    action.disabled = consent.checked !== true;
+  });
+  action.addEventListener('click', () => {
+    if (consent.checked !== true) return;
+    action.disabled = true;
+    onTranslate?.({configId: providerSelect.value, consent: true});
+  });
+
+  nodes.push(el('div', {className: 'field'},
+    el('label', {className: 'label', text: t('ai.report.translationProvider')}),
+    providerSelect,
+    costLine));
+  nodes.push(consentLabel);
+  nodes.push(el('div', {className: 'inline'},
+    action,
+    el('span', {className: 'small tertiary', text: t('ai.report.translationCacheReuse')})));
+  return el('div', {className: 'report-translation'}, nodes);
+}
+
+function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
+  const t = ctx.t;
+  const supported = ['zh-CN', 'ja', 'en'];
+  const source = payload.reportLocale ?? null;
+  const selected = supported.includes(payload.displayLocale)
+    ? payload.displayLocale
+    : (supported.includes(source) ? source : ctx.locale);
+  const select = el('select', {
+    className: 'select select--compact',
+    attrs: {'aria-label': t('ai.report.languageTitle')}
+  }, supported.map((locale) => el('option', {value: locale, text: localeName(t, locale)})));
+  select.value = selected;
+  select.addEventListener('change', () => onLocaleChange?.(select.value));
+  const status = payload.translation?.status ?? 'unavailable';
+  const translated = selected !== source && (status === 'complete' || status === 'partial');
+  return el('div', {className: 'report-language'},
+    el('div', {className: 'report-language-row'},
+      el('span', {className: 'label', text: t('ai.report.languageTitle')}),
+      select,
+      source === selected
+        ? chip(t('ai.report.languageOriginalChip'), 'neutral')
+        : (translated ? chip(t('ai.report.languageTranslatedChip'), 'accent') : null),
+      translated && onShowOriginal
+        ? el('button', {
+          className: 'button button--ghost button--small',
+          type: 'button',
+          text: t('ai.report.translationShowOriginal'),
+          onClick: () => onShowOriginal()
+        })
+        : null),
+    el('div', {className: 'small tertiary', text: source
+      ? t('ai.report.languageSource', {locale: localeName(t, source)})
+      : t('ai.report.languageSourceUnknown')}),
+    el('div', {className: 'small tertiary', text: t('ai.report.languageHint')}));
+}
+
 /**
  * Render the whole report section.
  * @param {object} ctx app context (t, locale, navigate)
  * @param {object} payload GET /api/ai/sessions/:id/report
- * @param {{onAggregate?:Function, aggregateBusy?:boolean}} options
  */
-export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
+export function renderAnalysisReport(ctx, payload, {
+  onAggregate = null,
+  onLocaleChange = null,
+  onTranslate = null,
+  onOpenSettings = null,
+  translationError = null
+} = {}) {
   const t = ctx.t;
   if (!payload) return null;
   const head = el('div', {className: 'report-head'},
@@ -331,7 +559,13 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
         payload.complete ? chip(t('ai.job.status.complete'), 'accent') : chip(t('ai.job.status.partial'), 'warn')),
       el('p', {className: 'report-subtitle', text: payload.report
         ? t('ai.report.evidenceNote')
-        : t('ai.report.noReportBody')})),
+        : t('ai.report.noReportBody')}),
+      languageBlock(ctx, payload, {
+        onLocaleChange,
+        onShowOriginal: onLocaleChange && payload.reportLocale
+          ? () => onLocaleChange(payload.reportLocale)
+          : null
+      })),
     el('div', {className: 'page-actions'},
       el('button', {
         className: 'button button--secondary button--small',
@@ -340,7 +574,19 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
         onClick: () => ctx.navigate(`/history/${encodeURIComponent(payload.session.id)}`)
       })));
 
-  const nodes = [head];
+  const panelHost = el('div', {className: 'report-translation-host'});
+  const renderPanel = (state = payload) => {
+    clear(panelHost);
+    const panel = renderTranslationPanel(ctx, state, {
+      onTranslate,
+      onOpenSettings,
+      error: translationError
+    });
+    if (panel) panelHost.append(panel);
+  };
+  renderPanel();
+
+  const nodes = [head, panelHost];
   if (!payload.report && payload.perBatch.length === 0) {
     nodes.push(sectionCard(t('ai.report.noReport'), {
       body: el('div', {},
@@ -358,7 +604,12 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
         body: renderLongTermProfiles(ctx, payload.longTermProfiles)
       }));
     }
-    return el('section', {className: 'report', id: 'ai-report'}, nodes);
+    return {
+      node: el('section', {className: 'report', id: 'ai-report'}, nodes),
+      updateTranslation(state) {
+        renderPanel(state);
+      }
+    };
   }
 
   if (payload.incompleteReason) {
@@ -423,7 +674,12 @@ export function renderAnalysisReport(ctx, payload, {onAggregate = null} = {}) {
     }
   }
 
-  return el('section', {className: 'report', id: 'ai-report'}, nodes);
+  return {
+    node: el('section', {className: 'report', id: 'ai-report'}, nodes),
+    updateTranslation(state) {
+      renderPanel(state);
+    }
+  };
 }
 
 export const __internal = {percent, rangeText, confidenceChip, renderEvidence};

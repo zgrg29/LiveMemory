@@ -11,6 +11,7 @@ import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
+import {ReportTranslationService} from '../ai/translation/service.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
@@ -136,6 +137,13 @@ export async function startServer({
       now,
       ...(auto ?? {})
     });
+    const translationService = new ReportTranslationService({
+      db,
+      configStore: providerConfigStore,
+      logger,
+      now,
+      ...(auto ?? {})
+    });
     return {
       paths,
       db,
@@ -146,6 +154,7 @@ export async function startServer({
       monitoring,
       providerConfigStore,
       analysisRunner,
+      translationService,
       recovered,
       migration
     };
@@ -165,6 +174,13 @@ export async function startServer({
       await instance.analysisRunner?.shutdown();
     } catch (error) {
       logger?.error({event: 'shutdown.analysis.failed', code: error?.code ?? 'unknown'});
+    }
+    // Translation runs are display-only, but they may still be writing cache
+    // rows; abort them before the database closes.
+    try {
+      await instance.translationService?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.translation.failed', code: error?.code ?? 'unknown'});
     }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
@@ -192,6 +208,7 @@ export async function startServer({
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
+    get translationService() { return runtime.translationService; },
     get maintenance() { return state.maintenance; },
     set maintenance(value) { state.maintenance = Boolean(value); },
     hub,
@@ -325,6 +342,7 @@ export async function startServer({
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
+    get translationService() { return runtime.translationService; },
     get runtime() { return runtime; },
     get deps() { return deps; },
     hub,

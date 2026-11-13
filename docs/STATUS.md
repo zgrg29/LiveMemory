@@ -1,8 +1,81 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-13（v0.13.2：真实 AI_IMPORT_INVALID 根因、观众级容错、后续批次继续调度、ref/seq Prompt 修复；632 tests；schema 13 不变）
+最后更新：2026-11-13（v0.13.2：AI 分析输出语言、已保存报告翻译与长期画像多语言展示；649 tests；schema 14；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.18 v0.13.2 AI 分析多语言输出与报告翻译（2026-11-13）
+
+完整变更与验证记录：`log/2026-11-13-ai-report-translation.md`。**未修改生产数据库、未干扰正在采集的直播、未调用真实付费 API；全部使用 `tests/.tmp` 隔离数据与 Mock Provider。**
+
+### 0.18.1 审计结论
+
+- **已经支持的部分**：AI 分析中心已有独立的「分析输出语言」选择（zh-CN / ja / en）；`POST /api/ai/analyze/run` 把 locale 写入会话/画像两个 `ai_jobs`，包内 `instructions.md`、Prompt 版本、Session 与 Memory 任务均使用同一 locale。`topic` 已作为稳定匹配键保留。切换界面语言不会修改已创建任务。
+- **本轮补齐的缺口**：
+  1. 分析语言容易与界面语言混淆；UI 文案改为「分析输出语言」，并明确它与界面、弹幕原文无关；Prompt 增加「任意/混合语言原文直接理解、不逐条预翻译」规则。
+  2. 已保存报告没有阅读语言切换；长期画像只能按原语言阅读。
+  3. 没有翻译缓存、按需翻译、分段落失败恢复、独立的翻译 usage/费用归属。
+- **未重做**：没有新增第二套分析系统，没有改变结果 Schema 1.3.0、批次/Resume/Compact/观众级容错与事实操作语义。
+
+### 0.18.2 功能 A：分析输出语言
+
+- 三个概念明确分离：界面语言（UI locale）、分析输出语言（task locale）、原始内容语言（弹幕/聊天实际语言）。
+- AI 中心默认使用当前界面语言，可手动选择；任务开始后 locale 写入 `ai_jobs.locale` 与运行时状态，界面语言切换、暂停/恢复不会改变已保存任务的语言。
+- Session 与 Memory 使用**同一个任务 locale**：Session Prompt、Memory 运行时 instructions、长期画像 Compact 示例均为该语言。
+- Prompt v13.2 新增：聊天/摘录可能是中文、日语、英语或混合语言，模型直接理解原意并用 locale 输出，不要求逐条翻译；技术字段、JSON 键名、枚举、稳定 ID、证据编号不变。
+
+### 0.18.3 功能 B：已保存报告的语言切换
+
+- 报告标题区新增「报告语言」选择器（简体中文 / 日本語 / English）与原文/翻译 chip；默认先显示报告原文，首次切换时才提示翻译，避免误产生费用。
+- **切换语言不是重新分析**：翻译服务只读取已导入的 `ai_results`、`viewer_memories`、`memory_facts` 的展示文本，不读取整场弹幕、不创建 `ai_job`、不执行 Session/Memory 批次、不调用事实操作。
+- 可翻译内容：单场摘要、话题标题/摘要/要点、情绪说明、争论标题/摘要/说明/观点、回看片段标题/原因/候选说明、本场观众画像摘要与兴趣说明、长期画像摘要与事实 `statement`。
+- **绝不翻译**：`viewer_id`、`topic` 匹配键、事实 ID、状态、`stated/inferred/uncertain`、版本、证据引用、时间、金额、计数、置信度、枚举值、JSON 键名、原始聊天证据正文。
+- 原始报告保持只读；翻译只写独立的展示缓存。选择原文语言时直接返回原始文本，不应用缓存。
+
+### 0.18.4 缓存、按需翻译与费用
+
+- 新增 schema **14**：`ai_translations`（段落级展示缓存）与 `ai_translation_runs`（独立翻译运行/usage/错误）。
+- 缓存键：`target_kind + target_id（ai_results.id / viewer_memories.id / memory_facts.id） + item_path + target_locale + source_hash + translator_version`。原始结果版本更新（新 `ai_results.id`）或事实文本变化（新 hash）时旧缓存不会覆盖新内容。
+- 首次切换语言：读取本地缓存；缺失时调用**用户已配置的 Provider/模型**，按段落分块翻译；每块成功即保存，单段失败只标记该段，已成功段落保留。再次选择同一语言只读缓存，不重复请求。
+- 失败后「重试未完成段落」只请求缺失/失败项，不重复成功项；中断/失败不清除已保存翻译，也不影响原始报告。
+- 翻译 usage/费用只写入 `ai_translation_runs`，不混入 `ai_jobs` 的 Session/Memory usage。价格未知时 `cost=null`，界面显示「费用未知」，不显示为零。
+- 首次翻译前 UI 显示「会调用 AI 模型并可能产生费用」并要求勾选确认；服务端要求 `consent:true`；没有可用 Key 时只说明原因，原文继续可读。
+
+### 0.18.5 API
+
+```text
+GET  /api/ai/sessions/:id/report?locale=zh-CN|ja|en   只读；应用缓存，绝不调用 Provider
+GET  /api/ai/sessions/:id/translation?locale=...      只读状态/缓存计数/运行进度/可用配置
+POST /api/ai/sessions/:id/translation                 按需翻译未完成段落（locale, configId, consent）
+```
+
+报告响应新增 `reportLocale`（原文语言）、`displayLocale`（当前展示语言）与 `translation`（status、total/translated/failed/missing、run usage/error、providers）。状态包括 `original / missing / partial / complete / running / failed / unavailable`。
+
+### 0.18.6 数据生命周期
+
+- `ai_translations` / `ai_translation_runs` 随场次级联删除；删除单场时显式删除并纳入 `assertNoResidue`。
+- 删除观众长期记忆时，同时删除该记忆及事实的翻译缓存，保留记忆墓碑，旧包不能借翻译恢复已删除内容。
+- 清空数据/恢复出厂包含两张翻译表；数据库迁移 v13→v14 只新增表与索引，不改写任何历史行。
+
+### 0.18.7 测试（本轮实测）
+
+- 全量：**649 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 155 秒）。
+- 新增：
+  - `tests/unit/ai-translation.test.mjs`（6）：字段提取、结构不变、stale hash、状态、文本清洗、分批报告字段定位。
+  - `tests/unit/ai-translation-ui.test.mjs`（2）：选择器/进度/失败重试/费用提示/三语键/无 innerHTML。
+  - `tests/integration/ai-report-translation.test.mjs`（7）：日语→中文、缓存复用、双语切换、部分失败只重试失败段、新结果版本隔离、缺失 Provider/网络失败、证据清理、Schema 1.1.0 旧报告、Session/Memory 同 locale。
+  - `tests/integration/ai-translation-migration.test.mjs`（2）：v13→v14、场次级联。
+- 覆盖任务要求的 A–J；其中移动端/真实浏览器/正式 EXE/真实付费 Provider 未执行（见 §0.18.8）。
+
+### 0.18.8 未验证 / 边界
+
+- **真实付费 Provider 翻译未执行**：本机无 Key，全部为 Mock fetch；真实 Provider 的翻译质量、429/超时下的分段恢复、费用精度未验收。
+- **真实浏览器 UI 未验收**：本机沙箱仍阻止浏览器命名管道；选择器/进度/窄屏由静态断言、i18n 与 HTTP 接口覆盖，不声称已截图。
+- **正式 EXE 未重建**：本轮未构建 `dist/LiveMemory.exe`；发布 EXE 仍为上一构建（schema 13），需下次构建才能包含 schema 14 与翻译功能。
+- **翻译质量不保证**：翻译是展示层派生文本，可能与原文有措辞差异；不做人工审校，不把翻译结果写回事实或报告。
+- **旧历史英文事实**：不会自动批量翻译；切换到其他语言时按需生成展示版本，原始事实保持不变。
+- **混合语言/原文语言识别**：`reportLocale` 取自主结果或任务 locale，不自动检测每条弹幕语言；翻译 Prompt 明确接受任意/混合语言。
+
 
 ## 0.16 v0.13.2 AI 分析可靠性与长期画像语言修复（2026-11-13）
 
@@ -256,8 +329,8 @@
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；M3 真实接入继续验证；M4 部分完成；M5 未完成
 - 版本：`0.13.2`（`package.json` 与 `src/shared/app-info.mjs` 一致；构建标识见 §5）
-- 数据库 schema：**13**（本轮无迁移）
-- 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本不变
+- 数据库 schema：**14**（v13→v14 只新增 `ai_translations` / `ai_translation_runs` 与索引）
+- 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本 **v13.2**（旧任务保留原版本号）
 - 分支：`main`，本地提交，未 Push
 - 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
 

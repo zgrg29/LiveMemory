@@ -47,6 +47,13 @@ function stepCard(index, title, desc) {
     el('div', {className: 'step-desc', text: desc}));
 }
 
+function localeLabel(t, locale) {
+  if (locale === 'zh-CN') return t('settings.language.zh');
+  if (locale === 'ja') return t('settings.language.ja');
+  if (locale === 'en') return t('settings.language.en');
+  return locale ?? '—';
+}
+
 function consentDialog(ctx) {
   return new Promise((resolve) => {
     const modal = createModal({title: ctx.t('ai.center.consentTitle'), t: ctx.t});
@@ -196,6 +203,12 @@ export const aiPage = {
     let busy = false;
     let statusEpoch = 0;
     let reportEpoch = 0;
+    // Report reading language is independent from both the UI language and the
+    // analysis output language. `null` means "show the stored original".
+    let reportLocale = null;
+    let translationTimer = null;
+    let translationError = null;
+    let reportController = null;
 
     const sessionSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.sessionLabel')}},
       sessions.map((session) => el('option', {
@@ -246,7 +259,7 @@ export const aiPage = {
       el('div', {className: 'card-body'},
         el('div', {className: 'grid-2-equal'},
           field(t('ai.center.sessionLabel'), sessionSelect),
-          field(t('ai.center.languageLabel'), languageSelect)),
+          field(t('ai.center.languageLabel'), languageSelect, t('ai.center.languageHint'))),
         el('div', {className: 'grid-2-equal'},
           field(t('ai.center.configLabel'), configSelect),
           el('div', {className: 'field'},
@@ -298,6 +311,7 @@ export const aiPage = {
     const requestStatus = el('div', {className: 'small tertiary', hidden: true});
     const requestElapsed = el('div', {className: 'small tertiary', hidden: true});
     const savedStatus = el('div', {className: 'small tertiary', hidden: true});
+    const taskLocaleStatus = el('div', {className: 'small tertiary', hidden: true});
     const budgetStatus = el('div', {className: 'small tertiary', hidden: true});
     const statsHost = el('div', {className: 'def-list'});
     const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
@@ -324,6 +338,7 @@ export const aiPage = {
       requestStatus,
       requestElapsed,
       savedStatus,
+      taskLocaleStatus,
       budgetStatus,
       statusText,
       statsHost,
@@ -790,6 +805,10 @@ export const aiPage = {
       errorText.textContent = '';
       errorDetailsText.textContent = '';
       statusText.className = 'auto-status';
+      taskLocaleStatus.hidden = !current.locale;
+      taskLocaleStatus.textContent = current.locale
+        ? t('ai.center.taskLocale', {locale: localeLabel(t, current.locale)})
+        : '';
       const coverage = current.memoryJob?.memoryCoverage ?? null;
       const showError = (message) => {
         errorText.hidden = false;
@@ -878,13 +897,15 @@ export const aiPage = {
       if (!selectedId) {
         reportEpoch += 1;
         clear(reportHost);
+        reportController = null;
         return;
       }
       const requestId = ++reportEpoch;
       const sessionId = selectedId;
       let report = null;
       try {
-        report = await api.get(`/api/ai/sessions/${encodeURIComponent(sessionId)}/report`);
+        const suffix = reportLocale ? `?locale=${encodeURIComponent(reportLocale)}` : '';
+        report = await api.get(`/api/ai/sessions/${encodeURIComponent(sessionId)}/report${suffix}`);
       } catch {
         report = null;
       }
@@ -892,9 +913,74 @@ export const aiPage = {
       // one (or after the user selected another broadcast).
       if (requestId !== reportEpoch || sessionId !== selectedId) return;
       clear(reportHost);
+      reportController = null;
       if (!report) return;
-      const node = renderAnalysisReport(ctx, report, {onAggregate: null});
-      if (node) reportHost.append(node);
+      if (reportLocale === null) {
+        reportLocale = report.displayLocale ?? report.reportLocale ?? null;
+      }
+      reportController = renderAnalysisReport(ctx, report, {
+        onAggregate: null,
+        onLocaleChange: (locale) => {
+          reportLocale = locale;
+          translationError = null;
+          refreshReport();
+        },
+        onTranslate: translateReport,
+        onOpenSettings: () => ctx.navigate('/settings'),
+        translationError
+      });
+      if (reportController?.node) reportHost.append(reportController.node);
+    }
+
+    function stopTranslationPoll() {
+      if (translationTimer) {
+        window.clearTimeout(translationTimer);
+        translationTimer = null;
+      }
+    }
+
+    async function pollTranslation() {
+      if (!selectedId || !reportLocale) return;
+      const requestId = reportEpoch;
+      const sessionId = selectedId;
+      const locale = reportLocale;
+      try {
+        const current = await api.get(`/api/ai/sessions/${encodeURIComponent(sessionId)}/translation?locale=${encodeURIComponent(locale)}`);
+        if (requestId !== reportEpoch || sessionId !== selectedId || locale !== reportLocale) return;
+        reportController?.updateTranslation?.(current);
+        if (current?.translation?.status === 'running') {
+          translationTimer = window.setTimeout(pollTranslation, 1500);
+        } else {
+          await refreshReport();
+        }
+      } catch (error) {
+        if (requestId !== reportEpoch || sessionId !== selectedId) return;
+        translationError = ctx.describeError(error);
+        ctx.toast(translationError, {tone: 'error'});
+        await refreshReport();
+      }
+    }
+
+    async function translateReport({configId, consent}) {
+      if (!selectedId || !reportLocale) return;
+      const sessionId = selectedId;
+      const locale = reportLocale;
+      stopTranslationPoll();
+      translationError = null;
+      try {
+        const current = await api.post(
+          `/api/ai/sessions/${encodeURIComponent(sessionId)}/translation`,
+          {locale, configId, consent}
+        );
+        if (sessionId !== selectedId || locale !== reportLocale) return;
+        reportController?.updateTranslation?.(current);
+        translationTimer = window.setTimeout(pollTranslation, 800);
+      } catch (error) {
+        if (sessionId !== selectedId) return;
+        translationError = ctx.describeError(error);
+        ctx.toast(translationError, {tone: 'error'});
+        await refreshReport();
+      }
     }
 
     function syncUrl() {
@@ -1021,6 +1107,9 @@ export const aiPage = {
     sessionSelect.addEventListener('change', async () => {
       selectedId = sessionSelect.value;
       status = null;
+      reportLocale = null;
+      translationError = null;
+      stopTranslationPoll();
       statusEpoch += 1;
       reportEpoch += 1;
       if (timer) {
@@ -1037,6 +1126,7 @@ export const aiPage = {
     await Promise.all([refreshStatus(), refreshReport()]);
     return () => {
       if (timer) window.clearTimeout(timer);
+      stopTranslationPoll();
       syncRequestTicker(false);
       statusEpoch += 1;
       reportEpoch += 1;

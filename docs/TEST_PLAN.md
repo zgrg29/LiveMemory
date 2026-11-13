@@ -612,6 +612,46 @@ duration ≈ 25.0s
 
 > 自动监听没有下载视频/音频；网络测试只使用本地假网页或固定 fixture，真实 YouTube 仅 1 个频道、共约 5 次只读请求。
 
+## 23. AI 分析输出语言与报告翻译（v0.13.2 / schema 14）
+
+### 23.1 自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/ai-translation.test.mjs` | 只收集自然语言展示字段；`topic`/ID/状态/certainty/版本/证据/时间/金额不进入翻译项；缓存只改文本；stale hash 不应用；original/missing/partial/complete/failed/running 状态；控制字符清洗 |
+| `tests/unit/ai-translation-ui.test.mjs` | 报告语言选择器、原文/翻译 chip、费用提示与勾选、真实进度、部分失败/重试、无 Provider、显示原文、`textContent`（无 `innerHTML`）；三语键与占位符 |
+| `tests/integration/ai-report-translation.test.mjs` | A 日语报告→中文展示、原文/日文证据不变；B 缓存复用（第二次同语言 0 请求）；C 中文→英文→中文缓存；D 部分失败只重试失败段；E 新结果版本不复用旧翻译；F 长期事实/摘要翻译但 `topic`/ID/certainty/版本/记忆行不变；G 删除记忆清理翻译墓碑；H 证据清理不伪造；I 无配置/无 Key/无 consent/网络失败不影响原报告；J Schema 1.1.0 旧报告可翻译；K Session 与 Memory 使用同一 locale 与提示词 |
+| `tests/integration/ai-translation-migration.test.mjs` | v13→v14 只新增表/索引、历史行不变、重复迁移无操作；翻译随场次级联 |
+
+### 23.2 本轮实测
+
+```text
+tests 649
+pass  649
+fail  0
+duration ≈ 155s
+```
+
+- 更新 schema 版本断言：`ai-api`、`memory-api`、`ai-migration`、`memory-migration`、`monitoring-migration`、`platform-status-migration`、`migration-emotes`、`broadcaster-identity`、`history-management`。
+- **未执行**：真实付费 Provider 翻译、真实浏览器窄屏截图、正式 EXE（未重建）、真实生产库 v13→v14 迁移。
+- 所有测试使用 `tests/.tmp` 隔离目录与 Mock fetch；未读取或修改用户真实数据库。
+
+### 23.3 验收映射
+
+| 要求 | 覆盖 |
+| --- | --- |
+| A 日语弹幕中文输出 | `ai-report-translation` 的 Session/Memory locale 子测试 + Mock 日文报告→中文 |
+| B 混合语言日语输出 | Prompt v13.2 规则 + 同一 locale 子测试；Provider 回答为 Mock，不代表真实模型质量 |
+| C 已有日语报告切中文不重跑 | 断言 `ai_results`/`ai_job_messages`/`ai_jobs.usage_json`/事实行不变 |
+| D 中文→日语→中文缓存 | 中文→英文→中文等价覆盖；同语言 POST 不新增请求 |
+| E 长期画像一致 | 事实 ID/topic/certainty/状态/版本/记忆行前后完全一致 |
+| F 翻译中断 | 失败/中断保留已完成段落；原报告可读；可重试 |
+| G 原始报告更新 | 新 `ai_results` 版本 → 旧 session 翻译不应用 |
+| H 证据已清理 | `contentAvailable=false`/`purged=true`，不伪造 |
+| I 无 Key/Provider 失败 | 400 结构化错误、网络失败 run= failed、原报告不变 |
+| J 旧报告/三语/窄屏/EXE | Schema 1.1.0 已测；三语静态已测；窄屏/EXE 未执行 |
+
+
 ## 22. 统一分析与长期记忆（P8 / v0.11.0）
 
 ### 22.1 自动化

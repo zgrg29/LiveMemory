@@ -2,9 +2,7 @@ import {createReadStream, existsSync, statSync, statfsSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
-import {normalizeLocale} from '../shared/locale.mjs';
-import {resolveLocale} from '../shared/locale.mjs';
-import {
+import {normalizeLocale, resolveLocale, SUPPORTED_LOCALES} from '../shared/locale.mjs';import {
   serializeBatch,
   serializeBroadcasterRow,
   serializeEvent,
@@ -235,6 +233,33 @@ function analysisError(error) {
     });
   }
   return error;
+}
+
+/**
+ * Translation errors are user-fixable configuration/locale problems; they must
+ * never be reported as an analysis failure. The saved report remains readable.
+ */
+function translationError(error) {
+  if (error instanceof AppError) return error;
+  const map = {
+    TRANSLATION_LOCALE_INVALID: ['TRANSLATION_LOCALE_INVALID', 'errors.translationLocaleInvalid', 400],
+    TRANSLATION_NOT_NEEDED: ['TRANSLATION_NOT_NEEDED', 'errors.translationNotNeeded', 409],
+    TRANSLATION_CONSENT_REQUIRED: ['TRANSLATION_CONSENT_REQUIRED', 'errors.translationConsentRequired', 400],
+    TRANSLATION_PROVIDER_REQUIRED: ['TRANSLATION_PROVIDER_REQUIRED', 'errors.translationProviderRequired', 400],
+    TRANSLATION_PROVIDER_NOT_FOUND: ['TRANSLATION_PROVIDER_NOT_FOUND', 'errors.translationProviderNotFound', 404],
+    TRANSLATION_CREDENTIAL_MISSING: ['TRANSLATION_CREDENTIAL_MISSING', 'errors.translationCredentialMissing', 400],
+    TRANSLATION_NO_TEXT: ['TRANSLATION_NO_TEXT', 'errors.translationNoText', 409],
+    TRANSLATION_ALREADY_RUNNING: ['TRANSLATION_ALREADY_RUNNING', 'errors.translationAlreadyRunning', 409],
+    TRANSLATION_SESSION_NOT_FOUND: ['TRANSLATION_SESSION_NOT_FOUND', 'errors.sessionNotFound', 404]
+  };
+  const [code, messageKey, httpStatus] = map[error?.code]
+    ?? ['TRANSLATION_FAILED', 'errors.translationFailed', 500];
+  return new AppError(code, {
+    messageKey,
+    details: error?.details ?? null,
+    httpStatus,
+    cause: error
+  });
 }
 
 function freeBytesFor(directory) {
@@ -1369,10 +1394,86 @@ export function buildRoutes() {
     {
       method: 'GET',
       path: '/api/ai/sessions/:id/report',
-      handler: ({res, params, deps}) => {
-        const report = buildSessionAnalysisReport(deps.db, params.id);
+      handler: ({res, params, url, deps}) => {
+        const requested = url.searchParams.get('locale');
+        const locale = requested ? normalizeLocale(requested) : null;
+        if (requested && (!locale || !SUPPORTED_LOCALES.includes(locale))) {
+          throw new AppError('TRANSLATION_LOCALE_INVALID', {
+            messageKey: 'errors.translationLocaleInvalid',
+            details: {locale: requested},
+            httpStatus: 400
+          });
+        }
+        const report = buildSessionAnalysisReport(deps.db, params.id, {
+          locale,
+          providers: deps.providerConfigStore?.list() ?? []
+        });
         if (!report) throw notFound(ERROR_CODES.SESSION_NOT_FOUND, 'errors.sessionNotFound');
         sendJson(res, 200, report);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/ai/sessions/:id/translation',
+      handler: async ({res, params, url, deps}) => {
+        if (!deps.translationService) {
+          throw new AppError('TRANSLATION_UNAVAILABLE', {
+            messageKey: 'errors.translationUnavailable',
+            httpStatus: 503
+          });
+        }
+        const requested = url.searchParams.get('locale');
+        const locale = requested ? normalizeLocale(requested) : null;
+        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+          throw new AppError('TRANSLATION_LOCALE_INVALID', {
+            messageKey: 'errors.translationLocaleInvalid',
+            details: {locale: requested},
+            httpStatus: 400
+          });
+        }
+        try {
+          sendJson(res, 200, await deps.translationService.getStatus(params.id, locale));
+        } catch (error) {
+          throw translationError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/ai/sessions/:id/translation',
+      handler: async ({req, res, params, deps}) => {
+        if (!deps.translationService) {
+          throw new AppError('TRANSLATION_UNAVAILABLE', {
+            messageKey: 'errors.translationUnavailable',
+            httpStatus: 503
+          });
+        }
+        const body = await readJsonBody(req);
+        const locale = normalizeLocale(body.locale);
+        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+          throw new AppError('TRANSLATION_LOCALE_INVALID', {
+            messageKey: 'errors.translationLocaleInvalid',
+            details: {locale: body.locale ?? null},
+            httpStatus: 400
+          });
+        }
+        try {
+          const status = await deps.translationService.start({
+            sessionId: params.id,
+            targetLocale: locale,
+            configId: typeof body.configId === 'string' ? body.configId : null,
+            consent: body.consent === true
+          });
+          deps.logger?.info?.({
+            event: 'ai.translation.accepted',
+            sessionId: params.id,
+            targetLocale: locale,
+            configId: body.configId ?? null
+          });
+          sendJson(res, 202, status);
+        } catch (error) {
+          throw translationError(error);
+        }
       }
     },
     {

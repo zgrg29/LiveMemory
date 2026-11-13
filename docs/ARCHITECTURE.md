@@ -28,6 +28,7 @@ LiveMemory.exe (Node SEA)
          ├─ src/analytics/              只读读模型（时间线/汇总/画像/历史搜索/AI 报告）
          ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
+         ├─ src/ai/translation/         报告/长期画像的只读展示翻译、缓存与独立运行状态
          ├─ src/ai/tasks/               任务状态计算（从数据库事实）
          ├─ src/ai/prompts/             三语提示词与提示词版本
          ├─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
@@ -658,3 +659,39 @@ AnalysisRunner
 - 编辑表单的 Key 输入为空；只有用户输入才随 PATCH 发送。
 - 旧模型能力、价格、上下文不会被新模型继承。
 - 历史分析结果、长期画像、其他 Provider 配置不因编辑而修改。
+
+## 1.8 v0.13.2 分析输出语言与报告翻译（2026-11-13）
+
+```text
+分析输出语言
+  AI 中心 locale select（默认 UI locale，可手选）
+    -> POST /api/ai/analyze/run {locale}
+    -> ai_jobs.locale（Session 与 Memory 两个 Job 同 locale）
+    -> Prompt / instructions.md / Compact 示例按 locale
+    -> 状态返回 locale（任务期间/Resume 不因 UI 切换改变）
+
+报告阅读语言
+  GET /api/ai/sessions/:id/report?locale=zh-CN
+    -> buildSessionAnalysisReport()（原分析读模型，只读）
+    -> collectTranslatableItems()（仅自然语言展示字段）
+    -> ai_translations 缓存（source_hash + target_locale + version）
+    -> 应用已缓存段落；绝不调用 Provider / 不创建 Job
+
+首次翻译
+  POST /api/ai/sessions/:id/translation {locale, configId, consent}
+    -> ReportTranslationService（独立于 AnalysisRunner）
+    -> 读取已导入结果 + 长期记忆的展示字段
+    -> 按字数分块 -> 用户配置 Provider（非流式）
+    -> 解析 JSON -> 逐段保存 ai_translations（成功/失败）
+    -> ai_translation_runs 独立 usage/费用；不写 ai_jobs
+    -> 失败段可由 UI 只重试未完成部分
+```
+
+关键保证：
+
+- 翻译只读已保存结果，不读取整场弹幕、不运行 Session/Memory 批次、不触发事实操作。
+- 翻译缓存键包含原始对象 ID、字段路径、源文本 hash、目标语言与翻译版本；新结果版本/新事实文本不会复用旧翻译。
+- `viewer_id`、`topic`、事实 ID/状态/certainty/版本/证据/时间/金额/计数/枚举/原始聊天不翻译。
+- 翻译服务有独立状态与 usage；失败/中断不影响已保存分析，也不影响原文阅读。
+- 翻译表随场次删除；删除记忆时删除其展示翻译；清空数据包含翻译表。
+

@@ -2240,6 +2240,81 @@
   color: var(--text-tertiary);
 }
 
+.report-language {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.report-language-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.report-language .label {
+  margin: 0;
+}
+
+.select--compact {
+  width: auto;
+  max-width: 100%;
+  min-width: 132px;
+  padding-block: 5px;
+  font-size: 12.5px;
+}
+
+.report-translation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.report-translation--muted {
+  color: var(--text-tertiary);
+}
+
+.report-translation-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.report-translation .field {
+  margin: 0;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.checkbox-row input {
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .report-language-row {
+    align-items: flex-start;
+  }
+
+  .report-translation {
+    padding: 10px 12px;
+  }
+}
+
 .report-body {
   display: flex;
   flex-direction: column;

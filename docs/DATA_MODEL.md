@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**12**
+Schema 版本：**14**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -613,3 +613,51 @@ paused（用户暂停；正在进行的 recording 不受影响）
 - `secrets/ai-keys.json` 的 credential reference 在仅改模型/名称/并发/价格时不变；Provider/区域/Base URL 变化时生成新 reference 并要求新 Key。
 - 模型变化后 `capabilities`、`lastTestStatus`、`modelLabel`、`contextLength`、旧价格都会失效；不把旧模型能力写入新模型。
 - `ai_jobs` 仍保存启动时的 provider/model/pricing 快照；历史 `ai_results` 与 `viewer_memories` 不因配置编辑而改写。
+
+## 17. 报告翻译展示缓存（schema 14 / v0.13.2）
+
+### 17.1 原则
+
+- 翻译是**展示派生数据**，不是分析结果：它不写 `ai_results`、`viewer_memories`、`memory_facts`、金额、计数或身份。
+- 原始报告/事实保持不可变；同一原始对象可以有多个目标语言的展示版本。
+- `viewer_id`、`topic` 匹配键、事实 ID、状态、certainty、版本、证据引用、时间、金额、计数不进入翻译项。
+
+### 17.2 表
+
+| 表 | 主键/唯一 | 关键列 |
+| --- | --- | --- |
+| `ai_translations` | `id`；`UNIQUE(target_kind, target_id, item_path, target_locale, source_hash, translator_version)` | `session_id`、`source_locale`、`translated_text`、`status`（`ok`/`failed`）、`error_code`、provider/model 快照、`created_at`、`updated_at` |
+| `ai_translation_runs` | `id` | `session_id`、`target_locale`、`source_locale`、`status`（`running`/`complete`/`partial`/`failed`/`interrupted`）、`total_items`/`translated_items`/`failed_items`/`pending_items`、`usage_json`、`error_json`、provider/model 快照、`started_at`/`updated_at`/`completed_at` |
+
+索引：
+
+```sql
+CREATE INDEX idx_ai_translation_runs_session
+  ON ai_translation_runs (session_id, target_locale, started_at DESC);
+CREATE INDEX idx_ai_translations_session
+  ON ai_translations (session_id, target_locale, target_kind, target_id);
+CREATE INDEX idx_ai_translations_target
+  ON ai_translations (target_kind, target_id, target_locale);
+```
+
+### 17.3 键与失效
+
+- `target_kind`：`session_result`（`ai_results.id`）、`memory_summary`（`viewer_memories.id`）、`memory_fact`（`memory_facts.id`）。
+- `item_path`：稳定字段路径，例如 `summary`、`topics.0.title`、`facts.mfc_x.statement`。
+- `source_hash`：源文本 SHA-256；`translator_version` 当前为 `lm-translation-v1`。
+- 新结果版本 = 新 `ai_results.id`；事实文本变化 = 新 hash。旧行不会被用于新内容。
+- 同一条目重试成功会更新同一唯一键的 `status`/`translated_text`；失败行保留错误码，供只重试失败段使用。
+
+### 17.4 生命周期与清理
+
+- `session_id REFERENCES sessions(id) ON DELETE CASCADE`；删除单场时显式删除两张表并纳入 `assertNoResidue`。
+- 删除观众记忆：删除该 `memory_summary` 与全部 `memory_fact` 翻译；保留记忆墓碑。
+- 清空数据/恢复出厂包含两张表；数据库备份/迁移随整库复制。
+- 翻译表不含聊天原文、API Key、请求头或模型推理正文；`error_json` 只存稳定错误码、HTTP 状态与时间。
+
+### 17.5 迁移 v13 → v14
+
+- 只新增两张表与三个索引；不 `ALTER`、不重写任何历史行。
+- 旧库升级后，已有报告/画像仍按原语言显示；首次切换语言时才生成缓存。
+- 测试：`tests/integration/ai-translation-migration.test.mjs`（v13→v14、重复迁移无操作、场次级联）。
+

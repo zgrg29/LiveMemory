@@ -73,6 +73,9 @@ const REQUIRED_MODULES = [
   'src/ai/runtime/stream.mjs',
   'src/ai/runtime/attempt.mjs',
   'src/ai/runtime/scheduler.mjs',
+  'src/ai/translation/service.mjs',
+  'src/ai/translation/fields.mjs',
+  'src/storage/repositories/ai-translations.mjs',
   'src/shared/build-info.mjs'
 ];
 for (const required of REQUIRED_MODULES) {

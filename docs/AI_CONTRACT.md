@@ -1,7 +1,7 @@
 # AI 分析协议（AI_CONTRACT）
 
-版本：**0.13.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13.1-session-<locale>` / `lm-prompt-v13.1-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`；v13.2 之前创建的 v13 任务保留原版本号）
+版本：**0.13.2** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13.2-session-<locale>` / `lm-prompt-v13.2-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`；v13.2 之前创建的 v13 任务保留原版本号）
 
 ## 1. 原则
 
@@ -990,3 +990,78 @@ Provider 返回 → extractJsonObject → assembleMemoryCompact
 
 - `MEMORY_EVIDENCE_OTHER_VIEWER` 的 `params` 包含 `seq`、目标 `viewerId`、实际 `actual` 与该观众 `allowedSeqs`。
 - `last_error_json.batches[].viewerErrors[]` 保存被隔离观众的字段错误；状态/技术详情不包含模型原始回答或聊天正文。
+
+## 22. v0.13.2 分析输出语言与报告翻译
+
+翻译**不是**新的分析协议，也不改变结果 Schema 1.3.0。它只读取已导入结果的展示字段并生成独立的展示缓存。
+
+### 22.1 三个语言概念
+
+| 概念 | 存储/来源 | 说明 |
+| --- | --- | --- |
+| UI locale | `settings.locale` | 菜单、按钮、提示、导航 |
+| 分析输出 locale | `ai_jobs.locale` / 运行时任务状态 | Session 与 Memory 的自然语言正文；任务创建时确定，Resume 沿用 |
+| 原始内容语言 | 弹幕/聊天实际语言 | 不由软件强制；Prompt 明确接受任意/混合语言 |
+
+### 22.2 功能 A：分析输出
+
+- `POST /api/ai/analyze/run` 的 `locale` 规范化为 zh-CN / ja / en；缺省使用当前 UI 语言。
+- Session 与 Memory 两个 Job 使用同一个任务 locale；`promptVersionFor(locale, mode)` 记录在 Job 与包 manifest。
+- 提示词 v13.2 明确：聊天/摘录可能是任意或混合语言，模型直接理解原意并用 locale 输出，不要求逐条翻译。
+- `GET /api/ai/analyze/status` 返回任务 `locale`（已随任务保存）；界面语言切换、暂停/恢复不会改写它。
+- 技术字段、JSON 键名、枚举值、稳定身份、证据编号、时间、金额、计数不随语言变化。
+
+### 22.3 功能 B：已保存报告阅读语言
+
+- `GET /api/ai/sessions/:id/report?locale=<zh-CN|ja|en>`：只读。先在本地读取翻译缓存并应用到展示对象；**绝不调用 Provider**。
+- `GET /api/ai/sessions/:id/translation?locale=...`：返回状态、总数、已翻译/失败/缺失、运行进度、独立 usage 与可用 Provider 配置。
+- `POST /api/ai/sessions/:id/translation`：`{locale, configId, consent:true}`；只请求缺失/失败段落，已成功段落不重复请求。
+- 报告新增 `reportLocale`、`displayLocale`、`translation`；`translation.status` 为 `original / missing / partial / complete / running / failed / unavailable`。
+
+### 22.4 可翻译字段与不变量
+
+可翻译（仅展示）：
+
+```text
+session_topics.summary
+session_topics.topics[].title / summary / key_points[]
+session_topics.sentiment[].note / evidence_note
+session_topics.disputes[].title / summary / note / viewpoints[]
+session_topics.highlights[].title / reason / clip_suggestion
+viewer_profiles[].summary / interests[].note
+longTermProfiles[].summary / facts[].statement
+```
+
+绝不翻译：
+
+```text
+viewer_id、topic（长期匹配键）、fact.id、status、certainty、version
+evidence refs、message_refs、时间、金额、计数、confidence、evidence 枚举
+protocol / schema_version / job_id / batch_id / task_id / session_id
+JSON 键名、枚举值、原始聊天 content
+```
+
+翻译结果按不可信文本处理：只做 JSON 解析、控制字符清理与长度上限；前端只通过 `textContent` 渲染，不执行 HTML/脚本/指令。
+
+### 22.5 缓存与失效
+
+- 表 `ai_translations`：键为 `target_kind + target_id + item_path + target_locale + source_hash + translator_version`。
+- `target_id` 是原始 `ai_results.id`、`viewer_memories.id` 或 `memory_facts.id`；`source_hash` 是源文本 SHA-256；`translator_version = lm-translation-v1`。
+- 新结果版本（新 `ai_results.id`）或事实文本变化（新 hash）不会命中旧缓存；原始报告更新后旧翻译不会被使用。
+- 成功段落持久保存；单段失败标记 `failed`，重试只处理缺失/失败段；失败不会清除已成功翻译。
+- `ai_translation_runs` 保存独立状态、Provider/模型快照、usage 与错误码；不写入 `ai_jobs.usage_json`。
+
+### 22.6 费用与确认
+
+- 复用用户已配置的 Provider/模型与 API Key；不引入新平台、服务器或额外 Key。
+- 首次翻译前 UI 明确提示会调用 AI 模型并可能产生费用，并要求勾选；服务端要求 `consent:true`。
+- 已知价格按实际 usage 计算并显示；未配置价格时 `cost=null`，界面显示“费用未知”，不得显示为零。
+- 翻译只使用非流式请求；复用现有超时、429/`Retry-After`、5xx 退避与取消语义。翻译不是分析批次，不进入 Session/Memory 进度或批次上限。
+
+### 22.7 数据生命周期
+
+- 翻译表随 `sessions` 级联删除；删除单场时显式删除并纳入残留检查。
+- 删除观众长期记忆时，同时删除该记忆与事实的展示翻译；记忆墓碑仍阻止旧包恢复。
+- 清空数据/恢复出厂包含翻译表；备份/迁移随数据库整体复制。
+- Schema 14 迁移只新增表与索引，不改写历史行；旧 1.0.0–1.3.0 结果均可读取并翻译。
+

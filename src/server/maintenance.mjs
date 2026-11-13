@@ -34,6 +34,8 @@ const CLEARED_TABLES = Object.freeze([
   'ai_job_viewers',
   'ai_results',
   'ai_result_evidence',
+  'ai_translation_runs',
+  'ai_translations',
   'viewer_memories',
   'memory_facts',
   'memory_fact_evidence',
@@ -143,6 +145,8 @@ function clearDatabase(db, {factory = false} = {}) {
     db.exec('DELETE FROM memory_facts');
     db.exec('DELETE FROM memory_versions');
     db.exec('DELETE FROM viewer_memories');
+    db.exec('DELETE FROM ai_translations');
+    db.exec('DELETE FROM ai_translation_runs');
     db.exec('DELETE FROM ai_result_evidence');
     db.exec('DELETE FROM ai_results');
     db.exec('DELETE FROM ai_job_messages');

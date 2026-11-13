@@ -16,6 +16,8 @@
  * deletion cannot silently restore the data the user removed.
  */
 
+import {deleteTranslationsForMemory} from './ai-translations.mjs';
+
 function mapMemory(row) {
   if (!row) return null;
   return {
@@ -537,6 +539,12 @@ export function pruneVersions(db, {memoryId, keep = 20} = {}) {
 export function deleteMemory(db, {memoryId, reason = 'user', now = Date.now()}) {
   const memory = getMemoryById(db, memoryId);
   if (!memory) return null;
+  // A translated statement is derived display data. Deleting the memory must
+  // also remove its translation cache; otherwise a deleted fact could remain
+  // readable through a report in another language.
+  const factIds = db.prepare('SELECT id FROM memory_facts WHERE memory_id = ?')
+    .all(String(memoryId)).map((row) => row.id);
+  deleteTranslationsForMemory(db, {memoryId, factIds});
   db.prepare(`
     DELETE FROM memory_fact_evidence
      WHERE fact_id IN (SELECT id FROM memory_facts WHERE memory_id = ?)

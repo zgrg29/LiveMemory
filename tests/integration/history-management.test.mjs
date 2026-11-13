@@ -240,7 +240,7 @@ test('archive is a persisted management flag, hidden by default and independent 
   chat(db, session, {uid: 'UC_1', name: 'One'});
   endSession(db, session.id, {status: 'ended', endedAt: T0 + 1000, reason: 'adapter_end'});
   const initialVersion = currentSchemaVersion(db);
-  assert.equal(initialVersion, 13);
+  assert.equal(initialVersion, 14);
 
   const archived = archiveSession({db, sessionId: session.id, archived: true, now: T0 + 5000});
   assert.equal(archived.archived_at, T0 + 5000);

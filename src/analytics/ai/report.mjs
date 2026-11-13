@@ -10,6 +10,10 @@ import {
 import {computeJobStatus} from '../../ai/tasks/status.mjs';
 import {MAX_REPORT_EVIDENCE} from '../../ai/constants.mjs';
 import {listFacts} from '../../storage/repositories/viewer-memory.mjs';
+import {
+  applyReportTranslation,
+  translationSourceLocale
+} from '../../ai/translation/apply.mjs';
 
 /**
  * Read model for the AI analysis report.
@@ -229,6 +233,7 @@ function summarizeLongTermProfiles(db, session, {limit = 50} = {}) {
     items: rows.map((row) => {
       const facts = listFacts(db, row.id, {limit: 8});
       return {
+        memoryId: row.id,
         viewerId: row.viewer_id,
         nickname: row.nickname ?? null,
         version: Number(row.version ?? 0),
@@ -237,6 +242,8 @@ function summarizeLongTermProfiles(db, session, {limit = 50} = {}) {
         facts: facts.map((fact) => ({
           id: fact.id,
           kind: fact.kind,
+          // `topic` is the stable long-term matching key. It is shown as stored
+          // and must never be translated or rewritten by the display layer.
           topic: fact.topic ?? null,
           statement: fact.statement,
           certainty: fact.certainty,
@@ -279,7 +286,32 @@ function jobSummary(db, job, {now = Date.now()} = {}) {
 /**
  * @returns {object|null} report payload, or null when the session is unknown.
  */
-export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {}) {
+/**
+ * Attach the read-only translation state (and apply any cached translation) to
+ * a freshly built payload. This never calls a provider and never writes.
+ */
+function withTranslationState(db, payload, {locale = null, providers = []} = {}) {
+  const {translation} = applyReportTranslation(db, payload, {locale, providers});
+  return {
+    ...payload,
+    reportLocale: translationSourceLocale(payload),
+    displayLocale: translation.targetLocale ?? null,
+    translation
+  };
+}
+
+/**
+ * @param {object} db
+ * @param {string} sessionId
+ * @param {{now?:number, locale?:string|null, providers?:Array}} options
+ *   `locale` is the requested report reading language. When omitted (or equal
+ *   to the report's original language) the stored text is returned unchanged.
+ */
+export function buildSessionAnalysisReport(db, sessionId, {
+  now = Date.now(),
+  locale = null,
+  providers = []
+} = {}) {
   const session = getSession(db, sessionId);
   if (!session) return null;
   const jobs = listJobs(db, {sessionId, limit: 50});
@@ -305,7 +337,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
   }
   if (!primary && reportJobs.length > 0) primary = summaries.find((summary) => summary.id === reportJobs[0].id) ?? null;
   if (!primary) {
-    return {
+    return withTranslationState(db, {
       session: {
         id: session.id,
         platform: session.platform,
@@ -327,7 +359,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
       localStats: null,
       viewerProfiles: null,
       longTermProfiles: summarizeLongTermProfiles(db, session)
-    };
+    }, {locale, providers});
   }
 
   const job = jobs.find((row) => row.id === primary.id);
@@ -365,7 +397,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
     else incompleteReason = 'no_results';
   }
 
-  return {
+  return withTranslationState(db, {
     session: {
       id: session.id,
       platform: session.platform,
@@ -395,7 +427,7 @@ export function buildSessionAnalysisReport(db, sessionId, {now = Date.now()} = {
         budget: MAX_REPORT_EVIDENCE
       }
       : null
-  };
+  }, {locale, providers});
 }
 
 export const __internal = {decorate, resolveEvidence, evidenceByItem};

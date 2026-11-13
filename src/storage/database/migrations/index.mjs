@@ -893,6 +893,68 @@ export const MIGRATIONS = Object.freeze([
           ON ai_provider_tests (config_id, tested_at DESC);
       `);
     }
+  },
+  {
+    version: 14,
+    name: 'ai-report-translations',
+    up(db) {
+      // A translated report is a display-only cache. It never overwrites
+      // ai_results, memory_facts or viewer_memories, and it is keyed by the
+      // original object id + source text hash + target locale + translator
+      // version. A new result version therefore cannot reuse an old
+      // translation, while a repeat read costs no provider request.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_translation_runs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          target_locale TEXT NOT NULL,
+          source_locale TEXT,
+          status TEXT NOT NULL,
+          provider_config_id TEXT,
+          provider_id TEXT,
+          model_id TEXT,
+          translator_version TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          translated_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          pending_items INTEGER NOT NULL DEFAULT 0,
+          usage_json TEXT,
+          error_json TEXT,
+          started_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          completed_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_translation_runs_session
+          ON ai_translation_runs (session_id, target_locale, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_translations (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+          target_kind TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          item_path TEXT NOT NULL,
+          target_locale TEXT NOT NULL,
+          source_hash TEXT NOT NULL,
+          source_locale TEXT,
+          translated_text TEXT,
+          status TEXT NOT NULL,
+          error_code TEXT,
+          provider_config_id TEXT,
+          provider_id TEXT,
+          model_id TEXT,
+          translator_version TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (
+            target_kind, target_id, item_path, target_locale, source_hash, translator_version
+          )
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_translations_session
+          ON ai_translations (session_id, target_locale, target_kind, target_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_translations_target
+          ON ai_translations (target_kind, target_id, target_locale);
+      `);
+    }
   }
 ]);
 

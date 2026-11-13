@@ -1,21 +1,65 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 真实 AI_IMPORT_INVALID 观众级容错 · schema 13 · 结果 Schema 1.3.0 · 提示词 v13.1
+本轮：2026-11-13 · v0.13.2 AI 分析输出语言、已保存报告翻译与长期画像多语言展示 · schema 14 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮只读复制生产库/分析包做调查；**未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集**。验证使用 `tests/.tmp` 与 Mock Provider。
+> 本轮使用 `tests/.tmp` 隔离数据与 Mock Provider；**未修改生产数据、未调用真实付费 API、未干扰直播采集、未重建 EXE**。
 
-## 0. 本轮（真实 AI_IMPORT_INVALID 与观众级容错）
+## 0. 本轮（多语言输出与报告翻译）
+
+完整记录：`log/2026-11-13-ai-report-translation.md`。
+
+### 0.1 审计结论
+
+- 已有：分析中心有独立「分析语言」；`locale` 写入 Session/Memory 两个 job；包内说明与 Prompt 按 locale 生成；界面语言切换不影响已创建任务。
+- 缺口：报告没有阅读语言切换；长期画像只能按原语言；没有翻译缓存/分段恢复/独立 usage；「分析语言」文案与界面语言容易混淆；Prompt 未明确任意/混合语言原文不逐条预翻译。
+- 未重做：结果 Schema 仍 1.3.0，Session/Memory 批次、Resume、Compact 校验、观众级容错、事实操作均未改变。
+
+### 0.2 实现
+
+- **功能 A**：AI 中心文案改为「分析输出语言」并增加说明；Prompt v13.2 明确「原文可能是任意/混合语言，直接理解并用 locale 输出，不逐条翻译」；Session 与 Memory 共用任务 locale；状态返回 `locale`，UI 显示「本次任务输出语言（已随任务保存）」。
+- **功能 B**：报告页新增「报告语言」选择器；首次切换提示会调用 Provider 并可能产生费用；已有缓存直接显示；原文/翻译 chip；失败红色提示与「重试未完成段落」；无可用 Key 时原文仍可读。
+- **翻译架构**：原始分析结果 + 段落级展示缓存。只翻译自然语言字段，绝不写 `ai_results` / `viewer_memories` / `memory_facts`；`viewer_id`、`topic`、事实 ID/状态/certainty/版本/证据/时间/金额/枚举/原始聊天均不翻译。
+- **缓存**：`ai_translations` 以原始对象 ID + 字段路径 + 源文本 SHA-256 + 目标语言 + `lm-translation-v1` 为键；`ai_translation_runs` 保存独立运行状态与 usage。结果新版本或事实文本变化不会误用旧翻译；失败只替换失败段。
+- **数据生命周期**：翻译表随场次级联删除；删除观众记忆同时删除其事实/摘要翻译；清空数据包含两张新表；v13→v14 只新增表/索引。
+- **费用**：翻译 usage/费用只写 `ai_translation_runs`，不混入 `ai_jobs`；未知价格 `cost=null`，显示「费用未知」；复用现有 Provider 配置、超时、重试/429 与 URL 安全检查，非流式请求。
+
+### 0.3 API
+
+```text
+GET  /api/ai/sessions/:id/report?locale=zh-CN|ja|en   只读；只应用缓存，不调用 Provider
+GET  /api/ai/sessions/:id/translation?locale=...      状态/缓存计数/运行进度/可用配置
+POST /api/ai/sessions/:id/translation                 {locale, configId, consent:true}
+```
+
+报告新增 `reportLocale`、`displayLocale`、`translation`。错误码：`TRANSLATION_LOCALE_INVALID`、`TRANSLATION_NOT_NEEDED`、`TRANSLATION_CONSENT_REQUIRED`、`TRANSLATION_PROVIDER_REQUIRED`、`TRANSLATION_CREDENTIAL_MISSING`、`TRANSLATION_NO_TEXT`、`TRANSLATION_ALREADY_RUNNING`、`TRANSLATION_SESSION_NOT_FOUND`。
+
+### 0.4 测试
+
+- 全量 **649 passed / 0 failed**（约 155 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 新增 `tests/unit/ai-translation.test.mjs`、`tests/unit/ai-translation-ui.test.mjs`、`tests/integration/ai-report-translation.test.mjs`、`tests/integration/ai-translation-migration.test.mjs`；更新 schema 14 相关迁移断言与 `ai-api` / `memory-api` 状态断言。
+- 覆盖 A–J：日语→中文、存档报告切换不重跑分析、缓存复用、部分失败重试、长期事实结构不变、翻译中断/失败保留结果、新版本隔离、证据清理、无 Provider/Key/网络失败、旧 Schema 1.1.0、三语 UI 静态断言。
+- **未验证**：真实付费 Provider、真实浏览器窄屏截图、正式 EXE（未重建）、真实生产库迁移。
+
+### 0.5 下一轮注意
+
+1. 如需发布 EXE，必须重新构建，使 schema 14 迁移与翻译代码进入二进制；旧 EXE 不能读取 schema 14 数据库。
+2. 翻译缓存是展示派生数据；不要在后续“事实合并/回滚”中把翻译文本当作事实来源。
+3. 若新增可翻译字段，必须同时更新 `src/ai/translation/fields.mjs`、`TRANSLATION_VERSION`、三语字典与测试。
+4. 不要为了“统一语言”批量改写历史事实；本轮只做按需展示翻译。
+
+
+## 0.6 上一轮（真实 AI_IMPORT_INVALID 与观众级容错）
 
 完整证据：`log/2026-11-13-real-ai-import-invalid-investigation.md`。
 
-### 0.1 真实根因
+### 0.6.1 真实根因
 
 - 任务 `aij_01M7963928KHJGNJTD64`（memory-only，47 观众/5 批）批次 5 失败；批次 1–4 已保存 40 名 semantic，批次 5 的 7 名 pending。
 - 批次 5 中 `seq 3` 属于 `bilibili:1765635337`（ref 5），`seq 5` 属于 `bilibili:5240206`（ref 3）。模型为 ref 5 引用了 seq 5 → `MEMORY_EVIDENCE_OTHER_VIEWER`。
 - 包/数据库映射一致；根因是 **ref 与 seq 两套小整数编号混淆**，旧 Prompt 的 excerpt 行没有 `ref`，契约未明确“ref≠seq”。
 - 自动修复确实发送过：批次 5 初始（schema type/enum 错误）+ 1 次 whole-batch repair（修复后跨观众证据）；旧版只允许一次修复，随后整批失败。任务总 usage 8 请求 / 77,204 input / 37,327 output；费用 unknown。
 
-### 0.2 修复
+### 0.6.2 修复
 
 - Prompt：excerpt 行增加本地 `ref`；契约明确 ref/seq 不同命名空间；repair 增加 `MEMORY EVIDENCE GUARD`；错误携带 `allowedSeqs`。
 - 观众级：whole-batch repair 失败后按 `viewer_memory_updates[i]` 拆分；合法观众在 `viewerIds` 作用域重新完整校验并导入；非法观众标记 `failed` 且不写事实；再一次 viewer-scoped repair（只发失败观众/证据），成功合并，失败保留可恢复。
@@ -24,7 +68,7 @@
 - Resume：按 pending/failed 观众构造子集 Prompt；只请求未完成观众。旧任务批次 5 的 7 人全是 pending，旧版没有保存其中合法 6 人，因此旧任务 Resume 会处理这 7 人，不能只挑 1 人。
 - UI：coverage 增加 failed；partial 显示已处理/未完成/失败等待恢复；报告 stats 使用 failed。
 
-### 0.3 验证
+### 0.6.3 验证
 
 - 全量：**632 passed / 0 failed**（约 112 秒）。
 - 真实任务副本（只读 DB+包，Mock）：

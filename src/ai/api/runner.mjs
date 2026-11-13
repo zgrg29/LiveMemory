@@ -222,7 +222,7 @@ function describeValidationErrors(errors, {limit = 3} = {}) {
     .join(', ');
 }
 
-function providerFromConfig(config, {responseMode = null} = {}) {
+export function providerFromConfig(config, {responseMode = null} = {}) {
   return {
     id: config.id,
     label: config.name || config.providerId,
@@ -618,6 +618,7 @@ export class AnalysisRunner {
         && error?.code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER',
       canCancel: status === 'running' && Boolean(active),
       mode: entry.mode ?? ANALYSIS_MODE.SESSION,
+      locale: entry.locale ?? null,
       configId: entry.configId ?? null,
       providerName: entry.providerName ?? null,
       providerId: entry.providerId ?? null,

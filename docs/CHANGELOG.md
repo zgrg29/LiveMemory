@@ -1,5 +1,24 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r7 — 2026-11-13（AI 分析输出语言与报告翻译）
+
+### 新增
+
+- **分析输出语言（功能 A）**：AI 中心明确「分析输出语言」；默认 UI 语言、可手选 zh-CN / ja / en；Session 与 Memory 共用同一任务 locale；locale 随 `ai_jobs` 与运行时状态保存，UI 切换/暂停恢复不改变已保存任务。
+- **Prompt v13.2**：明确聊天/摘录可能是中文、日语、英语或混合语言，模型直接理解原意并用 locale 输出，不逐条预翻译；技术字段/JSON 键名/枚举/稳定 ID 不变。
+- **报告阅读语言（功能 B）**：报告标题区新增「报告语言」选择器与原文/翻译 chip；已缓存直接显示，未翻译才提示付费翻译；失败红字 + 只重试未完成段落；无 Provider/Key 时原文仍可读。
+- **翻译展示缓存（schema 14）**：新增 `ai_translations`（段落级）与 `ai_translation_runs`（独立运行/usage/错误）。缓存键 = 原始对象 ID + 字段路径 + 源文本 SHA-256 + 目标语言 + `lm-translation-v1`。
+- **长期画像保护**：只翻译 `summary` / `statement`；`viewer_id`、`topic`、事实 ID/状态/certainty/版本/证据/金额/时间/原始聊天不翻译；同一组事实在两个语言中保持一致。
+- **按需翻译**：分块请求、成功段落立即保存、单段失败保留其他段落；同语言再次切换只读缓存；新结果版本/事实文本变化不会复用旧翻译。
+- **费用与安全**：翻译 usage/费用独立归属，不混入 `ai_jobs`；未知价格 `cost=null`，界面显示「费用未知」；首次翻译前明确费用提示并需 `consent:true`；复用现有 Provider/超时/重试/429/URL 安全检查。
+- **生命周期**：翻译随场次级联删除；删除观众记忆同时删除其摘要/事实翻译；清空数据/恢复出厂包含翻译表。
+
+### 验证
+
+- 全量 **649 passed / 0 failed**（约 155 秒）；新增 `ai-translation`、`ai-translation-ui`、`ai-report-translation`、`ai-translation-migration` 测试；更新 schema 14 迁移/状态断言。
+- 覆盖 A–J：日语→中文、缓存复用、部分失败重试、新版本隔离、长期事实不变、证据清理、无 Provider/Key/网络失败、旧 Schema 1.1.0、Session/Memory 同 locale、三语 UI。
+- **未做**：真实付费 Provider 翻译、真实浏览器窄屏截图、正式 EXE 重建（当前 EXE 仍为 schema 13）、真实生产库迁移。
+
 ## 0.13.2-r6 — 2026-11-13（真实 AI_IMPORT_INVALID 与观众级容错）
 
 ### 修复
