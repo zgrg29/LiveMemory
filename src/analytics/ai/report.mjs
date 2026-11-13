@@ -183,15 +183,9 @@ function memoryJobStats(db, session) {
     const coverage = status?.memoryCoverage;
     if (!coverage || Number(coverage.total ?? 0) <= 0) continue;
     const failedBatches = Array.isArray(status.failedBatches) ? status.failedBatches : [];
-    let failed = 0;
-    if (failedBatches.length > 0) {
-      const placeholders = failedBatches.map(() => '?').join(', ');
-      failed = Number(db.prepare(`
-        SELECT COUNT(*) AS count
-          FROM ai_job_memory_viewers
-         WHERE job_id = ? AND batch_index IN (${placeholders})
-      `).get(String(job.id), ...failedBatches)?.count ?? 0);
-    }
+    // `coverage.failed` is the authoritative viewer count. `failedBatches`
+    // remains for traceability and for the per-batch technical details.
+    const failed = Number(coverage.failed ?? 0);
     return {
       jobId: job.id,
       status: status.status,

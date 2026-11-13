@@ -47,9 +47,11 @@ export function importAnalysisResult({
   text,
   source = 'paste',
   createVersion = false,
+  viewerIds = null,
+  viewerFailures = [],
   now = Date.now()
 }) {
-  const validation = validateAnalysisImport({db, text, source, now});
+  const validation = validateAnalysisImport({db, text, source, now, viewerIds});
   if (!validation.ok) {
     if (validation.job?.id) {
       recordJobFailure(db, validation.job.id, {
@@ -148,6 +150,17 @@ export function importAnalysisResult({
         validation,
         resultId,
         now
+      });
+    }
+    // Viewers rejected by the same batch are marked inside the same
+    // transaction as the valid viewers' facts. A crash can therefore never
+    // leave facts saved without an accurate coverage status.
+    for (const failure of Array.isArray(viewerFailures) ? viewerFailures : []) {
+      if (!failure?.viewerId) continue;
+      setJobMemoryViewerStatus(db, job.id, failure.viewerId, {
+        status: 'failed',
+        resultId: null,
+        processedAt: now
       });
     }
     // Only this batch's failure is resolved. A concurrent sibling success must

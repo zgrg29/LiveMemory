@@ -361,6 +361,18 @@
 - ⬜ 真实浏览器 UI / EXE 运行验收
 - ⬜ 真实 Provider 429/1,000 观众/费用验证
 
+## P14 真实 AI_IMPORT_INVALID 与观众级容错（v0.13.2，2026-11-13）✅
+
+- ✅ 只读复制生产库/包，定位真实根因：ref 5 的合法证据是 seq 3，却引用 seq 5（属于 ref 3）；ref/seq 两套编号混淆
+- ✅ 自动修复确曾发送；旧版一次 whole-batch repair 后仍跨观众，整批 7 人全部拒绝
+- ✅ Prompt：excerpt 行增加 `ref`，契约明确 ref≠seq；repair 增加 evidence guard；错误携带 allowedSeqs
+- ✅ 观众级容错：合法观众独立保存，非法观众 `failed`，再一次 viewer-scoped repair；失败仍可 Resume
+- ✅ Resume 只请求 pending/failed 观众；旧任务无观众级保存的批次仍重跑该批 pending 观众
+- ✅ 调度：批次级校验失败不阻断后续批次（concurrency=1/4）；Provider/取消/数据库错误仍停止新调度
+- ✅ 统计：coverage.failed 与 partial 文案；真实任务副本回放 complete 47/47
+- ✅ 632 自动化测试
+- ⬜ 真实付费 API 生产任务 Resume（需用户授权）
+- ⬜ 真实浏览器 UI 截图（本机沙箱限制）
 ## P13 长期画像校验、语言与错误恢复（v0.13.2，2026-11-13）✅
 
 - ✅ Memory 回答统一「组装 → 完整校验 → 最多一次修复 → 再校验 → 导入」，ref 覆盖完整不能绕过校验

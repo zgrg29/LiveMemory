@@ -557,7 +557,7 @@
       "complete": "AI 分析完成",
       "completeMemory": "AI 分析完成 · 长期记忆已覆盖 {covered}/{total} 位观众",
       "completeMemoryStats": "长期画像：已处理 {processed}/{total} 位观众 · {semantic} 位有新增语义事实 · {objective} 位仅客观互动",
-      "partialMemoryStats": "长期画像已处理 {processed}/{total} 位观众，仍有 {pending} 位未完成",
+      "partialMemoryStats": "长期画像已处理 {processed}/{total} 位观众，仍有 {pending} 位未完成，{failed} 位校验失败等待恢复",
       "failed": "AI 分析失败",
       "canceled": "分析已取消",
       "errorDetails": "查看技术详情",

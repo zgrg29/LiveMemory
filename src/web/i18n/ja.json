@@ -557,7 +557,7 @@
       "complete": "AI 分析が完了しました",
       "completeMemory": "AI 分析が完了しました · 長期記憶は {covered}/{total} 人の視聴者をカバー",
       "completeMemoryStats": "長期プロファイル：{processed}/{total} 人を処理済み · {semantic} 人に新しい意味的事実 · {objective} 人は客観的記録のみ",
-      "partialMemoryStats": "長期プロファイルは {processed}/{total} 人を処理済み、残り {pending} 人が未完了です",
+      "partialMemoryStats": "長期プロファイルは {processed}/{total} 人を処理済み、残り {pending} 人が未完了、{failed} 人が検証失敗で復旧待ちです",
       "failed": "AI 分析に失敗しました",
       "canceled": "分析をキャンセルしました",
       "errorDetails": "技術的な詳細",

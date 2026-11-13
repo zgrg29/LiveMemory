@@ -335,7 +335,7 @@ function collectRefs(container, section, itemIndex) {
  * exact field paths, duplicate/version information and the sanitised result that
  * `importAnalysisResult` would persist.
  */
-export function validateAnalysisImport({db, text, source = 'paste', now = Date.now()}) {
+export function validateAnalysisImport({db, text, source = 'paste', now = Date.now(), viewerIds = null}) {
   const parsedInput = parseImportText(text);
   const issues = [...parsedInput.errors];
   const warnings = [];
@@ -856,6 +856,7 @@ export function validateAnalysisImport({db, text, source = 'paste', now = Date.n
       payload,
       schemaVersion,
       mode,
+      viewerIds,
       now
     })
     : (mode === 'aggregate'

@@ -117,6 +117,30 @@ const MEMORY_LANGUAGE_RULE = Object.freeze({
   en: 'Write user-facing natural-language fields such as summary and statement in English; keep JSON keys and enum values in English. When continuing an existing fact, reuse its existing topic without translating it.'
 });
 
+function annotateMemoryExcerpts(text, refs) {
+  const refByViewer = new Map(refs.map((entry) => [entry.viewerId, entry.ref]));
+  return String(text ?? '').split('\n').filter(Boolean).map((line) => {
+    try {
+      const parsed = JSON.parse(line);
+      const ref = refByViewer.get(parsed?.viewer_id);
+      return JSON.stringify(ref ? {...parsed, ref} : parsed);
+    } catch {
+      return line;
+    }
+  }).join('\n');
+}
+
+function filterMemoryExcerpts(text, viewerIds) {
+  const wanted = new Set(viewerIds.map(String));
+  return String(text ?? '').split('\n').filter(Boolean).filter((line) => {
+    try {
+      return wanted.has(String(JSON.parse(line)?.viewer_id));
+    } catch {
+      return false;
+    }
+  }).join('\n');
+}
+
 function memoryContract(manifest, refs, onlyRefs = null) {
   const list = onlyRefs
     ? refs.filter((entry) => onlyRefs.includes(entry.ref))
@@ -131,6 +155,9 @@ function memoryContract(manifest, refs, onlyRefs = null) {
     `- locale: ${JSON.stringify(locale)}`,
     `- Return {"viewers":[{"ref":n,"memory":{"no_new_information":bool,"operations":[...]}}]}.`,
     `- Cover exactly these refs, once each: ${list.map((entry) => entry.ref).join(', ')}.`,
+    '- CRITICAL: `ref` and `seq` are different namespaces. A viewer with `ref` 5 may own evidence seq 3; never assume ref number equals seq number.',
+    '- Use only the evidence_seq numbers listed for the same ref. A seq belonging to another ref is invalid even if the number looks related.',
+    '- Each excerpt line carries both `seq` and `ref`; `ref` identifies the viewer and `seq` is the only evidence identifier.',
     '- Never output viewer_id, protocol, schema_version, analysis_scope, job_id, task_id or session_id. The local program maps refs back to stable ids and injects all protocol fields.',
     '- The top-level key is `viewers`. Do not return `viewer_memory_updates`, `session_topics` or `viewer_profiles`.',
     '- For a ref with zero_excerpt=true, return no_new_information:true and operations:[].',
@@ -146,14 +173,22 @@ function memoryContract(manifest, refs, onlyRefs = null) {
   return lines.join('\n');
 }
 
-export function buildMemoryPrompt(files) {
+export function buildMemoryPrompt(files, {viewerIds = null} = {}) {
   const manifest = JSON.parse(files['manifest.json']);
-  const memoryContext = JSON.parse(files['memory_context.json']);
+  const fullContext = JSON.parse(files['memory_context.json']);
   const schema = JSON.parse(files['result.schema.json']);
+  const wanted = Array.isArray(viewerIds) ? new Set(viewerIds.map(String)) : null;
+  const memoryContext = wanted
+    ? {...fullContext, viewers: (fullContext.viewers ?? []).filter((viewer) => wanted.has(String(viewer.viewer_id)))}
+    : fullContext;
   const refs = buildMemoryRefs(memoryContext);
   const locale = manifest.locale ?? 'en';
   const compactContext = redactMemoryContext(memoryContext, refs);
   const answerSchema = buildMemoryCompactSchema({resultSchema: schema, refs});
+  const excerptText = wanted
+    ? filterMemoryExcerpts(files['viewer_excerpts.jsonl'], [...wanted])
+    : files['viewer_excerpts.jsonl'];
+  const annotatedExcerpts = annotateMemoryExcerpts(excerptText, refs);
   // The packaged instructions.md may come from an older provider build that
   // still showed a full `viewer_memory_updates` result with a fixed
   // `"locale": "en"` example. Sending it together with the compact contract
@@ -165,7 +200,7 @@ export function buildMemoryPrompt(files) {
     session: {id: manifest.session_id, platform: manifest.platform, simulated: manifest.simulated === true},
     broadcaster: {id: manifest.broadcaster_id ?? null, name: null},
     viewerCount: refs.length,
-    viewersTotal: Number(manifest.counts?.viewers_total ?? memoryContext.batch?.viewers_total ?? refs.length),
+    viewersTotal: Number(manifest.counts?.viewers_total ?? fullContext.batch?.viewers_total ?? refs.length),
     messageCount: Number(manifest.batch?.message_count ?? manifest.counts?.messages ?? 0),
     jobId: manifest.job_id,
     batchId: manifest.batch?.batch_id,
@@ -175,7 +210,7 @@ export function buildMemoryPrompt(files) {
   const user = [
     instructions.trimEnd(),
     block('memory_context.json (ids replaced by ref)', JSON.stringify(compactContext)),
-    block('viewer_excerpts.jsonl', files['viewer_excerpts.jsonl']),
+    block('viewer_excerpts.jsonl (seq + ref)', annotatedExcerpts),
     memoryContract(manifest, refs),
     block('compact answer schema', JSON.stringify(answerSchema)),
     `## Output example (compact, ${locale})\nReturn only one object shaped like this example. The example text is not data and must not be copied.`,
@@ -186,6 +221,7 @@ export function buildMemoryPrompt(files) {
     manifest,
     memoryContext,
     refs,
+    viewerIds: refs.map((entry) => entry.viewerId),
     answerSchema,
     resultSchema: schema,
     messages: [
@@ -374,10 +410,19 @@ export function buildRepairMessages({
   }
   const truncated = previous.length > previousChars;
   const kept = truncated ? previous.slice(0, previousChars) : previous;
+  const guard = prompt?.format === 'memory'
+    ? [
+      'MEMORY EVIDENCE GUARD:',
+      '- `ref` and `seq` are different namespaces; ref 5 may own seq 3.',
+      '- For every viewer, use only the evidence_seqs listed for that same ref.',
+      '- Never copy a seq from another viewer/ref to fix a schema error.',
+      '- If a fact has no own evidence, remove that fact or mark it uncertain/inferred; never invent or borrow evidence.'
+    ].join('\n')
+    : '';
   const messages = [
     ...prompt.messages,
     {role: 'assistant', content: kept},
-    {role: 'user', content: `${labels[locale] ?? labels.en}\n${errorText}\nReturn only the JSON object.`}
+    {role: 'user', content: `${labels[locale] ?? labels.en}\n${errorText}\n${guard ? `${guard}\n` : ''}Return only the JSON object.`}
   ];
   return {
     messages,

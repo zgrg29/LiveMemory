@@ -2,6 +2,7 @@ import {join} from 'node:path';
 import {
   getJob,
   listJobBatches,
+  listJobMemoryViewers,
   recordJobFailure,
   setJobUsage
 } from '../../storage/repositories/ai-jobs.mjs';
@@ -121,6 +122,15 @@ function needsUserAction(error) {
     return true;
   }
   return false;
+}
+
+/**
+ * A batch-level validation failure is local to that batch. Later batches should
+ * still run; provider/auth/cancel/database failures are different and still
+ * stop new scheduling to avoid repeated paid calls or corrupt state.
+ */
+function isBatchValidationFailure(error) {
+  return ['AI_IMPORT_INVALID', 'AUTO_SCHEMA_INVALID', 'AUTO_VIEWER_COVERAGE_INCOMPLETE'].includes(error?.code);
 }
 
 function emptyAttemptStats() {
@@ -259,7 +269,7 @@ function schedulerKey(provider) {
  * for. Only user cancel/pause/shutdown aborts in-flight work, through the
  * external signal. The first error is re-thrown after every worker settles.
  */
-async function runPool(items, limit, worker, signal) {
+async function runPool(items, limit, worker, signal, {shouldStop = () => true} = {}) {
   let nextIndex = 0;
   let firstError = null;
   let stopped = false;
@@ -279,8 +289,9 @@ async function runPool(items, limit, worker, signal) {
       } catch (error) {
         if (!firstError) {
           firstError = signal?.aborted ? abortError() : error;
-          // Stop pulling new work; in-flight siblings finish and are imported.
-          stopped = true;
+          // A batch-level validation failure must not block later batches; a
+          // provider/auth/cancel/database failure still stops new scheduling.
+          stopped = shouldStop(error);
         }
       }
     }
@@ -845,6 +856,7 @@ export class AnalysisRunner {
       recordJobFailure(this.db, job.id, {
         code: error?.code ?? 'ANALYSIS_FAILED',
         errors: extractValidationErrors(error),
+        viewerErrors: error?.viewerErrors ?? null,
         batchIndex: error?.batchIndex ?? null,
         batchId: error?.batchId ?? null,
         stage: error?.stage ?? stage ?? null,
@@ -948,6 +960,9 @@ export class AnalysisRunner {
     const memoryJob = entry?.memoryJobId ? getJob(this.db, entry.memoryJobId) : null;
     const memoryStatus = memoryJob ? computeJobStatus(this.db, memoryJob) : null;
     const sessionDone = entry?.sessionReportDone === true || Boolean(sessionStatus?.complete);
+    const memoryCoverage = memoryStatus?.memoryCoverage ?? null;
+    const memoryPartial = Boolean(memoryCoverage && Number(memoryCoverage.covered ?? 0) > 0
+      && memoryCoverage.complete !== true);
     const actionRequired = needsUserAction(error);
     const uncertainBilling = code === 'PROVIDER_TIMEOUT'
       && (error?.receivedHeaders === true || error?.receivedOutput === true);
@@ -964,7 +979,7 @@ export class AnalysisRunner {
       // A successful session report makes a later memory failure "partial"; a
       // memory-only task that fails stays "failed" even though its already
       // imported batches are preserved and resumable (see `saved`).
-      status: actionRequired ? 'needs_action' : (sessionDone ? 'partial' : 'failed'),
+      status: actionRequired ? 'needs_action' : ((sessionDone || memoryPartial) ? 'partial' : 'failed'),
       stage: actionRequired ? 'needs_action' : 'failed',
       error: {
         code,
@@ -1473,9 +1488,19 @@ export class AnalysisRunner {
       sessionForGate.started_at ?? sessionForGate.startedAt,
       async () => {
         const batches = listJobBatches(this.db, job.id);
-        const pending = batches.filter((batch) => (
-          !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
-        ));
+        const assignedViewers = listJobMemoryViewers(this.db, job.id);
+        const viewersByBatch = new Map();
+        for (const viewer of assignedViewers) {
+          if (viewer.status !== 'pending' && viewer.status !== 'failed') continue;
+          const list = viewersByBatch.get(viewer.batchIndex) ?? [];
+          list.push(viewer.viewerId);
+          viewersByBatch.set(viewer.batchIndex, list);
+        }
+        const pending = assignedViewers.length > 0
+          ? batches.filter((batch) => (viewersByBatch.get(batch.batchIndex)?.length ?? 0) > 0)
+          : batches.filter((batch) => (
+            !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
+          ));
         const total = job.batchTotal;
         let completed = total - pending.length;
         let active = 0;
@@ -1498,7 +1523,8 @@ export class AnalysisRunner {
             });
             if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
             const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), MEMORY_FILES);
-            const prompt = buildMemoryPrompt(files);
+            const viewerIdsForBatch = viewersByBatch.get(batch.batchIndex) ?? null;
+            const prompt = buildMemoryPrompt(files, {viewerIds: viewerIdsForBatch});
             prompt.files = files;
             active += 1;
             this.#setRunning(sessionId, {
@@ -1525,11 +1551,19 @@ export class AnalysisRunner {
                 lastProvider: generated.providerId,
                 lastModel: generated.model
               });
+              const hasExistingResult = Boolean(latestResultForScope(
+                this.db,
+                job.id,
+                `batch:${batch.batchIndex}`
+              ));
               const outcome = importAnalysisResult({
                 db: this.db,
                 text: generated.text,
                 source: 'api',
-                now: this.now()
+                now: this.now(),
+                viewerIds: generated.viewerIds ?? prompt.viewerIds ?? viewerIdsForBatch,
+                createVersion: hasExistingResult,
+                viewerFailures: generated.viewerFailures ?? []
               });
               completed += 1;
               const batchMs = this.now() - batchStartedAt;
@@ -1553,8 +1587,23 @@ export class AnalysisRunner {
                 provider: generated.providerId,
                 model: generated.model,
                 durationMs: batchMs,
-                duplicate: outcome.duplicate
+                duplicate: outcome.duplicate,
+                viewerFailures: generated.viewerFailures?.length ?? 0
               });
+              if (generated.viewerFailures?.length > 0) {
+                const error = Object.assign(new Error('MEMORY_VIEWERS_REJECTED'), {
+                  code: 'AI_IMPORT_INVALID',
+                  details: {
+                    errors: generated.viewerFailures.flatMap((entry) => entry.errors)
+                  },
+                  viewerErrors: generated.viewerFailures,
+                  stage: 'validation',
+                  jobId: job.id,
+                  batchId: batch.batchId,
+                  batchIndex: batch.batchIndex
+                });
+                throw error;
+              }
             } catch (error) {
               throw this.#recordBatchFailure(job, batch, 'memory_analyzing', error, sessionId);
             } finally {
@@ -1570,11 +1619,15 @@ export class AnalysisRunner {
               }
             }
           },
-          context.signal
+          context.signal,
+          {shouldStop: (error) => !isBatchValidationFailure(error)}
         );
         const updated = getJob(this.db, job.id);
         if (!updated || !computeJobStatus(this.db, updated).complete) {
-          throw Object.assign(new Error('MEMORY_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
+          throw Object.assign(new Error('MEMORY_INCOMPLETE'), {
+            code: 'ANALYSIS_INCOMPLETE',
+            detail: 'some viewers are failed or pending; resume retries only those viewers'
+          });
         }
         this.state.set(sessionId, {memoryDone: true, stage: 'memory_done'});
       }
@@ -1610,7 +1663,8 @@ export class AnalysisRunner {
      *      validation (schema, identity, evidence ownership, coverage, enums).
      * A complete ref list is not proof of a valid answer.
      */
-    const evaluate = (content) => {
+    const promptViewerIds = prompt.viewerIds ?? prompt.refs.map((entry) => entry.viewerId);
+    const evaluate = (content, sourcePrompt = prompt) => {
       const answer = extractJsonObject(content);
       if (!answer) {
         return {
@@ -1620,8 +1674,8 @@ export class AnalysisRunner {
       }
       const assembled = assembleMemoryCompact({
         answer,
-        manifest: prompt.manifest,
-        refs: prompt.refs
+        manifest: sourcePrompt.manifest,
+        refs: sourcePrompt.refs
       });
       if (assembled.ignoredFields?.length > 0) {
         // Field names only. This proves the model tried to contribute identity
@@ -1643,7 +1697,12 @@ export class AnalysisRunner {
           }
         };
       }
-      return {assembled, validation: this.validate(JSON.stringify(assembled.result))};
+      return {
+        assembled,
+        validation: this.validate(JSON.stringify(assembled.result), {
+          viewerIds: sourcePrompt.viewerIds ?? sourcePrompt.refs.map((entry) => entry.viewerId)
+        })
+      };
     };
 
     const generated = await this.requestOnce({
@@ -1657,7 +1716,12 @@ export class AnalysisRunner {
     this.#assertUsableOutput(generated);
     let evaluated = evaluate(generated.content);
     if (evaluated.validation.ok) {
-      return {...generated, text: JSON.stringify(evaluated.validation.sanitized)};
+      return {
+        ...generated,
+        text: JSON.stringify(evaluated.validation.sanitized),
+        viewerIds: promptViewerIds,
+        viewerFailures: []
+      };
     }
 
     // Exactly one bounded repair request, whether the first answer had missing
@@ -1740,9 +1804,144 @@ export class AnalysisRunner {
       );
     }
     if (!evaluated.validation.ok) {
+      // One repair is spent. Instead of discarding the whole batch, salvage the
+      // viewers whose updates are complete and valid, and keep only the truly
+      // invalid viewers for a later targeted resume.
+      const salvaged = this.#salvageMemoryViewers(evaluated.assembled, evaluated.validation);
+      if (salvaged) {
+        this.logger?.warn?.({
+          event: 'ai.analysis.memory.partial',
+          sessionId: context.sessionId,
+          jobId,
+          batchIndex,
+          validViewers: salvaged.viewerIds.length,
+          failedViewers: salvaged.viewerFailures.length,
+          errorCodes: salvaged.viewerFailures
+            .flatMap((entry) => entry.errors)
+            .slice(0, 8)
+            .map((item) => item.code)
+        });
+        // One bounded viewer-scoped repair: only the rejected viewers and their
+        // own evidence are sent. If it fails, the already validated viewers are
+        // still imported and the rejected ones remain resumable.
+        if (prompt.files && salvaged.viewerFailures.length > 0) {
+          const failedIds = salvaged.viewerFailures.map((entry) => entry.viewerId);
+          try {
+            const targetedPrompt = buildMemoryPrompt(prompt.files, {viewerIds: failedIds});
+            const targeted = await this.requestOnce({
+              context,
+              prompt: targetedPrompt,
+              kind: 'memory-viewer-repair',
+              batchIndex,
+              stage,
+              outputTokens: Math.min(4000, budgetFor(targetedPrompt))
+            });
+            this.#assertUsableOutput(targeted);
+            const targetedEvaluation = evaluate(targeted.content, targetedPrompt);
+            if (targetedEvaluation.validation.ok) {
+              const recovered = targetedEvaluation.validation.sanitized.viewer_memory_updates ?? [];
+              const merged = {
+                ...evaluated.assembled.result,
+                viewer_memory_updates: [...salvaged.validUpdates, ...recovered]
+              };
+              const mergedValidation = this.validate(JSON.stringify(merged), {
+                viewerIds: promptViewerIds
+              });
+              if (mergedValidation.ok) {
+                this.logger?.info?.({
+                  event: 'ai.analysis.memory.viewer_repair',
+                  sessionId: context.sessionId,
+                  jobId,
+                  batchIndex,
+                  recoveredViewers: recovered.length
+                });
+                return {
+                  ...targeted,
+                  text: JSON.stringify(mergedValidation.sanitized),
+                  viewerIds: promptViewerIds,
+                  viewerFailures: []
+                };
+              }
+            }
+            this.logger?.warn?.({
+              event: 'ai.analysis.memory.viewer_repair',
+              sessionId: context.sessionId,
+              jobId,
+              batchIndex,
+              recoveredViewers: 0,
+              errorCodes: (targetedEvaluation.validation.errors ?? [])
+                .slice(0, 8)
+                .map((item) => item.code)
+            });
+          } catch (error) {
+            if (context.signal?.aborted || isCanceledError(error)) throw error;
+            this.logger?.warn?.({
+              event: 'ai.analysis.memory.viewer_repair.failed',
+              sessionId: context.sessionId,
+              jobId,
+              batchIndex,
+              code: error?.code ?? 'UNKNOWN'
+            });
+          }
+        }
+        return {...repaired, ...salvaged};
+      }
       throw invalidAnswer(evaluated.validation.errors, 'memory repair failed validation');
     }
-    return {...repaired, text: JSON.stringify(evaluated.validation.sanitized)};
+    return {
+      ...repaired,
+      text: JSON.stringify(evaluated.validation.sanitized),
+      viewerIds: promptViewerIds,
+      viewerFailures: []
+    };
+  }
+
+  /**
+   * Split a repaired answer into valid and invalid viewers.
+   *
+   * This is deliberately strict: it only runs when every reported error is
+   * scoped to one `viewer_memory_updates[i]` entry, the remaining subset passes
+   * the same full validator again, and at least one viewer remains. Global
+   * protocol/schema/coverage errors never fall back to partial import.
+   */
+  #salvageMemoryViewers(assembled, validation) {
+    const updates = Array.isArray(assembled?.result?.viewer_memory_updates)
+      ? assembled.result.viewer_memory_updates
+      : [];
+    const errors = Array.isArray(validation?.errors) ? validation.errors : [];
+    if (updates.length === 0 || errors.length === 0) return null;
+    const byIndex = new Map();
+    for (const error of errors) {
+      const match = /^viewer_memory_updates\[(\d+)\]/.exec(String(error?.path ?? ''));
+      if (!match) return null; // global error: do not create a partial batch
+      const index = Number(match[1]);
+      if (!Number.isInteger(index) || index < 0 || index >= updates.length) return null;
+      const list = byIndex.get(index) ?? [];
+      list.push(error);
+      byIndex.set(index, list);
+    }
+    const validUpdates = updates.filter((_entry, index) => !byIndex.has(index));
+    if (validUpdates.length === 0 || byIndex.size === 0) return null;
+    const validViewerIds = validUpdates.map((entry) => entry.viewer_id).filter(Boolean);
+    if (validViewerIds.length !== validUpdates.length) return null;
+    const subset = {...assembled.result, viewer_memory_updates: validUpdates};
+    const subsetValidation = this.validate(JSON.stringify(subset), {viewerIds: validViewerIds});
+    if (!subsetValidation.ok) return null;
+    const viewerFailures = [...byIndex.entries()].map(([index, viewerErrors]) => ({
+      viewerId: updates[index]?.viewer_id ?? null,
+      errors: viewerErrors.map((error) => ({
+        path: error.path,
+        code: error.code,
+        params: error.params ?? null
+      }))
+    })).filter((entry) => entry.viewerId);
+    if (viewerFailures.length === 0) return null;
+    return {
+      text: JSON.stringify(subsetValidation.sanitized),
+      viewerIds: validViewerIds,
+      viewerFailures,
+      validUpdates
+    };
   }
 
   #assertUsableOutput(generated) {
@@ -1865,9 +2064,9 @@ export class AnalysisRunner {
     return {ok: true, sanitized: validation.sanitized, errors: []};
   }
 
-  validate(text) {
+  validate(text, options = {}) {
     try {
-      return validateAnalysisImport({db: this.db, text, source: 'api', now: this.now()});
+      return validateAnalysisImport({db: this.db, text, source: 'api', now: this.now(), ...options});
     } catch (error) {
       return {ok: false, errors: [{path: '', code: error?.code ?? 'VALIDATION_FAILED'}]};
     }

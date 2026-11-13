@@ -546,16 +546,20 @@ paused（用户暂停；正在进行的 recording 不受影响）
 
 `status` 取值：`pending`（所属批次尚未导入）、`semantic`（有新语义）、
 `no_semantics`（已处理但无新语义）、`objective_only`（旧结果/仅客观）、
-`missing_update`（缺少该观众的更新，阻塞导入）、`deleted`（记忆已删除，旧包不能恢复）。
+`missing_update`（缺少该观众的更新，阻塞导入）、`deleted`（记忆已删除，旧包不能恢复）、
+`failed`（该观众校验失败被隔离；合法观众仍可独立保存，Resume 只重试该观众）。
 
 ### 12.3 覆盖与状态
 
 - 导出时：每个观众一条 `ai_job_memory_viewers`（`pending`），任务 `memory_viewers_total`
   记录总数；批次不应有 `pending` 之外的遗漏。
 - 导入时：同一事务内保存分析结果、确保客观记忆头、应用语义操作、更新覆盖状态。
-- `memoryCoverage.complete` 要求 `pending = 0` 且 `missing_update = 0`；
-  任务只有在全部分配观众处理完且（多批时）汇总结果导入后才可能 `complete`。
+  v0.13.2 起，被隔离观众的 `failed` 状态也在同一事务写入。
+- `memoryCoverage.complete` 要求 `pending = 0`、`missing_update = 0` 且 `failed = 0`；
+  `covered` 排除这三类。任务只有在全部分配观众处理完且（多批时）汇总结果导入后才可能 `complete`。
 - 同一结果重复导入是 `duplicate`，不增加版本、不重复计数；同一批次新结果需要显式新版本。
+  v0.13.2 的观众级恢复会对同一批次追加一个只含恢复观众的新版本（例如 v2），
+  已成功观众的事实不重复写入。
 
 ### 12.4 迁移
 

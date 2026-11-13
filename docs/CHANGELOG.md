@@ -1,5 +1,22 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r6 — 2026-11-13（真实 AI_IMPORT_INVALID 与观众级容错）
+
+### 修复
+
+- **真实根因**：生产任务批次 5 的 ref 5（`bilibili:1765635337`）合法证据是 seq 3，却引用了属于 ref 3（`bilibili:5240206`）的 seq 5；包/数据库映射本身一致，问题是 ref/seq 两套编号混淆，旧 Prompt 未在 excerpt 行标注 ref。
+- **自动修复**：旧版批次 5 初始 schema 错误 → 一次 whole-batch repair → 修复后跨观众证据；旧版只允许一次修复，整批 7 人全部拒绝。本轮新增一次有界 viewer-scoped repair。
+- **观众级容错**：整批 repair 后仍有观众级错误时，合法观众在 `viewerIds` 作用域重新完整校验并导入；非法观众标记 `failed`、不写事实；恢复导入追加批次新版本，不重复成功观众事实。
+- **Prompt**：excerpt 行带 `ref`；契约明确 ref≠seq、只能引用同 ref 的 evidence；repair 增加 evidence guard；`MEMORY_EVIDENCE_OTHER_VIEWER` 携带 allowedSeqs。
+- **调度**：批次级校验失败不再停止后续批次（concurrency=1/4）；Provider/取消/数据库错误仍停止新调度。
+- **Resume/统计**：只请求 pending/failed 观众；coverage 增加 failed；partial 文案与报告统计区分未完成/失败。
+- **真实任务副本回放**：普通 Resume 1 次请求完成 47/47；模拟真实 ref/seq 错误 3 次请求完成 47/47、41 semantic、0 failed。
+
+### 验证
+
+- **632 passed / 0 failed**（约 112 秒）。
+- 新增 ref/seq 冲突、concurrency=1 后续批次、viewer-scoped repair 自动成功、观众级 9/1 隔离、Resume 只发失败观众等测试。
+- 未做：真实付费 API、生产任务 Resume、真实浏览器 UI、UAC 双击。
 ## 0.13.2-r5 — 2026-11-13（AI 分析可靠性与长期画像语言修复）
 
 ### 修复

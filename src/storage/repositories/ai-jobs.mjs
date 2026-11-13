@@ -173,6 +173,7 @@ export function setJobAggregatePackage(db, jobId, {packageId, taskId, now = Date
 export function recordJobFailure(db, jobId, {
   code,
   errors = [],
+  viewerErrors = null,
   batchIndex = null,
   batchId = null,
   stage = null,
@@ -183,6 +184,16 @@ export function recordJobFailure(db, jobId, {
     code: typeof error?.code === 'string' ? error.code.slice(0, 80) : 'UNKNOWN',
     params: error?.params && typeof error.params === 'object' ? error.params : null
   }));
+  const cappedViewers = Array.isArray(viewerErrors)
+    ? viewerErrors.slice(0, 200).map((entry) => ({
+      viewerId: typeof entry?.viewerId === 'string' ? entry.viewerId.slice(0, 200) : null,
+      errors: (Array.isArray(entry?.errors) ? entry.errors : []).slice(0, 20).map((error) => ({
+        path: typeof error?.path === 'string' ? error.path.slice(0, 300) : '',
+        code: typeof error?.code === 'string' ? error.code.slice(0, 80) : 'UNKNOWN',
+        params: error?.params && typeof error.params === 'object' ? error.params : null
+      }))
+    }))
+    : null;
   const current = getJob(db, jobId);
   let previous = null;
   try {
@@ -199,7 +210,8 @@ export function recordJobFailure(db, jobId, {
     stage: typeof stage === 'string' ? stage.slice(0, 80) : null,
     code: String(code ?? 'IMPORT_INVALID').slice(0, 80),
     at: Number(now),
-    errors: capped
+    errors: capped,
+    ...(cappedViewers ? {viewerErrors: cappedViewers} : {})
   };
   const remaining = entries.filter((item) => (
     normalizedIndex === null
@@ -215,6 +227,7 @@ export function recordJobFailure(db, jobId, {
     at: Number(latest?.at ?? now),
     code: String(latest?.code ?? entry.code),
     errors: Array.isArray(latest?.errors) ? latest.errors : capped,
+    ...(latest?.viewerErrors ? {viewerErrors: latest.viewerErrors} : {}),
     batches: remaining
   });
   db.prepare(`
@@ -520,6 +533,15 @@ export function countJobMemoryMessages(db, jobId, batchIndex) {
   `).get(String(jobId), Number(batchIndex))?.count ?? 0);
 }
 
+/** Evidence seqs that belong to one viewer in one batch (for repair prompts). */
+export function listJobMemoryMessageSeqs(db, jobId, batchIndex, viewerId) {
+  return db.prepare(`
+    SELECT seq FROM ai_job_memory_messages
+     WHERE job_id = ? AND batch_index = ? AND viewer_id = ?
+     ORDER BY seq ASC
+  `).all(String(jobId), Number(batchIndex), String(viewerId)).map((row) => Number(row.seq));
+}
+
 export function setJobMemoryViewerStatus(db, jobId, viewerId, {
   status,
   resultId = null,
@@ -556,7 +578,8 @@ export function jobMemoryCoverage(db, jobId) {
     no_semantics: 0,
     objective_only: 0,
     missing_update: 0,
-    deleted: 0
+    deleted: 0,
+    failed: 0
   };
   for (const row of rows) {
     const key = String(row.status ?? 'pending');
@@ -565,8 +588,11 @@ export function jobMemoryCoverage(db, jobId) {
   }
   return {
     ...counts,
-    covered: counts.total - counts.pending - counts.missing_update,
-    complete: counts.total > 0 && counts.pending === 0 && counts.missing_update === 0
+    covered: Math.max(0, counts.total - counts.pending - counts.missing_update - counts.failed),
+    complete: counts.total > 0
+      && counts.pending === 0
+      && counts.missing_update === 0
+      && counts.failed === 0
   };
 }
 

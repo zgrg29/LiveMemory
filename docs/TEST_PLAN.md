@@ -987,3 +987,44 @@ duration ≈ 25.0s
 - 结果：**628 passed / 0 failed**（2026-11-13，约 120 秒）。
 - 新增 17 个测试（`ai-compact-memory` 7 + `ai-memory-reliability` 10），另更新 `ai-ui`。
 - 未做：真实付费 API、真实浏览器截图（本机沙箱拒绝浏览器 Mojo 命名管道）、真实生产任务 Resume、EXE 构建/运行。
+## 33. 真实 AI_IMPORT_INVALID 与观众级容错（v0.13.2，2026-11-13）
+
+### 33.1 真实数据只读调查
+
+- 复制 `E:\新建文件夹\database\livememory.db` 与批次 5 包到 `tests/.tmp`，只读查询。
+- 任务 `aij_01M7963928KHJGNJTD64`：5 批/47 观众；批次 1–4 保存 40 名 semantic；批次 5 的 7 名 pending；usage 8 请求/77,204 input/37,327 output/cost null。
+- 批次 5：`seq 3 → bilibili:1765635337`（ref 5）；`seq 5 → bilibili:5240206`（ref 3）。错误是把 seq 5 用于 ref 5。
+- 生产日志：批次 5 初始 schema type/enum 错误 → 1 次 whole-batch repair → 修复后 `MEMORY_EVIDENCE_OTHER_VIEWER`；旧版无第二次修复。
+
+### 33.2 新增/更新自动测试
+
+| 场景 | 测试 |
+| --- | --- |
+| 原始跨观众证据 | `ai-memory-reliability` cross-viewer |
+| 真实 ref/seq 冲突（ref5↔seq3、ref3↔seq5） | `ai-memory-reliability` ref/seq collision |
+| 自动修复后成功 | `ai-memory-reliability` repair success / viewer-scoped repair success |
+| 自动修复仍失败 | `ai-memory-reliability` complete ref coverage |
+| 同批 9 合法/1 非法 | 四批并发 + concurrency=1 用例 |
+| 合法观众独立保存、非法不写事实 | 上述用例的 facts/coverage 断言 |
+| 后续批次继续（concurrency=1/4） | `ai-memory-reliability` 两个调度用例 |
+| 重启 Resume 只处理失败观众 | 四批并发重启 + Resume 用例 |
+| 重复 Resume 不重复事实 | duplicate 断言 |
+| 事务中断回滚 | 既有 `ai-import` 数据库失败回滚测试 |
+| 中文/日语 Prompt | `ai-compact-memory` + 日语画像用例 |
+| 旧任务/旧报告兼容 | 全量既有 schema/旧结果测试 |
+| Provider 超时/限流/取消 | 既有 `v14-task-budget`、`v14-streaming-timeout`、`v13-scheduler` |
+| 单场成功 + 画像部分失败 | `ai-memory-reliability` session partial |
+| Token/请求/费用 | `ai-memory-reliability` usage + 真实任务 usage 只读 |
+| 易混淆证据编号 | ref/seq collision + Prompt ref 注解单元测试 |
+
+### 33.3 真实任务副本回放（隔离，Mock Provider）
+
+- 普通 Resume：1 次请求（仅批次 5 的 7 名 pending），complete 47/47。
+- 模拟真实 ref/seq 错误：3 次请求（initial + whole repair + viewer repair），complete 47/47、41 semantic、0 failed，无跨观众写入。
+- 不是真实 Provider 调用，不是生产 Resume。
+
+### 33.4 全量结果
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- **632 passed / 0 failed**（2026-11-13，约 112 秒）。
+- 未做：真实付费 API、真实生产 Resume、真实浏览器截图、UAC 双击。

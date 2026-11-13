@@ -557,7 +557,7 @@
       "complete": "AI analysis complete",
       "completeMemory": "AI analysis complete · long-term memory covers {covered}/{total} viewers",
       "completeMemoryStats": "Long-term profiles: {processed}/{total} viewers processed · {semantic} with new semantic facts · {objective} with interaction history only",
-      "partialMemoryStats": "Long-term profiles processed {processed}/{total} viewers; {pending} still unfinished",
+      "partialMemoryStats": "Long-term profiles processed {processed}/{total} viewers; {pending} unfinished, {failed} awaiting recovery after validation failure",
       "failed": "AI analysis failed",
       "canceled": "Analysis canceled",
       "errorDetails": "Technical details",

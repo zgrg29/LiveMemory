@@ -601,3 +601,10 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 
 - 新增键：`ai.center.reason.AI_IMPORT_INVALID`、`ai.center.reason.unknown`、`ai.center.errorMeta.*`、`ai.center.completeMemoryStats`、`ai.center.partialMemoryStats`、`ai.center.stats.sessionUsage|memoryUsage|requestsTokens`、`ai.report.longTerm{Total,Processed,Semantic,ObjectiveLabel,Pending,Failed}`。
 - 三份字典键、占位符完全一致；无 `innerHTML`、无 `alert()`。
+### 7.17 v0.13.2 观众级失败与恢复展示
+
+- 长期画像 coverage 新增 `failed`：校验失败、已被隔离、等待恢复的观众数，与 `pending`（尚未导入/旧任务未处理）分开显示。
+- AI 中心 partial：`已处理 {processed}/{total}，{pending} 未完成，{failed} 校验失败等待恢复`；complete 时只显示 semantic/objectiveOnly。
+- 报告长期画像统计：`应处理 / 已成功处理 / 有新增语义事实 / 仅客观互动 / 尚未完成 / 失败批次涉及`；失败人数来自 coverage.failed。
+- 技术详情保留批次、字段路径、错误码与该观众 `allowedSeqs`；不展示模型原始回答或聊天正文。
+- 一个观众失败时，同批合法观众已经保存；Resume 只请求 pending/failed 观众；旧任务没有观众级保存的批次仍会重跑该批全部 pending 观众。

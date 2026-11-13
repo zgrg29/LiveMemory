@@ -210,3 +210,26 @@ test('the compact schema itself forbids viewer_id inside memory', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(memory.properties, 'viewer_id'), false);
   assert.deepEqual(memory.required.sort(), ['no_new_information', 'operations']);
 });
+
+test('prompt lines carry ref and seq separately so ref 1 can own seq 2', () => {
+  const context = memoryContext();
+  // Reverse the viewer list: ref 1 is B (evidence seq 2), ref 2 is A (seq 1).
+  context.viewers = [context.viewers[1], context.viewers[0]];
+  const files = {
+    'manifest.json': JSON.stringify(MANIFEST),
+    'memory_context.json': JSON.stringify(context),
+    'viewer_excerpts.jsonl': [
+      JSON.stringify({seq: 1, viewer_id: 'youtube:UC_A', name: 'A', at: '2026-11-08T10:00:01.000Z', content: 'a'}),
+      JSON.stringify({seq: 2, viewer_id: 'youtube:UC_B', name: 'B', at: '2026-11-08T10:00:02.000Z', content: 'b'})
+    ].join('\n'),
+    'result.schema.json': JSON.stringify(loadResultSchema('1.3.0')),
+    'instructions.md': ''
+  };
+  const prompt = buildMemoryPrompt(files);
+  const user = prompt.messages.find((message) => message.role === 'user').content;
+  assert.match(user, /`ref` and `seq` are different namespaces/);
+  assert.match(user, /- ref 1: nickname="B"; evidence_seqs=\[2\]; zero_excerpt=false/);
+  assert.match(user, /"seq":1[^\n]*"ref":2/);
+  assert.match(user, /"seq":2[^\n]*"ref":1/);
+  assert.deepEqual(prompt.viewerIds, ['youtube:UC_B', 'youtube:UC_A']);
+});

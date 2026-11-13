@@ -275,11 +275,14 @@ test('complete ref coverage does not skip schema and evidence validation', async
     consent: true
   });
   const status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
-  assert.equal(status.status, 'failed', JSON.stringify(status));
+  assert.equal(status.status, 'partial', JSON.stringify(status));
   assert.equal(status.error.code, 'AI_IMPORT_INVALID');
   assert.ok(status.error.errors.some((item) => item.code === 'MEMORY_EVIDENCE_REQUIRED'), JSON.stringify(status.error));
-  assert.equal(calls, 2, 'exactly one automatic repair request');
-  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 0);
+  assert.equal(calls, 3, 'whole-batch repair plus one bounded viewer repair');
+  // The invalid viewer is isolated; the valid viewer's result is still saved.
+  assert.equal(status.memoryJob.memoryCoverage.covered, 1);
+  assert.equal(status.memoryJob.memoryCoverage.failed, 1);
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 1);
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 0);
   assert.equal(status.canResume, true);
   assert.equal(status.error.recoverable, true);
@@ -429,15 +432,153 @@ test('cross-viewer evidence is rejected and never written to the wrong profile',
     consent: true
   });
   const status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
-  assert.equal(status.status, 'failed', JSON.stringify(status));
+  assert.equal(status.status, 'partial', JSON.stringify(status));
   assert.equal(status.error.code, 'AI_IMPORT_INVALID');
   assert.ok(
     status.error.errors.some((item) => item.code === 'MEMORY_EVIDENCE_OTHER_VIEWER'),
     JSON.stringify(status.error)
   );
-  assert.equal(calls, 2);
+  assert.equal(calls, 3, 'whole-batch repair plus one bounded viewer repair');
+  // Ref 1 is isolated; ref 2's own valid fact is still saved.
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 1);
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 1);
+  const facts = server.db.prepare('SELECT viewer_id FROM memory_facts').all();
+  const failedViewer = status.error.errors
+    .find((item) => item.code === 'MEMORY_EVIDENCE_OTHER_VIEWER')?.params?.viewerId;
+  assert.ok(failedViewer, 'error names the invalid viewer');
+  assert.ok(!facts.some((row) => row.viewer_id === failedViewer), 'invalid viewer got no fact');
+});
+
+test('a ref/seq number collision isolates only the mistaken viewer', async (t) => {
+  const temp = createTempDir();
+  const calls = [];
+  let phase = 'first';
+  const server = await startMockServer({
+    temp,
+    onMemory: ({info}) => {
+      calls.push({size: info.refs.size, phase});
+      const targetRef = info.refs.size === 1 ? 1 : 5;
+      const otherRef = info.refs.size === 1 ? null : 3;
+      const target = info.refs.get(targetRef);
+      const other = otherRef ? info.refs.get(otherRef) : null;
+      const viewers = [...info.refs.values()].map((entry) => {
+        if (entry.ref === targetRef) {
+          // Real production shape: ref 5's own seq is 3, while seq 5 belongs
+          // to ref 3. The model incorrectly uses seq 5 for ref 5.
+          const evidence = phase === 'second'
+            ? entry.evidence[0]
+            : (other?.evidence?.[0] ?? 5);
+          return {
+            ref: targetRef,
+            memory: {
+              no_new_information: false,
+              operations: [{
+                op: 'add',
+                kind: 'interest',
+                topic: phase === 'second' ? 'recovered' : 'guitar',
+                statement: phase === 'second' ? 'recovered fact' : 'wrong evidence fact',
+                certainty: 'stated',
+                evidence: [evidence]
+              }]
+            }
+          };
+        }
+        return {ref: entry.ref, memory: {no_new_information: true, operations: []}};
+      });
+      assert.ok(target, 'ref 5 exists');
+      return jsonResponse({viewers});
+    }
+  });
+  t.after(async () => {
+    await server.close();
+    temp.cleanup();
+  });
+  addBroadcaster(server.db);
+  const session = seedSession(server.db, {
+    id: 'ses_mem_ref_seq_collision',
+    messageCount: 7,
+    viewerCount: 7,
+    startedAt: T0
+  });
+  const config = makeConfig(server);
+  await server.analysisRunner.start({
+    sessionId: session.id,
+    locale: 'zh-CN',
+    mode: 'memory',
+    configId: config.id,
+    consent: true
+  });
+  const partial = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
+  assert.equal(partial.status, 'partial', JSON.stringify(partial));
+  assert.equal(partial.memoryJob.memoryCoverage.total, 7);
+  assert.equal(partial.memoryJob.memoryCoverage.covered, 6);
+  assert.equal(partial.memoryJob.memoryCoverage.failed, 1);
+  const batchError = partial.memoryJob.batchErrors[0];
+  assert.ok(batchError.errors.some((item) => item.code === 'MEMORY_EVIDENCE_OTHER_VIEWER'));
+  const failedViewer = batchError.viewerErrors?.[0]?.viewerId ?? null;
+  assert.ok(failedViewer, 'failed viewer is recorded');
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 0);
-  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 0);
+  assert.equal(calls.filter((entry) => entry.phase === 'first' && entry.size === 7).length, 2);
+
+  phase = 'second';
+  await server.analysisRunner.resume(session.id, {consent: true});
+  const complete = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
+  assert.equal(complete.status, 'complete', JSON.stringify(complete));
+  assert.equal(complete.memoryJob.memoryCoverage.covered, 7);
+  assert.equal(complete.memoryJob.memoryCoverage.failed, 0);
+  const secondCalls = calls.filter((entry) => entry.phase === 'second');
+  assert.equal(secondCalls.length, 1);
+  assert.equal(secondCalls[0].size, 1, 'resume only sends the failed viewer');
+  const fact = server.db.prepare('SELECT viewer_id, statement FROM memory_facts').get();
+  assert.equal(fact.viewer_id, failedViewer);
+  assert.equal(fact.statement, 'recovered fact');
+});
+
+test('a viewer-scoped repair can recover the rejected viewer automatically', async (t) => {
+  const temp = createTempDir();
+  const calls = [];
+  const server = await startMockServer({
+    temp,
+    onMemory: ({info}) => {
+      calls.push({size: info.refs.size});
+      // Whole-batch attempts are invalid; the viewer-scoped retry (only one ref)
+      // returns a valid fact with that viewer's own evidence.
+      if (info.refs.size > 1) {
+        return jsonResponse({viewers: missingEvidenceViewers(info)});
+      }
+      return jsonResponse({
+        viewers: memoryViewers(info, {statement: 'recovered viewer fact', topic: 'recovered'})
+      });
+    }
+  });
+  t.after(async () => {
+    await server.close();
+    temp.cleanup();
+  });
+  addBroadcaster(server.db);
+  const session = seedSession(server.db, {
+    id: 'ses_mem_viewer_repair_success',
+    messageCount: 2,
+    viewerCount: 2,
+    startedAt: T0
+  });
+  const config = makeConfig(server);
+  await server.analysisRunner.start({
+    sessionId: session.id,
+    locale: 'en',
+    mode: 'memory',
+    configId: config.id,
+    consent: true
+  });
+  const status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
+  assert.equal(status.status, 'complete', JSON.stringify(status));
+  assert.equal(status.memoryJob.memoryCoverage.covered, 2);
+  assert.equal(status.memoryJob.memoryCoverage.failed, 0);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].size, 1, 'third call is scoped to the failed viewer');
+  const fact = server.db.prepare('SELECT viewer_id, statement FROM memory_facts').get();
+  assert.ok(fact);
+  assert.equal(fact.statement, 'recovered viewer fact');
 });
 
 test('a Japanese task keeps Japanese long-term facts and the compact contract', async (t) => {
@@ -492,7 +633,7 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   const server = await startMockServer({
     temp,
     onMemory: ({info}) => {
-      calls.push({batchId: info.batchId, phase, repair: info.repair});
+      calls.push({batchId: info.batchId, phase, repair: info.repair, refs: info.refs.size});
       if (phase === 'first' && info.batchId?.endsWith('b02')) {
         return jsonResponse({viewers: missingEvidenceViewers(info)});
       }
@@ -505,6 +646,12 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   const cleanup = [];
   t.after(async () => {
     for (const fn of cleanup.reverse()) await fn();
+  });
+  // Always close the primary server, even when an assertion fails before the
+  // explicit restart below; otherwise the test process would keep the handle.
+  cleanup.push(async () => {
+    await server.close().catch(() => {});
+    temp.cleanup();
   });
   addBroadcaster(server.db);
   const session = seedSession(server.db, {
@@ -522,11 +669,13 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
     consent: true
   });
   const failed = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
-  assert.equal(failed.status, 'failed', JSON.stringify(failed));
+  assert.equal(failed.status, 'partial', JSON.stringify(failed));
   assert.equal(failed.canResume, true);
   assert.equal(failed.memoryJob.memoryCoverage.total, 40);
-  assert.equal(failed.memoryJob.memoryCoverage.covered, 30);
-  assert.equal(failed.memoryJob.memoryCoverage.pending, 10);
+  // 9 valid viewers of batch 2 are salvaged; only the invalid one waits.
+  assert.equal(failed.memoryJob.memoryCoverage.covered, 39);
+  assert.equal(failed.memoryJob.memoryCoverage.pending, 0);
+  assert.equal(failed.memoryJob.memoryCoverage.failed, 1);
   assert.deepEqual(failed.memoryJob.failedBatches, [2]);
   const batchErrors = failed.memoryJob.batchErrors;
   assert.equal(batchErrors.length, 1, JSON.stringify(batchErrors));
@@ -553,11 +702,11 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
     jobId: failed.memoryJobId,
     status: 'partial',
     total: 40,
-    processed: 30,
+    processed: 39,
     semantic: 3,
-    objectiveOnly: 27,
-    pending: 10,
-    failed: 10,
+    objectiveOnly: 36,
+    pending: 0,
+    failed: 1,
     failedBatches: [2],
     complete: false
   });
@@ -573,7 +722,7 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   const restarted = await startMockServer({
     temp,
     onMemory: ({info}) => {
-      calls.push({batchId: info.batchId, phase, repair: info.repair});
+      calls.push({batchId: info.batchId, phase, repair: info.repair, refs: info.refs.size});
       return jsonResponse({
         viewers: memoryViewers(info, {
           statement: 'Fact after resume',
@@ -584,10 +733,9 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   });
   cleanup.push(async () => {
     await restarted.close();
-    temp.cleanup();
   });
   const beforeResume = restarted.analysisRunner.getStatus(session.id);
-  assert.equal(beforeResume.status, 'failed');
+  assert.equal(beforeResume.status, 'partial');
   await restarted.analysisRunner.resume(session.id, {consent: true});
   const completed = await waitFor(restarted.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
   assert.equal(completed.status, 'complete', JSON.stringify(completed));
@@ -595,21 +743,99 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   assert.equal(completed.memoryJob.batchErrors.length, 0);
   const secondRunCalls = calls.filter((entry) => entry.phase === 'second');
   assert.equal(secondRunCalls.length, 1, JSON.stringify(secondRunCalls));
-  assert.ok(secondRunCalls[0].batchId.endsWith('b02'), 'only the failed batch is retried');
+  assert.ok(secondRunCalls[0].batchId.endsWith('b02'), 'only the failed viewer batch is retried');
+  assert.equal(secondRunCalls[0].refs, 1, 'only the failed viewer is sent, not the 9 salvaged ones');
   assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 4);
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 4);
+  // Batch 2 now has the original partial result (v1) plus the recovery result
+  // (v2) for the single failed viewer; results are not facts and are versioned.
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 5);
 
-  // Re-submitting the same successful batch is an idempotent duplicate.
+  // Re-submitting the same recovery result is an idempotent duplicate.
   const batchTwo = listResults(restarted.db, completed.memoryJobId, {includeJson: true})
-    .find((row) => row.batchIndex === 2);
+    .filter((row) => row.batchIndex === 2)
+    .sort((a, b) => b.resultVersion - a.resultVersion)[0];
+  const failedViewerId = batchTwo.result.viewer_memory_updates?.[0]?.viewer_id ?? null;
   const duplicate = importAnalysisResult({
     db: restarted.db,
     text: JSON.stringify(batchTwo.result),
-    source: 'api'
+    source: 'api',
+    viewerIds: failedViewerId ? [failedViewerId] : null
   });
   assert.equal(duplicate.duplicate, true);
   assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 4);
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 4);
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 5);
+});
+
+test('a failed validation batch does not block later batches when concurrency is 1', async (t) => {
+  const temp = createTempDir();
+  const requested = [];
+  let phase = 'first';
+  const server = await startMockServer({
+    temp,
+    onMemory: ({info}) => {
+      requested.push({batchId: info.batchId, repair: info.repair, refs: info.refs.size, phase});
+      if (phase === 'first' && info.batchId.endsWith('b01')) {
+        return jsonResponse({viewers: missingEvidenceViewers(info)});
+      }
+      if (info.batchId.endsWith('b01')) {
+        return jsonResponse({
+          viewers: memoryViewers(info, {statement: 'recovered fact', topic: 'recovered'})
+        });
+      }
+      return jsonResponse({
+        viewers: memoryViewers(info, {
+          statement: `fact ${info.batchId.slice(-3)}`,
+          topic: `topic-${info.batchId.slice(-3)}`
+        })
+      });
+    }
+  });
+  t.after(async () => {
+    await server.close();
+    temp.cleanup();
+  });
+  addBroadcaster(server.db);
+  const session = seedSession(server.db, {
+    id: 'ses_mem_concurrency_one_continue',
+    messageCount: 30,
+    viewerCount: 30,
+    startedAt: T0
+  });
+  const config = makeConfig(server, {concurrency: 1});
+  await server.analysisRunner.start({
+    sessionId: session.id,
+    locale: 'en',
+    mode: 'memory',
+    configId: config.id,
+    consent: true
+  });
+  const partial = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
+  assert.equal(partial.status, 'partial', JSON.stringify(partial));
+  // b01: 9 valid + 1 failed; b02/b03 still run and import.
+  assert.equal(partial.memoryJob.memoryCoverage.total, 30);
+  assert.equal(partial.memoryJob.memoryCoverage.covered, 29);
+  assert.equal(partial.memoryJob.memoryCoverage.failed, 1);
+  assert.deepEqual(partial.memoryJob.failedBatches, [1]);
+  const firstPhase = requested.filter((entry) => entry.phase === 'first');
+  assert.deepEqual([...new Set(firstPhase.map((entry) => entry.batchId.slice(-3)))].sort(), [
+    'b01', 'b02', 'b03'
+  ]);
+  assert.equal(firstPhase.filter((entry) => entry.batchId.endsWith('b01')).length, 3);
+
+  phase = 'second';
+  const failedViewerId = server.db.prepare(
+    "SELECT viewer_id FROM ai_job_memory_viewers WHERE job_id = ? AND status = 'failed'"
+  ).get(partial.memoryJobId)?.viewer_id ?? null;
+  assert.ok(failedViewerId);
+  await server.analysisRunner.resume(session.id, {consent: true});
+  const complete = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
+  assert.equal(complete.status, 'complete', JSON.stringify(complete));
+  assert.equal(complete.memoryJob.memoryCoverage.covered, 30);
+  const secondPhase = requested.filter((entry) => entry.phase === 'second');
+  assert.equal(secondPhase.length, 1);
+  assert.ok(secondPhase[0].batchId.endsWith('b01'));
+  assert.equal(secondPhase[0].refs, 1, 'resume sends only the failed viewer');
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 3);
 });
 
 test('session success with a failed memory half is partial and keeps the report', async (t) => {
@@ -651,9 +877,9 @@ test('session success with a failed memory half is partial and keeps the report'
   assert.equal(report.mode, 'single');
   assert.equal(report.report.summary, 'Synthetic session summary');
   assert.equal(report.longTermProfiles.stats.total, 2);
-  assert.equal(report.longTermProfiles.stats.processed, 0);
-  assert.equal(report.longTermProfiles.stats.pending, 2);
-  assert.equal(report.longTermProfiles.stats.failed, 2);
+  assert.equal(report.longTermProfiles.stats.processed, 1);
+  assert.equal(report.longTermProfiles.stats.pending, 0);
+  assert.equal(report.longTermProfiles.stats.failed, 1);
 });
 
 test('usage is attributed to the child job that made each request', async (t) => {

@@ -1,10 +1,38 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 AI 分析可靠性、长期画像语言与错误恢复 · schema 13 · 结果 Schema 1.3.0 · 提示词 v13.1
+本轮：2026-11-13 · v0.13.2 真实 AI_IMPORT_INVALID 观众级容错 · schema 13 · 结果 Schema 1.3.0 · 提示词 v13.1
 
-> 本轮**未修改生产数据、未 Resume 真实失败任务、未调用真实付费 API、未干扰正在采集的直播、未替换运行中的 EXE**。全部验证使用 `tests/.tmp` 与 Mock Provider。
+> 本轮只读复制生产库/分析包做调查；**未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集**。验证使用 `tests/.tmp` 与 Mock Provider。
 
-## 0. 本轮（v0.13.2 AI 分析可靠性）
+## 0. 本轮（真实 AI_IMPORT_INVALID 与观众级容错）
+
+完整证据：`log/2026-11-13-real-ai-import-invalid-investigation.md`。
+
+### 0.1 真实根因
+
+- 任务 `aij_01M7963928KHJGNJTD64`（memory-only，47 观众/5 批）批次 5 失败；批次 1–4 已保存 40 名 semantic，批次 5 的 7 名 pending。
+- 批次 5 中 `seq 3` 属于 `bilibili:1765635337`（ref 5），`seq 5` 属于 `bilibili:5240206`（ref 3）。模型为 ref 5 引用了 seq 5 → `MEMORY_EVIDENCE_OTHER_VIEWER`。
+- 包/数据库映射一致；根因是 **ref 与 seq 两套小整数编号混淆**，旧 Prompt 的 excerpt 行没有 `ref`，契约未明确“ref≠seq”。
+- 自动修复确实发送过：批次 5 初始（schema type/enum 错误）+ 1 次 whole-batch repair（修复后跨观众证据）；旧版只允许一次修复，随后整批失败。任务总 usage 8 请求 / 77,204 input / 37,327 output；费用 unknown。
+
+### 0.2 修复
+
+- Prompt：excerpt 行增加本地 `ref`；契约明确 ref/seq 不同命名空间；repair 增加 `MEMORY EVIDENCE GUARD`；错误携带 `allowedSeqs`。
+- 观众级：whole-batch repair 失败后按 `viewer_memory_updates[i]` 拆分；合法观众在 `viewerIds` 作用域重新完整校验并导入；非法观众标记 `failed` 且不写事实；再一次 viewer-scoped repair（只发失败观众/证据），成功合并，失败保留可恢复。
+- 事务：合法事实/证据/覆盖状态与 failed 状态同一事务；恢复结果追加同一批次的 `ai_results` 新版本，只含恢复观众。
+- 调度：批次级校验错误不再停止后续批次（concurrency=1/4 验证）；Provider/取消/数据库错误仍停止新调度。
+- Resume：按 pending/failed 观众构造子集 Prompt；只请求未完成观众。旧任务批次 5 的 7 人全是 pending，旧版没有保存其中合法 6 人，因此旧任务 Resume 会处理这 7 人，不能只挑 1 人。
+- UI：coverage 增加 failed；partial 显示已处理/未完成/失败等待恢复；报告 stats 使用 failed。
+
+### 0.3 验证
+
+- 全量：**632 passed / 0 failed**（约 112 秒）。
+- 真实任务副本（只读 DB+包，Mock）：
+  - 普通 Resume 只请求 1 次（批次 5 的 7 名 pending），complete 47/47。
+  - 模拟真实 ref/seq 错误：3 次请求（initial + whole repair + viewer repair），complete 47/47、41 semantic、0 failed，无跨观众写入。
+- 未验证：真实付费 API、生产任务 Resume、真实浏览器 UI、UAC。
+
+## 0.2 上一轮（v0.13.2 AI 分析可靠性）
 
 ### 0.1 核心修复
 

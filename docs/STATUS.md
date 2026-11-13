@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-13（v0.13.2：长期画像校验/身份/语言/分批次诊断/统计与 usage 归属修复；628 tests；schema 13 不变）
+最后更新：2026-11-13（v0.13.2：真实 AI_IMPORT_INVALID 根因、观众级容错、后续批次继续调度、ref/seq Prompt 修复；632 tests；schema 13 不变）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -54,6 +54,46 @@
 - **隔离 EXE**：先用独立构建（buildId `c51819b2f3f3`）通过本地 Mock Provider 实测：repair 场景 complete 37/37；always-invalid 场景显示精确错误、27/37；EXE 内 Resume 只发 b02 一次并完成 37/37。随后按用户明确授权把正式 `dist/LiveMemory.exe` 重建为 buildId `caece0818f11`（`c827a609…`，commit `2b0ade6`，requireAdministrator），并用 asInvoker 测试副本实际启动验证 buildId/commit；正式 EXE 已替换，旧 EXE 备份在 `tests/.tmp`。
 - 未验证：真实付费 API、原始 392 条聊天内容、真实生产任务 Resume、UAC 双击。
 
+
+## 0.17 v0.13.2 真实 AI_IMPORT_INVALID 与观众级容错（2026-11-13）
+
+完整调查与真实数据证据：`log/2026-11-13-real-ai-import-invalid-investigation.md`。
+
+### 0.17.1 真实根因（已验证）
+
+- 任务 `aij_01M7963928KHJGNJTD64`（memory-only，47 观众/5 批，locale zh-CN，qwen3.7-flash）：
+  - 批次 1–4 已导入 40 名 semantic；批次 5 的 7 名全部 pending。
+  - 失败批次 5 每名观众 1 条消息；`seq 3` 属于错误观众 `bilibili:1765635337`（ref 5），`seq 5` 属于另一观众 `bilibili:5240206`（ref 3）。
+  - 模型在 `viewer_memory_updates[4]` 中为 ref 5 引用了 `seq 5` → `MEMORY_EVIDENCE_OTHER_VIEWER`。
+  - 映射本身正确（包、`ai_job_memory_messages`、`memory_context.evidence_seqs` 一致）；根因是 **ref 与 seq 两套小整数编号混淆**：ref 5 的合法证据是 seq 3，而 seq 5 属于 ref 3。
+  - 旧 Prompt 的 excerpt 行没有 `ref`，`memory_context` 使用 ref 但没有 viewer_id，模型必须自行按昵称/数字对照；这是可复现的设计缺陷，不是单纯幻觉。
+- 自动修复确实发送过：批次 5 共 2 次请求（初始 + `memory-repair`）；初始错误为 `SCHEMA_TYPE`/`SCHEMA_ENUM`，修复后改为跨观众证据。旧代码只允许一次修复，修复后仍失败就拒绝整批。
+- 任务总 usage：8 次请求、77,204 input / 37,327 output；`pricing_status=unknown`、`cost=null`。单请求 token 未持久化。
+
+### 0.17.2 原有隔离能力（调查结论）
+
+- 单场报告：独立任务，已保留；画像失败没有删除报告。
+- 批次：已成功批次保留；旧 `runPool` 在首个错误后停止**尚未开始**的后续批次，已启动批次继续。真实任务 5 批均已启动，因此没有观察到后续阻断；concurrency=1 时旧逻辑会停。
+- 观众：**没有观众级隔离**；批次 5 的 1 人错误导致 7 人全部不导入，旧版无法只恢复失败观众。
+- 操作：同一观众的多条操作保持原子，不做单条操作拆分。
+
+### 0.17.3 修复
+
+- **Prompt**：Provider 的 `viewer_excerpts.jsonl` 每行增加本地生成的 `ref`；契约明确 ref/seq 不同命名空间、ref 5 可有 seq 3、只能使用同 ref 的 evidence_seqs；repair 增加 `MEMORY EVIDENCE GUARD`；错误参数携带 `allowedSeqs`。
+- **观众级容错**：whole-batch repair 后仍有观众级错误时，按 `viewer_memory_updates[i]` 拆分；合法观众用 `viewerIds` 作用域重新完整校验并导入；非法观众状态 `failed`，不写任何事实；再发一次有界 viewer-scoped repair（只含失败观众/证据），成功则合并回整批，失败则保留合法观众并标记 failed。
+- **事务/幂等**：合法事实、证据、覆盖状态与 failed 状态在同一 SQLite 事务；恢复导入生成新的 `ai_results` 版本（只含恢复观众），事实去重/版本机制不变。
+- **调度**：`runPool` 对批次级校验错误不再停止后续批次（concurrency=1/4 均验证）；Provider/取消/数据库错误仍停止新调度。
+- **Resume**：按 `ai_job_memory_viewers` 的 `pending/failed` 观众构造子集 Prompt；只请求未完成观众；旧任务失败批次 7 名仍全部 pending，因此旧任务 Resume 会处理这 7 人，不能只挑 1 人（旧响应未保存合法 6 人）。
+- **UI/统计**：覆盖新增 `failed`；partial 文案显示 `{processed}/{total}`、未完成、校验失败等待恢复；报告 stats 使用覆盖 `failed`。
+
+### 0.17.4 验证
+
+- 全量：**632 passed / 0 failed**（2026-11-13，约 112 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 新增/更新 `ai-memory-reliability`：ref/seq 冲突（真实生产形状，ref5↔seq3、ref3↔seq5）、concurrency=1 后续批次继续、viewer-scoped repair 自动成功、观众级 9/1 隔离、Resume 只发失败观众。
+- 真实任务副本回放（只读复制生产库+包，Mock Provider）：
+  - 普通 Resume：1 次请求，仅批次 5 的 7 名 pending；complete 47/47。
+  - 模拟真实 ref/seq 错误：initial + whole repair + viewer repair 共 3 次请求；complete 47/47，41 semantic/6 no_semantics/0 failed，未跨观众写入。
+- 未验证：真实付费 API、真实生产任务 Resume、真实浏览器 UI（沙箱仍阻止浏览器命名管道）、UAC 双击。
 
 ## 0.15 v0.13.2 观众身份专项审计（2026-11-12）
 

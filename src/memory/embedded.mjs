@@ -2,6 +2,7 @@ import {getSession} from '../storage/repositories/sessions.mjs';
 import {getEventById} from '../storage/repositories/events.mjs';
 import {
   getJobMemoryMessage,
+  listJobMemoryMessageSeqs,
   listJobMemoryViewers,
   listJobViewerIds
 } from '../storage/repositories/ai-jobs.mjs';
@@ -105,6 +106,7 @@ export function validateEmbeddedMemoryUpdates({
   payload,
   schemaVersion = '1.0.0',
   mode = 'batch',
+  viewerIds = null,
   now = Date.now()
 }) {
   const errors = [];
@@ -149,8 +151,8 @@ export function validateEmbeddedMemoryUpdates({
     // Pre-v12 jobs have no memory assignment table. Cover their batch viewers
     // with objective updates only; semantic updates are not accepted because
     // there is no excerpt mapping to verify them against.
-    const viewerIds = listJobViewerIds(db, job.id, batch.batchIndex);
-    memoryViewers = viewerIds.map((viewerId) => ({
+    const viewerIdsForLegacy = listJobViewerIds(db, job.id, batch.batchIndex);
+    memoryViewers = viewerIdsForLegacy.map((viewerId) => ({
       viewerId,
       batchIndex: batch.batchIndex,
       baseVersion: 0,
@@ -159,6 +161,13 @@ export function validateEmbeddedMemoryUpdates({
     if (Array.isArray(payload.viewer_memory_updates) && payload.viewer_memory_updates.length > 0) {
       errors.push(issue('error', 'viewer_memory_updates', 'MEMORY_UPDATES_REQUIRED', {legacy: true}));
     }
+  }
+  // A recovery request may cover only the viewers that are still pending or
+  // failed. Coverage is then enforced for exactly this subset, never for
+  // viewers that were already imported successfully.
+  if (Array.isArray(viewerIds)) {
+    const requested = new Set(viewerIds.map(String));
+    memoryViewers = memoryViewers.filter((entry) => requested.has(String(entry.viewerId)));
   }
   base.legacy = legacy;
   base.memoryViewers = memoryViewers;
@@ -320,7 +329,12 @@ export function validateEmbeddedMemoryUpdates({
           continue;
         }
         if (mapping.viewerId !== viewerId) {
-          errors.push(issue('error', refPath, 'MEMORY_EVIDENCE_OTHER_VIEWER', {seq: ref.seq, viewerId, actual: mapping.viewerId}));
+          errors.push(issue('error', refPath, 'MEMORY_EVIDENCE_OTHER_VIEWER', {
+            seq: ref.seq,
+            viewerId,
+            actual: mapping.viewerId,
+            allowedSeqs: listJobMemoryMessageSeqs(db, job.id, batch.batchIndex, viewerId)
+          }));
           continue;
         }
         const event = getEventById(db, mapping.eventId);
@@ -348,7 +362,10 @@ export function validateEmbeddedMemoryUpdates({
       ].includes(op);
       if (needsEvidence && evidence.length === 0) {
         if (certainty === MEMORY_CERTAINTY.STATED) {
-          errors.push(issue('error', `${opPath}.evidence`, 'MEMORY_EVIDENCE_REQUIRED', {certainty}));
+          errors.push(issue('error', `${opPath}.evidence`, 'MEMORY_EVIDENCE_REQUIRED', {
+            certainty,
+            allowedSeqs: listJobMemoryMessageSeqs(db, job.id, batch.batchIndex, viewerId)
+          }));
           continue;
         }
         if (certainty === MEMORY_CERTAINTY.INFERRED) certainty = MEMORY_CERTAINTY.UNCERTAIN;

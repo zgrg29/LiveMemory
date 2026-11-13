@@ -963,3 +963,30 @@ Provider 返回 → extractJsonObject → assembleMemoryCompact
 - `processed` 包含有语义事实与仅客观互动的观众；不再把“有 `viewer_memories` 行”等同于“有 AI 语义画像”。
 - `failed` 是失败批次涉及的观众数；`pending` 是尚未导入的观众数。
 - 旧任务没有 `memoryViewersTotal`/批次错误时，`stats` 为 `null`，界面回退到旧的 `count` 文案。
+## 21. v0.13.2 观众级容错与 ref/seq 分离
+
+### 21.1 ref 与 seq
+
+- `seq` 是**批次内全局唯一**的 `viewer_excerpts.jsonl` 序号，同一 seq 只属于一名观众；不是每名观众从 1 开始。
+- `ref` 是 Prompt 内的观众编号，按 `memory_context.viewers` 顺序分配；`ref` 与 `seq` 是不同命名空间。
+- Provider 的 excerpt 行同时包含 `seq`、`viewer_id` 和本地生成的 `ref`；契约明确 ref 5 可以拥有 seq 3，禁止用同号猜测。
+- 包文件格式不变；`ref` 是发送 Prompt 时的注解，不写入结果或数据库。
+
+### 21.2 观众级隔离
+
+- 整批完整校验失败且所有错误都定位到 `viewer_memory_updates[i]` 时，合法观众可以在 `viewerIds` 作用域内重新校验并导入；错误观众不写入事实，状态为 `failed`。
+- 非法观众再获得一次 **viewer-scoped repair**（只含该观众、允许 evidence 和错误）；成功则合并回整批并重新完整校验；失败则保留合法观众、失败观众保持 `failed`。
+- 全局 Schema/协议/覆盖错误不拆分，整批失败；Provider 鉴权/超时/限流/取消/数据库错误不按观众级错误处理。
+- `ai_job_memory_viewers.status` 可为 `pending`、`semantic`、`no_semantics`、`objective_only`、`missing_update`、`deleted`、`failed`；`covered` 排除 `pending`/`missing_update`/`failed`，`complete` 要求三者均为 0。
+- 恢复导入会为同一批次生成新的 `ai_results` 版本，只含恢复观众；已成功观众不重发，事实去重/版本机制不变。
+
+### 21.3 调度与恢复
+
+- 批次级校验失败不再停止后续批次调度；Provider/取消/数据库错误仍停止新调度。
+- Resume 只请求 `pending`/`failed` 观众；旧任务失败批次若没有任何合法观众被保存，仍会重跑该批全部 pending 观众。
+- 任务在存在非法观众时为 `partial`，不是 `complete`。
+
+### 21.4 诊断
+
+- `MEMORY_EVIDENCE_OTHER_VIEWER` 的 `params` 包含 `seq`、目标 `viewerId`、实际 `actual` 与该观众 `allowedSeqs`。
+- `last_error_json.batches[].viewerErrors[]` 保存被隔离观众的字段错误；状态/技术详情不包含模型原始回答或聊天正文。

@@ -836,7 +836,8 @@ export const aiPage = {
             ? t('ai.center.partialMemoryStats', {
               processed: formatInteger(coverage.covered ?? 0, ctx.locale),
               total: formatInteger(coverage.total ?? 0, ctx.locale),
-              pending: formatInteger(coverage.pending ?? 0, ctx.locale)
+              pending: formatInteger(coverage.pending ?? 0, ctx.locale),
+              failed: formatInteger(coverage.failed ?? 0, ctx.locale)
             })
             : null
         ].filter(Boolean).join(' · ');
