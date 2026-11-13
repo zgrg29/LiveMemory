@@ -229,9 +229,31 @@ function renderLongTermProfiles(ctx, data) {
   }
   return el('div', {className: 'report-profiles'},
     el('div', {className: 'report-note', text: t('ai.report.longTermNote')}),
-    el('div', {className: 'report-note'}, t('ai.report.longTermCount', {
-      count: formatInteger(data.count, ctx.locale)
-    })),
+    data.stats
+      ? el('div', {className: 'def-list', style: {marginBottom: '10px'}},
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.report.longTermTotal')}),
+          el('span', {className: 'def-value', text: formatInteger(data.stats.total, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.report.longTermProcessed')}),
+          el('span', {className: 'def-value', text: formatInteger(data.stats.processed, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.report.longTermSemantic')}),
+          el('span', {className: 'def-value', text: formatInteger(data.stats.semantic, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.report.longTermObjectiveLabel')}),
+          el('span', {className: 'def-value', text: formatInteger(data.stats.objectiveOnly, ctx.locale)})),
+        el('div', {className: 'def-row'},
+          el('span', {className: 'def-key', text: t('ai.report.longTermPending')}),
+          el('span', {className: 'def-value', text: formatInteger(data.stats.pending, ctx.locale)})),
+        data.stats.failed > 0
+          ? el('div', {className: 'def-row'},
+            el('span', {className: 'def-key', text: t('ai.report.longTermFailed')}),
+            el('span', {className: 'def-value', text: formatInteger(data.stats.failed, ctx.locale)}))
+          : null)
+      : el('div', {className: 'report-note'}, t('ai.report.longTermCount', {
+        count: formatInteger(data.count, ctx.locale)
+      })),
     data.items.map((profile) => el('div', {className: 'report-profile'},
       el('div', {className: 'report-topic-head'},
         el('span', {className: 'report-topic-title', text: profile.nickname || profile.viewerId}),

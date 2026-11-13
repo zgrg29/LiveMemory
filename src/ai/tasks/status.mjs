@@ -100,6 +100,14 @@ export function computeJobStatus(db, job) {
       latestError = null;
     }
   }
+  // Per-batch failures survive concurrent sibling successes and restarts. They
+  // are exposed so the console can say exactly which batch failed and why.
+  const batchErrors = Array.isArray(latestError?.batches)
+    ? latestError.batches.filter((entry) => entry && typeof entry === 'object')
+    : [];
+  const failedBatches = [...new Set(batchErrors
+    .map((entry) => (Number.isInteger(Number(entry.batchIndex)) ? Number(entry.batchIndex) : null))
+    .filter((index) => index !== null))].sort((a, b) => a - b);
 
   return {
     status,
@@ -118,11 +126,16 @@ export function computeJobStatus(db, job) {
     memoryCoverage,
     memoryReady,
     resultCount: results.length,
+    // The job's own usage row. Session and memory are separate jobs, so each
+    // value contains only the requests made for that job.
+    usage: job.usage ?? null,
     versions,
     finalResult: finalResult
       ? {id: finalResult.id, resultVersion: finalResult.resultVersion, importedAt: finalResult.importedAt}
       : null,
-    latestError
+    latestError,
+    batchErrors,
+    failedBatches
   };
 }
 

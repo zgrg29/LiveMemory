@@ -15,7 +15,7 @@ export const RESULT_SCHEMA_VERSION = '1.3.0';
 export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0', '1.3.0']);
 
 export const PROMPT_VERSION = 'lm-prompt-m6.3';
-export const PROMPT_VERSION_V13 = 'lm-prompt-v13';
+export const PROMPT_VERSION_V13 = 'lm-prompt-v13.1';
 
 export const ANALYSIS_MODE = Object.freeze({
   SESSION: 'session',

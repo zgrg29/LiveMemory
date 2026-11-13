@@ -97,6 +97,31 @@ export function buildMemoryRefs(memoryContext) {
   }));
 }
 
+/**
+ * The only fields a model may contribute to one viewer's memory update.
+ *
+ * Identity (`viewer_id`, `ref`, `session_id`, ...) is owned by the local
+ * program. Unknown fields are dropped instead of being spread into the result,
+ * so a model can never replace a stable viewer id or inject a second identity
+ * into a record that is about to be persisted.
+ */
+export const MEMORY_UPDATE_FIELDS = Object.freeze([
+  'summary',
+  'summary_certainty',
+  'no_new_information',
+  'operations'
+]);
+
+function pickMemoryFields(memory) {
+  const picked = {};
+  const ignored = [];
+  for (const key of Object.keys(memory ?? {})) {
+    if (MEMORY_UPDATE_FIELDS.includes(key)) picked[key] = memory[key];
+    else ignored.push(key);
+  }
+  return {picked, ignored};
+}
+
 export function buildMemoryCompactSchema({resultSchema, refs, onlyRefs = null}) {
   const allowed = Array.isArray(onlyRefs) && onlyRefs.length > 0
     ? onlyRefs.map(Number)
@@ -139,8 +164,15 @@ export function inspectCompactMemory(answer, {refs, onlyRefs = null}) {
   const allowed = new Set((onlyRefs ?? refs.map((entry) => entry.ref)).map(Number));
   const issues = [];
   const entries = new Map();
+  const ignoredFields = [];
   if (!answer || typeof answer !== 'object' || !Array.isArray(answer.viewers)) {
-    return {ok: false, issues: [{path: 'viewers', code: 'MEMORY_VIEWERS_REQUIRED'}], entries, missing: []};
+    return {
+      ok: false,
+      issues: [{path: 'viewers', code: 'MEMORY_VIEWERS_REQUIRED'}],
+      entries,
+      missing: [],
+      ignoredFields
+    };
   }
   for (let index = 0; index < answer.viewers.length; index += 1) {
     const entry = answer.viewers[index];
@@ -166,32 +198,42 @@ export function inspectCompactMemory(answer, {refs, onlyRefs = null}) {
       issues.push({path: `viewers[${index}].memory`, code: 'MEMORY_REQUIRED', params: {ref}});
       continue;
     }
-    entries.set(ref, entry.memory);
+    const {picked, ignored} = pickMemoryFields(entry.memory);
+    if (ignored.length > 0) ignoredFields.push({ref, fields: ignored.slice(0, 12)});
+    entries.set(ref, picked);
   }
   const missing = [...allowed].filter((ref) => !entries.has(ref)).sort((a, b) => a - b);
-  return {ok: issues.length === 0 && missing.length === 0, issues, entries, missing};
+  return {ok: issues.length === 0 && missing.length === 0, issues, entries, missing, ignoredFields};
 }
 
 export function assembleMemoryCompact({answer, manifest, refs, onlyRefs = null}) {
   const inspected = inspectCompactMemory(answer, {refs, onlyRefs});
   if (!inspected.ok) {
-    return {ok: false, issues: inspected.issues, missing: inspected.missing, result: null};
+    return {
+      ok: false,
+      issues: inspected.issues,
+      missing: inspected.missing,
+      result: null,
+      ignoredFields: inspected.ignoredFields ?? []
+    };
   }
   const byRef = new Map(refs.map((entry) => [entry.ref, entry.viewerId]));
   const updates = [];
   for (const ref of [...inspected.entries.keys()].sort((a, b) => a - b)) {
     const memory = inspected.entries.get(ref);
     updates.push({
-      viewer_id: byRef.get(ref),
       ...memory,
       no_new_information: memory.no_new_information === true,
-      operations: Array.isArray(memory.operations) ? memory.operations : []
+      operations: Array.isArray(memory.operations) ? memory.operations : [],
+      // Always last: the model can never overwrite the local stable identity.
+      viewer_id: byRef.get(ref)
     });
   }
   return {
     ok: true,
     issues: [],
     missing: [],
+    ignoredFields: inspected.ignoredFields ?? [],
     result: {
       protocol: 'livememory-analysis-result-v1',
       schema_version: '1.3.0',

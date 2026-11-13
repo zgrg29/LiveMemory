@@ -952,3 +952,38 @@ duration ≈ 25.0s
 - `tests/unit/ai-token-batching.test.mjs`：2500 观众无总批次上限；889 消息分批不回退。
 - `v14-session-batching`、`v13-scheduler`：批次失败/500 进入 `needs_action`，已完成兄弟批次保留，resume 不重发。
 - 未做：真实长任务/真实付费 API；Mock/注入时钟已覆盖。
+
+## 32. 长期画像校验、语言、分批次诊断与 usage 归属（v0.13.2，2026-11-13）
+
+### 32.1 单元
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/ai-compact-memory.test.mjs` | 三语 Compact 示例本地化、无 `viewer_id`/无 `"locale":"en"`；旧 instructions.md 被当前运行时提示词替代；`memory` 四字段白名单；模型 `viewer_id`/`session_id`/`ref` 被丢弃；非法 operation 仍交给 Schema；重复/未知/缺失 ref 诊断；Compact Schema 不含 `viewer_id` |
+| `tests/unit/ai-ui.test.mjs`（更新） | `AI_IMPORT_INVALID` 与 `unknown` 三语键；技术详情渲染 `error.errors`/`batchErrors`/`suggestedAction`；报告统计键；`partial` 文案明确「单场报告已完成」；无 innerHTML |
+| `tests/unit/i18n.test.mjs` | 三语键仍完全一致（新增键已同步） |
+
+### 32.2 集成（Mock Provider，隔离数据目录）
+
+| 场景 | 文件/断言 |
+| --- | --- |
+| A 合法 Compact 一次导入 | `ai-memory-reliability`：1 次请求、1 条结果、2 个记忆头、`no_semantics` 已处理 |
+| B 完整 ref 但证据缺失不能绕过校验 | 2 次请求（含一次 repair）、`AI_IMPORT_INVALID`、`MEMORY_EVIDENCE_REQUIRED`、0 结果/0 事实 |
+| C 一次修复后合法保存 | repair 后 complete，事实 `stated`，memory usage `requests=2` |
+| D 修复仍失败可恢复 | 状态 failed、`canResume=true`、`recoverable=true`、batchIndex 正确 |
+| E 伪造 `viewer_id` | 事实仍归属 ref 映射的观众；结果 JSON 两个稳定 ID；伪造字段未落库 |
+| F 跨观众 evidence | `MEMORY_EVIDENCE_OTHER_VIEWER`；0 事实/0 结果 |
+| G 4 批并发仅 b02 失败 | 30/40 covered；`last_error_json.batches=[2]`；兄弟成功不清除；HTTP status 含 `error.errors`/`batchErrors` |
+| H 重启 Resume 只补 b02 | 同目录重启后 `resume` 仅 1 次 b02 请求；complete 40/40 |
+| I 重复提交幂等 | 同一批结果再次导入 `duplicate=true`，事实/结果数量不变 |
+| J 日语画像 | 提示词含日语规则与日语示例、无 `"locale":"en"`；事实/`locale` 为日语 |
+| K combined partial | 状态 `partial`、`sessionReportDone=true`、报告保留、统计 pending/failed 正确 |
+| L usage 归属 | session 1 请求/100 输入、memory 1 请求/50 输入；任务总计 2/150/30；成本非零 |
+| M 礼物-only 观众 | `zero_excerpt=true`，`no_semantics` 已处理，记忆头存在，0 语义事实 |
+
+### 32.3 全量结果（本轮实测）
+
+- 命令：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- 结果：**628 passed / 0 failed**（2026-11-13，约 120 秒）。
+- 新增 17 个测试（`ai-compact-memory` 7 + `ai-memory-reliability` 10），另更新 `ai-ui`。
+- 未做：真实付费 API、真实浏览器截图（本机沙箱拒绝浏览器 Mojo 命名管道）、真实生产任务 Resume、EXE 构建/运行。

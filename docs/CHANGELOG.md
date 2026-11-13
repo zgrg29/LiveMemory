@@ -1,5 +1,25 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r5 — 2026-11-13（AI 分析可靠性与长期画像语言修复）
+
+### 修复
+
+- **统一校验链**：长期画像不再因 Compact ref 覆盖完整而跳过 `validateAnalysisImport()`；固定为「组装 → 完整校验 → 最多一次修复 → 再校验 → 事务导入」。
+- **稳定身份**：`assembleMemoryCompact()` 只接受 `summary` / `summary_certainty` / `no_new_information` / `operations`；`viewer_id` 永远由本地映射注入，模型字段无法覆盖；跨观众 evidence 继续拒绝。
+- **诊断**：`AI_IMPORT_INVALID` 不再吞掉 `AppError.details.errors`；任务状态包含 stage、Job/Batch、字段路径、可恢复性与建议；前端「技术详情」只显示本地字段，不含模型原文/聊天/Key。
+- **分批次错误**：`ai_jobs.last_error_json.batches[]` 按批次保留；成功批次只清除自己的失败，不再覆盖并发失败批次；旧格式兼容。
+- **语言**：长期画像 Compact 示例与规则三语本地化；不再出现固定 `"locale": "en"`；Provider 请求改用当前运行时 instructions，旧包中的冲突示例不再发送；`topic` 作为稳定匹配键。
+- **事实准确性**：三语明确 stated 需本人证据、inferred 不得写成事实、玩笑/引用/建议不算个人经历、不得编造、允许 no_semantics。
+- **统计**：报告新增 `longTermProfiles.stats`（应处理/已处理/有语义/仅客观/未完成/失败批次）；AI 中心区分单场完成与画像部分完成。
+- **usage**：session/memory 请求分别计入各自 Job；任务总计由子 Job 相加；修复/重试计入真实 usage；成本未知不显示为零。
+- **提示词版本**：`lm-prompt-v13` → `lm-prompt-v13.1`（旧任务保留原版本号）。
+
+### 验证
+
+- **628 passed / 0 failed**（约 120 秒）；新增 `tests/unit/ai-compact-memory.test.mjs`、`tests/integration/ai-memory-reliability.test.mjs`，更新 `ai-ui`。
+- 隔离 Mock Provider 验证 A–M：正常导入、完整 ref 但非法、自动修复成功/失败、伪造身份、跨观众证据、4 批并发仅 b02 失败、重启只补 b02、重复提交幂等、日语事实、combined partial、usage 归属、礼物-only 观众。
+- 未做：真实付费 API、真实浏览器截图（沙箱拒绝浏览器命名管道）、生产任务 Resume、EXE 构建。
+
 ## 0.13.2-r4 — 2026-11-12（观众身份专项审计）
 
 ### 修复

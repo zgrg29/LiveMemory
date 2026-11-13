@@ -161,10 +161,21 @@ export function setJobAggregatePackage(db, jobId, {packageId, taskId, now = Date
   return getJob(db, jobId);
 }
 
-/** Persist a failed import so the task state survives a restart. */
+/**
+ * Persist a failed batch/aggregate import so the task state survives a restart.
+ *
+ * Failures are kept per batch inside `last_error_json.batches`. A successful
+ * sibling batch clears only its own entry; the previous implementation cleared
+ * the whole job, which erased the real reason a different concurrent batch had
+ * failed. The legacy top-level `code`/`errors` fields are still written for
+ * older readers and for the most recent failure.
+ */
 export function recordJobFailure(db, jobId, {
   code,
   errors = [],
+  batchIndex = null,
+  batchId = null,
+  stage = null,
   now = Date.now()
 } = {}) {
   const capped = (Array.isArray(errors) ? errors : []).slice(0, 40).map((error) => ({
@@ -172,21 +183,113 @@ export function recordJobFailure(db, jobId, {
     code: typeof error?.code === 'string' ? error.code.slice(0, 80) : 'UNKNOWN',
     params: error?.params && typeof error.params === 'object' ? error.params : null
   }));
-  const json = JSON.stringify({at: now, code: String(code ?? 'IMPORT_INVALID'), errors: capped});
+  const current = getJob(db, jobId);
+  let previous = null;
+  try {
+    previous = current?.lastErrorJson ? JSON.parse(current.lastErrorJson) : null;
+  } catch {
+    previous = null;
+  }
+  const normalizedIndex = Number.isInteger(Number(batchIndex)) ? Number(batchIndex) : null;
+  const normalizedBatchId = typeof batchId === 'string' && batchId.trim() ? batchId.slice(0, 200) : null;
+  const entries = Array.isArray(previous?.batches) ? previous.batches.slice(0, 200) : [];
+  const entry = {
+    batchIndex: normalizedIndex,
+    batchId: normalizedBatchId,
+    stage: typeof stage === 'string' ? stage.slice(0, 80) : null,
+    code: String(code ?? 'IMPORT_INVALID').slice(0, 80),
+    at: Number(now),
+    errors: capped
+  };
+  const remaining = entries.filter((item) => (
+    normalizedIndex === null
+      ? !(item?.batchIndex === null || item?.batchIndex === undefined)
+      : Number(item?.batchIndex) !== normalizedIndex
+  ));
+  remaining.push(entry);
+  remaining.sort((a, b) => Number(a?.batchIndex ?? -1) - Number(b?.batchIndex ?? -1));
+  const latest = remaining.reduce((newest, item) => (
+    Number(item?.at ?? 0) >= Number(newest?.at ?? 0) ? item : newest
+  ), remaining[0]);
+  const json = JSON.stringify({
+    at: Number(latest?.at ?? now),
+    code: String(latest?.code ?? entry.code),
+    errors: Array.isArray(latest?.errors) ? latest.errors : capped,
+    batches: remaining
+  });
   db.prepare(`
     UPDATE ai_jobs
        SET last_error_at = ?, last_error_code = ?, last_error_json = ?, updated_at = ?
      WHERE id = ?
-  `).run(Number(now), String(code ?? 'IMPORT_INVALID'), json, Number(now), String(jobId));
+  `).run(Number(now), entry.code, json, Number(now), String(jobId));
   return getJob(db, jobId);
 }
 
-export function clearJobFailure(db, jobId, {now = Date.now()} = {}) {
+/**
+ * Clear a failure.
+ *
+ * With `batchIndex` only that batch's entry is removed, so a successful
+ * concurrent batch can never hide another batch's failure. Without it (legacy
+ * callers / explicit full clear) every recorded failure is removed. An old
+ * flat `{at, code, errors}` record has no batch identity; the first
+ * batch-scoped success is assumed to be the retry of that failure and clears it.
+ */
+export function clearJobFailure(db, jobId, {now = Date.now(), batchIndex = undefined} = {}) {
+  if (batchIndex === undefined) {
+    db.prepare(`
+      UPDATE ai_jobs
+         SET last_error_at = NULL, last_error_code = NULL, last_error_json = NULL, updated_at = ?
+       WHERE id = ?
+    `).run(Number(now), String(jobId));
+    return;
+  }
+  const current = getJob(db, jobId);
+  if (!current?.lastErrorJson) return;
+  let previous = null;
+  try {
+    previous = JSON.parse(current.lastErrorJson);
+  } catch {
+    previous = null;
+  }
+  const entries = Array.isArray(previous?.batches) ? previous.batches : [];
+  if (entries.length === 0) {
+    // Legacy flat failure: the batch that just succeeded is the retry.
+    db.prepare(`
+      UPDATE ai_jobs
+         SET last_error_at = NULL, last_error_code = NULL, last_error_json = NULL, updated_at = ?
+       WHERE id = ?
+    `).run(Number(now), String(jobId));
+    return;
+  }
+  const normalizedIndex = Number.isInteger(Number(batchIndex)) ? Number(batchIndex) : null;
+  const remaining = entries.filter((item) => (
+    normalizedIndex === null
+      ? !(item?.batchIndex === null || item?.batchIndex === undefined)
+      : Number(item?.batchIndex) !== normalizedIndex
+  ));
+  if (remaining.length === 0) {
+    db.prepare(`
+      UPDATE ai_jobs
+         SET last_error_at = NULL, last_error_code = NULL, last_error_json = NULL, updated_at = ?
+       WHERE id = ?
+    `).run(Number(now), String(jobId));
+    return;
+  }
+  remaining.sort((a, b) => Number(a?.batchIndex ?? -1) - Number(b?.batchIndex ?? -1));
+  const latest = remaining.reduce((newest, item) => (
+    Number(item?.at ?? 0) >= Number(newest?.at ?? 0) ? item : newest
+  ), remaining[0]);
+  const json = JSON.stringify({
+    at: Number(latest?.at ?? now),
+    code: String(latest?.code ?? 'IMPORT_INVALID'),
+    errors: Array.isArray(latest?.errors) ? latest.errors : [],
+    batches: remaining
+  });
   db.prepare(`
     UPDATE ai_jobs
-       SET last_error_at = NULL, last_error_code = NULL, last_error_json = NULL, updated_at = ?
+       SET last_error_at = ?, last_error_code = ?, last_error_json = ?, updated_at = ?
      WHERE id = ?
-  `).run(Number(now), String(jobId));
+  `).run(Number(latest?.at ?? now), String(latest?.code ?? 'IMPORT_INVALID'), json, Number(now), String(jobId));
 }
 
 export function setJobUsage(db, jobId, usage, {costEstimate = null, now = Date.now()} = {}) {

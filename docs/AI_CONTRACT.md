@@ -1,7 +1,7 @@
 # AI 分析协议（AI_CONTRACT）
 
 版本：**0.13.1** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13-session-<locale>` / `lm-prompt-v13-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`）
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13.1-session-<locale>` / `lm-prompt-v13.1-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`；v13.2 之前创建的 v13 任务保留原版本号）
 
 ## 1. 原则
 
@@ -374,7 +374,8 @@ M6/M7 扩展（1.1.0 字段可选；1.2.0 批次必须包含 `viewer_memory_upda
 - 已有不同结果但 `createVersion !== true` → `409 AI_VERSION_REQUIRED`，不写任何行。
 - 成功 → `201`，返回结果版本、任务状态与最新报告；`duplicate` 时返回 `200`。
 - 校验失败 → `422 AI_IMPORT_INVALID`，`details.errors` 与预览同结构；若已解析到任务，会记录
-  `ai_jobs.last_error_*`（只存路径/错误码），任务状态显示 `invalid`，但不写结果。
+  `ai_jobs.last_error_*`（只存路径/错误码），任务状态显示 `invalid`，但不写结果。v0.13.2 起
+  `last_error_json` 同时按 `batch_index` 保留每个失败批次，成功批次只清除自己的失败记录。
 
 ## 5. 任务状态
 
@@ -387,7 +388,8 @@ M6/M7 扩展（1.1.0 字段可选；1.2.0 批次必须包含 `viewer_memory_upda
 | `invalid` | 最近一次导入尝试失败，且当前没有完成结果 |
 
 状态由 `computeJobStatus()` 从 `ai_jobs`、`ai_job_batches`、`ai_results` 实时计算；
-`ai_jobs.last_error_*` 只保存最近一次失败的元数据。重启软件后状态不变。
+`ai_jobs.last_error_*` 按批次保存失败元数据（`last_error_json.batches[]`），顶层
+`code`/`errors` 仍指向最近一次失败，兼容旧读取方。重启软件后状态不变。
 
 允许“重新分析”：创建新任务（新 job id、新批次 id、新提示词版本记录），旧任务与旧结果版本保留；
 不会静默覆盖。
@@ -893,3 +895,71 @@ result.schema.json
 - 默认 `input_budget_tokens=24000`；`content_budget_tokens` 是留给消息/摘录的预算，固定 overhead 单独列出。
 - DashScope 请求额外发送 `max_completion_tokens`（回答预算 + 16k），限制回答+思考总量；其他 Provider 不发送。该字段的实际接受度仍需真实 Provider 验证。
 - 结果 Schema、导入协议、证据 `{batch, seq}` 规则不变。
+
+## 20. v0.13.2 长期画像协议修复
+
+### 20.1 统一校验链
+
+Memory 回答不再存在“ref 覆盖完整就直接导入”的快速路径。统一流程为：
+
+```text
+Provider 返回 → extractJsonObject → assembleMemoryCompact
+             → validateAnalysisImport（Schema / 身份 / 证据 / 覆盖 / 枚举）
+             → 失败时最多一次修复请求 → 重新组装 + 重新完整校验 → 事务导入
+```
+
+- ref 覆盖完整只说明“每个观众都有条目”，**不**代表字段合法；缺少证据、非法枚举、跨观众证据、未知字段仍必须被拒绝。
+- 修复请求最多一次：缺失 ref 时只发缺失观众（定向补充）；其他错误重发原批提示词 + 精确字段错误 + 上一次回答（有字符上限）。修复后的回答必须再次通过完整校验。
+- 修复仍失败 → 该批次不导入，任务保留已完成批次并可 `resume`；不会写入不合格结果。
+- 自动修复请求与正常重试一样计入真实 usage。
+
+### 20.2 本地身份与字段白名单
+
+- Compact 回答的 `viewers[].ref` 只能映射 `memory_context.viewers[].ref`；`viewer_id` 始终由 `assembleMemoryCompact()` 注入，模型提供的 `viewer_id`、`session_id`、`ref` 等身份字段一律丢弃。
+- `memory` 只接受 `summary`、`summary_certainty`、`no_new_information`、`operations` 四个字段；其他字段不会进入组装结果。`operations` 内部仍由完整 Schema 严格校验。
+- 未知/重复 ref 与缺失 ref 分别报告 `MEMORY_REF_UNKNOWN` / `MEMORY_REF_DUPLICATE` / `MEMORY_VIEWER_UPDATE_MISSING`。
+- 跨观众 evidence seq 继续由 `validateEmbeddedMemoryUpdates()` 以 `MEMORY_EVIDENCE_OTHER_VIEWER` 拒绝。
+
+### 20.3 三语与单一输出契约
+
+- Memory 的 Provider 提示词由**当前运行时**的 `buildMemoryInstructions()` 生成，不再直接使用旧包中的 `instructions.md`（旧文件仍保留在包内作为历史记录）。因此旧任务 Resume 也会使用新的语言与事实规则。
+- 旧 `instructions.md` 同时包含完整 Result 示例与 Compact 契约的问题不再影响 Provider 请求；当前请求只发送一个 Compact 契约与一个 Compact 示例。
+- 示例使用任务 locale 的自然语言（zh-CN / ja / en），不再固定 `"locale": "en"`，也不再展示 `viewer_id`。
+- `topic` 是去重/匹配的稳定短标识：续写已有事实时复用原 topic（不翻译）；新事实的 topic 使用当前语言。JSON 键名与枚举值保持英文。
+- 事实准确性规则写入三语提示词：`stated` 必须是观众本人明确说出并带本人证据；`inferred` 必须写成推断；证据不足用 `uncertain`/`no_semantics`；转述、玩笑、引用他人或给主播的建议不得当作观众个人事实；不得为填满每位观众而编造职业、年龄、地点、兴趣或经历。
+- 仅有问候/表情/付费时允许 `no_new_information`；客观互动历史仍会更新，`no_semantics` 仍算已处理。
+
+### 20.4 分批次错误与诊断
+
+- `ai_jobs.last_error_json` 增加 `batches[]`：`{batchIndex, batchId, stage, code, at, errors[]}`；顶层 `code`/`errors` 仍为最近一次失败，兼容旧读取。
+- 成功导入只清除同一 `batch_index` 的失败；其他并发批次的失败保留。对应失败批次真正成功并通过校验后才清除。
+- `GET /api/ai/analyze/status` 新增顶层 `batchErrors` 与 `memoryJob.batchErrors` / `failedBatches`；`error` 增加 `stage`、`jobId`、`batchId`、`batchIndex`、`errors[]`、`recoverable`、`suggestedAction`。
+- `errors[]` 只含字段路径、稳定错误码与必要参数（ID/seq/枚举/范围），不含模型原始回答、聊天正文、API Key 或请求头。
+
+### 20.5 统计口径与 usage 归属
+
+- `ai_jobs.usage_json` 按 Job 归属：session 请求只累计到 session job，memory/repair 请求只累计到 memory job；任务总计由两者相加得到。
+- 自动修复与正常重试都是真实请求，计入对应 Job 的 `requests`。
+- 任一子 Job 费用未知时，任务总费用保持未知，不按零处理。
+- 旧版本已写入的重复 usage 不做猜测性改写；历史任务会如实保留旧值，新请求从修复后的归属继续累计。
+
+### 20.6 报告统计
+
+`GET /api/ai/sessions/:id/report` 的 `longTermProfiles` 新增 `stats`：
+
+```json
+{
+  "total": 37,
+  "processed": 27,
+  "semantic": 18,
+  "objectiveOnly": 9,
+  "pending": 10,
+  "failed": 10,
+  "failedBatches": [2],
+  "complete": false
+}
+```
+
+- `processed` 包含有语义事实与仅客观互动的观众；不再把“有 `viewer_memories` 行”等同于“有 AI 语义画像”。
+- `failed` 是失败批次涉及的观众数；`pending` 是尚未导入的观众数。
+- 旧任务没有 `memoryViewersTotal`/批次错误时，`stats` 为 `null`，界面回退到旧的 `count` 文案。

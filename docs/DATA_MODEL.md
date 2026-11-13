@@ -219,7 +219,7 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 | batch_total / max_messages / total_messages | 批次总数、每批上限、消息总数（导出时快照） |
 | legacy | 1 = 由 M6 之前的整场结果自动创建 |
 | aggregate_package_id / aggregate_task_id | 第二阶段汇总包与任务 id |
-| last_error_at / last_error_code / last_error_json | 最近一次导入失败（只存字段路径/错误码，不存 AI 正文） |
+| last_error_at / last_error_code / last_error_json | 最近一次导入/批次失败。v0.13.2 起 `last_error_json` 含 `batches[]`（`batchIndex`、`batchId`、`stage`、`code`、`at`、`errors[]`），按批次保留；顶层 `code`/`errors` 兼容旧读取。只存字段路径/错误码/参数，不存 AI 正文、聊天、Key |
 | created_at / updated_at | 毫秒 |
 
 #### ai_job_batches

@@ -55,6 +55,9 @@ export function importAnalysisResult({
       recordJobFailure(db, validation.job.id, {
         code: validation.errors[0]?.code ?? 'IMPORT_INVALID',
         errors: validation.errors,
+        batchIndex: validation.batchIndex ?? null,
+        batchId: validation.batch?.batchId ?? null,
+        stage: 'import',
         now
       });
     }
@@ -69,6 +72,11 @@ export function importAnalysisResult({
     });
   }
   if (validation.action === 'duplicate') {
+    // The scope already has this exact validated result; any stored failure for
+    // the same batch is stale and must not keep the job looking broken.
+    if (validation.job?.id) {
+      clearJobFailure(db, validation.job.id, {now, batchIndex: validation.batchIndex ?? null});
+    }
     const duplicate = getResult(db, validation.target.duplicate.id, {includeJson: true});
     return {
       duplicate: true,
@@ -142,7 +150,9 @@ export function importAnalysisResult({
         now
       });
     }
-    clearJobFailure(db, job.id, {now});
+    // Only this batch's failure is resolved. A concurrent sibling success must
+    // not erase the real reason another batch failed.
+    clearJobFailure(db, job.id, {now, batchIndex: validation.batchIndex ?? null});
     recomputeSessionAiStatus(db, job.sessionId, {setSessionAiStatus, listJobs, now});
     return {duplicate: false, result: getResult(db, resultId, {includeJson: true})};
   });

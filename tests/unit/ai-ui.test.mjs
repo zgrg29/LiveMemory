@@ -175,6 +175,44 @@ test('the unified AI centre has complete Chinese, Japanese and English copy', ()
   }
 });
 
+test('memory failures expose batch diagnostics without rendering raw model output', () => {
+  const source = read('src/web/js/pages/ai.js');
+  assert.ok(source.includes('technicalDetailLines'), 'missing technical detail builder');
+  assert.ok(source.includes('error.errors'), 'field-level errors are not rendered');
+  assert.ok(source.includes('batchErrors'), 'per-batch failures are not rendered');
+  assert.ok(source.includes('suggestedAction'), 'recovery suggestion is not rendered');
+  assert.ok(source.includes('whiteSpace'), 'technical details must preserve line breaks');
+  assert.doesNotMatch(source, /innerHTML/, 'technical details must not be HTML');
+  const report = read('src/web/js/pages/ai-report.js');
+  for (const key of [
+    'ai.report.longTermTotal',
+    'ai.report.longTermProcessed',
+    'ai.report.longTermSemantic',
+    'ai.report.longTermObjectiveLabel',
+    'ai.report.longTermPending',
+    'ai.report.longTermFailed'
+  ]) {
+    assert.ok(report.includes(key), `report missing ${key}`);
+  }
+  for (const locale of ['zh-CN', 'ja', 'en']) {
+    const dict = JSON.parse(read(`src/web/i18n/${locale}.json`));
+    assert.equal(typeof dict.ai.center.reason.AI_IMPORT_INVALID, 'string');
+    assert.ok(dict.ai.center.reason.AI_IMPORT_INVALID.length > 0);
+    assert.equal(typeof dict.ai.center.reason.unknown, 'string');
+    for (const key of ['code', 'stage', 'job', 'batch', 'failedBatches', 'fields', 'recoverable', 'suggestedAction']) {
+      const node = key === 'suggestedAction' ? dict.ai.center.errorMeta.action : dict.ai.center.errorMeta[key];
+      assert.equal(typeof node, 'string', `${locale} missing errorMeta.${key}`);
+    }
+    assert.equal(typeof dict.ai.center.completeMemoryStats, 'string');
+    assert.equal(typeof dict.ai.center.partialMemoryStats, 'string');
+    assert.match(dict.ai.center.completeMemoryStats, /\{processed\}/);
+    assert.match(dict.ai.center.partialMemoryStats, /\{pending\}/);
+  }
+  const zh = JSON.parse(read('src/web/i18n/zh-CN.json'));
+  assert.match(zh.ai.v13.run.partial, /单场报告已完成/);
+  assert.match(zh.ai.v13.run.partial, /长期画像/);
+});
+
 test('the history and report surfaces still read saved analyses without a manual import UI', () => {
   const source = read('src/web/js/pages/history.js');
   assert.ok(source.includes('/api/ai/sessions/'));

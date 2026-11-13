@@ -1,5 +1,10 @@
 import {join} from 'node:path';
-import {getJob, listJobBatches, setJobUsage} from '../../storage/repositories/ai-jobs.mjs';
+import {
+  getJob,
+  listJobBatches,
+  recordJobFailure,
+  setJobUsage
+} from '../../storage/repositories/ai-jobs.mjs';
 import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
 import {latestResultForScope, listResults} from '../../storage/repositories/ai-results.mjs';
 import {getSession} from '../../storage/repositories/sessions.mjs';
@@ -45,7 +50,6 @@ import {
 } from './prompts.mjs';
 import {
   assembleMemoryCompact,
-  mergeMemorySupplement,
   assembleSessionAnswer,
   assembleSessionAggregateAnswer
 } from './compact.mjs';
@@ -129,6 +133,83 @@ function emptyAttemptStats() {
     retried: 0,
     usageUnknown: 0
   };
+}
+
+/**
+ * Requests belong to exactly one child job. Session and memory jobs are
+ * separate rows with separate usage; a task-level cumulative total must never
+ * be written into both rows, otherwise both display a bill that includes the
+ * other half.
+ */
+function jobIdForRequestKind(entry, kind) {
+  const value = String(kind ?? '');
+  if (value.startsWith('memory')) return entry?.memoryJobId ?? null;
+  return entry?.sessionJobId ?? null;
+}
+
+function sumUsageValues(values) {
+  const list = (values ?? []).filter((value) => value && typeof value === 'object');
+  if (list.length === 0) return null;
+  const total = {inputTokens: 0, outputTokens: 0, requests: 0, cost: null};
+  let costAmount = 0;
+  let costCurrency = null;
+  let costKnown = true;
+  for (const usage of list) {
+    total.inputTokens += Number(usage.inputTokens ?? 0);
+    total.outputTokens += Number(usage.outputTokens ?? 0);
+    total.requests += Number(usage.requests ?? 0);
+    const cost = usage.cost;
+    if (!cost || !Number.isFinite(Number(cost.amount)) || !cost.currency) {
+      // Unknown is not zero: if any child job has no reliable cost, the task
+      // total is unknown rather than a misleading partial amount.
+      costKnown = false;
+      continue;
+    }
+    if (costCurrency && cost.currency !== costCurrency) {
+      costKnown = false;
+      continue;
+    }
+    costCurrency = cost.currency;
+    costAmount += Number(cost.amount);
+  }
+  total.cost = costKnown && costCurrency
+    ? {
+      currency: costCurrency,
+      amount: costAmount,
+      inputTokens: total.inputTokens,
+      outputTokens: total.outputTokens,
+      basis: 'sum_of_jobs'
+    }
+    : null;
+  return total;
+}
+
+function capParams(params) {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
+  const out = {};
+  for (const [key, value] of Object.entries(params).slice(0, 12)) {
+    if (typeof value === 'string') out[key] = value.slice(0, 160);
+    else if (typeof value === 'number' || typeof value === 'boolean' || value === null) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Field-level errors, capped and stripped of anything that is not diagnostic. */
+function extractValidationErrors(error, {limit = 20} = {}) {
+  const source = Array.isArray(error?.details?.errors)
+    ? error.details.errors
+    : (Array.isArray(error?.errors) ? error.errors : []);
+  return source.slice(0, limit).map((item) => ({
+    path: typeof item?.path === 'string' ? item.path.slice(0, 300) : '',
+    code: typeof item?.code === 'string' ? item.code.slice(0, 80) : 'UNKNOWN',
+    params: capParams(item?.params)
+  }));
+}
+
+function describeValidationErrors(errors, {limit = 3} = {}) {
+  return (errors ?? []).slice(0, limit)
+    .map((item) => `${item.path || '(root)'}:${item.code}`)
+    .join(', ');
 }
 
 function providerFromConfig(config, {responseMode = null} = {}) {
@@ -398,11 +479,23 @@ export class AnalysisRunner {
   launch({sessionId, provider, mode, resume}) {
     const controller = new AbortController();
     const previous = this.state.get(sessionId);
+    // Rehydrate per-job usage from the database after a restart. A resumed task
+    // must keep adding new requests to the right child job instead of copying a
+    // task-level total into both jobs.
+    const usageByJob = {...(previous?.usageByJob ?? {})};
+    for (const jobId of [previous?.sessionJobId, previous?.memoryJobId]) {
+      if (!jobId || usageByJob[jobId]) continue;
+      const job = getJob(this.db, jobId);
+      if (job?.usage) usageByJob[jobId] = job.usage;
+    }
     this.state.set(sessionId, {
       status: 'running',
       taskStartedAt: this.now(),
       taskPausedAt: null,
       currentRequest: null,
+      usageByJob,
+      usage: sumUsageValues(Object.values(usageByJob)),
+      usageAttribution: 'per_job',
       attemptStats: resume
         ? (previous?.attemptStats ?? emptyAttemptStats())
         : emptyAttemptStats()
@@ -550,6 +643,11 @@ export class AnalysisRunner {
       sessionJob: sessionStatus,
       memoryJob: memoryStatus,
       usage: entry.usage ?? null,
+      usageByJob: {
+        session: entry.sessionJobId ? (entry.usageByJob?.[entry.sessionJobId] ?? sessionJob?.usage ?? null) : null,
+        memory: entry.memoryJobId ? (entry.usageByJob?.[entry.memoryJobId] ?? memoryJob?.usage ?? null) : null
+      },
+      usageAttribution: entry.usageAttribution ?? 'per_job',
       usageKnown: entry.usage !== null && entry.usage !== undefined,
       usageUnknownAttempts: Number(attemptStats.usageUnknown ?? 0),
       estimatedCost: entry.estimatedCost ?? null,
@@ -557,6 +655,7 @@ export class AnalysisRunner {
       attemptStats,
       currentRequest,
       lastRequest: entry.lastRequest ?? null,
+      batchErrors: memoryStatus?.batchErrors ?? sessionStatus?.batchErrors ?? [],
       requestMode: currentRequest?.mode ?? entry.lastRequest?.mode ?? entry.responseMode ?? null,
       retrying: currentRequest?.retrying === true,
       outputReceived: currentRequest?.receivedOutput === true,
@@ -724,6 +823,45 @@ export class AnalysisRunner {
     });
   }
 
+  /**
+   * Attach the batch identity to an error and persist a per-batch failure.
+   *
+   * The job-level `last_error_json` keeps one entry per batch, so a sibling
+   * batch that succeeds later clears only its own entry. This is what keeps
+   * "batch 2 failed, batches 1/3/4 succeeded" diagnosable after concurrency and
+   * after a restart.
+   */
+  #recordBatchFailure(job, batch, stage, error, sessionId = null) {
+    if (error && typeof error === 'object') {
+      if (error.jobId === undefined || error.jobId === null) error.jobId = job?.id ?? null;
+      if (error.batchIndex === undefined || error.batchIndex === null) {
+        error.batchIndex = batch?.batchIndex ?? null;
+      }
+      if (error.batchId === undefined || error.batchId === null) error.batchId = batch?.batchId ?? null;
+      if (!error.stage) error.stage = stage ?? null;
+    }
+    if (!job?.id) return error;
+    try {
+      recordJobFailure(this.db, job.id, {
+        code: error?.code ?? 'ANALYSIS_FAILED',
+        errors: extractValidationErrors(error),
+        batchIndex: error?.batchIndex ?? null,
+        batchId: error?.batchId ?? null,
+        stage: error?.stage ?? stage ?? null,
+        now: this.now()
+      });
+    } catch (dbError) {
+      this.logger?.warn?.({
+        event: 'ai.analysis.batch_failure.persist_failed',
+        sessionId,
+        jobId: job.id,
+        batchIndex: batch?.batchIndex ?? null,
+        code: dbError?.code ?? 'UNKNOWN'
+      });
+    }
+    return error;
+  }
+
   async run(context, {resume}) {
     const {sessionId, provider, mode, signal} = context;
     try {
@@ -799,12 +937,16 @@ export class AnalysisRunner {
 
   fail(context, error) {
     const code = error?.code ?? 'ANALYSIS_FAILED';
+    const entry = this.state.get(context.sessionId);
+    const fieldErrors = extractValidationErrors(error);
     const detail = error?.detail
+      ?? (fieldErrors.length > 0 ? describeValidationErrors(fieldErrors, {limit: 5}) : null)
       ?? (error instanceof AnalysisPermissionError ? JSON.stringify(error.details) : null)
       ?? String(error?.message ?? '').slice(0, 300);
-    const entry = this.state.get(context.sessionId);
     const sessionJob = entry?.sessionJobId ? getJob(this.db, entry.sessionJobId) : null;
     const sessionStatus = sessionJob ? computeJobStatus(this.db, sessionJob) : null;
+    const memoryJob = entry?.memoryJobId ? getJob(this.db, entry.memoryJobId) : null;
+    const memoryStatus = memoryJob ? computeJobStatus(this.db, memoryJob) : null;
     const sessionDone = entry?.sessionReportDone === true || Boolean(sessionStatus?.complete);
     const actionRequired = needsUserAction(error);
     const uncertainBilling = code === 'PROVIDER_TIMEOUT'
@@ -812,6 +954,12 @@ export class AnalysisRunner {
     const detailWithUncertainty = uncertainBilling
       ? `${detail ?? 'request-timeout'}; the provider may have processed this request, so resume retries only the unfinished batch`
       : detail;
+    const jobId = error?.jobId ?? entry?.memoryJobId ?? entry?.sessionJobId ?? null;
+    const batchIndex = Number.isInteger(Number(error?.batchIndex)) ? Number(error.batchIndex) : null;
+    const batchId = error?.batchId ?? null;
+    const stage = error?.stage ?? entry?.stage ?? null;
+    const recoverable = (actionRequired || Boolean(entry?.sessionJobId || entry?.memoryJobId))
+      && code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER';
     this.state.set(context.sessionId, {
       // A successful session report makes a later memory failure "partial"; a
       // memory-only task that fails stays "failed" even though its already
@@ -821,6 +969,16 @@ export class AnalysisRunner {
       error: {
         code,
         detail: detailWithUncertainty,
+        stage,
+        jobId,
+        batchId,
+        batchIndex,
+        // Exact field-level diagnostics stay attached to the task status so the
+        // console can show why an answer was rejected. The model's raw answer
+        // and chat text are never included.
+        errors: fieldErrors,
+        recoverable,
+        suggestedAction: recoverable ? 'resume' : 'check-provider',
         kind: error?.kind ?? null,
         httpStatus: error?.status ?? null,
         retryAfterMs: error?.retryAfterMs ?? null,
@@ -832,6 +990,7 @@ export class AnalysisRunner {
       },
       sessionReportDone: sessionDone,
       memoryDone: false,
+      batchErrors: memoryStatus?.batchErrors ?? sessionStatus?.batchErrors ?? [],
       completedAt: this.now(),
       currentRequest: null
     });
@@ -842,8 +1001,15 @@ export class AnalysisRunner {
       provider: context.provider?.providerId ?? null,
       model: context.provider?.modelId ?? null,
       code,
+      stage,
+      jobId,
+      batchId,
+      batchIndex,
       detail: detailWithUncertainty,
+      validationErrorCount: fieldErrors.length,
+      validationErrorCodes: fieldErrors.slice(0, 8).map((item) => item.code),
       actionRequired,
+      recoverable,
       uncertainBilling,
       errorKind: error?.kind ?? null,
       retryAfterMs: error?.retryAfterMs ?? null,
@@ -994,7 +1160,6 @@ export class AnalysisRunner {
           completed += 1;
           const batchMs = this.now() - batchStartedAt;
           const current = this.state.get(sessionId);
-          const updated = getJob(this.db, job.id);
           this.state.set(sessionId, {
             stage: 'session_batch_done',
             sessionBatchIndex: completed,
@@ -1005,7 +1170,6 @@ export class AnalysisRunner {
             activeBatches: active,
             batchDurationMsTotal: Number(current?.batchDurationMsTotal ?? 0) + batchMs,
             batchSamples: Number(current?.batchSamples ?? 0) + 1,
-            usage: updated?.usage ?? null,
             lastProvider: generated.providerId,
             lastModel: generated.model
           });
@@ -1019,6 +1183,8 @@ export class AnalysisRunner {
             durationMs: batchMs,
             duplicate: outcome.duplicate
           });
+        } catch (error) {
+          throw this.#recordBatchFailure(job, batch, 'session_analyzing', error, sessionId);
         } finally {
           active = Math.max(0, active - 1);
           const current = this.state.get(sessionId);
@@ -1039,7 +1205,11 @@ export class AnalysisRunner {
 
     const final = latestResultForScope(this.db, job.id, 'final');
     if (!final && total > 1) {
-      await this.#runSessionAggregate(context, job);
+      try {
+        await this.#runSessionAggregate(context, job);
+      } catch (error) {
+        throw this.#recordBatchFailure(job, null, 'session_aggregating', error, sessionId);
+      }
     } else if (!final && total === 1) {
       const single = latestResultForScope(this.db, job.id, 'batch:1');
       if (!single) throw Object.assign(new Error('SESSION_INCOMPLETE'), {code: 'ANALYSIS_INCOMPLETE'});
@@ -1373,7 +1543,6 @@ export class AnalysisRunner {
                 activeBatches: active,
                 batchDurationMsTotal: Number(current?.batchDurationMsTotal ?? 0) + batchMs,
                 batchSamples: Number(current?.batchSamples ?? 0) + 1,
-                usage: updated?.usage ?? null,
                 memoryDone: computeJobStatus(this.db, updated).complete
               });
               this.logger?.info?.({
@@ -1386,6 +1555,8 @@ export class AnalysisRunner {
                 durationMs: batchMs,
                 duplicate: outcome.duplicate
               });
+            } catch (error) {
+              throw this.#recordBatchFailure(job, batch, 'memory_analyzing', error, sessionId);
             } finally {
               active = Math.max(0, active - 1);
               const current = this.state.get(sessionId);
@@ -1411,11 +1582,70 @@ export class AnalysisRunner {
   }
 
   async generateMemoryAnswer({context, prompt, batchIndex = null, stage = 'memory_analyzing', outputTokens = 6000}) {
+    const entry = this.state.get(context.sessionId);
+    const jobId = entry?.memoryJobId ?? null;
+    const batchId = prompt.manifest?.batch?.batch_id ?? null;
     const budgetFor = (sourcePrompt) => resolveOutputTokens({
       desired: outputTokens,
       inputTokens: sourcePrompt?.estimatedTokens ?? 0,
       contextLength: context.provider?.contextLength ?? null
     });
+    const missingIssues = (missing) => (missing ?? []).map((ref) => ({
+      path: 'viewers',
+      code: 'MEMORY_VIEWER_UPDATE_MISSING',
+      params: {ref}
+    }));
+    const invalidAnswer = (errors, message) => Object.assign(new Error(message ?? 'MEMORY_IMPORT_INVALID'), {
+      code: 'AI_IMPORT_INVALID',
+      details: {errors},
+      stage: 'validation',
+      jobId,
+      batchId,
+      batchIndex
+    });
+    /**
+     * One answer is only usable after BOTH steps:
+     *   1. compact refs assemble to program-owned stable ids;
+     *   2. the assembled Schema 1.3.0 result passes the ordinary importer
+     *      validation (schema, identity, evidence ownership, coverage, enums).
+     * A complete ref list is not proof of a valid answer.
+     */
+    const evaluate = (content) => {
+      const answer = extractJsonObject(content);
+      if (!answer) {
+        return {
+          assembled: {ok: false, issues: [{path: '', code: 'AUTO_INVALID_JSON'}], missing: [], ignoredFields: []},
+          validation: {ok: false, errors: [{path: '', code: 'AUTO_INVALID_JSON'}]}
+        };
+      }
+      const assembled = assembleMemoryCompact({
+        answer,
+        manifest: prompt.manifest,
+        refs: prompt.refs
+      });
+      if (assembled.ignoredFields?.length > 0) {
+        // Field names only. This proves the model tried to contribute identity
+        // data without ever logging its value or the raw answer.
+        this.logger?.warn?.({
+          event: 'ai.analysis.memory.identity_fields_ignored',
+          sessionId: context.sessionId,
+          jobId,
+          batchIndex,
+          fields: assembled.ignoredFields
+        });
+      }
+      if (!assembled.ok) {
+        return {
+          assembled,
+          validation: {
+            ok: false,
+            errors: [...(assembled.issues ?? []), ...missingIssues(assembled.missing)]
+          }
+        };
+      }
+      return {assembled, validation: this.validate(JSON.stringify(assembled.result))};
+    };
+
     const generated = await this.requestOnce({
       context,
       prompt,
@@ -1425,65 +1655,33 @@ export class AnalysisRunner {
       outputTokens: budgetFor(prompt)
     });
     this.#assertUsableOutput(generated);
-    const object = extractJsonObject(generated.content);
-    let answer = object;
-    let assembled = assembleMemoryCompact({
-      answer,
-      manifest: prompt.manifest,
-      refs: prompt.refs
-    });
-    if (assembled.ok) {
-      return {...generated, text: JSON.stringify(assembled.result)};
+    let evaluated = evaluate(generated.content);
+    if (evaluated.validation.ok) {
+      return {...generated, text: JSON.stringify(evaluated.validation.sanitized)};
     }
-    // One bounded targeted supplement for missing refs. Unknown/duplicate refs
-    // are not "repaired" by guessing; they go through the normal error path.
-    if (assembled.missing?.length > 0) {
-      const targeted = buildTargetedMemoryPrompt({prompt, missingRefs: assembled.missing});
-      let supplement;
-      try {
-        supplement = await this.requestOnce({
-          context,
-          prompt: targeted,
-          kind: 'memory-targeted',
-          batchIndex,
-          stage,
-          outputTokens: Math.min(3000, budgetFor(targeted))
-        });
-      } catch {
-        supplement = null;
-      }
-      if (supplement) {
-        const merged = mergeMemorySupplement({
-          answer,
-          supplement: extractJsonObject(supplement.content),
-          refs: prompt.refs,
-          missingRefs: assembled.missing
-        });
-        if (merged.ok) {
-          assembled = assembleMemoryCompact({
-            answer: merged.answer,
-            manifest: prompt.manifest,
-            refs: prompt.refs
-          });
-        }
-      }
-    }
-    if (!assembled.ok) {
-      throw Object.assign(new Error('MEMORY_COVERAGE_INCOMPLETE'), {
-        code: 'AUTO_VIEWER_COVERAGE_INCOMPLETE',
-        detail: assembled.missing?.length
-          ? `missing refs: ${assembled.missing.join(', ')}`
-          : (assembled.issues?.[0]?.code ?? 'memory answer invalid')
+
+    // Exactly one bounded repair request, whether the first answer had missing
+    // refs, unknown fields, illegal enums or invalid evidence. If it still
+    // fails, the batch stops and stays resumable; nothing invalid is imported.
+    const outputBudget = budgetFor(prompt);
+    const repairLimit = this.#maxRequestInputTokens(context.provider, outputBudget);
+    const errorsForRepair = evaluated.validation.errors ?? [];
+    const onlyMissingRefs = !evaluated.assembled.ok
+      && (evaluated.assembled.issues ?? []).length === 0
+      && (evaluated.assembled.missing ?? []).length > 0;
+    let repairPrompt;
+    if (onlyMissingRefs) {
+      // Targeted supplement: only the missing viewers and their excerpts, not a
+      // copy of the whole batch.
+      repairPrompt = buildTargetedMemoryPrompt({
+        prompt,
+        missingRefs: evaluated.assembled.missing
       });
-    }
-    let validation = this.validate(JSON.stringify(assembled.result));
-    if (!validation.ok) {
-      const outputTokens = budgetFor(prompt);
-      const repairLimit = this.#maxRequestInputTokens(context.provider, outputTokens);
+    } else {
       const repair = buildRepairMessages({
         prompt,
         previousText: generated.content,
-        errors: validation.errors,
+        errors: errorsForRepair,
         locale: prompt.locale,
         maxInputTokens: repairLimit
       });
@@ -1502,40 +1700,49 @@ export class AnalysisRunner {
           code: 'ANALYSIS_REPAIR_TOO_LARGE',
           detail: `estimated ${repair.estimatedInputTokens} input tokens, limit ${repairLimit}`,
           estimatedTokens: repair.estimatedInputTokens,
-          limit: repairLimit
+          limit: repairLimit,
+          stage: 'validation',
+          jobId,
+          batchId,
+          batchIndex
         });
       }
-      const repaired = await this.requestOnce({
-        context,
-        prompt: {...prompt, messages: repair.messages, estimatedTokens: repair.estimatedInputTokens},
-        kind: 'memory-repair',
-        batchIndex,
-        stage,
-        outputTokens
-      });
-      this.#assertUsableOutput(repaired);
-      const repairedAnswer = extractJsonObject(repaired.content);
-      const repairedAssembled = assembleMemoryCompact({
-        answer: repairedAnswer,
-        manifest: prompt.manifest,
-        refs: prompt.refs
-      });
-      if (!repairedAssembled.ok) {
-        throw Object.assign(new Error('MEMORY_SCHEMA_INVALID'), {
-          code: 'AUTO_SCHEMA_INVALID',
-          detail: repairedAssembled.issues?.[0]?.code ?? 'memory repair invalid'
-        });
-      }
-      assembled = repairedAssembled;
-      validation = this.validate(JSON.stringify(assembled.result));
+      repairPrompt = {
+        ...prompt,
+        messages: repair.messages,
+        estimatedTokens: repair.estimatedInputTokens
+      };
     }
-    if (!validation.ok) {
-      throw Object.assign(new Error('MEMORY_SCHEMA_INVALID'), {
-        code: 'AUTO_SCHEMA_INVALID',
-        detail: validation.errors?.[0]?.code ?? 'memory validation failed'
-      });
+    this.logger?.info?.({
+      event: 'ai.analysis.memory.repair',
+      sessionId: context.sessionId,
+      jobId,
+      batchIndex,
+      targeted: onlyMissingRefs,
+      errorCodes: errorsForRepair.slice(0, 8).map((item) => item.code)
+    });
+    const repaired = await this.requestOnce({
+      context,
+      prompt: repairPrompt,
+      kind: 'memory-repair',
+      batchIndex,
+      stage,
+      outputTokens: onlyMissingRefs
+        ? Math.min(3000, budgetFor(repairPrompt))
+        : outputBudget
+    });
+    this.#assertUsableOutput(repaired);
+    evaluated = evaluate(repaired.content);
+    if (!evaluated.assembled.ok) {
+      throw invalidAnswer(
+        evaluated.validation.errors,
+        'memory repair did not produce a complete compact answer'
+      );
     }
-    return {...generated, text: JSON.stringify(validation.sanitized)};
+    if (!evaluated.validation.ok) {
+      throw invalidAnswer(evaluated.validation.errors, 'memory repair failed validation');
+    }
+    return {...repaired, text: JSON.stringify(evaluated.validation.sanitized)};
   }
 
   #assertUsableOutput(generated) {
@@ -1771,21 +1978,30 @@ export class AnalysisRunner {
         }), {signal});
         const usage = result.usage ?? null;
         const entry = this.state.get(context.sessionId);
-        const nextUsage = usage ? addUsage(entry?.usage, usage, provider.pricing) : (entry?.usage ?? null);
         if (usage) {
+          // Attribute this request to the child job that actually owns it. The
+          // previous code wrote the cumulative task total into the memory job as
+          // soon as it existed, so session and memory both displayed a request
+          // count and token total that included the other half.
+          const targetJobId = jobIdForRequestKind(entry, kind);
+          const usageByJob = {...(entry?.usageByJob ?? {})};
+          let jobUsage = null;
+          if (targetJobId) {
+            jobUsage = addUsage(entry?.usageByJob?.[targetJobId], usage, provider.pricing);
+            usageByJob[targetJobId] = jobUsage;
+          }
+          const totalUsage = sumUsageValues(Object.values(usageByJob)) ?? (entry?.usage ?? null);
           this.state.set(context.sessionId, {
-            usage: nextUsage,
+            usage: totalUsage,
+            usageByJob,
+            usageAttribution: 'per_job',
             lastProvider: result.providerId,
             lastModel: result.model,
             lastRoutedProvider: result.routedProvider ?? null,
             responseMode: result.responseMode ?? mode
           });
-          if (entry?.memoryJobId) {
-            const job = getJob(this.db, entry.memoryJobId);
-            if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
-          } else if (entry?.sessionJobId) {
-            const job = getJob(this.db, entry.sessionJobId);
-            if (job) setJobUsage(this.db, job.id, nextUsage, {now: this.now()});
+          if (targetJobId && jobUsage) {
+            setJobUsage(this.db, targetJobId, jobUsage, {now: this.now()});
           }
         }
         // A provider that ignores `stream` and returns JSON is handled by the

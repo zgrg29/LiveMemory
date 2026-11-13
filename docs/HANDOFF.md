@@ -1,10 +1,73 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-12 · v0.13.2 观众身份专项审计 · schema 13 · 结果 Schema 1.3.0
+本轮：2026-11-13 · v0.13.2 AI 分析可靠性、长期画像语言与错误恢复 · schema 13 · 结果 Schema 1.3.0 · 提示词 v13.1
 
-> 完整审计：`docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。本轮**只读用户数据库**，未修改历史事件；未发真实付费 API 请求。
+> 本轮**未修改生产数据、未 Resume 真实失败任务、未调用真实付费 API、未干扰正在采集的直播、未替换运行中的 EXE**。全部验证使用 `tests/.tmp` 与 Mock Provider。
 
-## 0. 本轮（观众身份专项）
+## 0. 本轮（v0.13.2 AI 分析可靠性）
+
+### 0.1 核心修复
+
+- Memory 回答统一走「Compact 组装 → `validateAnalysisImport()` 完整校验 → 最多一次定向修复/精确错误修复 → 再校验 → 事务导入」。ref 覆盖完整不再绕过 Schema/身份/证据/枚举校验。
+- `assembleMemoryCompact()` 对 `memory` 只接受 `summary` / `summary_certainty` / `no_new_information` / `operations`；`viewer_id` 始终由本地映射最后注入；模型提供的身份/未知字段被丢弃并只记录字段名。
+- `fail()` 保留字段级错误、stage、job/batch id、恢复建议；`GET /api/ai/analyze/status` 提供 `error.errors`、`batchErrors`、`memoryJob.failedBatches`。
+- `ai_jobs.last_error_json` 增加 `batches[]`；导入成功只清除对应批次，其他并发批次失败保留；旧扁平格式兼容。
+- 长期画像 Provider 提示词改为当前运行时 `buildMemoryInstructions()` + 单一 Compact 契约；三语示例本地化，不再出现固定 `"locale": "en"`；`topic` 作为匹配键，续写时复用原值。
+- 事实规则明确 stated/inferred/uncertain、本人证据、禁止编造、允许 no_semantics。
+- 报告新增 `longTermProfiles.stats`；AI 中心显示已处理/语义/仅客观/未完成与真实错误详情。
+- usage 按 session/memory 子 Job 归属，任务总计由两者相加；修复/重试计入真实 usage。
+
+### 0.2 涉及文件
+
+- `src/ai/api/compact.mjs`、`src/ai/api/runner.mjs`、`src/ai/api/prompts.mjs`
+- `src/ai/prompts/split.mjs`、`src/ai/constants.mjs`
+- `src/ai/import/importer.mjs`、`src/ai/tasks/status.mjs`
+- `src/storage/repositories/ai-jobs.mjs`、`src/server/serializers.mjs`
+- `src/analytics/ai/report.mjs`、`src/web/js/pages/ai.js`、`src/web/js/pages/ai-report.js`
+- `src/web/i18n/{zh-CN,ja,en}.json`
+- 新增 `tests/unit/ai-compact-memory.test.mjs`、`tests/integration/ai-memory-reliability.test.mjs`；更新 `tests/unit/ai-ui.test.mjs`
+- 文档：STATUS、HANDOFF、ROADMAP、AI_CONTRACT、DATA_MODEL、TEST_PLAN、CHANGELOG、UI_DESIGN、PRIVACY_SECURITY、log。
+
+### 0.3 测试
+
+- **628 passed / 0 failed**（2026-11-13，约 120 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 覆盖 A–O 中的 A/B/C/D/E/F/G/H/I/J/K/L/M；N/O 由既有 schema 兼容/单场回归测试覆盖。
+- **未验证**：真实 Provider、真实浏览器 UI（沙箱禁止浏览器命名管道）、真实生产任务 Resume。
+
+### 0.3.1 历史英文事实与新日文画像并存的处理
+
+- 不自动翻译、覆盖或删除历史 `memory_facts`；事实的 `id`、`source_*`、证据关联与版本关系保持原样。
+- 现有画像页会按事实逐条展示 `topic`/`statement`；旧英文事实与新日文事实可能并存，这是历史真实状态，不应伪装成已统一。
+- 可选的安全处理（需用户逐条授权）：由用户在观众详情中人工复核后新增/更新事实，或用相同场次重新生成受控结果；程序不提供批量翻译。
+- 未来生成由任务 locale 决定；`topic` 续写时复用旧 topic，避免同一概念因翻译产生重复事实。
+- 历史英文事实的语义不会被自动改写；若需要语言统一，建议先备份再逐条核对，而不是批量脚本。
+
+### 0.3.2 失败模型回答暂存（只给方案，本轮未实现）
+
+审计建议保留“已付费但导入失败”的原始回答以避免再次付费。本轮**没有实现持久化**，原因与安全方案如下：
+
+- 持久化必须加密（复用本机凭据加密层）、有明确生命周期（例如仅保留到该批次成功或用户删除）、大小上限（例如单批 ≤ 2 MB）、自动清理与用户可见的隐私说明。
+- 不得进入普通日志、诊断包、配置 JSON、ZIP 或任何上传；不得发送到开发者服务器。
+- 读取/重新校验必须复用同一 `validateAnalysisImport()` 与事务导入，且仍受身份/证据/Schema 约束。
+- 更简单的替代方案：保留已通过校验的批次结果（当前行为），失败批次由用户决定是否 Resume；自动修复已把单次失败成本降到最多一次额外请求。
+- 若未来实现，建议新增独立的加密暂存目录与“仅本机、可一键清除”的设置项，并先做隐私评审；本轮不引入。
+
+### 0.4 生产失败任务的安全恢复步骤（需用户明确授权）
+
+场次 `ses_01M77TJXG9VP4VAGNSXY`（392 条消息、37 名可识别观众；单场报告完成；画像 1/3/4 成功、第 2 批失败、缺 10 人）：
+
+1. **先备份数据目录**（至少复制 `%LOCALAPPDATA%\LiveMemory` 到独立位置；不要在软件运行时直接复制 SQLite 主库，使用软件已有快照/退出后再复制）。
+2. 完全退出 LiveMemory，替换为新版本 EXE/源码构建；确认设置页「关于」的 buildId 与新版本一致。
+3. 打开 AI 分析中心，选择该场次；选择与失败任务**相同**的 Provider/区域/模型配置。
+4. 页面应显示失败批次与「查看技术详情」；确认错误属于可恢复的校验/Provider 错误，且 `canResume=true`。
+5. 点击「继续」。恢复只会处理未导入批次（第 2 批）；已完成批次、单场报告与 1/3/4 批事实不会重发。
+6. 若仍失败，技术详情会显示批次、字段路径与错误码；不要重复点击；把错误码/批次（不要发聊天原文或 Key）反馈。
+7. 恢复后的新事实使用当前 locale（日语）与 v13.1 提示词；旧英文事实保留。若需要统一语言，只能逐条人工复核/重新生成，程序不做批量翻译（见 §0.3.1）。
+8. 恢复完成前不要把任务标记为整体成功；UI 只有全部批次通过校验后才显示 complete。
+
+**注意**：旧任务创建于 v13 提示词时代，包内 `instructions.md` 仍是旧文件；新代码在发送 Provider 请求时使用当前运行时 instructions，所以第 2 批会使用新语言/事实规则。任务记录中的 `prompt_version` 仍是创建时的 `lm-prompt-v13-memory-ja`，这是历史事实，不篡改。
+
+## 0.5 上一轮（观众身份专项）
 
 ### 0.1 结论
 

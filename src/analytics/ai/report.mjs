@@ -169,9 +169,48 @@ function summarizeViewerProfiles(result, db, limit = 50) {
  * must still surface it when it exists, otherwise a user who ran both tasks sees
  * an empty "viewer profiles" card and concludes that memory was never written.
  */
+/**
+ * Explain long-term coverage without conflating "processed" with "has semantic
+ * facts". The old UI showed only `count` (active memory headers) and users
+ * reasonably read it as "27 viewers have a full AI profile", even when 9 of
+ * them had objective interaction history only and 10 were still pending.
+ */
+function memoryJobStats(db, session) {
+  const jobs = listJobs(db, {sessionId: session.id, limit: 50})
+    .filter((job) => Number(job.memoryViewersTotal ?? 0) > 0);
+  for (const job of jobs) {
+    const status = computeJobStatus(db, job);
+    const coverage = status?.memoryCoverage;
+    if (!coverage || Number(coverage.total ?? 0) <= 0) continue;
+    const failedBatches = Array.isArray(status.failedBatches) ? status.failedBatches : [];
+    let failed = 0;
+    if (failedBatches.length > 0) {
+      const placeholders = failedBatches.map(() => '?').join(', ');
+      failed = Number(db.prepare(`
+        SELECT COUNT(*) AS count
+          FROM ai_job_memory_viewers
+         WHERE job_id = ? AND batch_index IN (${placeholders})
+      `).get(String(job.id), ...failedBatches)?.count ?? 0);
+    }
+    return {
+      jobId: job.id,
+      status: status.status,
+      total: Number(coverage.total ?? 0),
+      processed: Number(coverage.covered ?? 0),
+      semantic: Number(coverage.semantic ?? 0),
+      objectiveOnly: Number(coverage.no_semantics ?? 0) + Number(coverage.objective_only ?? 0),
+      pending: Number(coverage.pending ?? 0),
+      failed,
+      failedBatches,
+      complete: coverage.complete === true
+    };
+  }
+  return null;
+}
+
 function summarizeLongTermProfiles(db, session, {limit = 50} = {}) {
   if (!session?.broadcaster_id) {
-    return {count: 0, items: [], reason: 'no_broadcaster'};
+    return {count: 0, items: [], reason: 'no_broadcaster', stats: null};
   }
   const rows = db.prepare(`
     SELECT vm.*, v.nickname
@@ -192,6 +231,7 @@ function summarizeLongTermProfiles(db, session, {limit = 50} = {}) {
   return {
     count: total,
     reason: total === 0 ? 'none' : null,
+    stats: memoryJobStats(db, session),
     items: rows.map((row) => {
       const facts = listFacts(db, row.id, {limit: 8});
       return {

@@ -1,8 +1,48 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-12（v0.13.2：构建可验证、分批预算、任务完成优先；观众身份专项审计；610 tests；EXE 已实跑验证 buildId）
+最后更新：2026-11-13（v0.13.2：长期画像校验/身份/语言/分批次诊断/统计与 usage 归属修复；628 tests；schema 13 不变）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.16 v0.13.2 AI 分析可靠性与长期画像语言修复（2026-11-13）
+
+完整的只读审计报告在上一轮交付中提供，**本轮不重复审计，只按实际代码修复并验证**。生产数据、正在采集的直播、正式 `LiveMemory.exe` 与真实付费 API 均未触碰；所有测试使用 `tests/.tmp` 隔离目录与 Mock Provider。
+
+### 0.16.1 已修复问题
+
+| # | 问题 | 根因 | 修复 | 验证 |
+| --- | --- | --- | --- | --- |
+| 1 | Compact ref 覆盖完整时绕过完整校验 | `generateMemoryAnswer()` 在 `assembleMemoryCompact().ok` 后立即返回，从未调用 `validateAnalysisImport()` | 统一为「组装 → 完整校验 → 最多一次修复 → 再校验 → 导入」；ref 覆盖不再等于合法 | A/B/C/D；`ai-memory-reliability` |
+| 2 | 模型可覆盖本地稳定 `viewer_id` | `assembleMemoryCompact()` 先写 `viewer_id` 再展开模型 `memory` 字段 | `memory` 四字段白名单；`viewer_id` 永远最后注入；身份/未知字段丢弃并记录字段名（不记录值） | E + `ai-compact-memory` 单元测试 |
+| 3 | `AI_IMPORT_INVALID` 诊断丢失 | Runner `fail()` 只读取 `error.detail`，未读取 `AppError.details.errors` | `fail()` 提取字段级错误、阶段、Job/Batch、可恢复性与建议；随状态与 `/api/ai/analyze/status` 返回 | B/G + HTTP 状态断言 |
+| 4 | 成功批次清除其他批次失败 | 导入成功调用无参 `clearJobFailure()`，清空整个 Job | `last_error_json.batches[]` 按批次保存；成功只清同批次；旧扁平失败仍兼容 | G/I + 并发/重启测试 |
+| 5 | 日语长期画像输出英文事实 | `memoryShape()` 固定英文示例与 `"locale": "en"`；memory 任务缺语言要求 | 三语本地化 Compact 示例；明确自然语言字段使用 locale；`topic` 保留稳定匹配键；Provider 请求由当前运行时 instructions 生成 | J + `ai-compact-memory` |
+| 6 | 旧 instructions 与 Compact 契约冲突 | 包内 `instructions.md` 同时含完整 Result 示例与 Compact 契约；Resume 继续发送旧文件 | Memory Provider 提示词改用当前 `buildMemoryInstructions()`，旧包只提供数据文件；单一 Compact 契约 | J + 单元测试传入旧 instructions 验证被忽略 |
+| 7 | 事实准确性规则不足 | 未明确区分 stated/inferred/uncertain、玩笑/引用/建议 | 三语 rules 明确：本人证据、推断不可写成事实、不得编造、不得为填满而造事实、no_semantics 合法 | J + 提示词单元测试 |
+| 8 | 统计口径误导 | 报告只显示 `longTermProfiles.count`（有记忆头的观众数） | 新增 `stats`：应处理/已处理/有语义/仅客观/未完成/失败批次涉及；AI 中心与报告显示分别统计 | G/K + 报告接口断言 |
+| 9 | 单场成功 + 画像失败显示笼统 | 已会标 `partial`，但缺少精确的长期画像进度与批次原因 | 状态 `partial` 保留；UI 显示「单场报告已完成，长期画像未完成」+ 已处理/未完成；错误显示真实原因与技术详情 | K |
+| 10 | usage 跨 Job 重复统计 | `requestOnce` 把任务累计 usage 写入 memory job（包含 session 部分） | 按请求 kind 归属子 Job；任务总计由子 Job 相加；修复/重试计入真实请求；任一子 Job 费用未知则总费用未知 | L |
+| 11 | 断点恢复可能重复付费 | 需验证完成批次、语义事实与客观记录不重复 | 现有 pending 过滤 + 幂等导入；新增重启 Resume 只补失败批次、重复提交不重复写事实的测试 | G/H/I |
+
+### 0.16.2 明确未做 / 边界
+
+- **不自动恢复生产任务**：`ses_01M77TJXG9VP4VAGNSXY` 未执行 Resume、未调用真实 API；步骤见 HANDOFF。
+- **未批量翻译历史英文事实**：已有英文 `memory_facts` 保留；未来生成使用当前 locale。处理建议见 HANDOFF。
+- **未保存失败模型原始回答**：该增强涉及加密、生命周期、大小上限与隐私影响，本轮只给出方案（HANDOFF §4），不持久化任何模型正文。
+- **历史重复 usage 未猜测修正**：旧版本已写入的 `usage_json` 保持原样；新任务按子 Job 归属。旧任务的展示可能仍包含历史重复值，字段中有说明。
+- **真实付费 API 未验证**：本机无 Key；本轮全部是 Mock Provider 的确定性验证，不是真实 Provider 验收。
+- **浏览器 UI 截图未完成**：本机 DSH 沙箱禁止浏览器命名管道/Mojo（`OpenProcess`/`platform_channel` 0x5），headless Edge 无法启动；UI 由静态断言、i18n 与 HTTP 状态/报告接口覆盖，不声称已做真实浏览器验收。
+- **生产数据库未修改**：没有迁移、没有读写 `%LOCALAPPDATA%\LiveMemory`。
+
+### 0.16.3 测试（本轮实测）
+
+- 全量：**628 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 120 秒）。
+- 新增：
+  - `tests/unit/ai-compact-memory.test.mjs`（7）：白名单/身份覆盖/非法操作保留给 Schema/旧 instructions 被忽略/三语示例与语言规则/Schema 无 viewer_id。
+  - `tests/integration/ai-memory-reliability.test.mjs`（10）：A 正常导入、B 完整 ref 但证据缺失、C 一次修复成功、D 修复仍失败可恢复、E 伪造 viewer_id、F 跨观众证据、G 四批并发仅第 2 批失败且错误不被清除、H 重启只补 b02、I 重复提交幂等、J 日语事实、K combined partial、L usage 归属、M 礼物-only 客观处理。
+  - `tests/unit/ai-ui.test.mjs` 新增：诊断/统计三语键、技术详情只渲染本地字段、无 HTML 注入。
+- 关键命令与结果见 HANDOFF §5。
+
 
 ## 0.15 v0.13.2 观众身份专项审计（2026-11-12）
 

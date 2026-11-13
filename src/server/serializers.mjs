@@ -153,9 +153,12 @@ export function serializeJob(row, status = null) {
         memoryViewersTotal: status.memoryViewersTotal ?? 0,
         memoryCoverage: status.memoryCoverage ?? null,
         memoryReady: status.memoryReady ?? true,
+        usage: status.usage ?? null,
         versions: status.versions,
         resultCount: status.resultCount,
-        latestError: status.latestError
+        latestError: status.latestError,
+        batchErrors: status.batchErrors ?? [],
+        failedBatches: status.failedBatches ?? []
       }
       : null
   };

@@ -573,3 +573,31 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 - 保存失败：旧配置不变，toast 显示原因。
 - 运行中的配置：保存/删除返回明确「正在被分析任务使用」。
 - 窄屏：三列网格自动换行；暗色/明亮沿用现有 tokens；三语文案齐全。
+
+### 7.16 v0.13.2 长期画像错误、统计与部分成功
+
+**失败状态（`failed` / `partial` / `needs_action`）**
+
+- 普通文案只显示本地化的一句话原因（`ai.center.reason.<CODE>`）；未知代码回退为 `ai.center.reason.unknown`（含代码），不再直接显示裸代码。
+- 「查看技术详情」为 `<details>`，只显示本地诊断字段，纯 `textContent` + `white-space: pre-wrap`：
+  - 错误代码、发生阶段、任务 ID、批次（index + batchId）、字段路径/错误码/参数；
+  - 每个失败批次一行（`failedBatches`）；
+  - 可恢复（是/否）与建议操作（继续 / 检查配置）。
+- 不显示模型原始回答、聊天正文、API Key、请求头或任何未处理内容。
+- `combined` 单场成功、画像失败：状态 `partial`，文案明确「单场报告已完成，长期画像未完成」，并显示已处理/未完成人数；不显示为整场失败。
+
+**完成统计**
+
+- `complete` 的长期画像显示：已处理 / 总数、有新增语义事实人数、仅客观互动人数。
+- 报告「长期观众画像」卡使用 `longTermProfiles.stats` 的 def-list：应处理、已成功处理、有新增语义事实、仅客观互动、尚未完成、失败批次涉及。
+- 旧任务没有 `stats` 时回退到 `longTermCount` 文案；不伪造统计。
+
+**usage**
+
+- 有 session + memory 两个 Job 时，统计区分别显示「单场报告用量」「长期画像用量」的请求数与输入/输出 token；总 Token/费用仍为任务合计。
+- 任一 Job 费用未知时，总费用不显示（不是 0）；未知用量文本为「用量未知」。
+
+**三语**
+
+- 新增键：`ai.center.reason.AI_IMPORT_INVALID`、`ai.center.reason.unknown`、`ai.center.errorMeta.*`、`ai.center.completeMemoryStats`、`ai.center.partialMemoryStats`、`ai.center.stats.sessionUsage|memoryUsage|requestsTokens`、`ai.report.longTerm{Total,Processed,Semantic,ObjectiveLabel,Pending,Failed}`。
+- 三份字典键、占位符完全一致；无 `innerHTML`、无 `alert()`。

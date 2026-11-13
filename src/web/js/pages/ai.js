@@ -493,7 +493,58 @@ export const aiPage = {
     function reasonText(code) {
       const key = `ai.center.reason.${code}`;
       const value = t(key);
-      return value === key ? String(code ?? '') : value;
+      return value === key ? t('ai.center.reason.unknown', {code: String(code ?? '')}) : value;
+    }
+
+    /**
+     * Technical diagnostics, assembled locally from the task status. It never
+     * includes the model's raw answer, chat text, API key or headers; only the
+     * stable error code, stage, job/batch identity and field paths.
+     */
+    function technicalDetailLines(current) {
+      const error = current?.error;
+      if (!error) return [];
+      const latest = current?.memoryJob?.latestError ?? current?.sessionJob?.latestError ?? null;
+      const fieldErrors = Array.isArray(error.errors) && error.errors.length > 0
+        ? error.errors
+        : (Array.isArray(latest?.errors) ? latest.errors : []);
+      const lines = [`${t('ai.center.errorMeta.code')}: ${error.code ?? latest?.code ?? '—'}`];
+      if (error.stage) lines.push(`${t('ai.center.errorMeta.stage')}: ${error.stage}`);
+      if (error.jobId) lines.push(`${t('ai.center.errorMeta.job')}: ${error.jobId}`);
+      if (error.batchIndex !== null && error.batchIndex !== undefined) {
+        lines.push(`${t('ai.center.errorMeta.batch')}: ${formatInteger(error.batchIndex, ctx.locale)}`
+          + (error.batchId ? ` (${error.batchId})` : ''));
+      } else if (error.batchId) {
+        lines.push(`${t('ai.center.errorMeta.batch')}: ${error.batchId}`);
+      }
+      if (fieldErrors.length > 0) {
+        lines.push(`${t('ai.center.errorMeta.fields')}:`);
+        for (const item of fieldErrors.slice(0, 12)) {
+          const params = item?.params && Object.keys(item.params).length > 0
+            ? ` ${JSON.stringify(item.params)}`
+            : '';
+          lines.push(`  ${item?.path || '(root)'}: ${item?.code ?? 'UNKNOWN'}${params}`);
+        }
+      }
+      if (Array.isArray(current.batchErrors) && current.batchErrors.length > 0) {
+        lines.push(`${t('ai.center.errorMeta.failedBatches')}:`);
+        for (const entry of current.batchErrors.slice(0, 8)) {
+          lines.push(`  ${t('ai.center.errorMeta.batch')} ${formatInteger(entry.batchIndex ?? 0, ctx.locale)}: ${entry.code ?? 'UNKNOWN'}`
+            + (entry.batchId ? ` (${entry.batchId})` : ''));
+          for (const item of (entry.errors ?? []).slice(0, 6)) {
+            lines.push(`    ${item?.path || '(root)'}: ${item?.code ?? 'UNKNOWN'}`);
+          }
+        }
+      }
+      lines.push(`${t('ai.center.errorMeta.recoverable')}: ${error.recoverable === true
+        ? t('ai.center.errorMeta.yes')
+        : t('ai.center.errorMeta.no')}`);
+      if (error.suggestedAction) {
+        lines.push(`${t('ai.center.errorMeta.action')}: ${error.suggestedAction === 'resume'
+          ? t('ai.center.errorMeta.actionResume')
+          : t('ai.center.errorMeta.actionCheck')}`);
+      }
+      return lines;
     }
 
     function renderProgress(current) {
@@ -679,6 +730,16 @@ export const aiPage = {
       } else if (Number(current?.usageUnknownAttempts ?? 0) > 0) {
         rows.push([t('ai.center.stats.usage'), t('ai.center.stats.usageUnknown')]);
       }
+      const perJob = current?.usageByJob;
+      if (perJob?.session && perJob?.memory) {
+        const usageLine = (usage) => t('ai.center.stats.requestsTokens', {
+          requests: formatInteger(usage.requests ?? 0, ctx.locale),
+          input: formatInteger(usage.inputTokens ?? 0, ctx.locale),
+          output: formatInteger(usage.outputTokens ?? 0, ctx.locale)
+        });
+        rows.push([t('ai.center.stats.sessionUsage'), usageLine(perJob.session)]);
+        rows.push([t('ai.center.stats.memoryUsage'), usageLine(perJob.memory)]);
+      }
       if (current?.estimatedRemainingMs !== null
         && current?.estimatedRemainingMs !== undefined
         && Number.isFinite(Number(current.estimatedRemainingMs))) {
@@ -729,17 +790,30 @@ export const aiPage = {
       errorText.textContent = '';
       errorDetailsText.textContent = '';
       statusText.className = 'auto-status';
+      const coverage = current.memoryJob?.memoryCoverage ?? null;
+      const showError = (message) => {
+        errorText.hidden = false;
+        errorText.textContent = message;
+        const lines = technicalDetailLines(current);
+        errorDetails.hidden = lines.length === 0;
+        errorDetailsText.textContent = lines.join('\n');
+        errorDetailsText.style.whiteSpace = 'pre-wrap';
+      };
       if (running) {
         statusText.textContent = t('ai.center.running');
       } else if (current.status === 'complete') {
         statusText.className = 'auto-status auto-status--success';
-        const coverage = current.memoryJob?.memoryCoverage;
         statusText.textContent = [
           t('ai.center.complete'),
           current.memoryDone && coverage?.total > 0
-            ? t('ai.center.completeMemory', {
-              covered: formatInteger(coverage.covered ?? 0, ctx.locale),
-              total: formatInteger(coverage.total ?? 0, ctx.locale)
+            ? t('ai.center.completeMemoryStats', {
+              processed: formatInteger(coverage.covered ?? 0, ctx.locale),
+              total: formatInteger(coverage.total ?? 0, ctx.locale),
+              semantic: formatInteger(coverage.semantic ?? 0, ctx.locale),
+              objective: formatInteger(
+                Number(coverage.no_semantics ?? 0) + Number(coverage.objective_only ?? 0),
+                ctx.locale
+              )
             })
             : null,
           current.memorySkipped
@@ -754,22 +828,22 @@ export const aiPage = {
         statusText.textContent = t('ai.v13.stage.paused');
       } else if (current.status === 'needs_action') {
         statusText.textContent = t('ai.center.needsAction');
-        errorText.hidden = false;
-        errorText.textContent = reasonText(current.error?.code);
-        errorDetails.hidden = !current.error?.detail;
-        errorDetailsText.textContent = current.error?.detail ?? '';
+        showError(reasonText(current.error?.code));
       } else if (current.status === 'partial') {
-        statusText.textContent = t('ai.v13.run.partial');
-        errorText.hidden = false;
-        errorText.textContent = reasonText(current.error?.code);
-        errorDetails.hidden = !current.error?.detail;
-        errorDetailsText.textContent = current.error?.detail ?? '';
+        statusText.textContent = [
+          t('ai.v13.run.partial'),
+          coverage?.total > 0
+            ? t('ai.center.partialMemoryStats', {
+              processed: formatInteger(coverage.covered ?? 0, ctx.locale),
+              total: formatInteger(coverage.total ?? 0, ctx.locale),
+              pending: formatInteger(coverage.pending ?? 0, ctx.locale)
+            })
+            : null
+        ].filter(Boolean).join(' · ');
+        showError(reasonText(current.error?.code));
       } else {
         statusText.textContent = t('ai.center.failed');
-        errorText.hidden = false;
-        errorText.textContent = reasonText(current.error?.code);
-        errorDetails.hidden = !current.error?.detail;
-        errorDetailsText.textContent = current.error?.detail ?? '';
+        showError(reasonText(current.error?.code));
       }
       renderStats(current);
       if (!running) syncStartGate();

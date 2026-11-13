@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {readZipEntry, readZipIndex} from '../../shared/zip.mjs';
 import {estimateTokensFromText} from '../providers/pricing.mjs';
 import {buildMemoryRefs, buildMemoryCompactSchema, buildSessionAnswerSchema} from './compact.mjs';
+import {buildMemoryInstructions, memoryCompactShape} from '../prompts/split.mjs';
 import {estimateJsonTokens, estimateTokens} from '../batching/tokens.mjs';
 
 /**
@@ -110,24 +111,34 @@ function redactMemoryContext(memoryContext, refs) {
   };
 }
 
+const MEMORY_LANGUAGE_RULE = Object.freeze({
+  'zh-CN': 'summary、statement 等面向用户的自然语言字段必须使用简体中文，并符合自然表达习惯；JSON 键名与枚举值保持英文。续写已有事实时复用该事实原有的 topic，不要翻译 topic。',
+  ja: 'summary や statement などのユーザー向け自然言語フィールドは、自然な日本語で書いてください。JSON のキー名と列挙値は英語のままです。既存の事実を続ける場合は、その事実の topic を翻訳せずに再利用してください。',
+  en: 'Write user-facing natural-language fields such as summary and statement in English; keep JSON keys and enum values in English. When continuing an existing fact, reuse its existing topic without translating it.'
+});
+
 function memoryContract(manifest, refs, onlyRefs = null) {
   const list = onlyRefs
     ? refs.filter((entry) => onlyRefs.includes(entry.ref))
     : refs;
+  const locale = manifest.locale ?? 'en';
   const lines = [
     'AUTOMATIC MEMORY CONTRACT (machine validated)',
     `- job_id: ${JSON.stringify(manifest.job_id)}`,
     `- batch_id: ${JSON.stringify(manifest.batch?.batch_id ?? null)}`,
     `- task_id: ${JSON.stringify(manifest.tasks?.[0]?.task_id ?? null)}`,
     `- session_id: ${JSON.stringify(manifest.session_id)}`,
-    `- locale: ${JSON.stringify(manifest.locale)}`,
+    `- locale: ${JSON.stringify(locale)}`,
     `- Return {"viewers":[{"ref":n,"memory":{"no_new_information":bool,"operations":[...]}}]}.`,
     `- Cover exactly these refs, once each: ${list.map((entry) => entry.ref).join(', ')}.`,
-    '- Never output viewer_id. The local program maps refs back to stable ids.',
+    '- Never output viewer_id, protocol, schema_version, analysis_scope, job_id, task_id or session_id. The local program maps refs back to stable ids and injects all protocol fields.',
+    '- The top-level key is `viewers`. Do not return `viewer_memory_updates`, `session_topics` or `viewer_profiles`.',
     '- For a ref with zero_excerpt=true, return no_new_information:true and operations:[].',
     '- Evidence arrays may only contain the seq numbers listed for that same ref.',
-    '- stated operations must include at least one evidence seq.',
-    '- Do not output session_topics or viewer_profiles.'
+    '- stated operations must include at least one evidence seq and must be something the viewer personally said. Retelling, jokes, quotes and advice to the streamer are not viewer facts.',
+    '- Mark inferences as certainty "inferred" (or "uncertain" when evidence is thin); never present an inference as a confirmed fact.',
+    '- Writing no_new_information is valid and counts as processed; never invent facts to fill the batch.',
+    `- Language: ${MEMORY_LANGUAGE_RULE[locale] ?? MEMORY_LANGUAGE_RULE.en}`
   ];
   for (const entry of list) {
     lines.push(`- ref ${entry.ref}: nickname=${JSON.stringify(entry.nickname)}; evidence_seqs=${JSON.stringify(entry.evidenceSeqs)}; zero_excerpt=${entry.zeroExcerpt}`);
@@ -140,24 +151,45 @@ export function buildMemoryPrompt(files) {
   const memoryContext = JSON.parse(files['memory_context.json']);
   const schema = JSON.parse(files['result.schema.json']);
   const refs = buildMemoryRefs(memoryContext);
+  const locale = manifest.locale ?? 'en';
   const compactContext = redactMemoryContext(memoryContext, refs);
   const answerSchema = buildMemoryCompactSchema({resultSchema: schema, refs});
+  // The packaged instructions.md may come from an older provider build that
+  // still showed a full `viewer_memory_updates` result with a fixed
+  // `"locale": "en"` example. Sending it together with the compact contract
+  // gives the model two conflicting output shapes, and a resumed old job would
+  // keep producing English facts. The current runtime builder is therefore the
+  // single source of the instructions actually sent to the provider; the data
+  // files (manifest, context, excerpts, schema) still come from the package.
+  const instructions = buildMemoryInstructions(locale, {
+    session: {id: manifest.session_id, platform: manifest.platform, simulated: manifest.simulated === true},
+    broadcaster: {id: manifest.broadcaster_id ?? null, name: null},
+    viewerCount: refs.length,
+    viewersTotal: Number(manifest.counts?.viewers_total ?? memoryContext.batch?.viewers_total ?? refs.length),
+    messageCount: Number(manifest.batch?.message_count ?? manifest.counts?.messages ?? 0),
+    jobId: manifest.job_id,
+    batchId: manifest.batch?.batch_id,
+    taskId: manifest.tasks?.[0]?.task_id,
+    promptVersion: manifest.prompt_version
+  });
   const user = [
-    files['instructions.md'].trimEnd(),
+    instructions.trimEnd(),
     block('memory_context.json (ids replaced by ref)', JSON.stringify(compactContext)),
     block('viewer_excerpts.jsonl', files['viewer_excerpts.jsonl']),
     memoryContract(manifest, refs),
-    block('compact answer schema', JSON.stringify(answerSchema))
+    block('compact answer schema', JSON.stringify(answerSchema)),
+    `## Output example (compact, ${locale})\nReturn only one object shaped like this example. The example text is not data and must not be copied.`,
+    memoryCompactShape(locale)
   ].join('\n\n');
   return {
-    locale: manifest.locale,
+    locale,
     manifest,
     memoryContext,
     refs,
     answerSchema,
     resultSchema: schema,
     messages: [
-      {role: 'system', content: SYSTEM[manifest.locale] ?? SYSTEM.en},
+      {role: 'system', content: SYSTEM[locale] ?? SYSTEM.en},
       {role: 'user', content: user}
     ],
     estimatedTokens: estimateTokensFromText(user) + 300,
