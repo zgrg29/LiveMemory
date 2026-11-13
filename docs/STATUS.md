@@ -93,6 +93,7 @@
 - 真实任务副本回放（只读复制生产库+包，Mock Provider）：
   - 普通 Resume：1 次请求，仅批次 5 的 7 名 pending；complete 47/47。
   - 模拟真实 ref/seq 错误：initial + whole repair + viewer repair 共 3 次请求；complete 47/47，41 semantic/6 no_semantics/0 failed，未跨观众写入。
+- **正式 EXE**：`dist/LiveMemory.exe` 重建为 buildId `9b8daa7b2d1d` / commit `2df6052` / SHA-256 `9b3eea3e…`；asInvoker 测试副本 + 生产库/包只读副本 + Mock 实测 resume `aij_01M7963928KHJGNJTD64`：3 次请求后 complete 47/47、41 semantic、0 failed，批次 1–4 未重发。
 - 未验证：真实付费 API、真实生产任务 Resume、真实浏览器 UI（沙箱仍阻止浏览器命名管道）、UAC 双击。
 
 ## 0.15 v0.13.2 观众身份专项审计（2026-11-12）
@@ -661,18 +662,19 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 5. 构建结果（如实）
 
-- **2026-11-13 正式 EXE 已按用户授权重建并覆盖 `dist/LiveMemory.exe`**：`node scripts/build-windows.mjs`。
+- **2026-11-13 正式 EXE 已按用户授权重建并覆盖 `dist/LiveMemory.exe`**（观众级容错版本）：`node scripts/build-windows.mjs`。
   - 大小 **91.7 MB**
-  - SHA-256 `c827a609d56a0db7ed32d41871757cad7fc6a798c89588af8a24701df84c090a`
-  - commit `2b0ade6678b2f4e6a60a3fa6162426ec2de737c9`（短 `2b0ade6`）
-  - buildId `caece0818f11`，资源哈希 `caece0818f11566dbe75`
-  - builtAt 2026-11-13T00:33:30.336Z（08:33 +08）
+  - SHA-256 `9b3eea3eed365731a7d6f15b4ed0134cb66686e075c8b95910543b13a6f0f1b1`
+  - commit `2df60527bb608e0150e05b029ae41fb50a6f8c85`（短 `2df6052`）
+  - buildId `9b8daa7b2d1d`，资源哈希 `9b8daa7b2d1d5430b0d3`
+  - builtAt 2026-11-13T02:55:29.142Z（10:55:29 +08）
   - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
   - PE Manifest **requireAdministrator**（脚本断言通过；`readManifest` 复核）
-- **实际启动验证**：本会话非提升，复制同一二进制并把 manifest 临时改为 asInvoker 后启动；`/api/health` 返回 `buildId=caece0818f11`、`commit=2b0ade6`；`/api/bootstrap` 返回 `mode=packaged`、`verified=true`、schema 13、隔离数据目录。测试副本与临时数据目录已删除；正式 EXE 保留。
-- 旧正式 EXE 已备份到 `tests/.tmp/LiveMemory-pre-r5-backup.exe`（SHA-256 `aa3d4110…`，v0.13.2 `89bf47ac620e`），仅用于回滚，不提交。
-- **仍不能声称**：真实 UAC 双击、提升后的出站请求、真实付费 Provider 已完成验收。
-- 历史：v0.13.1（`ba917c52…` / 164 assets）与 2026-11-12 的 `89bf47ac620e` 已被本次构建取代；旧 EXE 仍可能存在于用户磁盘，必须用 buildId 判断。
+- **实际启动验证**：本会话非提升，复制同一二进制并把 manifest 临时改为 asInvoker 后启动；`/api/health` 返回 `buildId=9b8daa7b2d1d`、`commit=2df6052`；`/api/bootstrap` 返回 `mode=packaged`、`verified=true`、schema 13、隔离数据目录。
+- **真实任务副本 EXE 验证**：用生产库/包只读副本 + 本地 Mock Provider，在 asInvoker 测试副本中 resume `aij_01M7963928KHJGNJTD64`：模拟真实 ref/seq 错误，EXE 发出 3 次请求（initial + whole repair + viewer repair），最终 `complete` 47/47、41 semantic、0 failed；批次 1–4 未重发。测试副本与生产数据副本已删除；正式 EXE 保留。
+- 旧正式 EXE 已备份到 `tests/.tmp/LiveMemory-pre-r6-backup.exe`（SHA-256 `c827a609…`，buildId `caece0818f11`），仅用于回滚，不提交。
+- **仍不能声称**：真实 UAC 双击、提升后的出站请求、真实付费 Provider、生产任务 Resume 已完成验收。
+- 历史：v0.13.1（`ba917c52…`）、`89bf47ac620e`、`caece0818f11` 已被本次构建取代；旧 EXE 仍可能存在于用户磁盘，必须用 buildId 判断。
 
 ## 6. 未完成 / 未验证
 

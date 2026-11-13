@@ -11,6 +11,7 @@
 - **调度**：批次级校验失败不再停止后续批次（concurrency=1/4）；Provider/取消/数据库错误仍停止新调度。
 - **Resume/统计**：只请求 pending/failed 观众；coverage 增加 failed；partial 文案与报告统计区分未完成/失败。
 - **真实任务副本回放**：普通 Resume 1 次请求完成 47/47；模拟真实 ref/seq 错误 3 次请求完成 47/47、41 semantic、0 failed。
+- **正式 EXE（用户授权覆盖）**：dist/LiveMemory.exe 重建为 buildId 9b8daa7b2d1d、commit 2df6052、SHA-256 9b3eea3e…、91.7 MB、169 assets、Manifest equireAdministrator；生产库/包只读副本 + Mock 的 EXE Resume 实测 47/47。旧 EXE 备份在 	ests/.tmp。
 
 ### 验证
 

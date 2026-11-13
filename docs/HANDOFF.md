@@ -103,6 +103,7 @@
 - 新代码 `e67677a` 同条件全部 complete 37/37；缺证据/跨观众证据触发一次 repair；伪造 `viewer_id` 直接被本地映射覆盖。
 - 修复仍失败：精确显示 `MEMORY_EVIDENCE_REQUIRED`、stage=validation、batchIndex=2、`batchErrors=[2]`；重启 Resume 只重试 b02，最终 37/37。
 - 隔离 EXE（buildId `c51819b2f3f3`，requireAdministrator；asInvoker 测试副本）通过本地 Mock Provider 完成同样三项验收。之后用户明确授权覆盖正式 EXE：`dist/LiveMemory.exe` 已重建为 buildId `caece0818f11` / commit `2b0ade6` / SHA-256 `c827a609…`，Manifest 仍为 requireAdministrator；asInvoker 测试副本实际启动验证 `/api/health`、`/api/bootstrap` 返回同一 build，schema 13。旧 EXE 备份在 `tests/.tmp/LiveMemory-pre-r5-backup.exe`。
+- 2026-11-13 r6（观众级容错）：正式 EXE 再次重建为 buildId `9b8daa7b2d1d` / commit `2df6052` / SHA-256 `9b3eea3e…` / 91.7 MB / 169 assets / requireAdministrator。用生产库与 b05 包只读副本 + 本地 Mock Provider，在 asInvoker 测试副本中 resume `aij_01M7963928KHJGNJTD64`：模拟真实 ref/seq 错误，3 次请求（initial + whole repair + viewer repair）后 complete 47/47、41 semantic、0 failed；批次 1–4 未重发。独立生产数据副本已删除，正式 EXE 保留；旧 EXE 备份 `tests/.tmp/LiveMemory-pre-r6-backup.exe`。
 - 原始失败的具体非法字段未保留，无法断言当时是三个变体中的哪一个；但导致该错误的结构性代码路径均已复现并修复。
 
 ## 0.5 上一轮（观众身份专项）

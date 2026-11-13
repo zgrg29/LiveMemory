@@ -134,6 +134,17 @@ MEMORY_EVIDENCE_OTHER_VIEWER
    - `ai_results=5`；该观众新增恢复事实；
    - 未发生跨观众写入。
 - 这是**真实任务数据 + 真实包 + 新生产代码 + Mock Provider**；不是真实 Provider 调用，也不是生产 Resume。
+### 6.2 隔离 Windows EXE 回放（正式构建的测试副本）
+
+- 正式 EXE 重建：buildId `9b8daa7b2d1d`、commit `2df6052`、SHA-256 `9b3eea3e…`、91.7 MB、169 assets、Manifest requireAdministrator。
+- 非提升会话使用同一二进制的 asInvoker 测试副本 + `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`，数据目录为生产库/包只读副本。
+- 本地 Mock Provider 模拟真实 ref/seq 错误：初始与 whole-batch repair 都让 ref 5 引用 seq 5；viewer-scoped repair 返回该观众自己的 seq。
+- EXE 内 `/api/ai/analyze/resume` 实测：
+  - 3 次请求（7 refs → 7 refs → 1 ref）；
+  - `complete`，coverage 47/47、41 semantic、6 no_semantics、0 failed；
+  - `batchErrors=[]`；批次 1–4 未重发；
+  - `/api/health`、`/api/bootstrap` 返回 buildId `9b8daa7b2d1d`。
+- 这是**真实任务数据 + 真实包 + 正式 EXE 代码 + Mock Provider**；不是真实 Provider 调用，也不是生产 Resume。
 
 ## 7. 未做
 
