@@ -51,7 +51,7 @@
 - **旧代码 3fccba1**：392 条合成消息 / 37 观众 / 4 批（10/10/10/7），3 个变体（伪造 `viewer_id`、stated 缺证据、跨观众证据）全部复现 `AI_IMPORT_INVALID`；错误只有裸代码、无 stage/字段错误、无 repair；b02 仅 1 次请求；覆盖 27/37；后续成功批次清空 `last_error_*`。
 - **新代码 e67677a**：同数据同变体全部 `complete` 37/37。伪造身份变体无需 repair（本地 ID 不被覆盖）；缺证据/跨观众证据变体 b02 发起一次 repair 后成功。
 - **修复仍失败**：新代码显示 `AI_IMPORT_INVALID` + `MEMORY_EVIDENCE_REQUIRED` + stage=validation + batchIndex=2 + `batchErrors=[2]`；27/37 保留，facts 3。重启后 Resume 只发 1 次 b02，完成 37/37，facts 4。
-- **隔离 EXE**：独立构建（buildId `c51819b2f3f3`，SHA-256 `9b8832…`，requireAdministrator；测试副本 asInvoker）通过本地 Mock Provider 实测：repair 场景 complete 37/37；always-invalid 场景显示精确错误、27/37；EXE 内 Resume 只发 b02 一次并完成 37/37。正式 EXE 未替换。
+- **隔离 EXE**：先用独立构建（buildId `c51819b2f3f3`）通过本地 Mock Provider 实测：repair 场景 complete 37/37；always-invalid 场景显示精确错误、27/37；EXE 内 Resume 只发 b02 一次并完成 37/37。随后按用户明确授权把正式 `dist/LiveMemory.exe` 重建为 buildId `caece0818f11`（`c827a609…`，commit `2b0ade6`，requireAdministrator），并用 asInvoker 测试副本实际启动验证 buildId/commit；正式 EXE 已替换，旧 EXE 备份在 `tests/.tmp`。
 - 未验证：真实付费 API、原始 392 条聊天内容、真实生产任务 Resume、UAC 双击。
 
 
@@ -621,16 +621,18 @@ POST /api/ai/auto/cancel      {sessionId}
 
 ## 5. 构建结果（如实）
 
-- **v0.13.2 已构建并实际启动验证（asInvoker 副本）**：`node scripts/build-windows.mjs`。
-  - 大小 **91.6 MB**
-  - SHA-256 `aa3d41105af90eeed8608bb49caf018f17b5f0dbaa1aef0c9b297a3b870ba61d`
-  - commit `b101bd01bc227fd85abaa862873eb0ce61e792cd`
-  - buildId `89bf47ac620e`，资源哈希 `89bf47ac620eed9ed26c`
+- **2026-11-13 正式 EXE 已按用户授权重建并覆盖 `dist/LiveMemory.exe`**：`node scripts/build-windows.mjs`。
+  - 大小 **91.7 MB**
+  - SHA-256 `c827a609d56a0db7ed32d41871757cad7fc6a798c89588af8a24701df84c090a`
+  - commit `2b0ade6678b2f4e6a60a3fa6162426ec2de737c9`（短 `2b0ade6`）
+  - buildId `caece0818f11`，资源哈希 `caece0818f11566dbe75`
+  - builtAt 2026-11-13T00:33:30.336Z（08:33 +08）
   - 资源 **169 个**；7 个必需可靠性模块已断言存在；EXE 内 buildId 标记已验证
-  - PE Manifest **requireAdministrator**（脚本断言通过）
-- **实际启动验证**：本会话非提升，使用同一二进制临时改 manifest 为 asInvoker 后启动；`/api/health`、`/api/bootstrap` 返回上面的 buildId/commit，`mode=packaged`、`verified=true`；启动日志 `startup.begin` 记录同一 build；第二次启动复用缓存并校验 169 个文件。
+  - PE Manifest **requireAdministrator**（脚本断言通过；`readManifest` 复核）
+- **实际启动验证**：本会话非提升，复制同一二进制并把 manifest 临时改为 asInvoker 后启动；`/api/health` 返回 `buildId=caece0818f11`、`commit=2b0ade6`；`/api/bootstrap` 返回 `mode=packaged`、`verified=true`、schema 13、隔离数据目录。测试副本与临时数据目录已删除；正式 EXE 保留。
+- 旧正式 EXE 已备份到 `tests/.tmp/LiveMemory-pre-r5-backup.exe`（SHA-256 `aa3d4110…`，v0.13.2 `89bf47ac620e`），仅用于回滚，不提交。
 - **仍不能声称**：真实 UAC 双击、提升后的出站请求、真实付费 Provider 已完成验收。
-- 历史：v0.13.1（`ba917c52…` / 164 assets）已被本次构建取代；旧 EXE 仍可能存在于用户磁盘，必须用 buildId 判断。
+- 历史：v0.13.1（`ba917c52…` / 164 assets）与 2026-11-12 的 `89bf47ac620e` 已被本次构建取代；旧 EXE 仍可能存在于用户磁盘，必须用 buildId 判断。
 
 ## 6. 未完成 / 未验证
 

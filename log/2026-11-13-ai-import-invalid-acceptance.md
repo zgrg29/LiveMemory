@@ -113,3 +113,31 @@ EXE + 本地 Mock OpenAI-compatible HTTP Provider（127.0.0.1:48303）：
   - 以上均在隔离 EXE 中通过本地 Mock Provider 实测。
 - 原始失败的具体非法字段无法从生产库确认；但导致 `AI_IMPORT_INVALID` 的代码路径（Compact 成功后跳过完整校验、`viewer_id` 可被覆盖、错误详情被丢弃、成功批次清除失败）已被三条独立证据覆盖并修复。
 - 未验证：真实付费 API、真实生产任务 Resume、真实 UAC 双击、真实 392 条原始聊天内容。
+
+## 7. 正式 EXE 覆盖（用户授权，2026-11-13）
+
+用户确认 LiveMemory 已不再运行并明确授权覆盖 `dist/LiveMemory.exe`。执行：
+
+```bat
+node scripts/build-windows.mjs
+```
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | 91.7 MB |
+| SHA-256 | `c827a609d56a0db7ed32d41871757cad7fc6a798c89588af8a24701df84c090a` |
+| commit | `2b0ade6678b2f4e6a60a3fa6162426ec2de737c9` |
+| buildId | `caece0818f11` |
+| builtAt | 2026-11-13T00:33:30.336Z（08:33 +08） |
+| assets | 169 files，7 个必需模块，embedded build marker 已校验 |
+| Manifest | requireAdministrator（`readManifest` 复核） |
+
+- 覆盖前旧 EXE 备份：`tests/.tmp/LiveMemory-pre-r5-backup.exe`，SHA-256 `aa3d4110…`（buildId `89bf47ac620e`）。
+- 非提升会话无法直接启动 requireAdministrator EXE，因此复制同一二进制到 `tests/.tmp/LiveMemory-formal-asinvoker.exe`、临时改 manifest 为 asInvoker，并设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`，使用隔离数据目录 `tests/.tmp/formal-exe-smoke` 启动。
+- 实际结果：
+  - `/api/health` → `buildId=caece0818f11`、`commit=2b0ade6`；
+  - `/api/bootstrap` → `mode=packaged`、`verified=true`、schema 13、数据目录为隔离临时目录；
+  - 启动后正常监听 48304，关闭后删除测试副本与临时数据目录。
+- 正式 EXE 的 AI 行为与之前完整验收的源码/隔离 EXE 相同（同一 `src`；正式 build 仅 commit 记录不同）。未对正式 EXE 重新跑完整 392/37 画像回放，避免重复消耗；完整回放证据见 §2–§5。
+- 未做：真实 UAC 双击、提升后的出站请求、真实付费 API、生产任务 Resume。
