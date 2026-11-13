@@ -34,6 +34,7 @@ import {
   shouldRetryAttempt
 } from '../runtime/attempt.mjs';
 import {
+  MIN_AGGREGATE_OUTPUT_TOKENS,
   estimateJsonTokens,
   estimateTokens,
   resolveAggregateOutputTokens,
@@ -1455,6 +1456,19 @@ export class AnalysisRunner {
     });
     let inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
     let compacted = false;
+    const assertAggregateBudget = () => {
+      if (outputTokens >= MIN_AGGREGATE_OUTPUT_TOKENS) return;
+      throw Object.assign(new Error('AGGREGATE_BUDGET_TOO_SMALL'), {
+        code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
+        detail: `context leaves only ${outputTokens} aggregate output tokens (minimum ${MIN_AGGREGATE_OUTPUT_TOKENS}); estimated ${prompt.estimatedTokens} input tokens, batches ${job.batchTotal}`,
+        estimatedTokens: prompt.estimatedTokens,
+        limit: inputLimit,
+        outputTokens,
+        batches: job.batchTotal,
+        contextLength: provider.contextLength ?? null
+      });
+    };
+    assertAggregateBudget();
     // The actual 18-batch task was ~34k input tokens. A smaller-context model
     // cannot merge that plus a real report in one request. Retry the planning
     // with lower per-batch cardinality (all batches, all evidence preserved)
@@ -1470,6 +1484,7 @@ export class AnalysisRunner {
         contextLength: provider.contextLength
       });
       inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
+      assertAggregateBudget();
     }
     return {
       prompt,
