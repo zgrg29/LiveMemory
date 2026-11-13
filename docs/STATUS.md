@@ -23,7 +23,7 @@
 - **分层**：leaf 节点（批次→有界局部汇总）→ 需要时继续上层节点 → final。`MAX_AGGREGATE_DEPTH=6`，final 前最多 24 个 unit；超过则继续加层，而不是失败。
 - **有界局部汇总**：`DIGEST_AGGREGATE_LIMITS`（topics 12、sentiment 8、disputes 6、highlights 6、summary 800、refs 6），只保留关键话题、时间线、情绪、事件、回看片段和有效证据索引；不重复完整原始 JSON。
 - **独立持久化**：schema 15 新增 `ai_aggregate_nodes`（job/session/level/node_index/source_hash/covered_batches/digest/usage/coverage/fallback）。节点通过 source hash 复用；重启/重试只补缺失节点，不重做已完成节点。
-- **确定性校验**：每级检查 `covered_batches`、unit/batch 覆盖、证据 ref 必须来自该批次已保存结果、时间顺序、事件去重；final 对 ≤96 批次逐批检查，并在证据被过滤后从已保存结果补回真实 ref（不伪造）。
+- **确定性校验**：每级检查 `covered_batches`、unit/batch 覆盖、证据 ref 必须来自该批次已保存结果、时间顺序、事件去重；final 对 ≤144 批次逐批检查，并在证据被过滤后从已保存结果补回真实 ref（不伪造）。
 - **有界重试**：截断/结构错误最多 2 次输出尝试（第二次使用 TIGHT caps）；仍失败则用已保存批次/局部汇总生成确定性兜底节点。Provider 错误不兜底，保留可恢复状态。
 - **恢复**：`ANALYSIS_AGGREGATE_TOO_LARGE` 不再要求换模型；32/32 已保存时提供 `resume-aggregate`。旧任务在同一个 job、同一批结果上直接进入新分层流程。
 - **统计**：每个节点保存 usage，`aggregate.requests/inputTokens/outputTokens` 与任务 `usage` 都包含额外请求；不会把汇总请求漏计。

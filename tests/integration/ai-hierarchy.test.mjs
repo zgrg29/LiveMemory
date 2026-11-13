@@ -411,6 +411,13 @@ test('64 and 128 saved batches stay within the bounded request count', async (t)
       assert.ok(completed.aggregate.nodeTotal <= 24, 'the final level has at most 24 units');
       assert.ok(completed.aggregate.levels <= 6,
         `depth is controlled, got ${completed.aggregate.levels}`);
+      const final = latestResultForScope(server.db, completed.sessionJobId, 'final', {includeJson: true});
+      assert.ok(final);
+      const cited = new Set(final.result.session_topics.topics
+        .flatMap((topic) => topic.message_refs ?? [])
+        .map((ref) => ref.batch));
+      assert.equal(cited.size, completed.sessionBatchTotal,
+        'the final report cites every saved batch');
       const batchCalls = calls.filter((call) => call.kind === 'batch').length;
       const digestCalls = calls.filter((call) => call.kind === 'digest').length;
       const finalCalls = calls.filter((call) => call.kind === 'final').length;

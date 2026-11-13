@@ -1085,7 +1085,7 @@ answer  = resolveOutputTokens({desired, inputTokens: 完整提示词估算, cont
 
 - `buildSessionAggregateAnswerSchema()` 从结果 Schema 派生更严格的汇总 Schema，不修改原 Schema：
   - `session_topics.summary` ≤ 800 字符；
-  - `topics` ≤ 24，每条 summary ≤ 320 字符，`key_points` ≤ 4（每条 ≤ 140 字符），`message_refs` ≤ 4；
+  - `topics` ≤ 24，每条 summary ≤ 320 字符，`key_points` ≤ 4（每条 ≤ 140 字符），`message_refs` ≤ 6（24 × 6 = 144 个 batch ref 容量）；
   - `sentiment` ≤ 12；`disputes` ≤ 8（viewpoints ≤ 4）；`highlights` ≤ 8；
   - 不包含 `viewer_profiles`。
 - 三语汇总提示词增加：合并优先、不要逐批拼接/重复证据、覆盖全部批次的 seq 范围、时间线覆盖最早到最晚批次。
@@ -1156,7 +1156,7 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - 每个节点 `covered_batches` 必须精确等于输入批次；unit 覆盖要求每个可报告 batch/child unit 至少有一个有效 ref（或时间窗口重叠，仅当该单元确实没有可引用证据）。
 - `message_refs` 只能引用输入中该批次已有的 seq；伪造/越界 ref 被过滤，不计入覆盖。
 - 时间必须可解析且结束不早于开始；事件按标题/时间确定性去重，时间线排序。
-- final 对 ≤96 批逐批检查；被模型漏掉或使用了无效 ref 的批次，会从已保存的批次/局部节点补回**真实** ref。超过 96 批时按 unit 覆盖，局部节点已逐批校验。
+- final 对 ≤144 批逐批检查；被模型漏掉或使用了无效 ref 的批次，会从已保存的批次/局部节点补回**真实** ref。超过 144 批时按 unit 覆盖，局部节点已逐批校验。
 - 仍无法覆盖（例如批次结果本身没有可用证据且时间缺失）时明确失败；不得静默丢批次、伪造证据或降低报告完整性。
 
 ### 24.5 重试/兜底

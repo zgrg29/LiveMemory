@@ -22,7 +22,7 @@
 3. 先尝试 direct final；装不下则按实际 token 连续分组，每片 ≤72 批，单组超预算二分。
 4. 每个 leaf 生成有界 `covered_batches + session_topics`（topics ≤12 等），独立写入 `ai_aggregate_nodes`。
 5. final 装不下则把节点作为下一层输入，最多 6 层；final 前最多 24 个 unit。
-6. 每级校验 schema、覆盖、有效 ref、时间与去重；final 对 ≤96 批逐批补真实 ref。
+6. 每级校验 schema、覆盖、有效 ref、时间与去重；final 对 ≤144 批逐批补真实 ref。
 7. 每个节点最多 2 次输出尝试；仍失败用已保存结果确定性兜底；Provider 错误保留可恢复。
 8. 节点 source hash 复用；重启只补缺失节点与 final。
 

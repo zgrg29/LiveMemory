@@ -1606,7 +1606,7 @@ export class AnalysisRunner {
         coverage: entry.coverage,
         result: condenseBatchResult(entry.result, {batchIndex: entry.batchIndex, limits})
       }));
-      const answerSchema = finalEnvelopeSchema(resultSchema);
+      const answerSchema = finalEnvelopeSchema(resultSchema, {limits: FINAL_AGGREGATE_LIMITS});
       const prompt = buildSessionAggregatePrompt({
         manifest: context.manifest,
         batchResults,
@@ -1639,10 +1639,10 @@ export class AnalysisRunner {
     }
     const fits = plan.prompt.estimatedTokens <= plan.budget.inputLimit
       && plan.outputTokens >= MIN_AGGREGATE_OUTPUT_TOKENS
-      // A direct final cites batches inside bounded 4-ref topics. More than
-      // 24 × 4 batches would make "every batch cited" impossible; use the
-      // hierarchy so every batch is covered at a lower level instead.
-      && entries.length <= MAX_FINAL_UNITS * 4;
+      // Direct final relies on per-batch citation. 24 topics × 6 refs is the
+      // final schema's bounded capacity; beyond that the hierarchy must keep
+      // every batch covered at a lower level instead.
+      && entries.length <= MAX_FINAL_UNITS * FINAL_AGGREGATE_LIMITS.messageRefs;
     return {...plan, fits, compacted};
   }
 
@@ -1657,7 +1657,7 @@ export class AnalysisRunner {
       coverage: entry.coverage,
       result: condenseBatchResult(entry.result, {batchIndex: entry.batchIndex, limits: condenseLimits})
     }));
-    const answerSchema = finalEnvelopeSchema(resultSchema, {limits});
+    const answerSchema = finalEnvelopeSchema(resultSchema, {limits: limits ?? FINAL_AGGREGATE_LIMITS});
     const prompt = buildSessionAggregatePrompt({
       manifest: context.manifest,
       batchResults,
@@ -1690,7 +1690,7 @@ export class AnalysisRunner {
     const unitCoverage = nodes.length > 0
       ? nodes.map((node) => node.coveredBatches)
       : allBatches.map((batch) => [batch]);
-    const perBatch = allBatches.length <= MAX_FINAL_UNITS * 4;
+    const perBatch = allBatches.length <= MAX_FINAL_UNITS * FINAL_AGGREGATE_LIMITS.messageRefs;
     let normalized = normalizeFinalAnswer(answer, {
       allBatches,
       units: unitCoverage,
@@ -1704,7 +1704,8 @@ export class AnalysisRunner {
       envelope: normalized.envelope,
       allBatches,
       batchEntries: entries,
-      nodes
+      nodes,
+      maxRefsPerTopic: FINAL_AGGREGATE_LIMITS.messageRefs
     });
     return normalizeFinalAnswer(repaired, {
       allBatches,
@@ -1724,7 +1725,7 @@ export class AnalysisRunner {
       nodes,
       batchTotal: job.batchTotal
     });
-    const answerSchema = finalEnvelopeSchema(resultSchema, {limits});
+    const answerSchema = finalEnvelopeSchema(resultSchema, {limits: limits ?? FINAL_AGGREGATE_LIMITS});
     const prompt = buildSessionAggregatePrompt({
       manifest: context.manifest,
       batchResults: [],
@@ -2393,7 +2394,7 @@ export class AnalysisRunner {
         continue;
       }
       const schemaErrors = schemaIssuesFor(answer, finalEnvelopeSchema(resultSchema, {
-        limits: built.limits
+        limits: built.limits ?? FINAL_AGGREGATE_LIMITS
       }));
       if (schemaErrors.length > 0) {
         this.#recordOutputRejected(context, {

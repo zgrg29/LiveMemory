@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+﻿import {createHash} from 'node:crypto';
 import {validateAgainstSchema} from '../import/schema-validator.mjs';
 import {estimateJsonTokens, estimateTokens} from '../batching/tokens.mjs';
 import {
@@ -29,7 +29,7 @@ export const FINAL_AGGREGATE_LIMITS = Object.freeze({
   sentiment: 12,
   disputes: 8,
   highlights: 8,
-  messageRefs: 4
+  messageRefs: 6
 });
 export {DIGEST_AGGREGATE_LIMITS, TIGHT_AGGREGATE_LIMITS};
 export {uniqueIntegers};
@@ -954,7 +954,7 @@ export function schemaIssuesFor(value, schema) {
  * validated result; the normalizer drops such a ref. Dropping a fabricated ref
  * is correct, but it must not leave the final report looking as if a later
  * batch was ignored. For sessions small enough that every batch fits the final
- * ref budget (24 topics x 4 refs), this deterministic pass attaches one real
+ * ref budget (24 topics x 6 refs), this deterministic pass attaches one real
  * ref per uncovered reportable batch from the persisted batch/partial results.
  * It never invents a ref and never alters the model's prose.
  */
