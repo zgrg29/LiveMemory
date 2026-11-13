@@ -1184,7 +1184,7 @@ duration ≈ 155s
 
 ### 36.3 全量结果
 
-- **698 passed / 0 failed**（2026-11-13，约 196 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- **698 passed / 0 failed**（2026-11-13，约 188 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 
 ### 36.4 EXE
 

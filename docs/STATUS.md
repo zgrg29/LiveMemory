@@ -39,7 +39,7 @@
 
 ### 0.21.4 测试与 EXE
 
-- 全量：**698 passed / 0 failed**（2026-11-13，约 196 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 全量：**698 passed / 0 failed**（2026-11-13，约 188 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - 新增：`tests/unit/ai-adapter-output.test.mjs` 3 项；`tests/unit/ai-token-batching.test.mjs` 4 项；`tests/integration/ai-memory-output-recovery.test.mjs` 9 项（含 975/975、异常多消息观众、批次 2 失败/1&3 已保存、重复继续幂等）。
 - 迁移断言更新到 schema 16，新增 split 列断言。
 - **EXE**：`dist/LiveMemory.exe` buildId `4b697b2cb227` / commit `ab32386` / SHA-256 `de9ddc18d6856a8d79df56673ac4e6fff76d56ccd15521020860247631855b44` / 91.9 MB / 176 assets / `requireAdministrator`。
@@ -475,7 +475,7 @@ POST /api/ai/sessions/:id/translation                 按需翻译未完成段�
 
 - 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；v0.13.2 完成 P13–P16（画像校验、多语言、观众级容错、最终汇总恢复）；M3 真实接入继续验证；M4 部分完成；M5 未完成
 - 版本：`0.13.2`（`package.json` 与 `src/shared/app-info.mjs` 一致；构建标识见 §5）
-- 数据库 schema：**15**（v14→v15 只新增 `ai_aggregate_nodes` 与索引）
+- 数据库 schema：**16**（v14→v15 `ai_aggregate_nodes`；v15→v16 `ai_job_memory_viewers.split_path/split_reason` 与索引）
 - 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本 **v13.2**（旧任务保留原版本号）
 - 分支：`main`，本地提交，未 Push
 - 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
