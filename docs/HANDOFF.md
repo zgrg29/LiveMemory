@@ -31,13 +31,13 @@
 
 - 全量 **683 passed / 0 failed**（约 163 秒）。
 - 生产任务只读副本：原任务 32/32 → 2 个局部节点 + 1 次 final → complete；final 引用 32/32 批次；0 次 batch 重发；节点 usage 计入任务统计。
-- 正式 EXE：buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a6…` / 91.9 MB / 176 assets / requireAdministrator。asInvoker 测试副本实跑：health 同 buildId；旧任务状态 `resume-aggregate`；Resume 后 complete、32/32、2 节点、3 次汇总请求、final 32/32 refs、无 batch 重发。
+- 正式 EXE：buildId `68b663eec6fe` / commit `1070261` / SHA-256 `39562ce976ae…` / 91.9 MB / 176 assets / requireAdministrator。asInvoker 测试副本实跑：health 同 buildId；旧任务状态 `resume-aggregate`；Resume 后 complete、32/32、2 节点、3 次汇总请求、final 32/32 refs、无 batch 重发。
 - 未验证：真实付费 DeepSeek 分层请求质量、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击（沙箱限制）。
 
 ### 0.4 生产恢复步骤
 
 1. 完全退出 LiveMemory；备份整个数据目录。
-2. 替换为 buildId `58362fa30b5f` 的 EXE，设置页「关于」核对。
+2. 替换为 buildId `68b663eec6fe` 的 EXE，设置页「关于」核对。
 3. AI 分析中心选择 `ses_01M77TP9QYPFRE4H9NCH`；应显示 32/32、最终汇总未完成、「继续最终汇总」。
 4. 点击继续；只做局部汇总 + final，不会重新分析 32 个 batch。
 5. 成功后 final 保存、任务 complete；若局部输出仍截断，程序会做一次有界重试并确定性兜底，不新建整场分析、不清空数据。

@@ -33,7 +33,7 @@
 ### 0.20.3 真实数据与 EXE 验证
 
 - 生产 DB/runtime/exports 只读副本（schema 14→15）：原任务 32/32 批次、0 次批次重发；2 个局部节点 + 1 次 final；完成，final 引用 32/32 批次；节点 usage 计入任务统计。
-- **正式 EXE 重建**：`dist/LiveMemory.exe` buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a6…` / 91.9 MB / 176 assets / `requireAdministrator`。
+- **正式 EXE 重建**：`dist/LiveMemory.exe` buildId `68b663eec6fe` / commit `1070261` / SHA-256 `39562ce976ae…` / 91.9 MB / 176 assets / `requireAdministrator`。
 - asInvoker 测试副本（仅测试 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）+ 本地 Mock Provider + 生产数据副本实际启动：`/api/health` 返回同一 buildId；`/api/ai/analyze/status` 对旧任务显示 `resume-aggregate`；点击 Resume 后 `complete`、32/32、2 个节点、3 次汇总请求、final 引用 32/32，未重发任何 batch。
 - 未验证：真实付费 DeepSeek 的 32 批分层请求质量、真实 UAC 双击、真实浏览器点击（沙箱仍阻止浏览器命名管道）。
 
@@ -49,7 +49,7 @@
 ### 0.20.5 用户安全恢复步骤
 
 1. 完全退出 LiveMemory，备份整个数据目录（不要在运行时复制写入中的 SQLite）。
-2. 替换为 buildId `58362fa30b5f` 的 EXE；设置页「关于」核对。
+2. 替换为 buildId `68b663eec6fe` 的 EXE；设置页「关于」核对。
 3. AI 分析中心选择该场次：应显示「AI 分析未完成」、32/32 批次、最终汇总失败、「继续最终汇总」。
 4. 点击继续；只执行分层局部汇总 + final，不会重发 32 个 batch。
 5. 成功后 final 保存、任务 complete；若局部汇总仍被截断，程序会做有界重试并用已保存结果确定性兜底，不应新建整场分析或清空数据。

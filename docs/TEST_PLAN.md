@@ -1142,7 +1142,7 @@ duration ≈ 155s
 
 ### 35.3 正式 EXE 实跑
 
-- `dist/LiveMemory.exe`：buildId `58362fa30b5f` / commit `e281a3d` / SHA-256 `d808c36e17a670f2d9d931534d9423df4681458a44888d43781838c164fa407e` / 91.9 MB / 176 assets / `requireAdministrator`。
+- `dist/LiveMemory.exe`：buildId `68b663eec6fe` / commit `1070261` / SHA-256 `39562ce976ae925abdb86a6c97829a4aee21100c9fb38665f3493526dcd796bd` / 91.9 MB / 176 assets / `requireAdministrator`。
 - asInvoker 测试副本 + 生产数据副本 + 本地 Mock Provider：
   - `/api/health` 返回同一 buildId；
   - 旧任务 `/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、32/32、`canResume=true`；
