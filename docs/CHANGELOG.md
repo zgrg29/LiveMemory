@@ -14,9 +14,9 @@
 
 ### 验证
 
-- 全量 **668 passed / 0 failed**（约 164 秒）。
+- 全量 **668 passed / 0 failed**（约 130 秒）。
 - 新增 `ai-aggregate-recovery`（18 批截断、重启后只发汇总、checksum 不变、重复点击幂等、无效汇总统计）、`ai-aggregate-budget`、`ai-recovery-state`、`ai-recovery-ui`。
-- **EXE 已验证**：`dist/LiveMemory.exe` buildId `36b818bfbf7f` / commit `2a9ccd8` / SHA-256 `894d6b5b…` / 91.8 MB / 174 assets / `requireAdministrator`；asInvoker 测试副本实际启动，`/api/health`、`/api/bootstrap`（schema 14）、打包 `ai.js`/三语字典与生产任务只读副本的 `/api/ai/analyze/status` 均通过。
+- **EXE 已验证**：`dist/LiveMemory.exe` buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c056…` / 91.8 MB / 174 assets / `requireAdministrator`；asInvoker 测试副本实际启动，`/api/health`、`/api/bootstrap`（schema 14）、打包 `ai.js`/三语字典与生产任务只读副本的 `/api/ai/analyze/status` 均通过。
 - 未做：真实付费 Provider、真实生产任务 Resume、真实浏览器点击/截图、真实 UAC 双击。
 
 ## 0.13.2-r7 — 2026-11-13（AI 分析输出语言与报告翻译）

@@ -29,13 +29,13 @@
 
 ### 0.19.3 测试（本轮实测）
 
-- 全量：**668 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 164 秒）。
+- 全量：**668 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 130 秒）。
 - 新增：
   - `tests/integration/ai-aggregate-recovery.test.mjs`（2）：18 批 + 截断、重启后恢复只发汇总、18 条结果 checksum 不变、重复点击幂等、无效汇总统计口径。
   - `tests/unit/ai-aggregate-budget.test.mjs`（5）：预算上下限、上下文收缩、DashScope headroom、有界 schema、三语提示词覆盖全部批次、compact 保留证据。
   - `tests/unit/ai-recovery-state.test.mjs`（8）：aggregate/session/memory/config 恢复、完成/乱序/无任务、单批、pending viewer。
   - `tests/unit/ai-recovery-ui.test.mjs`（4）：独立恢复面板、真实 resume API、三语键与文案一致、无 innerHTML/alert。
-- 隔离 EXE：`dist/LiveMemory.exe` 已重建（buildId `36b818bfbf7f`、commit `2a9ccd8`、SHA-256 `894d6b5b…`、91.8 MB、174 assets、Manifest `requireAdministrator`）。用 asInvoker 测试副本（仅测试用 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）实际启动：`/api/health` 返回同一 buildId/commit、`mode=packaged`、`verified=true`；`/api/bootstrap` 返回 schema 14；打包后的 `js/pages/ai.js` 与三语字典包含 `recoveryPanel`/「继续最终汇总」；对生产 DB/runtime **只读副本**查询真实失败任务，`/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、18/18 已保存、`outputStats.responses=20/rejected=1`、`batchIndex=null`。
+- 隔离 EXE：`dist/LiveMemory.exe` 已重建（buildId `61da4c6991e1`、commit `205db74`、SHA-256 `7231c056…`、91.8 MB、174 assets、Manifest `requireAdministrator`）。用 asInvoker 测试副本（仅测试用 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）实际启动：`/api/health` 返回同一 buildId/commit、`mode=packaged`、`verified=true`；`/api/bootstrap` 返回 schema 14；打包后的 `js/pages/ai.js` 与三语字典包含 `recoveryPanel`/「继续最终汇总」；对生产 DB/runtime **只读副本**查询真实失败任务，`/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、18/18 已保存、`outputStats.responses=20/rejected=1`、`batchIndex=null`。
 - 未验证：真实付费 Provider 的 16k `max_tokens` 接受度与截断后 Continue；真实生产任务 Resume；真实浏览器点击/截图；真实 UAC 双击。
 
 ### 0.19.4 用户安全恢复步骤
@@ -45,7 +45,7 @@
 3. 打开 AI 分析中心，选择该场次；应看到「AI 分析未完成」、单场批次 18/18、最终汇总失败、原因与「继续最终汇总」。
 4. 选择与失败任务相同的 Provider/区域/模型，点击「继续最终汇总」；不会重发已保存的 18 个批次。
 5. 成功后 final 保存、任务变 complete、恢复面板消失；失败则查看技术详情，不要新建整场分析、不要清空数据。
-6. 当前正式 EXE：buildId `36b818bfbf7f` / commit `2a9ccd8` / SHA-256 `894d6b5b91853eebd4459938d65b8d660b4b68467a7617793cd5cde96c7cdc04` / 91.8 MB / 174 assets / `requireAdministrator`。
+6. 当前正式 EXE：buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c0560d79c0536d14dae7741609777a76ce575c52af284a73052c02b5475d` / 91.8 MB / 174 assets / `requireAdministrator`。
 
 ## 0.18 v0.13.2 AI 分析多语言输出与报告翻译（2026-11-13）
 

@@ -1101,15 +1101,15 @@ duration ≈ 155s
 ### 34.3 全量结果（本轮实测）
 
 - 命令：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-- 结果：**668 passed / 0 failed**（2026-11-13，约 164 秒）。
+- 结果：**668 passed / 0 failed**（2026-11-13，约 130 秒）。
 - 关键断言：18 批任务汇总截断后 `sessionBatchesCompleted=18`、`recovery.action=resume-aggregate`；重启后只发 1 次 aggregate、0 次 batch；18 条批次结果 checksum 不变；重复 Continue 0 次 Provider 请求。
 - 未做：真实付费 Provider（本机无 Key）、真实生产任务 Resume、真实浏览器点击/截图、真实 UAC 双击。
 
 ### 34.4 隔离 EXE 验证（本轮实测）
 
-- 正式 `dist/LiveMemory.exe` 重建：buildId `36b818bfbf7f`、commit `2a9ccd8`、SHA-256 `894d6b5b91853eebd4459938d65b8d660b4b68467a7617793cd5cde96c7cdc04`、91.8 MB、174 assets、RT_MANIFEST `requireAdministrator`。
+- 正式 `dist/LiveMemory.exe` 重建：buildId `61da4c6991e1`、commit `205db74`、SHA-256 `7231c0560d79c0536d14dae7741609777a76ce575c52af284a73052c02b5475d`、91.8 MB、174 assets、RT_MANIFEST `requireAdministrator`。
 - asInvoker 测试副本（仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）使用独立数据目录实际启动：
-  - `/api/health`：`buildId=36b818bfbf7f`、`commit=2a9ccd8`，`mode=packaged`、`verified=true`。
+  - `/api/health`：`buildId=61da4c6991e1`、`commit=205db74`，`mode=packaged`、`verified=true`。
   - `/api/bootstrap`：schema 14，AI 结果 Schema 1.3.0。
   - 打包后的 `/js/pages/ai.js` 含 `recoveryPanel`/`activateRecovery`/`resumeAggregate`；`/i18n/zh-CN.json` 的 `ai.center.recovery.resumeAggregate=继续最终汇总`。
   - 对生产 DB/runtime **只读副本**（18/18 真实失败任务）调用 `/api/ai/analyze/status`：`recovery.action=resume-aggregate`、`canResume=true`、`error.batchIndex=null`、`outputStats.responses=20/rejected=1`、`savedResults=18`、`analysisOutcome=incomplete`。

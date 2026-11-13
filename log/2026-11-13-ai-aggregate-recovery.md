@@ -118,11 +118,11 @@ output  = resolveOutputTokens({desired, inputTokens, contextLength})
 - `tests/unit/ai-recovery-state.test.mjs`：aggregate/session/memory/config 四类恢复动作；完成/乱序/无任务不显示恢复。
 - `tests/unit/ai-recovery-ui.test.mjs`：恢复面板、真实 API、不再用共用暂停按钮、三语键与文案一致、无 `innerHTML`/`alert()`。
 
-全量：**668 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 164 秒）。
+全量：**668 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 130 秒）。
 
 ## 5. 未验证 / 边界
 
 - 没有调用真实付费 Provider；本轮全部是 Mock Provider。真实截断后的聚合行为（例如 Provider 是否接受 16k `max_tokens`）仍需用户实际 Continue 验证。
 - 没有在真实生产任务上执行 Resume；安全步骤见 HANDOFF。
 - 真实浏览器点击/截图受限；UI 由静态断言、三语键、HTTP 状态与集成测试覆盖。
-- **EXE 已验证**：`dist/LiveMemory.exe` 重建为 buildId `36b818bfbf7f` / commit `2a9ccd8` / SHA-256 `894d6b5b…` / 91.8 MB / 174 assets / `requireAdministrator`。asInvoker 测试副本实际启动：`/api/health` 返回同 build、`/api/bootstrap` 返回 schema 14、打包 `ai.js`/三语字典含恢复面板；对生产 DB/runtime 只读副本查询真实失败任务，`/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、18/18 已保存、`outputStats.responses=20/rejected=1`、`batchIndex=null`。**未点击继续**，避免调用真实付费 API。
+- **EXE 已验证**：`dist/LiveMemory.exe` 重建为 buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c056…` / 91.8 MB / 174 assets / `requireAdministrator`。asInvoker 测试副本实际启动：`/api/health` 返回同 build、`/api/bootstrap` 返回 schema 14、打包 `ai.js`/三语字典含恢复面板；对生产 DB/runtime 只读副本查询真实失败任务，`/api/ai/analyze/status` 返回 `recovery.action=resume-aggregate`、18/18 已保存、`outputStats.responses=20/rejected=1`、`batchIndex=null`。**未点击继续**，避免调用真实付费 API。

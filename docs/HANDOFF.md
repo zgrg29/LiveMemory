@@ -30,10 +30,10 @@
 
 ### 0.3 测试
 
-- 全量 **668 passed / 0 failed**（约 164 秒）。
+- 全量 **668 passed / 0 failed**（约 130 秒）。
 - 新增 `tests/integration/ai-aggregate-recovery.test.mjs`（18 批截断/重启后只发汇总/checksum 不变/重复点击幂等/无效汇总统计）、`tests/unit/ai-aggregate-budget.test.mjs`、`ai-recovery-state.test.mjs`、`ai-recovery-ui.test.mjs`。
 - 关键证据：继续前 18 条 batch 结果的 id/version/checksum 与继续后完全一致；继续请求 0 次批次、1 次汇总；重复 Continue 0 次 Provider 请求。
-- **隔离 EXE 已验证**：`dist/LiveMemory.exe` 重建为 buildId `36b818bfbf7f` / commit `2a9ccd8` / SHA-256 `894d6b5b…` / 91.8 MB / 174 assets / `requireAdministrator`。asInvoker 测试副本（仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）实际启动：`/api/health` 同 build、`/api/bootstrap` schema 14、打包 `ai.js`/三语字典含恢复面板；对生产 DB/runtime 只读副本查询真实 18/18 任务，`/api/ai/analyze/status` 返回 `resume-aggregate`、`outputStats.responses=20/rejected=1`、`batchIndex=null`。
+- **隔离 EXE 已验证**：`dist/LiveMemory.exe` 重建为 buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c056…` / 91.8 MB / 174 assets / `requireAdministrator`。asInvoker 测试副本（仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）实际启动：`/api/health` 同 build、`/api/bootstrap` schema 14、打包 `ai.js`/三语字典含恢复面板；对生产 DB/runtime 只读副本查询真实 18/18 任务，`/api/ai/analyze/status` 返回 `resume-aggregate`、`outputStats.responses=20/rejected=1`、`batchIndex=null`。
 - **未验证**：真实付费 Provider、真实生产任务 Resume、真实浏览器点击/截图、真实 UAC 双击。
 
 ### 0.4 生产失败任务的安全恢复步骤（需用户明确授权）
@@ -47,7 +47,7 @@
 
 ### 0.5 下一轮注意
 
-1. 正式 EXE 已包含本轮修复（buildId `36b818bfbf7f`）；后续若改代码必须重新构建，旧 EXE 没有独立汇总预算与恢复面板。
+1. 正式 EXE 已包含本轮修复（buildId `61da4c6991e1`）；后续若改代码必须重新构建，旧 EXE 没有独立汇总预算与恢复面板。
 2. 不要为了“重试”自动重发截断请求；截断后只允许用户点击 Continue，且只重做缺失的 final。
 3. `outputStats.rejected` 是“成功响应但输出不可用”的计数，不要加进 HTTP 失败数；也不要把 HTTP 成功解释为分析完成。
 4. 若未来允许“汇总阶段更换模型”，必须只允许在全部批次已保存且 final 缺失时进行，并保留同一 job / 同一批次 checksum，不得重做批次。

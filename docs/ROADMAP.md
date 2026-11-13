@@ -404,7 +404,7 @@
 - ✅ `batchIndex` 1-based 规范化，旧 `batchIndex=0` 读取兼容且不再出现在失败批次
 - ✅ `outputStats` 区分 API 成功与输出完整性/Schema 失败；界面解释 API 成功 ≠ 分析完成
 - ✅ 668 自动化测试；18 条批次 id/version/checksum 在继续前后完全一致
-- ✅ 正式 EXE 重建：buildId `36b818bfbf7f` / commit `2a9ccd8` / SHA-256 `894d6b5b…` / 174 assets / requireAdministrator；asInvoker 副本实际启动，`/api/health`/`/api/bootstrap` 与打包 UI/API 已验证
+- ✅ 正式 EXE 重建：buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c056…` / 174 assets / requireAdministrator；asInvoker 副本实际启动，`/api/health`/`/api/bootstrap` 与打包 UI/API 已验证
 - ⬜ 真实付费 Provider 的 16k 输出预算与截断后 Continue（本机无 Key）
 - ⬜ 真实生产任务 Resume（需用户授权）
 - ⬜ 真实浏览器点击与 UAC 双击验收
