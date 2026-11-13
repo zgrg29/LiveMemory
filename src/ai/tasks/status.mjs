@@ -1,4 +1,9 @@
-import {getJobBatch, jobMemoryCoverage, listJobBatches} from '../../storage/repositories/ai-jobs.mjs';
+import {
+  getJobBatch,
+  jobMemoryCoverage,
+  listJobBatches,
+  listJobMemoryViewers
+} from '../../storage/repositories/ai-jobs.mjs';
 import {listResults} from '../../storage/repositories/ai-results.mjs';
 
 /**
@@ -34,6 +39,32 @@ export function computeJobStatus(db, job) {
   const aggregatePackageReady = Boolean(job.aggregatePackageId);
   const memoryCoverage = jobMemoryCoverage(db, job.id);
   const memoryReady = analysisMode === 'session' || memoryCoverage.total === 0 || memoryCoverage.complete;
+  // Recovery sub-batches are persisted on the viewer rows (`split_path`). They
+  // are informational progress, not new planned batches: `batchTotal` remains
+  // the original 1-based plan so saved result indexes and evidence stay valid.
+  const splitGroups = new Map();
+  const pendingMemoryBatchIndexes = new Set();
+  for (const viewer of listJobMemoryViewers(db, job.id)) {
+    if (['pending', 'failed', 'missing_update'].includes(viewer.status)) {
+      pendingMemoryBatchIndexes.add(viewer.batchIndex);
+    }
+    if (!viewer.splitPath) continue;
+    const key = `${viewer.batchIndex}:${viewer.splitPath}`;
+    const group = splitGroups.get(key) ?? {batchIndex: viewer.batchIndex, splitPath: viewer.splitPath, viewers: 0, pending: 0};
+    group.viewers += 1;
+    if (['pending', 'failed', 'missing_update'].includes(viewer.status)) group.pending += 1;
+    splitGroups.set(key, group);
+  }
+  const splitList = [...splitGroups.values()].sort((left, right) => (
+    left.batchIndex - right.batchIndex || left.splitPath.localeCompare(right.splitPath, undefined, {numeric: true})
+  ));
+  // A batch with one persisted child result is not "completed" while other
+  // viewers of the same planned batch are still pending. The memory progress
+  // line therefore counts fully covered planned batches, while
+  // `batchesImported` still reports how many result rows were saved.
+  const memoryBatchesCompleted = analysisMode === 'memory' && memoryCoverage.total > 0
+    ? batches.filter((batch) => !pendingMemoryBatchIndexes.has(batch.batchIndex)).length
+    : importedBatches;
 
   let status;
   if (analysisMode === 'session') {
@@ -119,6 +150,8 @@ export function computeJobStatus(db, job) {
     analysisMode,
     batchTotal: job.batchTotal,
     batchesImported: importedBatches,
+    batchesCompleted: memoryBatchesCompleted,
+    pendingBatches: Math.max(0, batches.length - memoryBatchesCompleted),
     missingBatches,
     aggregateRequired,
     aggregateImported,
@@ -128,6 +161,10 @@ export function computeJobStatus(db, job) {
     memoryViewersTotal: job.memoryViewersTotal,
     memoryCoverage,
     memoryReady,
+    splitBatches: splitList.length,
+    splitViewers: splitList.reduce((total, group) => total + group.viewers, 0),
+    pendingSplitBatches: splitList.filter((group) => group.pending > 0).length,
+    splits: splitList,
     resultCount: results.length,
     // The job's own usage row. Session and memory are separate jobs, so each
     // value contains only the requests made for that job.

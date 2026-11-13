@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openDatabase, withTransaction} from '../../src/storage/database/connection.mjs';
 import {currentSchemaVersion, migrate, MIGRATIONS} from '../../src/storage/database/migrations/index.mjs';
@@ -70,8 +70,8 @@ test('a v9 database upgrades to v10 keeping every existing row', () => {
 
     const result = migrate(db, {now: T0 + 1000});
     assert.equal(result.from, 9);
-    assert.equal(result.to, 15);
-    assert.deepEqual(result.applied, [10, 11, 12, 13, 14, 15]);
+    assert.equal(result.to, 16);
+    assert.deepEqual(result.applied, [10, 11, 12, 13, 14, 15, 16]);
 
     for (const table of [
       'viewer_memories',
@@ -105,20 +105,23 @@ test('a v9 database upgrades to v10 keeping every existing row', () => {
     const index = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_memory_facts_dedupe'").get();
     assert.match(index.sql, /WHERE status <> 'superseded'/);
 
-    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 15, to: 15, applied: []});
+    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 16, to: 16, applied: []});
   } finally {
     db.close();
   }
 });
 
-test('a fresh database creates the full schema at version 15', () => {
+test('a fresh database creates the full schema at version 16', () => {
   const db = openDatabase({memory: true});
   try {
     const result = migrate(db, {now: T0});
     assert.equal(result.from, 0);
-    assert.equal(result.to, 15);
-    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-    assert.equal(currentSchemaVersion(db), 15);
+    assert.equal(result.to, 16);
+    assert.deepEqual(result.applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    assert.equal(currentSchemaVersion(db), 16);
+    const viewerColumns = db.prepare('PRAGMA table_info(ai_job_memory_viewers)').all().map((row) => row.name);
+    assert.ok(viewerColumns.includes('split_path'), 'recovery sub-batch path column is present');
+    assert.ok(viewerColumns.includes('split_reason'), 'recovery split reason column is present');
   } finally {
     db.close();
   }

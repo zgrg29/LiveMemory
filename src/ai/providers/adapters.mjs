@@ -40,7 +40,10 @@ export class ProviderHttpError extends Error {
     receivedOutput = false,
     elapsedMs = null,
     timeoutMs = null,
-    metrics = null
+    metrics = null,
+    finishReason = null,
+    reasoningChars = 0,
+    usage = null
   } = {}) {
     super(code);
     this.name = 'ProviderHttpError';
@@ -58,6 +61,13 @@ export class ProviderHttpError extends Error {
     this.elapsedMs = elapsedMs;
     this.timeoutMs = timeoutMs;
     this.metrics = metrics;
+    // A response can be unusable *because of how it ended*. Losing the finish
+    // reason here used to turn an explicit `length` truncation into a generic
+    // "empty content" error, which the UI could not distinguish from a broken
+    // provider payload and the retry policy treated as a permanent failure.
+    this.finishReason = typeof finishReason === 'string' ? finishReason.slice(0, 40) : null;
+    this.reasoningChars = Math.max(0, Math.round(Number(reasoningChars) || 0));
+    this.usage = usage ?? null;
   }
 }
 
@@ -69,6 +79,7 @@ export const PROVIDER_ERROR = Object.freeze({
   NOT_FOUND: 'PROVIDER_ENDPOINT_NOT_FOUND',
   HTTP: 'PROVIDER_HTTP_ERROR',
   FORMAT: 'PROVIDER_RESPONSE_INVALID',
+  EMPTY: 'PROVIDER_RESPONSE_EMPTY',
   STREAM_INTERRUPTED: 'PROVIDER_STREAM_INTERRUPTED',
   STREAM_ERROR: 'PROVIDER_STREAM_ERROR',
   CONFIG: 'PROVIDER_CONFIG_INVALID',
@@ -315,6 +326,46 @@ function timeoutFromIdle(error, {providerId, control, startedAt, now, timeoutMs,
   });
 }
 
+/**
+ * The provider answered HTTP 200 but produced no assistant text.
+ *
+ * There are two materially different cases:
+ *   - `finish_reason=length`: the model consumed the answer budget (often on
+ *     hidden reasoning) and was cut off. This is an output truncation and must
+ *     be recovered by reducing the batch or, for a single viewer, raising the
+ *     answer budget once. It is not a malformed response.
+ *   - no finish reason / `stop`: a genuinely empty response. It is usually
+ *     transient, so one bounded retry is safe and cheap (there is no answer to
+ *     pay for); after that it stays a precise, resumable provider error.
+ */
+function emptyContentError({
+  providerId,
+  response,
+  finishReason = null,
+  reasoningChars = 0,
+  usage = null,
+  metrics = null,
+  elapsedMs = null,
+  streaming = false
+}) {
+  const truncated = finishReason === 'length';
+  return new ProviderHttpError(truncated ? 'AUTO_OUTPUT_TRUNCATED' : PROVIDER_ERROR.EMPTY, {
+    status: response?.status ?? null,
+    detail: truncated ? 'finish-reason-length-empty-content' : 'empty-content',
+    providerId,
+    kind: ERROR_KIND.INVALID_RESPONSE,
+    retryable: !truncated,
+    receivedHeaders: true,
+    receivedOutput: Boolean(finishReason) || Number(metrics?.events ?? 0) > 0,
+    phase: streaming ? ATTEMPT_PHASE.STREAM : ATTEMPT_PHASE.BODY,
+    elapsedMs,
+    metrics,
+    finishReason,
+    reasoningChars,
+    usage
+  });
+}
+
 /* -------------------------------------------------------------- OpenAI family */
 
 const STREAM_USAGE_PROVIDERS = new Set(['openai', 'deepseek', 'openrouter', 'dashscope']);
@@ -525,14 +576,15 @@ export async function callOpenAICompatible({
     }
     const text = result.text;
     if (!text) {
-      throw new ProviderHttpError(PROVIDER_ERROR.FORMAT, {
-        status: response.status,
-        detail: 'empty-content',
+      throw emptyContentError({
         providerId: config.providerId,
-        kind: ERROR_KIND.INVALID_RESPONSE,
-        receivedHeaders: true,
-        phase: ATTEMPT_PHASE.STREAM,
-        metrics
+        response,
+        finishReason: result.finishReason,
+        reasoningChars: result.reasoningChars,
+        usage: normalizeUsage({usage: result.usage}),
+        metrics,
+        elapsedMs: finishedAt - startedAt,
+        streaming: true
       });
     }
     return {
@@ -585,13 +637,15 @@ export async function callOpenAICompatible({
   };
   const text = contentFromOpenAI(payload).trim();
   if (!text) {
-    throw new ProviderHttpError(PROVIDER_ERROR.FORMAT, {
-      status: response.status,
-      detail: 'empty-content',
+    throw emptyContentError({
       providerId: config.providerId,
-      kind: ERROR_KIND.INVALID_RESPONSE,
-      receivedHeaders: true,
-      metrics
+      response,
+      finishReason: finishFromOpenAI(payload),
+      reasoningChars: reasoningCharsFromPayload(payload),
+      usage: normalizeUsage(payload),
+      metrics,
+      elapsedMs: finishedAt - startedAt,
+      streaming: false
     });
   }
   onProgress?.({receivedOutput: true, firstTokenAt: finishedAt});
@@ -771,14 +825,15 @@ export async function callAnthropic({
       throw streamInterruptedError(config.providerId, 'stream-ended-without-finish', metrics);
     }
     if (!result.text) {
-      throw new ProviderHttpError(PROVIDER_ERROR.FORMAT, {
-        status: response.status,
-        detail: 'empty-content',
+      throw emptyContentError({
         providerId: config.providerId,
-        kind: ERROR_KIND.INVALID_RESPONSE,
-        receivedHeaders: true,
-        phase: ATTEMPT_PHASE.STREAM,
-        metrics
+        response,
+        finishReason: result.finishReason,
+        reasoningChars: 0,
+        usage: normalizeUsage({usage: result.usage}),
+        metrics,
+        elapsedMs: finishedAt - startedAt,
+        streaming: true
       });
     }
     return {
@@ -833,13 +888,15 @@ export async function callAnthropic({
     ? payload.content.filter((part) => part?.type === 'text').map((part) => part.text).join('').trim()
     : '';
   if (!text) {
-    throw new ProviderHttpError(PROVIDER_ERROR.FORMAT, {
-      status: response.status,
-      detail: 'empty-content',
+    throw emptyContentError({
       providerId: config.providerId,
-      kind: ERROR_KIND.INVALID_RESPONSE,
-      receivedHeaders: true,
-      metrics
+      response,
+      finishReason: payload?.stop_reason === 'max_tokens' ? 'length' : (payload?.stop_reason ?? null),
+      reasoningChars: 0,
+      usage: normalizeUsage(payload),
+      metrics,
+      elapsedMs: finishedAt - startedAt,
+      streaming: false
     });
   }
   const usage = normalizeUsage(payload);

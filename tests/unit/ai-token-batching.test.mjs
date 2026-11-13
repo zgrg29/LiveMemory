@@ -2,13 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_BATCH_INPUT_TOKENS,
+  MAX_MEMORY_SPLIT_DEPTH,
+  MEMORY_BASE_OUTPUT_TOKENS,
+  MEMORY_MAX_FACTS_PER_VIEWER,
+  MEMORY_MAX_OUTPUT_TOKENS,
+  MEMORY_MIN_OUTPUT_TOKENS,
   MIN_BATCH_INPUT_TOKENS,
+  estimateMemoryViewerOutputTokens,
   planBatchBudget,
   planMemoryViewerBatches,
   planSessionMessageBatches,
   promptOverheadTokens,
   resolveBatchInputTokens,
   resolveMaxCompletionTokens,
+  resolveMemoryOutputTokens,
   resolveOutputTokens
 } from '../../src/ai/batching/tokens.mjs';
 import {assignMemoryOnlyBatches} from '../../src/ai/export/split-jobs.mjs';
@@ -115,8 +122,80 @@ test('exceeding the batch limit fails explicitly instead of silently truncating'
   }), (error) => error.code === 'ANALYSIS_TOO_MANY_BATCHES');
 });
 
-test('the legacy memory assignment helper stays compatible and gains token awareness', () => {
+test('viewer output demand grows slowly, is capped and never invents facts for silence', () => {
+  assert.equal(estimateMemoryViewerOutputTokens({excerptCount: 0}), 80);
+  const one = estimateMemoryViewerOutputTokens({excerptCount: 1});
+  const many = estimateMemoryViewerOutputTokens({excerptCount: 120});
+  assert.ok(one < many);
+  const absurd = estimateMemoryViewerOutputTokens({excerptCount: 100000});
+  assert.ok(absurd <= 90 + MEMORY_MAX_FACTS_PER_VIEWER * 120 + 4 * 25 + 180,
+    'the estimate is bounded by the prompt fact cap, not by message count');
+});
+
+test('memory output budget stays bounded and shrinks with a small context', () => {
+  assert.equal(resolveMemoryOutputTokens({estimatedOutputTokens: 0}), MEMORY_BASE_OUTPUT_TOKENS);
+  assert.ok(resolveMemoryOutputTokens({estimatedOutputTokens: 100000}) <= MEMORY_MAX_OUTPUT_TOKENS);
+  assert.ok(resolveMemoryOutputTokens({estimatedOutputTokens: 100000}) >= MEMORY_MIN_OUTPUT_TOKENS);
+  assert.ok(resolveMemoryOutputTokens({
+    estimatedOutputTokens: 7000,
+    inputTokens: 9000,
+    contextLength: 12000
+  }) < 7000, 'input + answer must still fit the declared context');
+  assert.equal(
+    resolveMemoryOutputTokens({estimatedOutputTokens: 0, bump: true}),
+    MEMORY_MAX_OUTPUT_TOKENS
+  );
+});
+
+test('a batch is split by expected output even when its input fits', () => {
+  // Ten active viewers: each needs ~750 answer tokens, so 10 do not fit a 6k
+  // answer with the 80% planning margin even though their input is small.
+  const viewers = Array.from({length: 10}, (_, index) => ({
+    viewerId: `v${index}`,
+    excerptCount: 120,
+    excerptTokens: 400,
+    memoryTokens: 0
+  }));
+  const plan = planMemoryViewerBatches({
+    viewers,
+    viewerCap: 10,
+    excerptCap: 600,
+    overheadTokens: 1000,
+    inputBudget: 32000,
+    outputBudgetTokens: 6000
+  });
+  assert.ok(plan.batches.length > 1, 'output demand must influence the batch count');
+  assert.equal(plan.batches.flatMap((batch) => batch.viewerIds).length, 10);
+  for (const batch of plan.batches) {
+    assert.ok(batch.estimatedOutputTokens <= plan.outputCapacity, JSON.stringify(batch));
+    assert.ok(batch.outputBudgetTokens >= MEMORY_BASE_OUTPUT_TOKENS);
+    assert.ok(batch.outputBudgetTokens <= MEMORY_MAX_OUTPUT_TOKENS);
+  }
+  assert.equal(MAX_MEMORY_SPLIT_DEPTH >= 1, true);
+});
+
+test('one viewer above the output share is isolated with a larger bounded budget', () => {
   const viewers = [
+    {viewerId: 'a', excerptCount: 2, excerptTokens: 100, memoryTokens: 0},
+    {viewerId: 'heavy', excerptCount: 400, excerptTokens: 2000, memoryTokens: 0, outputTokens: 7000},
+    {viewerId: 'c', excerptCount: 2, excerptTokens: 100, memoryTokens: 0}
+  ];
+  const plan = planMemoryViewerBatches({
+    viewers,
+    viewerCap: 10,
+    excerptCap: 600,
+    overheadTokens: 1000,
+    inputBudget: 32000,
+    outputBudgetTokens: 6000
+  });
+  const heavy = plan.batches.find((batch) => batch.viewerIds.includes('heavy'));
+  assert.deepEqual(heavy.viewerIds, ['heavy']);
+  assert.equal(heavy.outputOversized, true);
+  assert.ok(heavy.outputBudgetTokens <= MEMORY_MAX_OUTPUT_TOKENS);
+  assert.deepEqual(plan.batches.flatMap((batch) => batch.viewerIds), ['a', 'heavy', 'c']);
+});
+
+test('the legacy memory assignment helper stays compatible and gains token awareness', () => {  const viewers = [
     {viewer_id: 'a'},
     {viewer_id: 'b'},
     {viewer_id: 'c'}

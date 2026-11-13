@@ -1,10 +1,60 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 可扩展分层汇总与真实 32 批恢复 · schema 15 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-13 · v0.13.2 长期画像输出预算、截断恢复与观众级断点 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮使用生产 DB/runtime/exports 的**只读副本**与本地 Mock Provider；未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。正式 EXE 已重建并用 asInvoker 测试副本实跑验证。
+> 本轮使用生产 DB/runtime/config/exports 的**只读副本**与本地 Mock Provider；未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。正式 EXE 已重建（见 §0.3）。
 
-## 0. 本轮（分层汇总与 32 批恢复）
+## 0. 本轮（长期画像输出截断与观众级恢复）
+
+完整证据：`log/2026-11-13-ai-memory-output-recovery.md`。
+
+### 0.1 真实根因
+
+- 任务 `aij_01M7AJ05B5E2VRG9Z82G`：100 批、975 人；17 条成功结果（1–11、13–18），批次 12 的 10 人与后续 812 人 pending。
+- 批次 12 与更早的批次 4 都以 HTTP 200 + `empty-content` 失败（约 33–35 秒无文本），`retry=false`；批次 4 在用户继续后成功。不是批次 12 输入过大导致的确定性问题。
+- 适配器空文本时抛 `PROVIDER_RESPONSE_INVALID` 并丢弃 `finish_reason`/usage；length 截断无法识别，也不会自动重试。
+- UI 的 `length` 是上一子任务（session aggregate）13:35:54 的陈旧 `lastOutputRejection`；批次 12 错误本身 finishReason=null。b12 是否 length 未持久化，属于推测。
+- 分批只看输入；输出固定 6,000；没有拆分映射；进度把任意子结果当批次完成；elapsedMs=null 显示 0。
+- 17 个成功批次是并发乱序完成，不是按序号跳过。
+
+### 0.2 实现
+
+- `src/ai/batching/tokens.mjs`：`estimateMemoryViewerOutputTokens`、`resolveMemoryOutputTokens`、输出感知 `planMemoryViewerBatches`、上限 8,192。
+- `src/ai/export/split-jobs.mjs`：观众输出成本、批次 `output_budget_tokens`、`estimated_output_tokens`、`max_facts_per_viewer`。
+- `src/ai/prompts/split.mjs`：三语事实/证据上限（12 条/人，1–3 证据/事实）。
+- `src/ai/providers/adapters.mjs`：保留 finishReason/reasoningChars/usage/metrics；空 + length → `AUTO_OUTPUT_TRUNCATED`；空 + 非 length → `PROVIDER_RESPONSE_EMPTY`。
+- `src/ai/runtime/attempt.mjs`：空响应自动重试 1 次；截断不在传输层重试。
+- `src/ai/api/runner.mjs`：失败 usage 归属、`recoveryStats`、有界拆分/预算提升、成功子结果立即导入、连续 3 个输出失败停止调度、`lastOutputRejection` 按 Job 隔离、elapsedMs null 修复。
+- `src/storage/database/migrations/index.mjs` + `ai-jobs.mjs`：schema 16 `split_path/split_reason`、事务写入、状态读模型。
+- `src/ai/tasks/status.mjs` / `recovery.mjs`：计划批次覆盖计数、splitBatches/pendingSplitBatches/splits。
+- `src/web/js/pages/ai.js` + 三语 i18n：截断/空响应/自动重试/拆分进度/子批次路径/恢复文案。
+- 文档：STATUS、HANDOFF、ROADMAP、AI_CONTRACT §25、DATA_MODEL §19、TEST_PLAN §36、CHANGELOG、本文件、日志。
+
+### 0.3 验证
+
+- 全量 **698 passed / 0 failed**（约 196 秒）。
+- 真实任务只读副本 + Mock：17/100、153/975 → complete 100/100、975/975；只请求 b12、19–100；b12 自动拆 12.1/12.2；旧 17 条结果 id/version 全部保留；再次继续 0 请求。
+- EXE：见 §0.4（构建完成后填入 buildId/commit/SHA-256/大小/assets）。
+- 未验证：真实付费 DeepSeek Flash、真实生产任务 Resume（需用户授权）、真实 UAC 双击、真实浏览器点击；b12 原始 finish_reason 未保存。
+
+### 0.4 生产恢复步骤
+
+1. 完全退出 LiveMemory；备份整个数据目录（不要在运行时复制写入中的 SQLite）。
+2. 替换为包含本轮修复的 EXE；设置页「关于」核对 buildId。
+3. 打开 AI 分析中心，选择 `ses_01M77TP9QYPFRE4H9NCH`；应显示 17/100 批、153/975 人、822 待处理、「继续未完成画像」。
+4. 选择与失败任务相同的 DeepSeek / global / deepseek-flash；点击继续。只处理批次 12 与 19–100 的待处理观众，不会重发已保存批次/观众。
+5. 若仍失败，查看技术详情：`AUTO_OUTPUT_TRUNCATED` 会显示拆分子批次路径；`PROVIDER_RESPONSE_EMPTY` 表示已自动重试一次仍为空。不要新建整场分析、不要清空数据。
+6. 成功后任务 complete、恢复面板消失；已保存事实不会重复写入。
+
+### 0.5 下一轮注意
+
+1. 不要为了“让任务成功”重新发送已保存的 17 个批次/153 位观众，也不要按“从失败批次之后全部重跑”。
+2. `split_path` 是恢复边界；修改拆分算法时必须保持原 `batch_index`、证据 seq、事实 id/topic 不变。
+3. 空响应自动重试只允许 1 次；截断必须先缩小批次或单观众预算，不得无上限提高 max_tokens。
+4. 新增输出错误码时同步更新 `runner.mjs`、`recovery.mjs`、`ai.js`、三语 i18n 与测试。
+5. 正式 EXE 已更新；后续改代码必须重建。
+
+## 0.6 上一轮（分层汇总与 32 批恢复）
 
 完整证据：`log/2026-11-13-ai-hierarchical-aggregate.md`。
 

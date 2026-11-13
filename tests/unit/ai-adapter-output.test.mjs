@@ -80,3 +80,83 @@ test('usage normalization reports reasoning tokens when the provider exposes the
   }).reasoningTokens, 10684);
   assert.equal(normalizeUsage({usage: {prompt_tokens: 1, completion_tokens: 1}}).reasoningTokens, 0);
 });
+
+function streamResponse(chunks) {
+  const body = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n';
+  return new Response(body, {
+    status: 200,
+    headers: {'content-type': 'text/event-stream; charset=utf-8'}
+  });
+}
+
+test('an empty stream finished by length is a truncation, not a generic empty response', async () => {
+  const fetchImpl = async () => streamResponse([
+    {choices: [{delta: {reasoning_content: 'reasoning text only'}, finish_reason: null}]},
+    {choices: [{delta: {}, finish_reason: 'length'}], usage: {prompt_tokens: 120, completion_tokens: 6000, total_tokens: 6120}}
+  ]);
+  await assert.rejects(
+    () => callOpenAICompatible({
+      config: config('deepseek'),
+      apiKey: 'test-key',
+      messages: [{role: 'user', content: 'Return JSON'}],
+      maxTokens: 6000,
+      streaming: true,
+      fetchImpl
+    }),
+    (error) => {
+      assert.equal(error.code, 'AUTO_OUTPUT_TRUNCATED');
+      assert.equal(error.finishReason, 'length');
+      assert.equal(error.detail, 'finish-reason-length-empty-content');
+      assert.equal(error.retryable, false);
+      assert.equal(error.reasoningChars, 'reasoning text only'.length);
+      assert.equal(error.usage.outputTokens, 6000, 'usage on a truncated answer is still counted');
+      return true;
+    }
+  );
+});
+
+test('an empty stream with stop is a retryable empty provider response', async () => {
+  const fetchImpl = async () => streamResponse([
+    {choices: [{delta: {}, finish_reason: 'stop'}], usage: {prompt_tokens: 50, completion_tokens: 0, total_tokens: 50}}
+  ]);
+  await assert.rejects(
+    () => callOpenAICompatible({
+      config: config('deepseek'),
+      apiKey: 'test-key',
+      messages: [{role: 'user', content: 'Return JSON'}],
+      maxTokens: 6000,
+      streaming: true,
+      fetchImpl
+    }),
+    (error) => {
+      assert.equal(error.code, 'PROVIDER_RESPONSE_EMPTY');
+      assert.equal(error.finishReason, 'stop');
+      assert.equal(error.retryable, true);
+      return true;
+    }
+  );
+});
+
+test('a non-streaming empty answer keeps its length finish reason', async () => {
+  const fetchImpl = async () => Response.json({
+    model: 'deepseek-flash',
+    choices: [{message: {content: ''}, finish_reason: 'length'}],
+    usage: {prompt_tokens: 100, completion_tokens: 6000, total_tokens: 6100}
+  });
+  await assert.rejects(
+    () => callOpenAICompatible({
+      config: config('deepseek'),
+      apiKey: 'test-key',
+      messages: [{role: 'user', content: 'Return JSON'}],
+      maxTokens: 6000,
+      streaming: false,
+      fetchImpl
+    }),
+    (error) => {
+      assert.equal(error.code, 'AUTO_OUTPUT_TRUNCATED');
+      assert.equal(error.finishReason, 'length');
+      assert.equal(error.usage.outputTokens, 6000);
+      return true;
+    }
+  );
+});

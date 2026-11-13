@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openDatabase, withTransaction} from '../../src/storage/database/connection.mjs';
 import {currentSchemaVersion, migrate, MIGRATIONS} from '../../src/storage/database/migrations/index.mjs';
@@ -38,8 +38,8 @@ test('v13 upgrades to v15 by adding translation and aggregate-node tables only',
     );
 
     const result = migrate(db, {now: T0 + 1000});
-    assert.deepEqual(result, {from: 13, to: 15, applied: [14, 15]});
-    assert.equal(currentSchemaVersion(db), 15);
+    assert.deepEqual(result, {from: 13, to: 16, applied: [14, 15, 16]});
+    assert.equal(currentSchemaVersion(db), 16);
 
     for (const table of ['ai_translations', 'ai_translation_runs']) {
       assert.ok(
@@ -61,7 +61,7 @@ test('v13 upgrades to v15 by adding translation and aggregate-node tables only',
       'ses_v13'
     );
     // Re-running is a no-op.
-    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 15, to: 15, applied: []});
+    assert.deepEqual(migrate(db, {now: T0 + 2000}), {from: 16, to: 16, applied: []});
   } finally {
     db.close();
   }

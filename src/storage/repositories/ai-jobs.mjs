@@ -8,6 +8,8 @@
  * deleted broadcast.
  */
 
+import {withTransaction} from '../database/connection.mjs';
+
 function parseJson(value) {
   if (typeof value !== 'string' || value === '') return null;
   try {
@@ -177,6 +179,9 @@ export function recordJobFailure(db, jobId, {
   batchIndex = null,
   batchId = null,
   stage = null,
+  finishReason = null,
+  outputTruncated = false,
+  splitPath = null,
   now = Date.now()
 } = {}) {
   const capped = (Array.isArray(errors) ? errors : []).slice(0, 40).map((error) => ({
@@ -214,6 +219,11 @@ export function recordJobFailure(db, jobId, {
     code: String(code ?? 'IMPORT_INVALID').slice(0, 80),
     at: Number(now),
     errors: capped,
+    ...(typeof finishReason === 'string' && finishReason
+      ? {finishReason: finishReason.slice(0, 40)}
+      : {}),
+    ...(outputTruncated === true ? {outputTruncated: true} : {}),
+    ...(typeof splitPath === 'string' && splitPath ? {splitPath: splitPath.slice(0, 80)} : {}),
     ...(cappedViewers ? {viewerErrors: cappedViewers} : {})
   };
   const remaining = entries.filter((item) => (
@@ -230,6 +240,9 @@ export function recordJobFailure(db, jobId, {
     at: Number(latest?.at ?? now),
     code: String(latest?.code ?? entry.code),
     errors: Array.isArray(latest?.errors) ? latest.errors : capped,
+    ...(latest?.finishReason ? {finishReason: latest.finishReason} : {}),
+    ...(latest?.outputTruncated === true ? {outputTruncated: true} : {}),
+    ...(latest?.splitPath ? {splitPath: latest.splitPath} : {}),
     ...(latest?.viewerErrors ? {viewerErrors: latest.viewerErrors} : {}),
     batches: remaining
   });
@@ -467,7 +480,12 @@ function mapMemoryViewer(row) {
     messageCount: Number(row.message_count ?? 0),
     status: row.status,
     resultId: row.result_id ?? null,
-    processedAt: row.processed_at ?? null
+    processedAt: row.processed_at ?? null,
+    // Recovery sub-batch (e.g. `12.1`) of the original planned batch. NULL for
+    // viewers that never needed a split. The original `batchIndex` is preserved
+    // so saved viewer status and evidence references remain valid.
+    splitPath: row.split_path ?? null,
+    splitReason: row.split_reason ?? null
   };
 }
 
@@ -489,8 +507,39 @@ export function insertJobMemoryViewers(db, jobId, entries) {
   }
 }
 
-export function insertJobMemoryMessages(db, jobId, batchIndex, entries) {
-  const statement = db.prepare(`
+/**
+ * Persist the viewer-to-sub-batch mapping used after an output truncation.
+ *
+ * `splitPath` is `"<originalBatch>.<child>[.<grandchild>]"`. It is written
+ * before the child request so a crash, restart or repeated Continue reuses the
+ * same partition. The original `batch_index` is never changed: saved results,
+ * evidence seqs and fact IDs stay attached to the planned batch.
+ */
+export function setJobMemoryViewerSplit(db, jobId, viewerIds, {splitPath, reason = null} = {}) {
+  const path = splitPath === null || splitPath === undefined ? null : String(splitPath).slice(0, 80);
+  const ids = [...new Set((viewerIds ?? []).map(String).filter(Boolean))];
+  if (ids.length === 0) return;
+  // One statement keeps a crash from persisting only half of a split mapping.
+  const placeholders = ids.map(() => '?').join(', ');
+  db.prepare(`
+    UPDATE ai_job_memory_viewers
+       SET split_path = ?, split_reason = ?
+     WHERE job_id = ? AND viewer_id IN (${placeholders})
+  `).run(path, reason === null ? null : String(reason).slice(0, 80), String(jobId), ...ids);
+}
+
+export function setJobMemoryViewerSplits(db, jobId, groups = []) {
+  withTransaction(db, () => {
+    for (const group of groups) {
+      setJobMemoryViewerSplit(db, jobId, group.viewerIds, {
+        splitPath: group.splitPath,
+        reason: group.reason ?? null
+      });
+    }
+  });
+}
+
+export function insertJobMemoryMessages(db, jobId, batchIndex, entries) {  const statement = db.prepare(`
     INSERT INTO ai_job_memory_messages (job_id, batch_index, seq, viewer_id, event_id)
     VALUES (?, ?, ?, ?, ?)
   `);

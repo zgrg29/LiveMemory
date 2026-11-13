@@ -1001,6 +1001,25 @@ export const MIGRATIONS = Object.freeze([
           ON ai_aggregate_nodes (job_id, status);
       `);
     }
+  },
+  {
+    version: 16,
+    name: 'memory-viewer-split-path',
+    up(db) {
+      // Output truncation recovery may split one planned memory batch into
+      // smaller viewer groups. The original batch index stays intact; the
+      // sub-batch is identified by a deterministic path such as `12.1.2`.
+      // Persisting it on the viewer row means a restart reuses the same split
+      // instead of re-partitioning (and re-paying for) the batch differently.
+      db.exec(`
+        ALTER TABLE ai_job_memory_viewers ADD COLUMN split_path TEXT;
+        ALTER TABLE ai_job_memory_viewers ADD COLUMN split_reason TEXT;
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_ai_job_memory_viewers_split
+          ON ai_job_memory_viewers (job_id, batch_index, split_path);
+      `);
+    }
   }
 ]);
 

@@ -4,6 +4,7 @@ import {
   listJobBatches,
   listJobMemoryViewers,
   recordJobFailure,
+  setJobMemoryViewerSplits,
   setJobUsage
 } from '../../storage/repositories/ai-jobs.mjs';
 import {getJobPackage} from '../../storage/repositories/ai-packages.mjs';
@@ -45,7 +46,9 @@ import {
   DIGEST_OUTPUT_TOKENS,
   MAX_AGGREGATE_DEPTH,
   MAX_AGGREGATE_NODES,
+  MAX_MEMORY_SPLIT_DEPTH,
   estimateJsonTokens,
+  estimateMemoryViewerOutputTokens,
   estimateTokens,
   resolveAggregateContextBudget,
   resolveAggregateInputLimit,
@@ -53,6 +56,7 @@ import {
   resolveBatchInputTokens,
   resolveDigestOutputTokens,
   resolveMaxCompletionTokens,
+  resolveMemoryOutputTokens,
   resolveOutputTokens
 } from '../batching/tokens.mjs';
 import {
@@ -197,6 +201,32 @@ function isBatchValidationFailure(error) {
   return ['AI_IMPORT_INVALID', 'AUTO_SCHEMA_INVALID', 'AUTO_VIEWER_COVERAGE_INCOMPLETE'].includes(error?.code);
 }
 
+/**
+ * Output truncation is a response-level fact, not a schema failure. It can be
+ * recovered by making the next request smaller; repeating the identical large
+ * request is explicitly forbidden.
+ */
+function isOutputTruncationError(error) {
+  return error?.code === 'AUTO_OUTPUT_TRUNCATED'
+    || (error?.kind === ERROR_KIND.INVALID_RESPONSE && error?.finishReason === 'length');
+}
+
+/** A 200 response with no assistant content at all (after the safe retry). */
+function isEmptyProviderResponse(error) {
+  return error?.code === 'PROVIDER_RESPONSE_EMPTY';
+}
+
+/**
+ * These failures stay local to one viewer group; sibling batches may continue.
+ * A run of them still stops scheduling after a small threshold so a broken
+ * provider cannot cause an unbounded paid retry storm.
+ */
+function isMemoryOutputFailure(error) {
+  return isOutputTruncationError(error) || isEmptyProviderResponse(error);
+}
+
+const MAX_CONSECUTIVE_MEMORY_OUTPUT_FAILURES = 3;
+
 function emptyAttemptStats() {
   return {
     total: 0,
@@ -211,6 +241,22 @@ function emptyAttemptStats() {
     // rejected by JSON/Schema/coverage validation, so the console can explain
     // "20 API requests succeeded, but the task failed".
     outputRejected: 0
+  };
+}
+
+function emptyRecoveryStats() {
+  return {
+    // Automatic requests made because one bounded provider output was unusable.
+    autoRetries: 0,
+    // `finish_reason=length` responses (with or without text).
+    truncations: 0,
+    // HTTP 200 responses with no assistant text after the safe retry.
+    emptyResponses: 0,
+    // Planned batch splits and the resulting child groups.
+    splits: 0,
+    subBatches: 0,
+    // Single-viewer requests that raised the answer budget once.
+    budgetBumps: 0
   };
 }
 
@@ -655,12 +701,13 @@ export class AnalysisRunner {
       sessionStatus?.batchesImported ?? entry.sessionBatchesCompleted ?? 0
     );
     const memoryBatchTotal = entry.memoryJobId
-      ? Number(entry.batchTotal ?? memoryStatus?.batchTotal ?? 0)
+      ? Number(memoryStatus?.batchTotal ?? entry.batchTotal ?? 0)
       : 0;
     const memoryBatchesCompleted = entry.memoryJobId
       ? Number(
-        entry.batchesCompleted
+        memoryStatus?.batchesCompleted
           ?? memoryStatus?.batchesImported
+          ?? entry.batchesCompleted
           ?? (memoryDone ? memoryBatchTotal : 0)
       )
       : 0;
@@ -823,14 +870,39 @@ export class AnalysisRunner {
       estimatedCost: entry.estimatedCost ?? null,
       requestStats,
       attemptStats,
+      recoveryStats: {...emptyRecoveryStats(), ...(entry.recoveryStats ?? {})},
       outputStats: {
         // HTTP/provider responses that returned successfully. This is an API
         // statistic, not a claim that the model produced a valid report.
         responses: Number(attemptStats.succeeded ?? 0),
         rejected: outputRejected,
-        lastCode: entry.lastOutputRejection?.code ?? null,
-        lastFinishReason: entry.lastOutputRejection?.finishReason ?? error?.finishReason ?? null
+        lastCode: (() => {
+          const rejection = entry.lastOutputRejection;
+          // A rejection belongs to the job that produced it. Older tasks did
+          // not persist a job id; never show that stale value as if it came
+          // from the current memory stage.
+          const activeJobId = error?.jobId ?? entry.memoryJobId ?? entry.sessionJobId ?? null;
+          return rejection?.jobId && rejection.jobId === activeJobId
+            ? rejection.code
+            : (error?.code ?? null);
+        })(),
+        lastFinishReason: (() => {
+          const rejection = entry.lastOutputRejection;
+          const activeJobId = error?.jobId ?? entry.memoryJobId ?? entry.sessionJobId ?? null;
+          if (error?.finishReason) return error.finishReason;
+          if (rejection?.jobId && rejection.jobId === activeJobId) return rejection.finishReason ?? null;
+          return null;
+        })(),
+        truncations: Number(entry.recoveryStats?.truncations ?? 0),
+        emptyResponses: Number(entry.recoveryStats?.emptyResponses ?? 0),
+        autoRetries: Number(entry.recoveryStats?.autoRetries ?? 0),
+        splits: Number(entry.recoveryStats?.splits ?? 0)
       },
+      outputTruncated: Boolean(error?.outputTruncated || error?.finishReason === 'length'),
+      providerEmpty: error?.code === 'PROVIDER_RESPONSE_EMPTY',
+      currentSplitPath: entry.currentSplitPath ?? null,
+      memorySplitBatches: Number(memoryStatus?.splitBatches ?? 0),
+      memorySplitViewers: Number(memoryStatus?.splitViewers ?? 0),
       lastOutputRejection: entry.lastOutputRejection ?? null,
       currentRequest,
       lastRequest: entry.lastRequest ?? null,
@@ -1013,11 +1085,17 @@ export class AnalysisRunner {
     const entry = this.state.get(context.sessionId);
     const stats = {...emptyAttemptStats(), ...(entry?.attemptStats ?? {})};
     stats.outputRejected = Number(stats.outputRejected ?? 0) + 1;
+    // Scope the rejection to the child job that produced it. Without this, a
+    // truncation from the session aggregate leaked into the memory stage and
+    // the console displayed "model finish reason: length" for a memory batch
+    // that had not returned that reason at all.
+    const jobId = jobIdForRequestKind(entry, kind);
     this.state.set(context.sessionId, {
       attemptStats: stats,
       lastOutputRejection: {
         code: code ?? 'OUTPUT_REJECTED',
         kind: kind ?? null,
+        jobId: jobId ?? null,
         batchIndex: normalizeBatchIndex(batchIndex),
         stage: stage ?? null,
         finishReason: finishReason ?? null,
@@ -1028,10 +1106,46 @@ export class AnalysisRunner {
       event: 'ai.analysis.output.rejected',
       sessionId: context.sessionId,
       kind,
+      jobId: jobId ?? null,
       batchIndex: normalizeBatchIndex(batchIndex),
       stage,
       code: code ?? 'OUTPUT_REJECTED',
       finishReason: finishReason ?? null
+    });
+  }
+
+  /**
+   * Record one bounded output-recovery action (safe retry, budget bump or
+   * batch split). This is deliberately separate from transport retries so the
+   * console can say "the model answer was truncated and the batch was split"
+   * instead of showing "0 automatic retries".
+   */
+  #recordOutputRecovery(context, {batchIndex = null, stage = null, action, reason, viewerCount = null, childCount = null, splitPath = null}) {
+    const entry = this.state.get(context.sessionId);
+    const stats = {...emptyRecoveryStats(), ...(entry?.recoveryStats ?? {})};
+    if (action === 'split') {
+      stats.splits += 1;
+      stats.subBatches += Math.max(0, Number(childCount) || 0);
+      stats.autoRetries += Math.max(1, Number(childCount) || 2);
+    } else if (action === 'budget-bump' || action === 'retry') {
+      stats.autoRetries += 1;
+    }
+    if (action === 'budget-bump') stats.budgetBumps += 1;
+    if (action === 'detected') {
+      if (reason === 'length') stats.truncations += 1;
+      if (reason === 'empty') stats.emptyResponses += 1;
+    }
+    this.state.set(context.sessionId, {recoveryStats: stats});
+    this.logger?.warn?.({
+      event: 'ai.analysis.memory.output_recovery',
+      sessionId: context.sessionId,
+      batchIndex: normalizeBatchIndex(batchIndex),
+      stage,
+      action,
+      reason,
+      viewerCount,
+      childCount,
+      splitPath
     });
   }
 
@@ -1061,6 +1175,9 @@ export class AnalysisRunner {
         batchIndex: error?.batchIndex ?? null,
         batchId: error?.batchId ?? null,
         stage: error?.stage ?? stage ?? null,
+        finishReason: error?.finishReason ?? null,
+        outputTruncated: Boolean(error?.outputTruncated || error?.finishReason === 'length'),
+        splitPath: error?.splitPath ?? null,
         now: this.now()
       });
     } catch (dbError) {
@@ -1214,11 +1331,19 @@ export class AnalysisRunner {
           ?? (actionRequired ? 'check-provider' : (recoverable ? 'resume' : 'check-provider')),
         kind: error?.kind ?? null,
         finishReason: error?.finishReason ?? null,
+        outputTruncated: Boolean(error?.outputTruncated || error?.finishReason === 'length'),
+        providerEmpty: code === 'PROVIDER_RESPONSE_EMPTY',
+        splitPath: error?.splitPath ?? null,
+        viewerCount: Number.isFinite(Number(error?.viewerCount)) ? Number(error.viewerCount) : null,
         httpStatus: error?.status ?? null,
         retryAfterMs: error?.retryAfterMs ?? null,
         receivedHeaders: error?.receivedHeaders === true,
         receivedOutput: error?.receivedOutput === true,
-        elapsedMs: Number.isFinite(Number(error?.elapsedMs)) ? Number(error.elapsedMs) : null,
+        // `Number(null)` is 0; a failure that never measured elapsed time must
+        // not display "0 ms" as if the request failed instantly.
+        elapsedMs: error?.elapsedMs === null || error?.elapsedMs === undefined
+          ? null
+          : (Number.isFinite(Number(error.elapsedMs)) ? Number(error.elapsedMs) : null),
         actionRequired,
         uncertainBilling
       },
@@ -2732,27 +2857,33 @@ export class AnalysisRunner {
       async () => {
         const batches = listJobBatches(this.db, job.id);
         const assignedViewers = listJobMemoryViewers(this.db, job.id);
-        const viewersByBatch = new Map();
+        // Pending/failed viewers are the only unit of work. The batch index is
+        // the original planned batch; a saved split path further narrows it to
+        // the exact child group. Successful viewers are never included, even
+        // when their batch index is larger than a failed one.
+        const pendingViewersByBatch = new Map();
         for (const viewer of assignedViewers) {
           if (viewer.status !== 'pending' && viewer.status !== 'failed') continue;
-          const list = viewersByBatch.get(viewer.batchIndex) ?? [];
-          list.push(viewer.viewerId);
-          viewersByBatch.set(viewer.batchIndex, list);
+          const list = pendingViewersByBatch.get(viewer.batchIndex) ?? [];
+          list.push(viewer);
+          pendingViewersByBatch.set(viewer.batchIndex, list);
         }
         const pending = assignedViewers.length > 0
-          ? batches.filter((batch) => (viewersByBatch.get(batch.batchIndex)?.length ?? 0) > 0)
+          ? batches.filter((batch) => (pendingViewersByBatch.get(batch.batchIndex)?.length ?? 0) > 0)
           : batches.filter((batch) => (
             !latestResultForScope(this.db, job.id, `batch:${batch.batchIndex}`)
           ));
         const total = job.batchTotal;
         let completed = total - pending.length;
         let active = 0;
+        let outputFailureStreak = 0;
         this.#setRunning(sessionId, {
           stage: 'memory_analyzing',
           batchIndex: completed,
           batchTotal: total,
           batchesCompleted: completed,
-          activeBatches: 0
+          activeBatches: 0,
+          currentSplitPath: null
         });
         await runPool(
           pending,
@@ -2766,34 +2897,29 @@ export class AnalysisRunner {
             });
             if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
             const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), MEMORY_FILES);
-            const viewerIdsForBatch = viewersByBatch.get(batch.batchIndex) ?? null;
-            const prompt = buildMemoryPrompt(files, {viewerIds: viewerIdsForBatch});
-            prompt.files = files;
+            const batchViewerRecords = pendingViewersByBatch.get(batch.batchIndex) ?? [];
+            // With no assignment rows (legacy jobs) there is no subset to build:
+            // the package itself is the whole work unit.
+            const groups = batchViewerRecords.length > 0
+              ? this.#memoryGroupsForBatch(batch.batchIndex, batchViewerRecords)
+              : [{path: String(batch.batchIndex), depth: 0, viewerIds: null}];
+            if (groups.length === 0) return;
             active += 1;
             this.#setRunning(sessionId, {
               stage: 'memory_analyzing',
               batchIndex: completed,
               batchTotal: total,
               batchesCompleted: completed,
-              activeBatches: active
+              activeBatches: active,
+              currentSplitPath: groups.some((group) => group.path.includes('.')) ? groups[0].path : null
             });
             const batchStartedAt = this.now();
-            try {
-              const generated = await this.generateMemoryAnswer({
-                context: {...context, signal: workerSignal},
-                prompt,
-                batchIndex: batch.batchIndex,
-                stage: 'memory_analyzing'
-              });
-              this.state.set(sessionId, {
-                stage: 'memory_importing',
-                batchIndex: completed,
-                batchTotal: total,
-                batchesCompleted: completed,
-                activeBatches: active,
-                lastProvider: generated.providerId,
-                lastModel: generated.model
-              });
+            const viewerFailures = [];
+            let importedCount = 0;
+            const importChunk = (chunk) => {
+              if (workerSignal?.aborted) throw abortError();
+              // Each child answer is imported as soon as it validates. A crash
+              // after a successful child must not discard paid, valid facts.
               const hasExistingResult = Boolean(latestResultForScope(
                 this.db,
                 job.id,
@@ -2801,14 +2927,57 @@ export class AnalysisRunner {
               ));
               const outcome = importAnalysisResult({
                 db: this.db,
-                text: generated.text,
+                text: chunk.text,
                 source: 'api',
                 now: this.now(),
-                viewerIds: generated.viewerIds ?? prompt.viewerIds ?? viewerIdsForBatch,
+                viewerIds: chunk.viewerIds,
                 createVersion: hasExistingResult,
-                viewerFailures: generated.viewerFailures ?? []
+                viewerFailures: chunk.viewerFailures ?? []
               });
-              completed += 1;
+              importedCount += 1;
+              if (chunk.viewerFailures?.length > 0) viewerFailures.push(...chunk.viewerFailures);
+              this.logger?.info?.({
+                event: 'ai.analysis.memory.chunk',
+                sessionId,
+                jobId: job.id,
+                batchIndex: batch.batchIndex,
+                viewers: chunk.viewerIds?.length ?? 0,
+                duplicate: outcome.duplicate,
+                viewerFailures: chunk.viewerFailures?.length ?? 0
+              });
+            };
+            try {
+              for (const group of groups) {
+                const prompt = buildMemoryPrompt(files, {viewerIds: group.viewerIds});
+                prompt.files = files;
+                this.state.set(sessionId, {
+                  stage: 'memory_analyzing',
+                  batchIndex: completed,
+                  batchTotal: total,
+                  batchesCompleted: completed,
+                  activeBatches: active,
+                  currentSplitPath: group.path.includes('.') ? group.path : null,
+                  lastProvider: provider.providerId,
+                  lastModel: provider.modelId
+                });
+                await this.#generateMemoryGroup({
+                  context: {...context, signal: workerSignal},
+                  prompt,
+                  batchIndex: batch.batchIndex,
+                  stage: 'memory_analyzing',
+                  depth: group.depth,
+                  parentPath: group.path,
+                  onChunk: importChunk
+                });
+              }
+              // A planned batch only counts as complete when every viewer that
+              // belongs to it is covered. Splitting therefore never inflates the
+              // batch progress bar while viewers are still pending.
+              const refreshed = listJobMemoryViewers(this.db, job.id, {batchIndex: batch.batchIndex});
+              const batchComplete = refreshed.length > 0 && refreshed.every((viewer) => (
+                !['pending', 'failed', 'missing_update'].includes(viewer.status)
+              ));
+              if (batchComplete) completed += 1;
               const batchMs = this.now() - batchStartedAt;
               const current = this.state.get(sessionId);
               const updated = getJob(this.db, job.id);
@@ -2818,28 +2987,31 @@ export class AnalysisRunner {
                 batchTotal: total,
                 batchesCompleted: completed,
                 activeBatches: active,
+                currentSplitPath: null,
                 batchDurationMsTotal: Number(current?.batchDurationMsTotal ?? 0) + batchMs,
                 batchSamples: Number(current?.batchSamples ?? 0) + 1,
                 memoryDone: computeJobStatus(this.db, updated).complete
               });
+              outputFailureStreak = 0;
               this.logger?.info?.({
                 event: 'ai.analysis.memory.batch',
                 sessionId,
                 jobId: job.id,
                 batchIndex: batch.batchIndex,
-                provider: generated.providerId,
-                model: generated.model,
+                provider: provider.providerId,
+                model: provider.modelId,
                 durationMs: batchMs,
-                duplicate: outcome.duplicate,
-                viewerFailures: generated.viewerFailures?.length ?? 0
+                duplicate: importedCount > 1,
+                chunks: importedCount,
+                viewerFailures: viewerFailures.length
               });
-              if (generated.viewerFailures?.length > 0) {
+              if (viewerFailures.length > 0) {
                 const error = Object.assign(new Error('MEMORY_VIEWERS_REJECTED'), {
                   code: 'AI_IMPORT_INVALID',
                   details: {
-                    errors: generated.viewerFailures.flatMap((entry) => entry.errors)
+                    errors: viewerFailures.flatMap((entry) => entry.errors)
                   },
-                  viewerErrors: generated.viewerFailures,
+                  viewerErrors: viewerFailures,
                   stage: 'validation',
                   jobId: job.id,
                   batchId: batch.batchId,
@@ -2848,6 +3020,8 @@ export class AnalysisRunner {
                 throw error;
               }
             } catch (error) {
+              if (isMemoryOutputFailure(error)) outputFailureStreak += 1;
+              else if (!isBatchValidationFailure(error)) outputFailureStreak = 0;
               throw this.#recordBatchFailure(job, batch, 'memory_analyzing', error, sessionId);
             } finally {
               active = Math.max(0, active - 1);
@@ -2863,7 +3037,18 @@ export class AnalysisRunner {
             }
           },
           context.signal,
-          {shouldStop: (error) => !isBatchValidationFailure(error)}
+          {
+            shouldStop: (error) => {
+              // A validation failure is local to its batch and must not stop
+              // siblings. Output truncation/empty responses are also local, but
+              // a run of them (broken provider) stops scheduling to bound cost.
+              if (isBatchValidationFailure(error)) return false;
+              if (isMemoryOutputFailure(error)) {
+                return outputFailureStreak >= MAX_CONSECUTIVE_MEMORY_OUTPUT_FAILURES;
+              }
+              return true;
+            }
+          }
         );
         const updated = getJob(this.db, job.id);
         if (!updated || !computeJobStatus(this.db, updated).complete) {
@@ -2877,12 +3062,220 @@ export class AnalysisRunner {
     );
   }
 
-  async generateMemoryAnswer({context, prompt, batchIndex = null, stage = 'memory_analyzing', outputTokens = 6000}) {
+  #memoryViewerIds(prompt) {
+    if (Array.isArray(prompt?.viewerIds)) return prompt.viewerIds.map(String);
+    return (prompt?.refs ?? []).map((entry) => String(entry.viewerId));
+  }
+
+  /**
+   * Expected answer size from the *actual subset* in this prompt. The packaged
+   * manifest value covers the planned batch, so it is only a fallback; a
+   * recovery subset must be re-estimated or it would keep an oversized budget.
+   */
+  #memoryOutputEstimate(prompt) {
+    const viewers = prompt?.memoryContext?.viewers ?? [];
+    const byId = new Map(viewers.map((viewer) => [String(viewer.viewer_id), viewer]));
+    let total = 0;
+    for (const ref of prompt?.refs ?? []) {
+      const viewer = byId.get(String(ref.viewerId));
+      const existingFacts = Array.isArray(viewer?.memory?.facts) ? viewer.memory.facts.length : 0;
+      const excerptCount = Array.isArray(ref.evidenceSeqs) ? ref.evidenceSeqs.length : 0;
+      total += estimateMemoryViewerOutputTokens({excerptCount, existingFacts});
+    }
+    if (total > 0) return total;
+    return Math.max(0, Number(prompt?.manifest?.batch_plan?.estimated_output_tokens) || 0);
+  }
+
+  #memoryOutputBudget(prompt, context, {bump = false} = {}) {
+    return resolveMemoryOutputTokens({
+      estimatedOutputTokens: this.#memoryOutputEstimate(prompt),
+      inputTokens: prompt?.estimatedTokens ?? 0,
+      contextLength: context?.provider?.contextLength ?? null,
+      bump
+    });
+  }
+
+  /**
+   * The planned batch stays the unit of progress. Pending viewers may belong to
+   * a persisted recovery sub-batch (`splitPath`, e.g. `12.1`); a restart must
+   * reuse that exact partition instead of re-splitting or replaying siblings.
+   */
+  #memoryGroupsForBatch(batchIndex, viewers) {
+    const list = (viewers ?? []).filter((entry) => entry?.viewerId);
+    if (list.length === 0) return [];
+    const hasSplit = list.some((entry) => entry.splitPath);
+    if (!hasSplit) {
+      return [{
+        path: String(batchIndex),
+        depth: 0,
+        viewerIds: list.map((entry) => String(entry.viewerId))
+      }];
+    }
+    const groups = new Map();
+    for (const viewer of list) {
+      const path = viewer.splitPath ? String(viewer.splitPath) : String(batchIndex);
+      const group = groups.get(path) ?? [];
+      group.push(String(viewer.viewerId));
+      groups.set(path, group);
+    }
+    return [...groups.entries()]
+      .sort(([left], [right]) => left.localeCompare(right, undefined, {numeric: true}))
+      .map(([path, viewerIds]) => ({
+        path,
+        depth: Math.max(0, path.split('.').length - 1),
+        viewerIds
+      }));
+  }
+
+  #splitMemoryViewers(viewerIds) {
+    const unique = [...new Set((viewerIds ?? []).map(String))];
+    if (unique.length <= 1) return [unique, []];
+    const middle = Math.ceil(unique.length / 2);
+    return [unique.slice(0, middle), unique.slice(middle)];
+  }
+
+  /**
+   * Generate one viewer group, with bounded recovery.
+   *
+   * Recovery ladder (each step changes the request, never repeats the same
+   * oversized one):
+   *   - empty 200 response: the request layer already retried once; if it is
+   *     still empty, split the group when possible;
+   *   - `length` truncation: split the group immediately (halves, max depth 2);
+   *   - one remaining viewer: raise its answer budget once (capped), then stop
+   *     with a precise truncation error and leave the viewer resumable.
+   *
+   * Successfully validated child answers are imported immediately through
+   * `onChunk`, so a crash after one child never discards a paid, valid answer.
+   */
+  async #generateMemoryGroup({
+    context,
+    prompt,
+    batchIndex,
+    stage,
+    depth = 0,
+    parentPath = null,
+    onChunk = null
+  }) {
+    const viewerIds = this.#memoryViewerIds(prompt);
+    const path = parentPath ?? String(batchIndex ?? '1');
+    try {
+      const generated = await this.generateMemoryAnswer({
+        context,
+        prompt,
+        batchIndex,
+        stage
+      });
+      const chunk = {
+        text: generated.text,
+        viewerIds: generated.viewerIds ?? viewerIds,
+        viewerFailures: generated.viewerFailures ?? [],
+        finishReason: generated.finishReason ?? null,
+        usage: generated.usage ?? null
+      };
+      if (onChunk) await onChunk(chunk);
+      return {chunks: [chunk]};
+    } catch (error) {
+      if (context.signal?.aborted || isCanceledError(error)) throw error;
+      if (!isMemoryOutputFailure(error)) throw error;
+      const reason = isOutputTruncationError(error) ? 'length' : 'empty';
+      this.#recordOutputRecovery(context, {
+        batchIndex,
+        stage,
+        action: 'detected',
+        reason,
+        viewerCount: viewerIds.length,
+        splitPath: path
+      });
+      if (viewerIds.length > 1 && depth < MAX_MEMORY_SPLIT_DEPTH) {
+        const [left, right] = this.#splitMemoryViewers(viewerIds);
+        if (left.length > 0 && right.length > 0) {
+          const jobId = this.state.get(context.sessionId)?.memoryJobId ?? null;
+          const leftPath = `${path}.1`;
+          const rightPath = `${path}.2`;
+          if (jobId) {
+            // Persist before sending: a crash or a repeated Continue reuses this
+            // mapping and only processes the still-pending child. Both sides are
+            // written in one transaction so the mapping is never half-applied.
+            setJobMemoryViewerSplits(this.db, jobId, [
+              {viewerIds: left, splitPath: leftPath, reason},
+              {viewerIds: right, splitPath: rightPath, reason}
+            ]);
+          }
+          this.#recordOutputRecovery(context, {
+            batchIndex,
+            stage,
+            action: 'split',
+            reason,
+            viewerCount: viewerIds.length,
+            childCount: 2,
+            splitPath: path
+          });
+          const chunks = [];
+          for (const [group, childPath] of [[left, leftPath], [right, rightPath]]) {
+            const childPrompt = buildMemoryPrompt(prompt.files, {viewerIds: group});
+            childPrompt.files = prompt.files;
+            const result = await this.#generateMemoryGroup({
+              context,
+              prompt: childPrompt,
+              batchIndex,
+              stage,
+              depth: depth + 1,
+              parentPath: childPath,
+              onChunk
+            });
+            chunks.push(...result.chunks);
+          }
+          return {chunks};
+        }
+      }
+      if (viewerIds.length <= 1 && isOutputTruncationError(error)) {
+        // No smaller group is left. One budget bump is the only bounded change
+        // that can preserve the viewer's answer; it is never repeated.
+        this.#recordOutputRecovery(context, {
+          batchIndex,
+          stage,
+          action: 'budget-bump',
+          reason: 'length',
+          viewerCount: viewerIds.length,
+          splitPath: path
+        });
+        const generated = await this.generateMemoryAnswer({
+          context,
+          prompt,
+          batchIndex,
+          stage,
+          outputTokens: this.#memoryOutputBudget(prompt, context, {bump: true})
+        });
+        const chunk = {
+          text: generated.text,
+          viewerIds: generated.viewerIds ?? viewerIds,
+          viewerFailures: generated.viewerFailures ?? [],
+          finishReason: generated.finishReason ?? null,
+          usage: generated.usage ?? null
+        };
+        if (onChunk) await onChunk(chunk);
+        return {chunks: [chunk]};
+      }
+      // Attach the viewer-specific context so the console and recovery object
+      // can explain exactly what remains without showing any chat text.
+      error.batchIndex = error.batchIndex ?? batchIndex;
+      error.splitPath = path;
+      error.viewerCount = viewerIds.length;
+      error.outputTruncated = isOutputTruncationError(error);
+      throw error;
+    }
+  }
+
+  async generateMemoryAnswer({context, prompt, batchIndex = null, stage = 'memory_analyzing', outputTokens = null}) {
     const entry = this.state.get(context.sessionId);
     const jobId = entry?.memoryJobId ?? null;
     const batchId = prompt.manifest?.batch?.batch_id ?? null;
+    const answerTokens = Number.isFinite(Number(outputTokens)) && Number(outputTokens) > 0
+      ? Math.max(256, Number(outputTokens))
+      : this.#memoryOutputBudget(prompt, context);
     const budgetFor = (sourcePrompt) => resolveOutputTokens({
-      desired: outputTokens,
+      desired: answerTokens,
       inputTokens: sourcePrompt?.estimatedTokens ?? 0,
       contextLength: context.provider?.contextLength ?? null
     });
@@ -3560,6 +3953,25 @@ export class AnalysisRunner {
         const outcome = canceled ? 'canceled' : (error?.kind === ERROR_KIND.TIMEOUT ? 'timeout' : 'failed');
         const durationMs = this.now() - startedAt;
         const failedAttempt = attempt;
+        // A failed response can still carry provider usage (for example a
+        // reasoning-only `length` answer). Counting it keeps the token/cost
+        // statistics truthful; the old code reported such an attempt as
+        // "usage unknown" even though the provider had billed it.
+        if (!canceled && error?.usage) {
+          const entry = this.state.get(context.sessionId);
+          const targetJobId = jobIdForRequestKind(entry, kind);
+          if (targetJobId) {
+            const usageByJob = {...(entry?.usageByJob ?? {})};
+            const jobUsage = addUsage(usageByJob[targetJobId], error.usage, provider.pricing);
+            usageByJob[targetJobId] = jobUsage;
+            this.state.set(context.sessionId, {
+              usage: sumUsageValues(Object.values(usageByJob)) ?? entry?.usage ?? null,
+              usageByJob,
+              usageAttribution: 'per_job'
+            });
+            setJobUsage(this.db, targetJobId, jobUsage, {now: this.now()});
+          }
+        }
         const recordFailure = (extra = {}) => this.#recordAttempt(context, attemptRecord({
           kind,
           batchIndex,
@@ -3572,13 +3984,15 @@ export class AnalysisRunner {
           timeoutMs: effectiveTimeout,
           receivedHeaders: error?.receivedHeaders === true,
           receivedOutput: error?.receivedOutput === true,
+          usage: error?.usage ?? null,
           metrics: error?.metrics ?? null,
           model: provider.modelId,
           maxTokens: answerTokens,
           maxCompletionTokens,
           estimatedInputTokens,
           requestBytes: error?.requestBytes ?? null,
-          reasoningChars: 0,
+          reasoningChars: error?.reasoningChars ?? 0,
+          finishReason: error?.finishReason ?? null,
           ...extra
         }));
         if (canceled) {
@@ -3657,7 +4071,11 @@ export class AnalysisRunner {
       receivedHeaders: error?.receivedHeaders === true,
       receivedOutput: error?.receivedOutput === true,
       elapsedMs: error?.elapsedMs ?? null,
-      timeoutMs: error?.timeoutMs ?? null
+      timeoutMs: error?.timeoutMs ?? null,
+      finishReason: error?.finishReason ?? null,
+      reasoningChars: error?.reasoningChars ?? 0,
+      usage: error?.usage ?? null,
+      metrics: error?.metrics ?? null
     });
     return normalized;
   }

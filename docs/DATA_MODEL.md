@@ -543,7 +543,7 @@ paused（用户暂停；正在进行的 recording 不受影响）
 | 表/列 | 主键/唯一 | 关键列 |
 | --- | --- | --- |
 | `ai_jobs.memory_viewers_total` | — | 本任务需要覆盖的可识别观众总数 |
-| `ai_job_memory_viewers` | `(job_id, viewer_id)` | `batch_index`、`base_memory_id`、`base_version`、`message_count`、`status`、`result_id`、`processed_at` |
+| `ai_job_memory_viewers` | `(job_id, viewer_id)` | `batch_index`、`base_memory_id`、`base_version`、`message_count`、`status`、`result_id`、`processed_at`、`split_path`（schema 16）、`split_reason` |
 | `ai_job_memory_messages` | `(job_id, batch_index, seq)` | `viewer_id`、`event_id`（记忆证据 `seq → 真实事件`） |
 
 `status` 取值：`pending`（所属批次尚未导入）、`semantic`（有新语义）、
@@ -700,3 +700,25 @@ ai_aggregate_nodes
 - 删除场次/清空数据包含该表；`assertNoResidue` 检查 `session_id`。
 - v14→v15 只新增表与两个索引，不改写任何历史行；测试覆盖 v13→v15、重复迁移、场次级联。
 
+
+## 19. 画像子批次映射（schema 16 / v0.13.2）
+
+### 19.1 新增列
+
+```text
+ai_job_memory_viewers
+  split_path    TEXT NULL      -- 原批次下的恢复子批次，如 12.1 / 12.1.2
+  split_reason  TEXT NULL      -- output-truncated | empty-content
+```
+
+- 只 `ALTER TABLE ADD COLUMN` 与新增索引 `idx_ai_job_memory_viewers_split (job_id, batch_index, split_path)`；不改写任何历史行。
+- `batch_index` 仍是**原始计划批次**，不因拆分改变。结果 scope、证据 `seq`、事实 `id/topic` 全部保持原批次语义。
+- `split_path` 为 NULL 表示该观众从未拆分；旧库升级后所有行均为 NULL，行为与升级前一致。
+- 同一批次的所有 split 映射在一次 `BEGIN IMMEDIATE` 中写入，避免崩溃后只写一半。
+
+### 19.2 恢复规则
+
+- `pending` / `failed` 观众按 `(batch_index, split_path)` 分组；已有 split 优先复用，不重新划分已保存观众。
+- 拆分只发生在当前待处理子集的观众上；路径最多 2 层。
+- 计划批次进度按“该 `batch_index` 下全部观众均已覆盖”计算；存在某个子结果但仍有 pending/failed 时不计为完成。
+- `GET /api/ai/analyze/status` 的 `memoryJob.splitBatches`、`pendingSplitBatches`、`splits[]` 来自这些列；`batchesImported` 仍是已保存结果行数。

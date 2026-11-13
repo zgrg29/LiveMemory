@@ -68,7 +68,7 @@ export function buildRecovery({
     || Boolean(sessionJobId && sessionBatchTotal > 1);
   const aggregateDone = Boolean(sessionStatus?.aggregateImported);
   const memoryBatchTotal = integer(memoryStatus?.batchTotal);
-  const memoryBatchesSaved = integer(memoryStatus?.batchesImported);
+  const memoryBatchesSaved = integer(memoryStatus?.batchesCompleted ?? memoryStatus?.batchesImported);
   const memoryPending = Math.max(0, memoryBatchTotal - memoryBatchesSaved);
   const memoryComplete = Boolean(memoryStatus?.complete);
   const coverage = memoryStatus?.memoryCoverage ?? null;
@@ -127,10 +127,15 @@ export function buildRecovery({
       pendingBatches: memoryPending,
       viewersTotal,
       viewersProcessed,
-      complete: memoryComplete
+      complete: memoryComplete,
+      // Output-truncation recovery may split one planned batch into persisted
+      // child groups. They are shown separately so "17/100 saved" is never
+      // confused with "the failed batch was replayed from scratch".
+      splitBatches: integer(memoryStatus?.splitBatches),
+      pendingSplitBatches: integer(memoryStatus?.pendingSplitBatches)
     },
     savedResults: sessionBatchesSaved
       + (aggregateDone ? 1 : 0)
-      + memoryBatchesSaved
+      + integer(memoryStatus?.batchesImported)
   };
 }

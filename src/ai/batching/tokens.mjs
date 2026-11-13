@@ -27,6 +27,34 @@ export const MIN_BATCH_INPUT_TOKENS = 2000;
 export const MAX_BATCH_INPUT_TOKENS = 32000;
 
 /**
+ * Long-term-profile output budgets.
+ *
+ * A viewer-memory answer is not a single short report: it contains one compact
+ * update per viewer in the batch, and a model may legitimately need several
+ * facts for a very active viewer. The previous planner only measured *input*
+ * tokens and then sent every batch with the same 6,000-token answer budget, so
+ * a batch of ten chatty viewers could produce an answer larger than the request
+ * allowed. These values keep the answer bounded while letting output demand
+ * influence how viewers are grouped.
+ *
+ * 8,192 is a deliberate, conservative ceiling shared by the common
+ * OpenAI-compatible providers; the planner never raises it without bound. If a
+ * single viewer still does not fit, the runner splits the batch or reports a
+ * precise truncation error instead of silently dropping facts.
+ */
+export const MEMORY_MIN_OUTPUT_TOKENS = 3000;
+export const MEMORY_BASE_OUTPUT_TOKENS = 6000;
+export const MEMORY_MAX_OUTPUT_TOKENS = 8192;
+/** Fixed allowance added to the estimated answer when resolving the budget. */
+export const MEMORY_OUTPUT_SAFETY_TOKENS = 800;
+/** Share of the answer budget a normal batch may plan to use. */
+export const MEMORY_OUTPUT_SAFETY_SHARE = 0.8;
+/** Maximum facts the prompt asks a model to emit per viewer in one answer. */
+export const MEMORY_MAX_FACTS_PER_VIEWER = 12;
+/** Maximum split depth for one original batch (10 -> 5 -> 2/3). */
+export const MAX_MEMORY_SPLIT_DEPTH = 2;
+
+/**
  * 24k input + 8k output fits a 32k-context model with a small safety margin and
  * is the smallest default that keeps a large session at a handful of requests.
  */
@@ -350,6 +378,66 @@ function viewerCost(viewer) {
 }
 
 /**
+ * Estimate how many answer tokens one viewer needs.
+ *
+ * Observed real data (975 viewers, 8,778 messages) is sparse: most batches
+ * produced 0-10 facts for ten viewers. Assuming one fact per message would
+ * over-split the job and multiply the number of paid requests. The estimate
+ * therefore grows slowly, is capped by the prompt-level fact limit, and only
+ * serves as a *planning* signal - the validator still accepts every fact the
+ * model can justify.
+ */
+export function estimateMemoryViewerOutputTokens({
+  excerptCount = 0,
+  existingFacts = 0
+} = {}) {
+  const messages = Math.max(0, Number(excerptCount) || 0);
+  const facts = Math.max(0, Number(existingFacts) || 0);
+  if (messages === 0 && facts === 0) return 80;
+  const expectedFacts = messages === 0
+    ? 0
+    : Math.min(MEMORY_MAX_FACTS_PER_VIEWER, Math.max(1, Math.ceil(messages / 30)));
+  // confirm/update operations on existing facts carry a target id but usually
+  // no long statement, so they cost much less than a new fact.
+  const existingOps = Math.min(4, Math.ceil(facts / 5));
+  const summaryTokens = messages === 0 ? 0 : Math.min(180, 60 + Math.ceil(messages * 1.2));
+  return Math.ceil(
+    90
+    + expectedFacts * 120
+    + existingOps * 25
+    + summaryTokens
+  );
+}
+
+/**
+ * Resolve the answer budget for one memory batch.
+ *
+ * The base stays at 6,000 tokens for compatibility with existing jobs; only a
+ * batch whose estimated answer is genuinely larger gets more room, and the
+ * result is still capped at `MEMORY_MAX_OUTPUT_TOKENS` and by the declared
+ * context window. It never grows just because a provider returned `length`
+ * once: the recovery path first reduces the number of viewers.
+ */
+export function resolveMemoryOutputTokens({
+  estimatedOutputTokens = 0,
+  inputTokens = 0,
+  contextLength = null,
+  bump = false
+} = {}) {
+  const expected = Math.max(0, Number(estimatedOutputTokens) || 0);
+  const desired = Math.max(
+    MEMORY_BASE_OUTPUT_TOKENS,
+    Math.ceil(expected * 1.25) + MEMORY_OUTPUT_SAFETY_TOKENS,
+    bump ? MEMORY_MAX_OUTPUT_TOKENS : 0
+  );
+  return resolveOutputTokens({
+    desired: clamp(desired, MEMORY_MIN_OUTPUT_TOKENS, MEMORY_MAX_OUTPUT_TOKENS),
+    inputTokens,
+    contextLength
+  });
+}
+
+/**
  * Assign viewers to memory batches.
  *
  * A viewer is never split and never dropped. When one viewer alone exceeds the
@@ -365,7 +453,9 @@ export function planMemoryViewerBatches({
   overheadTokens = 0,
   inputBudget = null,
   maxBatches = Number.MAX_SAFE_INTEGER,
-  maxSingleViewerTokens = null
+  maxSingleViewerTokens = null,
+  outputBudgetTokens = MEMORY_BASE_OUTPUT_TOKENS,
+  outputSafetyShare = MEMORY_OUTPUT_SAFETY_SHARE
 } = {}) {
   const cap = Math.max(1, Math.floor(Number(viewerCap) || 10));
   const excerptLimit = Math.max(1, Math.floor(Number(excerptCap) || 600));
@@ -374,17 +464,46 @@ export function planMemoryViewerBatches({
     ? Math.max(500, Math.floor(Number(contentBudget) || 0))
     : Math.max(500, Math.floor(Number(inputBudget) || DEFAULT_BATCH_INPUT_TOKENS) - overhead);
   const singleLimit = Number(maxSingleViewerTokens);
+  const outputBudget = clamp(
+    Math.floor(Number(outputBudgetTokens) || MEMORY_BASE_OUTPUT_TOKENS),
+    MEMORY_MIN_OUTPUT_TOKENS,
+    MEMORY_MAX_OUTPUT_TOKENS
+  );
+  const outputShare = clamp(Number(outputSafetyShare) || MEMORY_OUTPUT_SAFETY_SHARE, 0.3, 1);
+  const outputCapacity = Math.max(1, Math.floor(outputBudget * outputShare));
   const batches = [];
   let current = null;
   let oversized = false;
   let oversizedViewerCount = 0;
+  let outputOversizedViewerCount = 0;
   const flush = () => {
-    if (current && current.viewerIds.length > 0) batches.push(current);
+    if (current && current.viewerIds.length > 0) {
+      batches.push({
+        ...current,
+        outputBudgetTokens: resolveMemoryOutputTokens({
+          estimatedOutputTokens: current.estimatedOutputTokens
+        }),
+        outputOversized: current.estimatedOutputTokens > outputCapacity
+      });
+    }
     current = null;
   };
+  const emptyBatch = () => ({
+    viewerIds: [],
+    excerptCount: 0,
+    estimatedTokens: overhead,
+    estimatedOutputTokens: 0,
+    oversized: false,
+    outputOversized: false
+  });
   for (const viewer of viewers) {
     const excerptCount = Math.max(0, Number(viewer?.excerptCount ?? 0));
     const cost = viewerCost(viewer);
+    const outputTokens = Math.max(1, Math.ceil(Number(viewer?.outputTokens)
+      || estimateMemoryViewerOutputTokens({
+        excerptCount,
+        existingFacts: viewer?.existingFacts
+      })));
     if (Number.isFinite(singleLimit) && singleLimit > 0 && overhead + cost > singleLimit) {
       throw Object.assign(new Error('MEMORY_VIEWER_TOO_LARGE'), {
         code: 'ANALYSIS_MEMORY_VIEWER_TOO_LARGE',
@@ -393,34 +512,34 @@ export function planMemoryViewerBatches({
         limit: singleLimit
       });
     }
-    if (!current) {
-      current = {
-        viewerIds: [],
-        excerptCount: 0,
-        estimatedTokens: overhead,
-        oversized: false
-      };
-    }
+    if (!current) current = emptyBatch();
     const nextExcerpts = current.excerptCount + excerptCount;
     const nextTokens = current.estimatedTokens + cost;
+    const nextOutputTokens = current.estimatedOutputTokens + outputTokens;
+    const outputWouldOverflow = current.viewerIds.length > 0
+      && nextOutputTokens > outputCapacity;
     const wouldOverflow = current.viewerIds.length >= cap
+      || outputWouldOverflow
       || (current.viewerIds.length > 0 && (nextExcerpts > excerptLimit || nextTokens > available + overhead));
     if (wouldOverflow) {
       flush();
-      current = {
-        viewerIds: [],
-        excerptCount: 0,
-        estimatedTokens: overhead,
-        oversized: false
-      };
+      current = emptyBatch();
     }
     current.viewerIds.push(viewer?.viewerId ?? viewer?.viewer_id);
     current.excerptCount += excerptCount;
     current.estimatedTokens += cost;
+    current.estimatedOutputTokens += outputTokens;
     if (current.estimatedTokens > overhead + available && current.viewerIds.length === 1) {
       current.oversized = true;
       oversized = true;
       oversizedViewerCount += 1;
+    }
+    if (current.estimatedOutputTokens > outputCapacity && current.viewerIds.length === 1) {
+      // One viewer's expected answer already exceeds the batch share. It is
+      // still its own batch and gets a larger (but capped) answer budget; it is
+      // never dropped and its input is never truncated.
+      current.outputOversized = true;
+      outputOversizedViewerCount += 1;
     }
   }
   flush();
@@ -433,6 +552,9 @@ export function planMemoryViewerBatches({
   }
   return {
     batches,
+    outputBudgetTokens: outputBudget,
+    outputCapacity,
+    outputOversizedViewerCount,
     oversized,
     oversizedViewerCount,
     contentBudget: available,

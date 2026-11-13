@@ -45,13 +45,17 @@ import {
 } from './context.mjs';
 import {buildSessionInstructions, buildMemoryInstructions} from '../prompts/split.mjs';
 import {
+  MEMORY_BASE_OUTPUT_TOKENS,
+  MEMORY_MAX_FACTS_PER_VIEWER,
   estimateJsonTokens,
+  estimateMemoryViewerOutputTokens,
   estimateTokens,
   planBatchBudget,
   planMemoryViewerBatches,
   planSessionMessageBatches,
   promptOverheadTokens,
-  resolveBatchInputTokens
+  resolveBatchInputTokens,
+  resolveMemoryOutputTokens
 } from '../batching/tokens.mjs';
 import {getMemory} from '../../storage/repositories/viewer-memory.mjs';
 
@@ -631,9 +635,19 @@ export async function createViewerMemoryJob({
     const contractTokens = Math.min(600, slice.length * 4);
     const entry = contextByViewer.get(viewer.viewer_id);
     const memoryTokens = estimateJsonTokens(entry?.memory ?? null);
+    const existingFacts = Array.isArray(entry?.memory?.facts) ? entry.memory.facts.length : 0;
     viewerCosts.set(viewer.viewer_id, {
       excerptTokens: excerptTokens + contractTokens,
-      memoryTokens
+      memoryTokens,
+      // Output demand is planned separately from input demand. Keeping both on
+      // the same viewer record is what lets a small batch of very chatty
+      // viewers be split before a paid request truncates its answer.
+      outputTokens: estimateMemoryViewerOutputTokens({
+        excerptCount: slice.length,
+        existingFacts
+      }),
+      existingFacts,
+      excerptCount: slice.length
     });
   }
 
@@ -680,21 +694,27 @@ export async function createViewerMemoryJob({
     });
   }
   const plan = planMemoryViewerBatches({
-    viewers: allViewers.map((viewer) => ({
-      viewerId: viewer.viewer_id,
-      excerptCount: Math.min(
-        (messagesByViewer.get(viewer.viewer_id) ?? []).length,
-        MAX_MESSAGES_PER_VIEWER_EXCERPT
-      ),
-      excerptTokens: viewerCosts.get(viewer.viewer_id)?.excerptTokens ?? 0,
-      memoryTokens: viewerCosts.get(viewer.viewer_id)?.memoryTokens ?? 0
-    })),
+    viewers: allViewers.map((viewer) => {
+      const cost = viewerCosts.get(viewer.viewer_id) ?? {};
+      return {
+        viewerId: viewer.viewer_id,
+        excerptCount: Math.min(
+          (messagesByViewer.get(viewer.viewer_id) ?? []).length,
+          MAX_MESSAGES_PER_VIEWER_EXCERPT
+        ),
+        excerptTokens: cost.excerptTokens ?? 0,
+        memoryTokens: cost.memoryTokens ?? 0,
+        outputTokens: cost.outputTokens ?? 0,
+        existingFacts: cost.existingFacts ?? 0
+      };
+    }),
     viewerCap: viewersPerBatch,
     excerptCap,
     contentBudget: batchBudget.contentTokens,
     overheadTokens: batchBudget.overheadTokens,
     maxBatches,
-    maxSingleViewerTokens: MAX_SINGLE_VIEWER_INPUT_TOKENS
+    maxSingleViewerTokens: MAX_SINGLE_VIEWER_INPUT_TOKENS,
+    outputBudgetTokens: MEMORY_BASE_OUTPUT_TOKENS
   });
   const batches = plan.batches;
   const jobId = createId('aij');
@@ -714,6 +734,11 @@ export async function createViewerMemoryJob({
         : `${session.id}-memory-b${pad(batchIndex)}`;
       const viewerSet = new Set(batch.viewerIds);
       const viewers = allViewers.filter((viewer) => viewerSet.has(viewer.viewer_id));
+      const batchOutputTokens = resolveMemoryOutputTokens({
+        estimatedOutputTokens: batch.estimatedOutputTokens,
+        inputTokens: batch.estimatedTokens,
+        contextLength
+      });
       const excerptMessages = [];
       for (const viewerId of batch.viewerIds) {
         excerptMessages.push(...(messagesByViewer.get(viewerId) ?? []).slice(-MAX_MESSAGES_PER_VIEWER_EXCERPT));
@@ -842,12 +867,20 @@ export async function createViewerMemoryJob({
           content_budget_tokens: batchBudget.contentTokens,
           overhead_tokens: batchBudget.overheadTokens,
           output_reserve_tokens: batchBudget.outputReserve,
+          // The answer budget is derived from this batch's expected output,
+          // bounded by the provider-independent ceiling. Resume uses the value
+          // stored here; old packages without it fall back to the same
+          // calculation from their viewer/ref list.
+          output_budget_tokens: batchOutputTokens,
+          estimated_output_tokens: batch.estimatedOutputTokens,
+          max_facts_per_viewer: MEMORY_MAX_FACTS_PER_VIEWER,
           context_length: batchBudget.contextLength,
           overhead_adjusted: batchBudget.overheadAdjusted,
           context_capped: batchBudget.contextCapped,
           estimated_prompt_tokens: batch.estimatedTokens,
           batches_total: batches.length,
-          viewerOversized: batch.oversized === true
+          viewerOversized: batch.oversized === true,
+          outputOversized: batch.outputOversized === true
         },
         files: []
       };
@@ -975,6 +1008,8 @@ export async function createViewerMemoryJob({
         contentBudgetTokens: batchBudget.contentTokens,
         overheadTokens: batchBudget.overheadTokens,
         batchPlan: batchBudget,
+        outputBudgetTokens: MEMORY_BASE_OUTPUT_TOKENS,
+        outputOversizedViewerCount: plan.outputOversizedViewerCount ?? 0,
         oversizedViewerCount: plan.oversizedViewerCount ?? 0,
         createdAt: now
       },

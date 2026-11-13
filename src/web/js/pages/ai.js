@@ -585,7 +585,10 @@ export const aiPage = {
         lines.push(`${t('ai.center.errorMeta.failedBatches')}:`);
         for (const entry of current.batchErrors.slice(0, 8)) {
           lines.push(`  ${t('ai.center.errorMeta.batch')} ${formatInteger(entry.batchIndex ?? 0, ctx.locale)}: ${entry.code ?? 'UNKNOWN'}`
-            + (entry.batchId ? ` (${entry.batchId})` : ''));
+            + (entry.batchId ? ` (${entry.batchId})` : '')
+            + (entry.finishReason ? ` · ${t('ai.center.errorMeta.finishReason')}: ${entry.finishReason}` : '')
+            + (entry.outputTruncated ? ` · ${t('ai.center.errorMeta.outputTruncated')}` : '')
+            + (entry.splitPath ? ` · ${t('ai.center.errorMeta.splitPath')}: ${entry.splitPath}` : ''));
           for (const item of (entry.errors ?? []).slice(0, 6)) {
             lines.push(`    ${item?.path || '(root)'}: ${item?.code ?? 'UNKNOWN'}`);
           }
@@ -596,6 +599,14 @@ export const aiPage = {
         : t('ai.center.errorMeta.no')}`);
       if (error.finishReason) {
         lines.push(`${t('ai.center.errorMeta.finishReason')}: ${error.finishReason}`);
+      }
+      if (error.outputTruncated) {
+        lines.push(`${t('ai.center.errorMeta.outputKind')}: ${t('ai.center.errorMeta.outputTruncated')}`);
+      } else if (error.providerEmpty) {
+        lines.push(`${t('ai.center.errorMeta.outputKind')}: ${t('ai.center.errorMeta.providerEmpty')}`);
+      }
+      if (error.splitPath) {
+        lines.push(`${t('ai.center.errorMeta.splitPath')}: ${error.splitPath}`);
       }
       if (error.suggestedAction) {
         const actionKeys = {
@@ -761,6 +772,11 @@ export const aiPage = {
           total: formatInteger(current.memoryBatchTotal ?? 0, ctx.locale)
         }));
       }
+      if (Number(current.memorySplitBatches ?? 0) > 0) {
+        parts.push(t('ai.center.saved.memorySplits', {
+          count: formatInteger(current.memorySplitBatches, ctx.locale)
+        }));
+      }
       if (saved.memory) parts.push(t('ai.center.saved.memory'));
       savedStatus.hidden = parts.length === 0;
       savedStatus.textContent = parts.length > 0
@@ -773,6 +789,9 @@ export const aiPage = {
       const parts = [];
       if (Number.isFinite(elapsed)) parts.push(t('ai.center.task.elapsed', {elapsed: elapsedLabel(elapsed)}));
       if (current?.waitingAggregate) parts.push(t('ai.center.task.waitingAggregate'));
+      if (current?.currentSplitPath) {
+        parts.push(t('ai.center.task.splittingBatch', {path: current.currentSplitPath}));
+      }
       if (current?.needsUserAction) parts.push(t('ai.center.task.needsAction'));
       if (current?.canResume && current.status !== 'running' && !current.recovery) {
         parts.push(t('ai.center.task.resumeHint'));
@@ -801,6 +820,18 @@ export const aiPage = {
       }
       if (Number(output?.rejected ?? 0) > 0) {
         rows.push([t('ai.center.stats.outputRejected'), formatInteger(output.rejected, ctx.locale)]);
+      }
+      if (Number(output?.truncations ?? 0) > 0) {
+        rows.push([t('ai.center.stats.truncations'), formatInteger(output.truncations, ctx.locale)]);
+      }
+      if (Number(output?.emptyResponses ?? 0) > 0) {
+        rows.push([t('ai.center.stats.emptyResponses'), formatInteger(output.emptyResponses, ctx.locale)]);
+      }
+      if (Number(output?.autoRetries ?? 0) > 0) {
+        rows.push([t('ai.center.stats.autoRecovery'), formatInteger(output.autoRetries, ctx.locale)]);
+      }
+      if (Number(output?.splits ?? 0) > 0) {
+        rows.push([t('ai.center.stats.splits'), formatInteger(output.splits, ctx.locale)]);
       }
       if (output?.lastFinishReason) {
         rows.push([t('ai.center.stats.finishReason'), output.lastFinishReason]);
@@ -899,6 +930,18 @@ export const aiPage = {
             })
           ]);
         }
+        if (Number(memory.splitBatches ?? 0) > 0) {
+          rows.push([
+            t('ai.center.recovery.splitBatches'),
+            t('ai.center.recovery.splitValue', {
+              done: formatInteger(
+                Math.max(0, Number(memory.splitBatches ?? 0) - Number(memory.pendingSplitBatches ?? 0)),
+                ctx.locale
+              ),
+              total: formatInteger(memory.splitBatches ?? 0, ctx.locale)
+            })
+          ]);
+        }
       }
       if (Number(recovery.savedResults ?? 0) > 0) {
         rows.push([
@@ -927,9 +970,17 @@ export const aiPage = {
         memory: 'noteMemory',
         config: 'noteConfig'
       };
-      recoveryNote.textContent = t(`ai.center.recovery.${noteKeys[recovery.kind] ?? 'noteConfig'}`, {
+      let noteKey = noteKeys[recovery.kind] ?? 'noteConfig';
+      if (recovery.kind === 'memory' && current.error?.outputTruncated) {
+        noteKey = 'noteMemoryTruncated';
+      } else if (recovery.kind === 'memory' && current.error?.providerEmpty) {
+        noteKey = 'noteMemoryEmpty';
+      }
+      recoveryNote.textContent = t(`ai.center.recovery.${noteKey}`, {
         saved: formatInteger(session.batchesSaved ?? 0, ctx.locale),
-        total: formatInteger(session.batchTotal ?? 0, ctx.locale)
+        total: formatInteger(session.batchTotal ?? 0, ctx.locale),
+        done: formatInteger(memory.viewersProcessed ?? 0, ctx.locale),
+        all: formatInteger(memory.viewersTotal ?? 0, ctx.locale)
       });
     }
 

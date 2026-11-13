@@ -1,5 +1,28 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r10 — 2026-11-13（长期画像输出预算、截断恢复与观众级断点）
+
+### 新增
+
+- **输出感知动态分批**：`estimateMemoryViewerOutputTokens()` + `resolveMemoryOutputTokens()`（基础 6,000、上限 8,192、受 context 收缩）；`planMemoryViewerBatches()` 同时按输入与预期输出分批；单观众超份额时独占一批；包 `batch_plan` 记录输出预算/估算/事实上限。
+- **三语事实/证据上限**：每位观众每次最多 12 条高价值事实；每条事实通常 1–3 条同一观众证据；不静默丢弃已通过校验的事实。
+- **有界恢复**：空响应自动重试 1 次；截断/仍空按观众组对半拆分，最多 2 层；单观众仍截断仅一次提高到 8,192；连续 3 个输出失败批次停止调度。
+- **schema 16**：`ai_job_memory_viewers.split_path/split_reason` + 索引；拆分映射事务写入；恢复按 `(batch_index, split_path)` 只取 pending/failed 观众。
+- **状态/UI**：`recoveryStats`、`outputStats.truncations/emptyResponses/autoRetries/splits`、`memoryJob.splitBatches/pendingSplitBatches/splits[]`、`currentSplitPath`；三语恢复面板区分截断/空响应/校验失败。
+
+### 修复
+
+- **真实任务 `aij_01M7AJ05B5E2VRG9Z82G` 根因**：空文本适配器错误丢失 finish_reason/usage；`invalid_response` 不自动重试；界面 length 来自上一子任务的陈旧 `lastOutputRejection`；分批只看输入；无拆分映射；部分子结果被当作批次完成；elapsedMs=null 显示 0；17 个成功批次是并发乱序完成。
+- `finish_reason=length` 现在优先识别为 `AUTO_OUTPUT_TRUNCATED`（即使内容为空）；无文本非 length 为 `PROVIDER_RESPONSE_EMPTY`；失败响应 usage 也计入 job。
+- `lastOutputRejection` 绑定子 Job；`elapsedMs=null` 不再显示 0。
+
+### 验证
+
+- 全量 **698 passed / 0 failed**（约 196 秒）。
+- 新增 `tests/unit/ai-adapter-output.test.mjs` 3 项、`tests/unit/ai-token-batching.test.mjs` 4 项、`tests/integration/ai-memory-output-recovery.test.mjs` 9 项。
+- 生产数据只读副本 + Mock：17/100、153/975 → complete 100/100、975/975；只请求 b12、19–100；b12 自动拆 12.1/12.2；旧 17 条结果保留；重复继续 0 请求。
+- EXE 构建结果见 STATUS §0.21.4 / HANDOFF §0.3。
+
 ## 0.13.2-r9 — 2026-11-13（可扩展分层汇总与真实 32 批恢复）
 
 ### 新增

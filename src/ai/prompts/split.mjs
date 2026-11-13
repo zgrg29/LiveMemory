@@ -1,4 +1,5 @@
 import {RESULT_SCHEMA_VERSION, promptVersionFor, ANALYSIS_MODE} from '../constants.mjs';
+import {MEMORY_MAX_FACTS_PER_VIEWER} from '../batching/tokens.mjs';
 
 /**
  * Instructions for the two v0.13 tasks. They are deliberately separate:
@@ -58,6 +59,8 @@ const TEXT = {
       'inferred 必须明确写成推断（例如「似乎」「可能」），不得写成确定事实；证据不足时使用 uncertain 或 no_semantics，不要猜测。',
       '只有问候、表情、刷屏或付费且没有明确个人信息时，才允许 no_new_information: true。',
       '不要为了让每位观众都有事实而编造职业、年龄、所在地、兴趣或经历。',
+      `每位观众本次最多新增/更新 ${MEMORY_MAX_FACTS_PER_VIEWER} 条最有长期价值的事实；其余合并进 summary 或省略，不要为了凑数重复或拆分同一事实。`,
+      '每条事实通常只引用 1–3 条最直接的同一观众证据；不要堆叠无关发言。',
       '已有记忆用 confirm/update/supersede 指向 target_fact_id，不要重复创建同一事实。'
     ],
     memoryRules: [
@@ -123,6 +126,8 @@ const TEXT = {
       'inferred は推測として書き（「〜のようです」「おそらく」など）、断定しないでください。証拠が足りない場合は uncertain または no_semantics にし、推測で埋めないでください。',
       '挨拶・絵文字・連投・支払いだけで個人的な情報がない場合に限り、no_new_information: true を許可します。',
       '全員に事実を作る必要はありません。職業・年齢・居住地・興味・経歴を捏造しないでください。',
+      `1 人の視聴者につき今回追加・更新するのは長期的価値の高い事実を最大 ${MEMORY_MAX_FACTS_PER_VIEWER} 件までにしてください。残りは summary にまとめるか省略し、件数を埋めるために重複・分割しないでください。`,
+      '1 件の事実には通常 1〜3 件だけ、最も直接的な同一視聴者の証拠を引用してください。無関係な発言を積み重ねないでください。',
       '既存記憶は target_fact_id を指定して confirm/update/supersede する。'
     ],
     memoryRules: [
@@ -188,6 +193,8 @@ const TEXT = {
       'Write `inferred` as an explicit inference ("seems", "probably"); never present it as a confirmed fact. With thin evidence use `uncertain` or `no_semantics` instead of guessing.',
       'Only greetings, emoji, spam or payments with no personal information may use no_new_information: true.',
       'Never invent occupation, age, location, interests or life history just to give every viewer a fact.',
+      `Emit at most ${MEMORY_MAX_FACTS_PER_VIEWER} of the most durable new or updated facts per viewer in this run. Fold the rest into the summary or leave them out; never split or duplicate one fact to fill a quota.`,
+      'Cite only 1-3 of the most direct excerpts from the same viewer per fact. Do not pile up unrelated evidence.',
       'Use confirm/update/supersede with target_fact_id for existing facts instead of duplicating them.'
     ],
     memoryRules: [

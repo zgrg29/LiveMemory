@@ -1154,3 +1154,38 @@ duration ≈ 155s
 ### 35.4 全量结果
 
 - **683 passed / 0 failed**（2026-11-13，约 163 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+
+## 36. 长期画像输出预算、截断恢复与观众级断点（v0.13.2，2026-11-13）
+
+### 36.1 自动测试
+
+| 场景 | 测试 |
+| --- | --- |
+| 正常 JSON 输出 | 既有 `ai-memory-reliability` valid compact answer |
+| `finish_reason=length` + 不完整 JSON | `ai-memory-output-recovery` split length |
+| `finish_reason=length` + 空内容 | `ai-adapter-output` empty stream length；`ai-memory-output-recovery` single viewer budget bump |
+| `finish_reason=stop` + JSON 格式错误 | `ai-memory-output-recovery` malformed JSON repair |
+| 截断后自动缩小批次并成功 | `ai-memory-output-recovery` split length |
+| 某观众消息异常多 → 独立处理 | `ai-memory-output-recovery` heavy viewer；`ai-token-batching` output isolation |
+| 批次 2 失败、批次 1/3 已保存 | `ai-memory-output-recovery` non-contiguous resume |
+| 153/975 之后继续 | 生产只读副本回放（§36.2）；自动化用 30/30 与 975/975 |
+| 恢复不重复写事实 | non-contiguous resume + repeated Continue 0 请求 |
+| 多次恢复/重启幂等 | 同上；既有 restart/Resume 用例 |
+| 自动重试次数与 Token 统计 | `ai-adapter-output` usage on empty/length；`ai-memory-output-recovery` retried/budgetBumps |
+| 975/975 覆盖 | `ai-memory-output-recovery` 975 viewers / 98 batches |
+| 中文输出语言 | single viewer budget bump 事实 `喜欢吉他` |
+| 迁移 schema 16 | `memory-migration` split 列；全部迁移断言更新 |
+
+### 36.2 生产只读副本回放（Mock）
+
+- 任务 `aij_01M7AJ05B5E2VRG9Z82G`：开始 17/100、153/975、822 pending。
+- 只请求 b12、19–100；b12 首次空+length → 12.1/12.2；结束 100/100、975/975、facts 252、85 请求。
+- 17 条旧结果 id/version 全部保留；重复继续 0 请求；关闭重开后再继续 complete。
+
+### 36.3 全量结果
+
+- **698 passed / 0 failed**（2026-11-13，约 196 秒，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+
+### 36.4 EXE
+
+- 构建完成后填入：buildId / commit / SHA-256 / 大小 / assets / Manifest；asInvoker 测试副本 + Mock 实跑结果。

@@ -1172,3 +1172,49 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - `ANALYSIS_CONTEXT_TOO_SMALL`：上下文不足以容纳最终输出预留，恢复为 `change-model`。
 - `ANALYSIS_AGGREGATE_LIMIT`：层级/节点数超过受控上限；已完成节点保留。
 - `AUTO_OUTPUT_TRUNCATED`：有界重试 + 确定性兜底后不应成为永久失败；仍失败时保留已保存批次与节点。
+
+## 25. v0.13.2 长期画像输出预算、截断分类与观众级恢复（2026-11-13）
+
+### 25.1 输出预算与动态分批
+
+- 长期画像批次不再只按输入 token 分配。`estimateMemoryViewerOutputTokens()` 使用本场摘录条数与已有事实数估算每位观众的预期回答规模；`planMemoryViewerBatches()` 同时受输入内容预算、观众上限、摘录上限与**预期输出预算**约束。
+- 单批回答预算 `resolveMemoryOutputTokens()`：基础 6,000，按预期输出增长，最高 8,192；仍受已知 `contextLength` 收缩。不为“让模型别截断”而无上限提高输出。
+- 单观众预期输出或输入超预算时独占一批；不拆分观众、不丢观众、不截断摘录。异常多消息的观众由输入预算单独隔离。
+- 提示词新增每位观众每次最多 12 条高价值事实、每条事实通常 1–3 条同一观众证据的上限；这是**规划与提示词**上限，不是静默丢弃已通过校验的事实。
+
+### 25.2 结束原因与错误分类
+
+| 情况 | 内部代码 | 可恢复 | 处理 |
+| --- | --- | --- | --- |
+| Provider 返回 HTTP 200 但无任何文本，无 `length` | `PROVIDER_RESPONSE_EMPTY` | 是 | 同一请求自动重试 1 次；仍空则拆分或保留继续 |
+| `finish_reason=length`（无论是否有部分文本） | `AUTO_OUTPUT_TRUNCATED` + `finishReason=length` | 是 | **不重发相同大请求**；缩小批次或单观众加一次有界预算 |
+| JSON 残缺/无法解析（`stop`） | `AUTO_INVALID_JSON` | 是 | 现有一次定向 repair |
+| Schema 不合法 | `AUTO_SCHEMA_INVALID` | 是 | 现有一次 repair；仍失败保留批次 |
+| 证据/身份错误 | `MEMORY_*` 字段级代码（如 `MEMORY_EVIDENCE_OTHER_VIEWER`） | 是 | 观众级隔离 + 有界 viewer repair |
+| 网络/HTTP 失败 | `PROVIDER_NETWORK_FAILED` / `PROVIDER_HTTP_ERROR` 等 | 按错误 | 现有 needs_action/自动退避语义 |
+
+- 适配器在抛出空响应/截断错误时保留 `finishReason`、`reasoningChars`、`usage` 与 `metrics`；`finish_reason=length` 不再被降级成 `PROVIDER_RESPONSE_INVALID empty-content`。
+- `requestOnce` 仅在“明确空响应且无任何文本”时自动重试一次；截断不在传输层重试。
+- `lastOutputRejection` 绑定产生它的子 Job；单场汇总的 `length` 不会显示成当前画像批次的结束原因。`error.elapsedMs=null` 不再被 `Number(null)` 显示为 0。
+
+### 25.3 有界恢复阶梯
+
+1. 空响应：自动重试 1 次（无回答文本，成本可控）。
+2. 截断或多观众仍空：将观众组对半拆分，最多 2 层（10 → 5 → 2/3）；每次拆分都先写数据库映射。
+3. 单观众仍截断：仅一次把回答预算提高到上限 8,192；仍失败则以 `AUTO_OUTPUT_TRUNCATED` 保留该观众为 pending。
+4. 连续 3 个输出失败批次后停止调度新批次，避免 Provider 故障时无限付费；已成功批次保留。
+
+### 25.4 观众级断点恢复
+
+- schema 16 在 `ai_job_memory_viewers` 增加 `split_path`、`split_reason`。`split_path` 形如 `12.1`、`12.1.2`，原 `batch_index` 不变；结果、证据 seq、事实 ID 与 topic 匹配键全部保持原批次语义。
+- 恢复只读取 `ai_job_memory_viewers` 中 `pending`/`failed` 的观众；成功观众即使所在批次编号更大也不会重跑。
+- 已有 split 映射优先复用；拆分只在**当前待处理观众子集**上递增路径，不会重新划分已保存观众。
+- 每个子批次通过 `viewerIds` 作用域重新校验/导入；同一观众不会因恢复重复写事实。批次完成进度按“该计划批次全部观众已覆盖”计算，而不是“存在任意子结果”。
+- 页面刷新、程序重启、重复点击 Continue 都从数据库重新计算；complete 时 resume 直接返回。
+
+### 25.5 状态与 UI
+
+- `recoveryStats`：`autoRetries`、`truncations`、`emptyResponses`、`splits`、`subBatches`、`budgetBumps`。
+- `outputStats`：`truncations`、`emptyResponses`、`autoRetries`、`splits`；`lastFinishReason` 只来自当前 Job。
+- `memoryJob.splitBatches` / `pendingSplitBatches` / `splits[]`；`currentSplitPath` 在运行中显示。
+- 恢复面板区分“输出截断”“Provider 空响应”“校验失败”；截断时显示系统正在拆分/提高预算，不再一直停留在失败状态。

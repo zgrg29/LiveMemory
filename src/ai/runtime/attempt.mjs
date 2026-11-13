@@ -43,7 +43,11 @@ export const ATTEMPT_PHASE = Object.freeze({
 const MAX_AUTO_ATTEMPTS = Object.freeze({
   [ERROR_KIND.NETWORK]: 2,
   [ERROR_KIND.RATE_LIMIT]: 3,
-  [ERROR_KIND.SERVER]: 3
+  [ERROR_KIND.SERVER]: 3,
+  // A genuinely empty 200 response is usually transient and produced no
+  // billable answer text, so exactly one automatic retry is safe. Truncation is
+  // a different code and is never retried with identical parameters here.
+  [ERROR_KIND.INVALID_RESPONSE]: 2
 });
 
 export function isCanceledError(error) {
@@ -73,7 +77,13 @@ export function shouldRetryAttempt(error, {attempt = 0, maxRetries = 2, random =
   // resend it: the safe response is to report the timeout and let the user resume
   // only the unfinished batches (which may pick a smaller model or longer wait).
   if (kind === ERROR_KIND.TIMEOUT) return false;
-  if (kind === ERROR_KIND.INVALID_RESPONSE || kind === ERROR_KIND.STREAM_INTERRUPTED) return false;
+  if (kind === ERROR_KIND.INVALID_RESPONSE || kind === ERROR_KIND.STREAM_INTERRUPTED) {
+    // Only an empty 200 response is retried, and only because the adapter marks
+    // it `retryable` after proving no assistant content arrived. A truncated
+    // answer (`AUTO_OUTPUT_TRUNCATED`) and every other invalid response remain
+    // non-retryable here; the memory runner reduces the batch size instead.
+    if (error.code !== 'PROVIDER_RESPONSE_EMPTY' || error.retryable !== true) return false;
+  }
   if (kind === ERROR_KIND.CLIENT || kind === ERROR_KIND.CONFIG) return false;
   if (kind === ERROR_KIND.NETWORK && error.phase === ATTEMPT_PHASE.STREAM) return false;
   if (error.retryable !== true) return false;
