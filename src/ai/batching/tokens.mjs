@@ -190,6 +190,42 @@ export function resolveOutputTokens({desired = 8000, inputTokens = 0, contextLen
 }
 
 /**
+ * Output budget for the whole-session aggregate.
+ *
+ * The aggregate must merge every validated batch report, so it is not a normal
+ * batch and must not inherit the batch output budget. The previous code reused
+ * 8,000 tokens for an 18-batch merge; the provider stopped at exactly 8,000 with
+ * `finish_reason=length` after spending ~3m20s. This budget is independent,
+ * bounded and derived from the real condensed input instead of an unbounded
+ * "raise the limit" value:
+ *
+ *   - a merge is expected to be much shorter than its input, so 60% of the
+ *     condensed batch-result tokens plus a fixed report allowance;
+ *   - at least 12,000 answer tokens, so an 18-batch report is not artificially
+ *     squeezed into the batch budget;
+ *   - never more than 16,000 answer tokens, even when the input is huge; the
+ *     bounded aggregate schema needs far less than this, so there is no reason
+ *     to risk a provider's output-limit rejection with an unbounded ceiling;
+ *   - reduced by the model context when the context length is known.
+ */
+export const MIN_AGGREGATE_OUTPUT_TOKENS = 12000;
+export const MAX_AGGREGATE_OUTPUT_TOKENS = 16000;
+
+export function resolveAggregateOutputTokens({
+  batchResultTokens = 0,
+  inputTokens = 0,
+  contextLength = null
+} = {}) {
+  const condensed = Math.max(0, Number(batchResultTokens) || 0);
+  const desired = clamp(
+    Math.ceil(condensed * 0.6) + 3000,
+    MIN_AGGREGATE_OUTPUT_TOKENS,
+    MAX_AGGREGATE_OUTPUT_TOKENS
+  );
+  return resolveOutputTokens({desired, inputTokens, contextLength});
+}
+
+/**
  * Split a session into contiguous message batches under a *content* budget.
  *
  * @param messageTokens per-message estimated tokens, in chronological order

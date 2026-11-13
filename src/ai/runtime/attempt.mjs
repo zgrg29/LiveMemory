@@ -110,7 +110,8 @@ export function attemptRecord({
   estimatedInputTokens = null,
   requestBytes = null,
   reasoningChars = 0,
-  reasoningTokens = null
+  reasoningTokens = null,
+  finishReason = null
 } = {}) {
   return {
     kind: kind ?? null,
@@ -140,6 +141,7 @@ export function attemptRecord({
     requestBytes: requestBytes === null ? null : Math.max(0, Math.round(Number(requestBytes))),
     reasoningChars: Math.max(0, Math.round(Number(reasoningChars) || 0)),
     reasoningTokens: reasoningTokens === null ? null : Math.max(0, Math.round(Number(reasoningTokens) || 0)),
+    finishReason: typeof finishReason === 'string' ? finishReason.slice(0, 40) : null,
     timeToFirstByteMs: metrics?.timeToFirstByteMs ?? null,
     timeToFirstTokenMs: metrics?.timeToFirstTokenMs ?? null,
     streamDurationMs: metrics?.streamDurationMs ?? null,

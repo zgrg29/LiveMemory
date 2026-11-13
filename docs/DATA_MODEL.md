@@ -219,8 +219,10 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 | batch_total / max_messages / total_messages | 批次总数、每批上限、消息总数（导出时快照） |
 | legacy | 1 = 由 M6 之前的整场结果自动创建 |
 | aggregate_package_id / aggregate_task_id | 第二阶段汇总包与任务 id |
-| last_error_at / last_error_code / last_error_json | 最近一次导入/批次失败。v0.13.2 起 `last_error_json` 含 `batches[]`（`batchIndex`、`batchId`、`stage`、`code`、`at`、`errors[]`），按批次保留；顶层 `code`/`errors` 兼容旧读取。只存字段路径/错误码/参数，不存 AI 正文、聊天、Key |
+| last_error_at / last_error_code / last_error_json | 最近一次导入/批次失败。v0.13.2 起 `last_error_json` 含 `batches[]`（`batchIndex`、`batchId`、`stage`、`code`、`at`、`errors[]`），按批次保留；顶层 `code`/`errors` 兼容旧读取。`batchIndex` 为 1-based；整场汇总失败为 `null`（旧数据可能为 0，读取时规范化）。只存字段路径/错误码/参数，不存 AI 正文、聊天、Key |
 | created_at / updated_at | 毫秒 |
+
+运行时 `runtime/ai-v13.json` 只保存任务阶段、计数器、错误码、`recovery`/`outputStats` 等诊断状态，**不含提示词、聊天正文或模型回答**；批次结果与 final 是否存在的权威来源仍是 `ai_results`。删除/清空数据后运行时可重建。
 
 #### ai_job_batches
 

@@ -1065,3 +1065,60 @@ JSON 键名、枚举值、原始聊天 content
 - 清空数据/恢复出厂包含翻译表；备份/迁移随数据库整体复制。
 - Schema 14 迁移只新增表与索引，不改写历史行；旧 1.0.0–1.3.0 结果均可读取并翻译。
 
+## 23. v0.13.2 最终汇总输出预算与恢复（2026-11-13）
+
+### 23.1 汇总不是普通批次
+
+- 多批 Session 的 final aggregate 必须合并全部已校验批次；它使用**独立的输出预算**，不得沿用普通批次的 8,000。
+- 预算计算（`resolveAggregateOutputTokens`）：
+
+```text
+batchResultTokens = 估计的已压缩 batch_results token 数
+desired = clamp(ceil(batchResultTokens * 0.6) + 3000, 12000, 16000)
+answer  = resolveOutputTokens({desired, inputTokens: 完整提示词估算, contextLength})
+```
+
+- 已知上下文时仍受 `context - input - 500` 限制；DashScope 额外发送 `max_completion_tokens = answer + 16000`，不是无限提高上限。
+- 18 批、约 30k 合并输入 → 16,000 回答 tokens（上限）；真实事故的 `maxTokens=8000` 不再出现。有界汇总 schema 的实际文本上限远低于 16k，因此不需要更高的上限。
+
+### 23.2 有界汇总输出契约
+
+- `buildSessionAggregateAnswerSchema()` 从结果 Schema 派生更严格的汇总 Schema，不修改原 Schema：
+  - `session_topics.summary` ≤ 800 字符；
+  - `topics` ≤ 24，每条 summary ≤ 320 字符，`key_points` ≤ 4（每条 ≤ 140 字符），`message_refs` ≤ 4；
+  - `sentiment` ≤ 12；`disputes` ≤ 8（viewpoints ≤ 4）；`highlights` ≤ 8；
+  - 不包含 `viewer_profiles`。
+- 三语汇总提示词增加：合并优先、不要逐批拼接/重复证据、覆盖全部批次的 seq 范围、时间线覆盖最早到最晚批次。
+- `condenseBatchResult(..., {limits})` 可做第二遍 compact：每批 topics ≤16、sentiment ≤8、disputes ≤8、highlights ≤8、message_refs ≤6；**全部批次与证据引用保留**，不丢后面的批次。
+- 输入在 compact 后仍超限 → `ANALYSIS_AGGREGATE_TOO_LARGE`，恢复状态为 `change-model` / `canResume=false`；不得伪造可用的“继续”。
+
+### 23.3 汇总失败状态与恢复
+
+- `AUTO_OUTPUT_TRUNCATED`（`finish_reason=length`）是**可恢复**的输出错误，不自动重发同一大请求。
+- `GET /api/ai/analyze/status` 新增：
+
+```text
+analysisOutcome: complete | incomplete | failed | running | canceled
+recovery: {
+  kind: aggregate | session | memory | config,
+  action: resume-aggregate | resume-session | resume-memory | change-model,
+  canResume: boolean,
+  reasonCode,
+  session: {batchTotal, batchesSaved, pendingBatches, aggregateRequired, aggregateDone},
+  memory: {batchTotal, batchesSaved, pendingBatches, viewersTotal, viewersProcessed, complete},
+  savedResults
+}
+outputStats: {responses, rejected, lastCode, lastFinishReason}
+savedResults
+```
+
+- 18/18 已保存且 final 缺失 → `kind=aggregate`、`action=resume-aggregate`；继续只发 final，不重发批次。
+- 有未保存批次 → `resume-session`；画像未完成 → `resume-memory`；配置/上下文不足 → `change-model`。
+- `resume` 在任务 complete 时直接返回；重复点击幂等，不新建任务、不重复 Provider 请求。
+- `batchIndex` 一律 1-based；`null`/`0`/负数均不是合法批次。旧 `last_error_json.batches[].batchIndex=0` 在读取时规范化为 null，不改写历史行。
+
+### 23.4 统计口径
+
+- `attemptStats.succeeded` 只表示 HTTP/Provider 请求成功；`outputStats.rejected` 表示成功响应但被截断/退化/JSON/Schema/覆盖校验拒绝。
+- 两者必须同时展示；不得用“20 次请求成功”表示“AI 分析完成”。
+- 旧任务没有 `outputRejected` 时，依据最终错误码保守显示至少 1 条拒绝输出；未知 usage 仍为未知，不当作零。

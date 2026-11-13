@@ -1,8 +1,49 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-13（v0.13.2：AI 分析输出语言、已保存报告翻译与长期画像多语言展示；649 tests；schema 14；提示词 v13.2）
+最后更新：2026-11-13（v0.13.2：最终汇总截断修复、「继续最终汇总」恢复与统计口径；668 tests；schema 14；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.19 v0.13.2 最终汇总截断与「继续最终汇总」恢复（2026-11-13）
+
+完整证据与根因：`log/2026-11-13-ai-aggregate-recovery.md`。**未修改生产数据库、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。** 只读检查了生产 `runtime/ai-v13.json`、日志与数据库副本。
+
+### 0.19.1 真实故障结论（已确认）
+
+- 任务 `ses_01M77TM1Q80HQ4XSZTMV` / `aij_01M79KZEFWBCCJP8G1JK`：dashscope `qwen3.7-flash`，18 批全部保存，final 缺失。
+- 汇总请求：`maxTokens=8000`、`maxCompletionTokens=24000`、`estimatedInputTokens=34048`、耗时 199,729ms；Provider 返回成功但 `finish_reason=length` → `AUTO_OUTPUT_TRUNCATED`。
+- 输入 34k 低于 48k 上限，**不是输入超限**；根因是汇总沿用了普通批次的 8k 输出预算，且汇总提示词/Schema 没有限制输出条数与长度。
+- 20 次请求全部 HTTP 成功（18 批 + 1 次批次修复 + 1 次汇总）；失败发生在请求之后的完整性检查，所以旧统计显示 20/20 成功。
+- `batchIndex:null` 被 `Number(null)===0` 持久化为 `batchIndex:0`；旧任务/旧库存在假的“批次 0”。
+- 旧前端只有与暂停共用的泛化「继续」ghost 按钮；没有「最终汇总」专属恢复状态、准确操作名或“不会重做 18 批”的说明。用户报告看不到该按钮；本轮确认的产品缺口是缺少明确、可验证的汇总恢复入口（后端当时 `canResume=true`，未复现隐藏按钮的具体渲染路径）。
+
+### 0.19.2 修复
+
+- **独立汇总输出预算**：`resolveAggregateOutputTokens()` = `clamp(ceil(batchResultTokens*0.6)+3000, 12000, 16000)`，再按已知上下文收缩；DashScope 的 `max_completion_tokens` 为回答预算 + 16k。18 批上限 16k，不再固定 8k；有界 schema 的实际文本远低于 16k。
+- **有界汇总契约**：汇总专用 schema（topics ≤24、sentiment ≤12、disputes ≤8、highlights ≤8、每条 message_refs ≤4，移除 viewer_profiles）；三语提示词明确合并优先、输出上限、覆盖全部批次；compact 第二遍只降低每批条数，不丢批次/证据。
+- **恢复状态**：新增 `src/ai/tasks/recovery.mjs`，只依据数据库真实结果计算 `aggregate/session/memory/config`、`resume-aggregate` 等动作与 `canResume`。18/18 已保存且 final 缺失时只提供「继续最终汇总」；输入装不下时提供 `change-model` 且 `canResume=false`。
+- **幂等恢复**：`resume()` 在 complete 时直接返回；重复点击不创建任务、不请求 Provider；继续只发缺失的 final，不重发 18 批。
+- **batchIndex**：统一 1-based，0/负/null 归一为 null；`recordJobFailure`、状态读模型与失败批次列表都不再出现批次 0；旧数据读取时兼容。
+- **UI**：AI 中心新增独立恢复面板（标题、已保存/未完成、原因、[继续最终汇总]、[查看技术详情]、不会重做已保存批次的说明）；按故障显示继续未完成分析 / 继续最终汇总 / 继续未完成画像 / 前往设置更换模型；页面刷新与服务重启后从 `/api/ai/analyze/status` 恢复。
+- **统计**：`outputStats.responses/rejected/lastFinishReason`；界面区分「API 请求成功」与「输出未通过完整性/结构校验」「已保存分析结果」，并解释 API 成功 ≠ 分析完成。
+
+### 0.19.3 测试（本轮实测）
+
+- 全量：**668 passed / 0 failed**（2026-11-13，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`，约 164 秒）。
+- 新增：
+  - `tests/integration/ai-aggregate-recovery.test.mjs`（2）：18 批 + 截断、重启后恢复只发汇总、18 条结果 checksum 不变、重复点击幂等、无效汇总统计口径。
+  - `tests/unit/ai-aggregate-budget.test.mjs`（5）：预算上下限、上下文收缩、DashScope headroom、有界 schema、三语提示词覆盖全部批次、compact 保留证据。
+  - `tests/unit/ai-recovery-state.test.mjs`（8）：aggregate/session/memory/config 恢复、完成/乱序/无任务、单批、pending viewer。
+  - `tests/unit/ai-recovery-ui.test.mjs`（4）：独立恢复面板、真实 resume API、三语键与文案一致、无 innerHTML/alert。
+- 未验证：真实付费 Provider 的 16k `max_tokens` 接受度与截断后 Continue；真实生产任务 Resume；真实浏览器点击/截图；正式 EXE 重建。
+
+### 0.19.4 用户安全恢复步骤
+
+1. 先完全退出 LiveMemory，备份整个数据目录（不要在运行时复制写入中的 SQLite）。
+2. 替换为包含本轮修复的新构建，确认设置页「关于」的 buildId 与构建记录一致。
+3. 打开 AI 分析中心，选择该场次；应看到「AI 分析未完成」、单场批次 18/18、最终汇总失败、原因与「继续最终汇总」。
+4. 选择与失败任务相同的 Provider/区域/模型，点击「继续最终汇总」；不会重发已保存的 18 个批次。
+5. 成功后 final 保存、任务变 complete、恢复面板消失；失败则查看技术详情，不要新建整场分析、不要清空数据。
 
 ## 0.18 v0.13.2 AI 分析多语言输出与报告翻译（2026-11-13）
 
@@ -327,7 +368,7 @@ POST /api/ai/sessions/:id/translation                 按需翻译未完成段�
 
 ## 1. 当前阶段
 
-- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；M3 真实接入继续验证；M4 部分完成；M5 未完成
+- 里程碑：**M0 / M1 / M2 核心 / P0–P9 / M6 / M7 / v0.13 AI 架构重构完成**；v0.13.1 完成 AI 入口与调度收敛；v0.13.2 完成 P13–P16（画像校验、多语言、观众级容错、最终汇总恢复）；M3 真实接入继续验证；M4 部分完成；M5 未完成
 - 版本：`0.13.2`（`package.json` 与 `src/shared/app-info.mjs` 一致；构建标识见 §5）
 - 数据库 schema：**14**（v13→v14 只新增 `ai_translations` / `ai_translation_runs` 与索引）
 - 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本 **v13.2**（旧任务保留原版本号）

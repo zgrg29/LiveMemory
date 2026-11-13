@@ -11,6 +11,7 @@ import {latestResultForScope, listResults} from '../../storage/repositories/ai-r
 import {getSession} from '../../storage/repositories/sessions.mjs';
 import {listSessionViewers} from '../../storage/repositories/viewers.mjs';
 import {computeJobStatus} from '../tasks/status.mjs';
+import {buildRecovery} from '../tasks/recovery.mjs';
 import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
 import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-jobs.mjs';
@@ -33,7 +34,9 @@ import {
   shouldRetryAttempt
 } from '../runtime/attempt.mjs';
 import {
+  estimateJsonTokens,
   estimateTokens,
+  resolveAggregateOutputTokens,
   resolveBatchInputTokens,
   resolveMaxCompletionTokens,
   resolveOutputTokens
@@ -84,10 +87,26 @@ const MAX_CONCURRENCY = 8;
 /** Repair and aggregate must never recreate an unbounded prompt. */
 const MAX_REPAIR_INPUT_TOKENS = 48000;
 const MAX_AGGREGATE_INPUT_TOKENS = 48000;
-const AGGREGATE_OUTPUT_TOKENS = 8000;
 /** Minimum previous-answer text kept when a repair request is tightened. */
 const MIN_REPAIR_PREVIOUS_CHARS = 2000;
 const MAX_REPAIR_PREVIOUS_CHARS = 12000;
+
+/**
+ * Second condense pass used only when the default aggregate input does not fit
+ * the model/request budget. It still includes every batch and every evidence
+ * reference; it only reduces per-batch cardinality and text length.
+ */
+const COMPACT_AGGREGATE_LIMITS = Object.freeze({
+  topics: 16,
+  sentiment: 8,
+  disputes: 8,
+  highlights: 8,
+  summaryChars: 1200,
+  topicSummaryChars: 800,
+  keyPoints: 5,
+  keyPointChars: 180,
+  messageRefs: 6
+});
 
 export class AnalysisPermissionError extends Error {
   constructor(code, details = {}) {
@@ -141,8 +160,25 @@ function emptyAttemptStats() {
     canceled: 0,
     timedOut: 0,
     retried: 0,
-    usageUnknown: 0
+    usageUnknown: 0,
+    // A provider HTTP success is not a usable analysis result. This counter
+    // records successful responses whose output was truncated, degenerate or
+    // rejected by JSON/Schema/coverage validation, so the console can explain
+    // "20 API requests succeeded, but the task failed".
+    outputRejected: 0
   };
+}
+
+/**
+ * Batch indexes are 1-based. `Number(null)` is 0, which used to turn an
+ * aggregate failure (no batch) into a fake "batch 0" in persisted errors and
+ * recovery conditions. Normalize every source to null or a positive integer.
+ */
+function normalizeBatchIndex(value) {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1) return null;
+  return number;
 }
 
 /**
@@ -549,7 +585,12 @@ export class AnalysisRunner {
     const memoryStatus = memoryJob ? computeJobStatus(this.db, memoryJob) : null;
     let status = entry.status;
     let stage = entry.stage;
-    let error = entry.error ?? null;
+    let error = entry.error ? {...entry.error} : null;
+    if (error && error.batchIndex !== undefined) {
+      // Legacy tasks persisted `batchIndex: 0` for aggregate failures because
+      // `Number(null)` is 0. Batch indexes are 1-based; expose null, never 0.
+      error.batchIndex = normalizeBatchIndex(error.batchIndex);
+    }
     if (status === 'running' && !active) {
       status = 'interrupted';
       stage = 'interrupted';
@@ -607,6 +648,46 @@ export class AnalysisRunner {
       && sessionBatchTotal > 0;
     const pendingSessionBatches = Math.max(0, sessionBatchTotal - sessionBatchesCompleted);
     const pendingMemoryBatches = Math.max(0, memoryBatchTotal - memoryBatchesCompleted);
+    const recovery = buildRecovery({
+      status,
+      errorCode: error?.code ?? null,
+      sessionJobId: entry.sessionJobId ?? null,
+      memoryJobId: entry.memoryJobId ?? null,
+      sessionStatus,
+      memoryStatus
+    });
+    // Old tasks did not persist the rejection counter. A truncation/schema
+    // failure still proves at least one successful response was unusable, so
+    // report a conservative 1 instead of zero for backward compatibility.
+    const rejectionCodes = new Set([
+      'AUTO_OUTPUT_TRUNCATED',
+      'AUTO_OUTPUT_DEGENERATED',
+      'AUTO_SCHEMA_INVALID',
+      'AUTO_INVALID_JSON',
+      'AI_IMPORT_INVALID',
+      'AUTO_VIEWER_COVERAGE_INCOMPLETE'
+    ]);
+    const outputRejected = Math.max(
+      Number(attemptStats.outputRejected ?? 0),
+      rejectionCodes.has(error?.code) && status !== 'complete' ? 1 : 0
+    );
+    if (error) {
+      // The recovery object is the current source of truth. Older persisted
+      // errors only had a generic "resume"; normalize them on read without
+      // rewriting historical rows.
+      error.recoveryKind = recovery?.kind ?? error.recoveryKind ?? null;
+      error.recoverable = recovery ? recovery.canResume : error.recoverable;
+      error.suggestedAction = recovery?.action ?? error.suggestedAction ?? null;
+      if (!error.finishReason && error.detail === 'finish-reason-length') {
+        error.finishReason = 'length';
+      }
+    }
+    const savedResults = sessionBatchesCompleted
+      + (sessionAggregateDone ? 1 : 0)
+      + memoryBatchesCompleted;
+    const analysisOutcome = status === 'complete'
+      ? 'complete'
+      : (status === 'running' ? 'running' : (recovery ? 'incomplete' : (status === 'canceled' ? 'canceled' : 'failed')));
     return {
       sessionId,
       status,
@@ -615,7 +696,8 @@ export class AnalysisRunner {
       canPause: status === 'running' && Boolean(active),
       canResume: status !== 'complete'
         && Boolean(sessionJob || memoryJob)
-        && error?.code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER',
+        && error?.code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER'
+        && (recovery ? recovery.canResume : true),
       canCancel: status === 'running' && Boolean(active),
       mode: entry.mode ?? ANALYSIS_MODE.SESSION,
       locale: entry.locale ?? null,
@@ -637,6 +719,9 @@ export class AnalysisRunner {
       waitingAggregate,
       pendingSessionBatches,
       pendingMemoryBatches,
+      analysisOutcome,
+      recovery,
+      savedResults,
       memoryBatchIndex: memoryBatchesCompleted,
       memoryBatchTotal,
       memoryBatchesCompleted,
@@ -665,6 +750,15 @@ export class AnalysisRunner {
       estimatedCost: entry.estimatedCost ?? null,
       requestStats,
       attemptStats,
+      outputStats: {
+        // HTTP/provider responses that returned successfully. This is an API
+        // statistic, not a claim that the model produced a valid report.
+        responses: Number(attemptStats.succeeded ?? 0),
+        rejected: outputRejected,
+        lastCode: entry.lastOutputRejection?.code ?? null,
+        lastFinishReason: entry.lastOutputRejection?.finishReason ?? error?.finishReason ?? null
+      },
+      lastOutputRejection: entry.lastOutputRejection ?? null,
       currentRequest,
       lastRequest: entry.lastRequest ?? null,
       batchErrors: memoryStatus?.batchErrors ?? sessionStatus?.batchErrors ?? [],
@@ -798,6 +892,7 @@ export class AnalysisRunner {
       requestBytes: record.requestBytes ?? null,
       reasoningChars: record.reasoningChars ?? 0,
       reasoningTokens: record.reasoningTokens ?? null,
+      finishReason: record.finishReason ?? null,
       at: this.now()
     };
     this.state.set(context.sessionId, {
@@ -831,7 +926,39 @@ export class AnalysisRunner {
       estimatedInputTokens: record.estimatedInputTokens ?? null,
       requestBytes: record.requestBytes ?? null,
       reasoningChars: record.reasoningChars ?? 0,
-      reasoningTokens: record.reasoningTokens ?? null
+      reasoningTokens: record.reasoningTokens ?? null,
+      finishReason: record.finishReason ?? null
+    });
+  }
+
+  /**
+   * Record a provider response that arrived successfully but was not usable.
+   * This never decrements `succeeded` and never pretends the HTTP call failed;
+   * it makes the distinction visible in the status object.
+   */
+  #recordOutputRejected(context, {code, kind, batchIndex = null, stage = null, finishReason = null}) {
+    const entry = this.state.get(context.sessionId);
+    const stats = {...emptyAttemptStats(), ...(entry?.attemptStats ?? {})};
+    stats.outputRejected = Number(stats.outputRejected ?? 0) + 1;
+    this.state.set(context.sessionId, {
+      attemptStats: stats,
+      lastOutputRejection: {
+        code: code ?? 'OUTPUT_REJECTED',
+        kind: kind ?? null,
+        batchIndex: normalizeBatchIndex(batchIndex),
+        stage: stage ?? null,
+        finishReason: finishReason ?? null,
+        at: this.now()
+      }
+    });
+    this.logger?.warn?.({
+      event: 'ai.analysis.output.rejected',
+      sessionId: context.sessionId,
+      kind,
+      batchIndex: normalizeBatchIndex(batchIndex),
+      stage,
+      code: code ?? 'OUTPUT_REJECTED',
+      finishReason: finishReason ?? null
     });
   }
 
@@ -909,6 +1036,7 @@ export class AnalysisRunner {
         status: 'complete',
         stage: 'complete',
         error: null,
+        recovery: null,
         completedAt: this.now(),
         currentRequest: null,
         sessionReportDone: entry?.sessionReportDone === true,
@@ -971,17 +1099,31 @@ export class AnalysisRunner {
       ? `${detail ?? 'request-timeout'}; the provider may have processed this request, so resume retries only the unfinished batch`
       : detail;
     const jobId = error?.jobId ?? entry?.memoryJobId ?? entry?.sessionJobId ?? null;
-    const batchIndex = Number.isInteger(Number(error?.batchIndex)) ? Number(error.batchIndex) : null;
+    const batchIndex = normalizeBatchIndex(error?.batchIndex);
     const batchId = error?.batchId ?? null;
     const stage = error?.stage ?? entry?.stage ?? null;
-    const recoverable = (actionRequired || Boolean(entry?.sessionJobId || entry?.memoryJobId))
-      && code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER';
+    const finalStatus = actionRequired ? 'needs_action' : ((sessionDone || memoryPartial) ? 'partial' : 'failed');
+    // The same source of truth as GET /api/ai/analyze/status: only the missing
+    // unit is offered, never a re-run of saved batches.
+    const recovery = buildRecovery({
+      status: finalStatus,
+      errorCode: code,
+      sessionJobId: entry?.sessionJobId ?? null,
+      memoryJobId: entry?.memoryJobId ?? null,
+      sessionStatus,
+      memoryStatus
+    });
+    const recoverable = recovery
+      ? recovery.canResume
+      : ((actionRequired || Boolean(entry?.sessionJobId || entry?.memoryJobId))
+        && code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER');
     this.state.set(context.sessionId, {
       // A successful session report makes a later memory failure "partial"; a
       // memory-only task that fails stays "failed" even though its already
       // imported batches are preserved and resumable (see `saved`).
-      status: actionRequired ? 'needs_action' : ((sessionDone || memoryPartial) ? 'partial' : 'failed'),
+      status: finalStatus,
       stage: actionRequired ? 'needs_action' : 'failed',
+      recovery,
       error: {
         code,
         detail: detailWithUncertainty,
@@ -994,8 +1136,11 @@ export class AnalysisRunner {
         // and chat text are never included.
         errors: fieldErrors,
         recoverable,
-        suggestedAction: recoverable ? 'resume' : 'check-provider',
+        recoveryKind: recovery?.kind ?? null,
+        suggestedAction: recovery?.action
+          ?? (actionRequired ? 'check-provider' : (recoverable ? 'resume' : 'check-provider')),
         kind: error?.kind ?? null,
+        finishReason: error?.finishReason ?? null,
         httpStatus: error?.status ?? null,
         retryAfterMs: error?.retryAfterMs ?? null,
         receivedHeaders: error?.receivedHeaders === true,
@@ -1026,6 +1171,9 @@ export class AnalysisRunner {
       validationErrorCodes: fieldErrors.slice(0, 8).map((item) => item.code),
       actionRequired,
       recoverable,
+      recoveryKind: recovery?.kind ?? null,
+      suggestedAction: recovery?.action ?? null,
+      finishReason: error?.finishReason ?? null,
       uncertainBilling,
       errorKind: error?.kind ?? null,
       retryAfterMs: error?.retryAfterMs ?? null,
@@ -1233,6 +1381,7 @@ export class AnalysisRunner {
     this.state.set(sessionId, {
       sessionReportDone: true,
       stage: 'session_done',
+      recovery: null,
       sessionBatchesCompleted: total,
       sessionBatchTotal: total,
       batchIndex: this.state.get(sessionId)?.memoryJobId ? this.state.get(sessionId).batchIndex : total,
@@ -1241,7 +1390,7 @@ export class AnalysisRunner {
     });
   }
 
-  #buildAggregatePrompt(job) {
+  #buildAggregatePrompt(job, provider) {
     const packages = getJobPackage(this.db, {jobId: job.id, stage: 'session', batchIndex: 1});
     if (!packages) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
     const files = readAnalysisPackage(join(this.paths.exports, packages.file_name), ['result.schema.json']);
@@ -1254,10 +1403,18 @@ export class AnalysisRunner {
       if (!current || current.resultVersion < row.resultVersion) latest.set(row.batchIndex, row);
     }
     const batchRows = new Map(listJobBatches(this.db, job.id).map((batch) => [batch.batchIndex, batch]));
-    const batchResults = [...latest.values()]
+    const buildBatchResults = (limits) => [...latest.values()]
       .sort((a, b) => a.batchIndex - b.batchIndex)
       .map((row) => {
         const batch = batchRows.get(row.batchIndex);
+        const topics = row.result?.session_topics ?? {};
+        const times = [
+          ...(topics.topics ?? []),
+          ...(topics.disputes ?? []),
+          ...(topics.highlights ?? [])
+        ].flatMap((entry) => [entry?.started_at, entry?.ended_at])
+          .filter((value) => typeof value === 'string' && !Number.isNaN(Date.parse(value)))
+          .sort();
         return {
           batch_index: row.batchIndex,
           task_id: row.taskId,
@@ -1265,12 +1422,15 @@ export class AnalysisRunner {
             ? {
               from_seq: batch.fromSeq,
               to_seq: batch.toSeq,
-              message_count: batch.messageCount
+              message_count: batch.messageCount,
+              from_at: times[0] ?? null,
+              to_at: times[times.length - 1] ?? null
             }
             : null,
-          result: condenseBatchResult(row.result, {batchIndex: row.batchIndex})
+          result: condenseBatchResult(row.result, {batchIndex: row.batchIndex, limits})
         };
       });
+    let batchResults = buildBatchResults(null);
     if (batchResults.length === 0) {
       throw Object.assign(new Error('AGGREGATE_NOT_READY'), {code: 'ANALYSIS_AGGREGATE_NOT_READY'});
     }
@@ -1285,21 +1445,56 @@ export class AnalysisRunner {
         session_id: job.sessionId
       }]
     };
-    const prompt = buildSessionAggregatePrompt({manifest, batchResults, resultSchema});
-    return {prompt, resultSchema};
+    const build = () => buildSessionAggregatePrompt({manifest, batchResults, resultSchema});
+    let prompt = build();
+    let batchResultTokens = estimateJsonTokens(batchResults);
+    let outputTokens = resolveAggregateOutputTokens({
+      batchResultTokens,
+      inputTokens: prompt.estimatedTokens,
+      contextLength: provider.contextLength
+    });
+    let inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
+    let compacted = false;
+    // The actual 18-batch task was ~34k input tokens. A smaller-context model
+    // cannot merge that plus a real report in one request. Retry the planning
+    // with lower per-batch cardinality (all batches, all evidence preserved)
+    // before declaring the input too large.
+    if (prompt.estimatedTokens > inputLimit) {
+      compacted = true;
+      batchResults = buildBatchResults(COMPACT_AGGREGATE_LIMITS);
+      prompt = build();
+      batchResultTokens = estimateJsonTokens(batchResults);
+      outputTokens = resolveAggregateOutputTokens({
+        batchResultTokens,
+        inputTokens: prompt.estimatedTokens,
+        contextLength: provider.contextLength
+      });
+      inputLimit = this.#maxRequestInputTokens(provider, outputTokens);
+    }
+    return {
+      prompt,
+      resultSchema,
+      batchResults,
+      batchResultTokens,
+      outputTokens,
+      inputLimit,
+      compacted
+    };
   }
 
   async #runSessionAggregate(context, job) {
     const {sessionId, provider} = context;
     this.#setRunning(sessionId, {stage: 'session_aggregating'});
-    const {prompt} = this.#buildAggregatePrompt(job);
-    const limit = this.#maxRequestInputTokens(provider, AGGREGATE_OUTPUT_TOKENS);
+    const aggregate = this.#buildAggregatePrompt(job, provider);
+    const {prompt, outputTokens, inputLimit: limit} = aggregate;
     if (prompt.estimatedTokens > limit) {
       throw Object.assign(new Error('AGGREGATE_TOO_LARGE'), {
         code: 'ANALYSIS_AGGREGATE_TOO_LARGE',
-        detail: `estimated ${prompt.estimatedTokens} input tokens, limit ${limit}, batches ${job.batchTotal}; all batch results are preserved`,
+        detail: `estimated ${prompt.estimatedTokens} input tokens, limit ${limit}, batches ${job.batchTotal}, aggregate output ${outputTokens}; all batch results are preserved`,
         estimatedTokens: prompt.estimatedTokens,
-        limit
+        limit,
+        aggregateOutputTokens: outputTokens,
+        batches: job.batchTotal
       });
     }
     this.logger?.info?.({
@@ -1308,7 +1503,10 @@ export class AnalysisRunner {
       jobId: job.id,
       batches: job.batchTotal,
       estimatedInputTokens: prompt.estimatedTokens,
-      inputLimit: limit
+      inputLimit: limit,
+      batchResultTokens: aggregate.batchResultTokens,
+      aggregateOutputTokens: outputTokens,
+      compacted: aggregate.compacted
     });
     const generated = await this.requestWithRepair({
       context,
@@ -1316,11 +1514,7 @@ export class AnalysisRunner {
       kind: 'session-aggregate',
       batchIndex: null,
       stage: 'session_aggregating',
-      outputTokens: resolveOutputTokens({
-        desired: AGGREGATE_OUTPUT_TOKENS,
-        inputTokens: prompt.estimatedTokens,
-        contextLength: provider.contextLength
-      }),
+      outputTokens,
       evaluate: (text, aggregatePrompt) => this.evaluateSessionAggregateAnswer(text, aggregatePrompt)
     });
     this.#setRunning(sessionId, {stage: 'session_importing'});
@@ -1333,6 +1527,7 @@ export class AnalysisRunner {
     this.state.set(sessionId, {
       sessionReportDone: true,
       stage: 'session_done',
+      recovery: null,
       lastProvider: generated.providerId,
       lastModel: generated.model,
       currentRequest: null
@@ -1344,7 +1539,8 @@ export class AnalysisRunner {
       batches: job.batchTotal,
       provider: generated.providerId,
       model: generated.model,
-      duplicate: outcome.duplicate
+      duplicate: outcome.duplicate,
+      aggregateOutputTokens: outputTokens
     });
   }
 
@@ -1714,7 +1910,7 @@ export class AnalysisRunner {
       stage,
       outputTokens: budgetFor(prompt)
     });
-    this.#assertUsableOutput(generated);
+    this.#assertUsableOutput(generated, {context, kind: 'memory', batchIndex, stage});
     let evaluated = evaluate(generated.content);
     if (evaluated.validation.ok) {
       return {
@@ -1724,6 +1920,13 @@ export class AnalysisRunner {
         viewerFailures: []
       };
     }
+    this.#recordOutputRejected(context, {
+      code: (evaluated.validation.errors ?? [])[0]?.code ?? 'AI_IMPORT_INVALID',
+      kind: 'memory',
+      batchIndex,
+      stage,
+      finishReason: generated.finishReason ?? null
+    });
 
     // Exactly one bounded repair request, whether the first answer had missing
     // refs, unknown fields, illegal enums or invalid evidence. If it still
@@ -1796,15 +1999,29 @@ export class AnalysisRunner {
         ? Math.min(3000, budgetFor(repairPrompt))
         : outputBudget
     });
-    this.#assertUsableOutput(repaired);
+    this.#assertUsableOutput(repaired, {context, kind: 'memory-repair', batchIndex, stage});
     evaluated = evaluate(repaired.content);
     if (!evaluated.assembled.ok) {
+      this.#recordOutputRejected(context, {
+        code: (evaluated.validation.errors ?? [])[0]?.code ?? 'AI_IMPORT_INVALID',
+        kind: 'memory-repair',
+        batchIndex,
+        stage,
+        finishReason: repaired.finishReason ?? null
+      });
       throw invalidAnswer(
         evaluated.validation.errors,
         'memory repair did not produce a complete compact answer'
       );
     }
     if (!evaluated.validation.ok) {
+      this.#recordOutputRejected(context, {
+        code: (evaluated.validation.errors ?? [])[0]?.code ?? 'AI_IMPORT_INVALID',
+        kind: 'memory-repair',
+        batchIndex,
+        stage,
+        finishReason: repaired.finishReason ?? null
+      });
       // One repair is spent. Instead of discarding the whole batch, salvage the
       // viewers whose updates are complete and valid, and keep only the truly
       // invalid viewers for a later targeted resume.
@@ -1945,20 +2162,42 @@ export class AnalysisRunner {
     };
   }
 
-  #assertUsableOutput(generated) {
+  #assertUsableOutput(generated, {context = null, kind = null, batchIndex = null, stage = null} = {}) {
     if (generated?.finishReason === 'length') {
-      throw Object.assign(new Error('OUTPUT_TRUNCATED'), {
+      const error = Object.assign(new Error('OUTPUT_TRUNCATED'), {
         code: 'AUTO_OUTPUT_TRUNCATED',
         detail: 'finish-reason-length',
-        kind: ERROR_KIND.INVALID_RESPONSE
+        kind: ERROR_KIND.INVALID_RESPONSE,
+        finishReason: 'length'
       });
+      if (context) {
+        this.#recordOutputRejected(context, {
+          code: error.code,
+          kind,
+          batchIndex,
+          stage,
+          finishReason: 'length'
+        });
+      }
+      throw error;
     }
     if (looksDegenerate(generated?.content)) {
-      throw Object.assign(new Error('OUTPUT_DEGENERATED'), {
+      const error = Object.assign(new Error('OUTPUT_DEGENERATED'), {
         code: 'AUTO_OUTPUT_DEGENERATED',
         detail: 'repeated-structure',
-        kind: ERROR_KIND.INVALID_RESPONSE
+        kind: ERROR_KIND.INVALID_RESPONSE,
+        finishReason: generated?.finishReason ?? null
       });
+      if (context) {
+        this.#recordOutputRejected(context, {
+          code: error.code,
+          kind,
+          batchIndex,
+          stage,
+          finishReason: generated?.finishReason ?? null
+        });
+      }
+      throw error;
     }
   }
 
@@ -1975,9 +2214,16 @@ export class AnalysisRunner {
     let generated = await this.requestOnce({context, prompt, kind, batchIndex, stage, outputTokens});
     // A length-truncated or degenerate answer must not trigger a second copy of
     // the same large request: that was the original 3× timeout/cost failure.
-    this.#assertUsableOutput(generated);
+    this.#assertUsableOutput(generated, {context, kind, batchIndex, stage});
     let evaluation = evaluateAnswer(generated.content, prompt);
     if (evaluation.ok) return {...generated, text: JSON.stringify(evaluation.sanitized)};
+    this.#recordOutputRejected(context, {
+      code: (evaluation.errors ?? [])[0]?.code ?? 'AUTO_SCHEMA_INVALID',
+      kind,
+      batchIndex,
+      stage,
+      finishReason: generated.finishReason ?? null
+    });
     const repairLimit = this.#maxRequestInputTokens(context.provider, outputTokens);
     const repair = buildRepairMessages({
       prompt,
@@ -2012,14 +2258,22 @@ export class AnalysisRunner {
       stage,
       outputTokens
     });
-    this.#assertUsableOutput(generated);
+    this.#assertUsableOutput(generated, {context, kind, batchIndex, stage});
     evaluation = evaluateAnswer(generated.content, prompt);
     if (!evaluation.ok) {
+      this.#recordOutputRejected(context, {
+        code: (evaluation.errors ?? [])[0]?.code ?? 'AUTO_SCHEMA_INVALID',
+        kind,
+        batchIndex,
+        stage,
+        finishReason: generated.finishReason ?? null
+      });
       throw Object.assign(new Error('SCHEMA_INVALID'), {
         code: 'AUTO_SCHEMA_INVALID',
         detail: (evaluation.errors ?? []).slice(0, 3)
           .map((error) => `${error.path || '(root)'}:${error.code}`)
-          .join(', ') || 'validation failed'
+          .join(', ') || 'validation failed',
+        finishReason: generated.finishReason ?? null
       });
     }
     return {...generated, text: JSON.stringify(evaluation.sanitized)};
@@ -2234,7 +2488,8 @@ export class AnalysisRunner {
           estimatedInputTokens,
           requestBytes: result.requestBytes ?? null,
           reasoningChars: result.reasoningChars ?? 0,
-          reasoningTokens: usage?.reasoningTokens ?? null
+          reasoningTokens: usage?.reasoningTokens ?? null,
+          finishReason: result.finishReason ?? null
         }));
         this.state.set(context.sessionId, {
           currentRequest: null,
@@ -2382,6 +2637,11 @@ export class AnalysisRunner {
     const entry = this.state.get(sessionId);
     if (!entry || !(entry.sessionJobId || entry.memoryJobId)) {
       throw new AnalysisPermissionError('NOTHING_TO_RESUME');
+    }
+    // Idempotent: a repeated Continue after the aggregate was saved must not
+    // launch another task or create a second final result.
+    if (this.getStatus(sessionId).status === 'complete') {
+      return this.getStatus(sessionId);
     }
     if (this.active.has(sessionId)) throw new AnalysisPermissionError('ALREADY_RUNNING');
     if (consent !== true) throw new AnalysisPermissionError('CONSENT_REQUIRED');

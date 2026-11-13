@@ -1,7 +1,12 @@
 import {readFileSync} from 'node:fs';
 import {readZipEntry, readZipIndex} from '../../shared/zip.mjs';
 import {estimateTokensFromText} from '../providers/pricing.mjs';
-import {buildMemoryRefs, buildMemoryCompactSchema, buildSessionAnswerSchema} from './compact.mjs';
+import {
+  buildMemoryRefs,
+  buildMemoryCompactSchema,
+  buildSessionAnswerSchema,
+  buildSessionAggregateAnswerSchema
+} from './compact.mjs';
 import {buildMemoryInstructions, memoryCompactShape} from '../prompts/split.mjs';
 import {estimateJsonTokens, estimateTokens} from '../batching/tokens.mjs';
 
@@ -283,32 +288,57 @@ export function buildTargetedMemoryPrompt({prompt, missingRefs}) {
  * explicit, which is what keeps the final report from duplicating batch topics
  * or inventing facts that no batch observed.
  */
-export function buildSessionAggregatePrompt({manifest, batchResults, resultSchema}) {
+export function buildSessionAggregatePrompt({
+  manifest,
+  batchResults,
+  resultSchema,
+  // The bounded aggregate schema is part of the prompt, so a provider that
+  // supports structured outputs enforces the same limits as the instructions.
+  answerSchema = null
+}) {
   const locale = manifest.locale ?? 'en';
-  const answerSchema = buildSessionAnswerSchema(resultSchema);
+  const schema = answerSchema ?? buildSessionAggregateAnswerSchema(resultSchema);
   const rules = {
     'zh-CN': [
       '你在合并同一场直播的多个分批结果。没有原始聊天可看，不得编造任何事实、时间或观众。',
       '合并相同话题、争论与片段；不要简单拼接；冲突或证据不足时降低 confidence。',
       '证据只能使用 {"batch": 批次号, "seq": 序号} 形式，且只能引用对应批次结果中出现过的 seq；不得输出纯整数 seq。',
       '时间必须保持在各批次覆盖范围内。',
-      '只返回 session_topics；不要输出 viewer_memory_updates。viewer_profiles 省略。'
+      '输出上限：summary 最多 800 字符；topics 最多 24 个，每个 topic 的 summary 最多 320 字符、key_points 最多 4 条（每条最多 140 字符）；sentiment 最多 12 条；disputes 最多 8 条（viewpoints 最多 4 条）；highlights 最多 8 条；每个条目的 message_refs 最多 4 个。',
+      '合并优先于罗列：同一话题/争论/片段只保留一条；不要逐批复制，不要重复证据或观众信息。',
+      '覆盖全部批次：下面列出每个已保存批次的序号范围。最终时间线必须覆盖最早到最晚的批次，并为每个有可报告内容的批次保留至少一个话题或回看片段；不得只总结前面的批次。',
+      '只返回 session_topics；不要输出 viewer_memory_updates，也不要输出 viewer_profiles。'
     ],
     ja: [
       '同じ配信の複数バッチ結果を統合します。生のチャットは見えないため、事実・時刻・視聴者を捏造してはいけません。',
       '同じ話題・論争・見どころは統合し、単純に連結しないでください。矛盾や証拠不足は confidence を下げます。',
       '証拠は {"batch": バッチ番号, "seq": 連番} 形式のみ。各バッチ結果に存在する seq だけを引用し、整数だけの seq は出力しないでください。',
       '時刻は各バッチの範囲内に保ってください。',
-      'session_topics だけを返してください。viewer_memory_updates は出力せず、viewer_profiles も省略します。'
+      '出力上限：summary は 800 文字以内、topics は最大 24 件、各 topic の summary は 320 文字以内、key_points は最大 4 件（各 140 文字以内）、sentiment は最大 12 件、disputes は最大 8 件（viewpoints は最大 4 件）、highlights は最大 8 件、各項目の message_refs は最大 4 件です。',
+      '列挙より統合を優先してください。同じ話題・論争・見どころは 1 件にまとめ、バッチごとに複製したり、証拠や視聴者情報を繰り返したりしないでください。',
+      '全バッチを網羅してください。以下に保存済みバッチの seq 範囲を示します。最終タイムラインは最初から最後のバッチまでを覆い、報告可能な内容がある各バッチについて少なくとも 1 つの話題または見どころを残してください。前のバッチだけを要約してはいけません。',
+      'session_topics だけを返してください。viewer_memory_updates は出力せず、viewer_profiles も出力しないでください。'
     ],
     en: [
       'You are merging several validated batch reports of ONE broadcast. No raw chat is available; never invent facts, times or viewers.',
       'Merge duplicate topics, disputes and highlights instead of concatenating them. Lower confidence for conflicts or thin evidence.',
       'Evidence must use {"batch": batchNumber, "seq": seqNumber} and may only cite seqs present in that batch result. Never output a bare integer seq.',
       'Keep every time inside the batch coverage ranges.',
-      'Return session_topics only. Do not output viewer_memory_updates and omit viewer_profiles.'
+      'Output limits: summary at most 800 chars; at most 24 topics, each topic summary at most 320 chars, key_points at most 4 (each at most 140 chars); at most 12 sentiment entries; at most 8 disputes (viewpoints at most 4); at most 8 highlights; at most 4 message_refs per item.',
+      'Merge instead of enumerating: one entry per real topic/dispute/highlight; do not copy each batch, repeat evidence or repeat viewer information.',
+      'Cover every batch: the seq ranges of all saved batches are listed below. The final timeline must span the earliest to the latest batch, and every batch with reportable content must contribute at least one topic or highlight. Never summarize only the early batches.',
+      'Return session_topics only. Do not output viewer_memory_updates and do not output viewer_profiles.'
     ]
   }[locale] ?? [];
+  const coverage = (batchResults ?? []).map((entry) => {
+    const range = entry?.coverage ?? {};
+    const from = range.from_seq ?? '?';
+    const to = range.to_seq ?? '?';
+    const messages = range.message_count ?? '?';
+    const fromAt = range.from_at ?? 'unknown';
+    const toAt = range.to_at ?? 'unknown';
+    return `- batch ${entry?.batch_index ?? '?'}: seq ${from}-${to}, messages ${messages}, from ${fromAt}, to ${toAt}`;
+  }).join('\n');
   const user = [
     '## AGGREGATE MERGE CONTRACT',
     ...rules.map((line) => `- ${line}`),
@@ -316,13 +346,14 @@ export function buildSessionAggregatePrompt({manifest, batchResults, resultSchem
     `- task_id: ${JSON.stringify(manifest.tasks?.[0]?.task_id ?? null)}`,
     `- session_id: ${JSON.stringify(manifest.session_id)}`,
     `- batches: ${batchResults.length}`,
+    block('batch coverage (all batches must be represented)', coverage || '- no batch coverage'),
     block('batch_results (validated, evidence refs are batch-qualified)', JSON.stringify(batchResults)),
-    block('compact answer schema', JSON.stringify(answerSchema))
+    block('compact answer schema (bounded aggregate)', JSON.stringify(schema))
   ].join('\n\n');
   return {
     locale,
     manifest,
-    answerSchema,
+    answerSchema: schema,
     messages: [
       {role: 'system', content: SYSTEM[locale] ?? SYSTEM.en},
       {role: 'user', content: user}
@@ -331,15 +362,37 @@ export function buildSessionAggregatePrompt({manifest, batchResults, resultSchem
   };
 }
 
-/** Keep only the fields the aggregate needs, so a large job can still merge. */
-export function condenseBatchResult(result, {batchIndex = null} = {}) {
+const DEFAULT_CONDENSE_LIMITS = Object.freeze({
+  topics: 60,
+  sentiment: 40,
+  disputes: 40,
+  highlights: 40,
+  summaryChars: 2000,
+  topicSummaryChars: 2000,
+  keyPoints: 12,
+  keyPointChars: 400,
+  messageRefs: 200
+});
+
+/**
+ * Bounded per-batch condensation for the aggregate request.
+ *
+ * Every batch is always included. `limits` only reduces how many items and how
+ * many characters one batch may contribute; it never drops a later batch and
+ * never rewrites an evidence reference. A compact pass is used when the default
+ * input would not fit the request/context budget.
+ */
+export function condenseBatchResult(result, {batchIndex = null, limits = null} = {}) {
+  const caps = {...DEFAULT_CONDENSE_LIMITS, ...(limits ?? {})};
   const topics = result?.session_topics ?? {};
+  const clip = (value, maxChars) => (typeof value === 'string' ? value.slice(0, maxChars) : value);
   const qualify = (refs) => (Array.isArray(refs) ? refs : [])
     .map((ref) => (typeof ref === 'number' && Number.isInteger(ref) && batchIndex !== null
       ? {batch: batchIndex, seq: ref}
       : ref))
     .filter((ref) => (typeof ref === 'number' && batchIndex !== null)
-      || (ref && Number.isInteger(Number(ref.batch)) && Number.isInteger(Number(ref.seq))));
+      || (ref && Number.isInteger(Number(ref.batch)) && Number.isInteger(Number(ref.seq))))
+    .slice(0, caps.messageRefs);
   const pick = (entry, keys) => {
     const out = {};
     for (const key of keys) {
@@ -351,20 +404,52 @@ export function condenseBatchResult(result, {batchIndex = null} = {}) {
     ...pick(entry, keys),
     ...(entry?.message_refs !== undefined ? {message_refs: qualify(entry.message_refs)} : {})
   });
-  return {
-    summary: typeof topics.summary === 'string' ? topics.summary.slice(0, 2000) : '',
-    topics: (topics.topics ?? []).slice(0, 60).map((entry) => withRefs(entry, [
+  const topicList = (topics.topics ?? []).slice(0, caps.topics).map((entry) => {
+    const item = withRefs(entry, [
       'title', 'started_at', 'ended_at', 'summary', 'key_points', 'confidence', 'evidence'
-    ])),
-    sentiment: (topics.sentiment ?? []).slice(0, 40).map((entry) => pick(entry, [
-      'at', 'tone', 'note', 'confidence', 'sample_size', 'evidence_note'
-    ])),
-    disputes: (topics.disputes ?? []).slice(0, 40).map((entry) => withRefs(entry, [
+    ]);
+    if (item.title !== undefined) item.title = clip(item.title, 120);
+    if (item.summary !== undefined) item.summary = clip(item.summary, caps.topicSummaryChars);
+    if (Array.isArray(item.key_points)) {
+      item.key_points = item.key_points.slice(0, caps.keyPoints)
+        .map((point) => clip(point, caps.keyPointChars));
+    }
+    return item;
+  });
+  const sentimentList = (topics.sentiment ?? []).slice(0, caps.sentiment).map((entry) => {
+    const item = pick(entry, ['at', 'tone', 'note', 'confidence', 'sample_size', 'evidence_note']);
+    if (item.note !== undefined) item.note = clip(item.note, 500);
+    if (item.evidence_note !== undefined) item.evidence_note = clip(item.evidence_note, 300);
+    return item;
+  });
+  const disputeList = (topics.disputes ?? []).slice(0, caps.disputes).map((entry) => {
+    const item = withRefs(entry, [
       'title', 'summary', 'started_at', 'ended_at', 'note', 'viewpoints', 'confidence', 'evidence'
-    ])),
-    highlights: (topics.highlights ?? []).slice(0, 40).map((entry) => withRefs(entry, [
+    ]);
+    if (item.title !== undefined) item.title = clip(item.title, 120);
+    if (item.summary !== undefined) item.summary = clip(item.summary, caps.topicSummaryChars);
+    if (item.note !== undefined) item.note = clip(item.note, caps.topicSummaryChars);
+    if (Array.isArray(item.viewpoints)) {
+      item.viewpoints = item.viewpoints.slice(0, 4)
+        .map((point) => clip(point, caps.keyPointChars));
+    }
+    return item;
+  });
+  const highlightList = (topics.highlights ?? []).slice(0, caps.highlights).map((entry) => {
+    const item = withRefs(entry, [
       'title', 'started_at', 'ended_at', 'reason', 'clip_suggestion', 'confidence', 'evidence'
-    ]))
+    ]);
+    if (item.title !== undefined) item.title = clip(item.title, 120);
+    if (item.reason !== undefined) item.reason = clip(item.reason, caps.topicSummaryChars);
+    if (item.clip_suggestion !== undefined) item.clip_suggestion = clip(item.clip_suggestion, caps.topicSummaryChars);
+    return item;
+  });
+  return {
+    summary: typeof topics.summary === 'string' ? topics.summary.slice(0, caps.summaryChars) : '',
+    topics: topicList,
+    sentiment: sentimentList,
+    disputes: disputeList,
+    highlights: highlightList
   };
 }
 

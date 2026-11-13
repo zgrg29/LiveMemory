@@ -23,6 +23,126 @@ export function buildSessionAnswerSchema(resultSchema) {
   };
 }
 
+/**
+ * The aggregate answer is a *merged report*, not a container for every batch.
+ * The full result Schema allows up to 60 topics × 2,000 chars and 120 sentiment
+ * notes; asking one request to fill that while merging 18 batches is exactly how
+ * an 8k answer budget gets truncated. This bounded copy keeps the same required
+ * fields and evidence shape but caps the cardinality and text length to the
+ * amount a whole-session report actually needs. Validation still runs against
+ * the full Schema, so this is a stricter output contract, never a weaker one.
+ */
+export function buildSessionAggregateAnswerSchema(resultSchema, {
+  topics = 24,
+  sentiment = 12,
+  disputes = 8,
+  highlights = 8,
+  summaryChars = 800,
+  topicSummaryChars = 320,
+  keyPoints = 4,
+  keyPointChars = 140,
+  noteChars = 180,
+  messageRefs = 4
+} = {}) {
+  const base = buildSessionAnswerSchema(resultSchema);
+  const section = base?.properties?.session_topics;
+  if (!section?.properties) return base;
+  const props = section.properties;
+  const topicItem = props.topics?.items;
+  const topicProps = topicItem?.properties ?? {};
+  const sentimentItem = props.sentiment?.items;
+  const sentimentProps = sentimentItem?.properties ?? {};
+  const disputeItem = props.disputes?.items;
+  const disputeProps = disputeItem?.properties ?? {};
+  const highlightItem = props.highlights?.items;
+  const highlightProps = highlightItem?.properties ?? {};
+  const boundedRefs = (refs) => (refs
+    ? {...refs, maxItems: Math.min(Number(refs.maxItems ?? messageRefs), messageRefs)}
+    : refs);
+  // The aggregate never produces viewer_profiles; omit the property entirely so
+  // a structured-output provider cannot ask the model to fill it.
+  const {viewer_profiles: _viewerProfiles, ...baseProperties} = base.properties;
+  return {
+    ...base,
+    properties: {
+      ...baseProperties,
+      session_topics: {
+        ...section,
+        properties: {
+          ...props,
+          summary: {...props.summary, maxLength: summaryChars},
+          topics: {
+            ...props.topics,
+            maxItems: Math.min(Number(props.topics?.maxItems ?? topics), topics),
+            items: {
+              ...topicItem,
+              properties: {
+                ...topicProps,
+                summary: {...topicProps.summary, maxLength: topicSummaryChars},
+                key_points: {
+                  ...topicProps.key_points,
+                  maxItems: Math.min(Number(topicProps.key_points?.maxItems ?? keyPoints), keyPoints),
+                  items: {
+                    ...(topicProps.key_points?.items ?? {type: 'string'}),
+                    maxLength: Math.min(
+                      Number(topicProps.key_points?.items?.maxLength ?? keyPointChars),
+                      keyPointChars
+                    )
+                  }
+                },
+                message_refs: boundedRefs(topicProps.message_refs)
+              }
+            }
+          },
+          sentiment: {
+            ...props.sentiment,
+            maxItems: Math.min(Number(props.sentiment?.maxItems ?? sentiment), sentiment),
+            items: {
+              ...sentimentItem,
+              properties: {
+                ...sentimentProps,
+                note: {...sentimentProps.note, maxLength: noteChars},
+                evidence_note: {...sentimentProps.evidence_note, maxLength: noteChars}
+              }
+            }
+          },
+          disputes: {
+            ...props.disputes,
+            maxItems: Math.min(Number(props.disputes?.maxItems ?? disputes), disputes),
+            items: {
+              ...disputeItem,
+              properties: {
+                ...disputeProps,
+                summary: {...disputeProps.summary, maxLength: topicSummaryChars},
+                note: {...disputeProps.note, maxLength: topicSummaryChars},
+                viewpoints: {
+                  ...disputeProps.viewpoints,
+                  maxItems: Math.min(Number(disputeProps.viewpoints?.maxItems ?? 4), 4),
+                  items: {...(disputeProps.viewpoints?.items ?? {type: 'string'}), maxLength: keyPointChars}
+                },
+                message_refs: boundedRefs(disputeProps.message_refs)
+              }
+            }
+          },
+          highlights: {
+            ...props.highlights,
+            maxItems: Math.min(Number(props.highlights?.maxItems ?? highlights), highlights),
+            items: {
+              ...highlightItem,
+              properties: {
+                ...highlightProps,
+                reason: {...highlightProps.reason, maxLength: topicSummaryChars},
+                clip_suggestion: {...highlightProps.clip_suggestion, maxLength: noteChars + 40},
+                message_refs: boundedRefs(highlightProps.message_refs)
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
 export function assembleSessionAnswer({answer, manifest}) {
   const topics = answer?.session_topics;
   if (!topics || typeof topics !== 'object' || Array.isArray(topics)) {

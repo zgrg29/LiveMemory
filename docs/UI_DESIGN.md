@@ -648,3 +648,37 @@ YouTube 标签只有一个入口，与 Bilibili 一样直接：
 - 选择器与翻译面板在 ≤760px 纵向换行，不产生横向溢出；颜色只用 tokens，明亮/黑暗分别适配。
 - 翻译文本视为不可信输入，只作为纯文本显示；不执行 HTML/脚本/指令。
 
+### 7.19 v0.13.2 最终汇总失败与恢复（2026-11-13）
+
+**恢复面板**（分析进度卡内，位于任务状态下方、统计上方；不是暂停按钮）
+
+```text
+AI 分析未完成
+单场批次：已保存 18/18
+最终汇总：失败
+已保存结果：18 项
+原因：AI 输出在达到上限时被截断。已有批次结果已保存；继续只补做未完成的最终汇总或批次。
+
+[继续最终汇总]  [查看技术详情]
+
+继续后只处理尚未完成的最终汇总，不会重新分析已保存的 18 个单场批次。
+```
+
+**规则**
+
+- 面板由服务端 `status.recovery` 驱动；没有 `recovery` 时不显示，不用刷新页面代替恢复。
+- 按故障类型使用准确动作名：
+  - `resume-aggregate` →「继续最终汇总」；
+  - `resume-session` →「继续未完成分析」；
+  - `resume-memory` →「继续未完成画像」；
+  - `change-model` →「前往设置更换模型」，且不显示可用的“继续”。
+- 按钮调用真实 `POST /api/ai/analyze/resume`；请求中禁用按钮；重复点击/成功后按钮消失。
+- 页面刷新、离开再返回、服务重启后从 `/api/ai/analyze/status` 恢复面板。
+- 面板显示已保存批次、final 状态、原因、已保存结果数；不显示模型原始回答、聊天正文或 Key。
+- 「查看技术详情」打开既有 `<details>`：错误码、阶段、Job、批次（汇总阶段显示「整场汇总（不属于单场批次）」）、结束原因、字段错误、恢复性、建议操作。
+- 通用暂停按钮只在 `running` 时显示；不再用其「继续」文案充当恢复入口。
+- 统计区将「API 请求成功」与「输出未通过完整性/结构校验」「已保存分析结果」分开；失败但 HTTP 请求全成功时显示解释文案。
+- 阶段文案不再把 `failed` 回退为「准备数据」；恢复失败显示「AI 分析未完成」+ 真实阶段百分比。
+- 三语键：`ai.center.incomplete`、`ai.center.recovery.*`、`ai.center.errorMeta.aggregateStage|finishReason|actionResume*|actionChangeModel`、`ai.center.stats.outputRejected|finishReason|savedResults|apiNotAnalysis`。
+- 颜色/间距只用 tokens；明亮/黑暗分别适配；≤860px 面板纵向排列，按钮换行不溢出；无 `innerHTML`、无 `alert()`。
+

@@ -2,7 +2,8 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-13）：AI 分析输出语言与已保存报告翻译；新增 schema 14 翻译缓存、段落级按需翻译/重试、长期画像多语言展示；649 自动化测试。完整说明见 `docs/STATUS.md` §0.18 与 `docs/HANDOFF.md` §0。
+> v0.13.2（2026-11-13）：最终汇总截断修复、独立 12k–16k 汇总预算、有界汇总契约、`recovery` 状态与「继续最终汇总」恢复面板、API/输出统计分离；668 自动化测试。完整说明见 `docs/STATUS.md` §0.19 与 `docs/HANDOFF.md` §0。
+> v0.13.2（2026-11-13）：AI 分析输出语言与已保存报告翻译；新增 schema 14 翻译缓存、段落级按需翻译/重试、长期画像多语言展示；649 自动化测试。完整说明见 `docs/STATUS.md` §0.18 与 `docs/HANDOFF.md` §0.7。
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
@@ -391,6 +392,21 @@
 - ⬜ 真实付费 Provider 翻译质量/429/超时验收（本机无 Key）
 - ⬜ 真实浏览器窄屏截图（本机沙箱限制）
 - ⬜ 正式 EXE 重建（当前 `dist/LiveMemory.exe` 仍为 schema 13）
+
+## P16 最终汇总截断与恢复（v0.13.2，2026-11-13）✅
+
+- ✅ 真实 18/18 任务只读定位：汇总 8k 输出预算 + 无界汇总契约 + `finish_reason=length`，输入 34k 未超限
+- ✅ 独立汇总预算 12k–16k（按实际合并输入与上下文计算，不无限增长）
+- ✅ 汇总专用有界 schema/三语提示词：topics ≤24、sentiment ≤12、disputes ≤8、highlights ≤8、message_refs ≤4
+- ✅ compact 第二遍压缩保留全部批次与证据；装不下明确返回 `ANALYSIS_AGGREGATE_TOO_LARGE` 并提示更换模型
+- ✅ `recovery` 状态：18/18+final 缺失只给 `resume-aggregate`；批次/画像/配置分别给准确动作
+- ✅ 「继续最终汇总」独立恢复面板调用真实 Resume；刷新/重启后恢复；重复点击幂等
+- ✅ `batchIndex` 1-based 规范化，旧 `batchIndex=0` 读取兼容且不再出现在失败批次
+- ✅ `outputStats` 区分 API 成功与输出完整性/Schema 失败；界面解释 API 成功 ≠ 分析完成
+- ✅ 668 自动化测试；18 条批次 id/version/checksum 在继续前后完全一致
+- ⬜ 真实付费 Provider 的 16k 输出预算与截断后 Continue（本机无 Key）
+- ⬜ 真实生产任务 Resume（需用户授权）
+- ⬜ 正式 EXE 重建与真实浏览器点击验收
 
 ## P13 长期画像校验、语言与错误恢复（v0.13.2，2026-11-13）✅
 

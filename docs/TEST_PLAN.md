@@ -1068,3 +1068,39 @@ duration ≈ 155s
 - `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
 - **632 passed / 0 failed**（2026-11-13，约 112 秒）。
 - 未做：真实付费 API、真实生产 Resume、真实浏览器截图、UAC 双击。
+
+## 34. 最终汇总截断与恢复（v0.13.2，2026-11-13）
+
+### 34.1 真实故障只读证据
+
+- 生产任务 `ses_01M77TM1Q80HQ4XSZTMV` / `aij_01M79KZEFWBCCJP8G1JK`：18/18 批保存、final 缺失；usage 20 请求、615,812 input / 136,220 output、cost null。
+- 汇总请求 `maxTokens=8000`、`maxCompletionTokens=24000`、`estimatedInputTokens=34048`、`elapsedMs=199729`、HTTP 成功、`finish_reason=length`。
+- `last_error_json.batches[0].batchIndex=0`；旧状态同样为 0。
+- 只读复制数据库到 `tests/.tmp` 检查；生产数据未修改、未 Resume、未调用真实 Provider。
+
+### 34.2 新增/更新自动测试
+
+| 场景 | 测试 |
+| --- | --- |
+| 18 批全部成功、汇总截断 | `tests/integration/ai-aggregate-recovery.test.mjs` |
+| 最终汇总失败后恢复只重试汇总 | 同上：继续时 0 次 batch、1 次 aggregate |
+| 18 条结果 id/version/checksum 不变 | 同上：继续前后 `savedBatchRows` 深比较 |
+| 汇总输出超预算返回可恢复错误 | 同上 + `ai-aggregate-budget` |
+| HTTP 成功但 Schema/完整性失败统计 | 同上第二用例：`attemptStats.failed=0`、`outputStats.rejected>=1` |
+| `batchIndex=0` 不影响恢复 | 同上：旧状态/旧 last_error 读取后 `error.batchIndex=null`、`failedBatches=[]` |
+| 刷新浏览器后仍显示恢复 | 同上：重启后 `GET /api/ai/analyze/status` 返回 `recovery`；UI 静态断言 |
+| 重启程序后仍可继续 | 同上：关闭/重启 server 后 HTTP `POST /resume` |
+| 重复点击不创建重复任务 | 同上：第二次 Continue 0 次 Provider 请求、结果集不变 |
+| 成功后按钮消失、报告展示 | 同上：`recovery=null`、`canResume=false`、final 存在 |
+| 长期画像事实不重复写入 | 既有 `ai-memory-reliability` 幂等/Resume 用例 |
+| 旧任务/旧数据库兼容 | 同上：旧 `batchIndex=0`、无 `outputRejected` 状态读取 |
+| 中日英错误与恢复一致 | `tests/unit/ai-recovery-ui.test.mjs` + `i18n.test.mjs` |
+| 汇总预算/schema/prompt | `tests/unit/ai-aggregate-budget.test.mjs` |
+| 恢复动作分类 | `tests/unit/ai-recovery-state.test.mjs` |
+
+### 34.3 全量结果（本轮实测）
+
+- 命令：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- 结果：**668 passed / 0 failed**（2026-11-13，约 164 秒）。
+- 关键断言：18 批任务汇总截断后 `sessionBatchesCompleted=18`、`recovery.action=resume-aggregate`；重启后只发 1 次 aggregate、0 次 batch；18 条批次结果 checksum 不变；重复 Continue 0 次 Provider 请求。
+- 未做：真实付费 Provider（本机无 Key）、真实生产任务 Resume、真实浏览器点击/截图、正式 EXE 重建/运行。

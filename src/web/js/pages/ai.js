@@ -314,6 +314,30 @@ export const aiPage = {
     const taskLocaleStatus = el('div', {className: 'small tertiary', hidden: true});
     const budgetStatus = el('div', {className: 'small tertiary', hidden: true});
     const statsHost = el('div', {className: 'def-list'});
+    const statsNote = el('div', {className: 'callout callout--warn small', hidden: true});
+    // A dedicated, explicit recovery panel. It is not the pause/resume toggle:
+    // the user must be able to find "继续最终汇总" without guessing what the
+    // generic "继续" button will retry.
+    const recoveryPanel = el('div', {className: 'recovery-panel', hidden: true});
+    const recoveryTitle = el('div', {className: 'recovery-title'});
+    const recoverySummary = el('div', {className: 'def-list'});
+    const recoveryReason = el('div', {className: 'small tertiary'});
+    const recoveryNote = el('div', {className: 'small tertiary', style: {marginTop: '8px'}});
+    const recoveryPrimary = el('button', {
+      className: 'button button--primary button--small',
+      type: 'button'
+    });
+    const recoveryDetailsButton = el('button', {
+      className: 'button button--ghost button--small',
+      type: 'button',
+      text: t('ai.center.errorDetails')
+    });
+    recoveryPanel.append(
+      recoveryTitle,
+      recoverySummary,
+      recoveryReason,
+      el('div', {className: 'inline', style: {marginTop: '10px'}}, recoveryPrimary, recoveryDetailsButton),
+      recoveryNote);
     const errorText = el('div', {className: 'auto-error', attrs: {role: 'alert'}, hidden: true});
     const errorDetailsText = el('div', {className: 'small tertiary'});
     const errorDetails = el('details', {className: 'auto-details', hidden: true},
@@ -341,7 +365,9 @@ export const aiPage = {
       taskLocaleStatus,
       budgetStatus,
       statusText,
+      recoveryPanel,
       statsHost,
+      statsNote,
       el('div', {className: 'inline', style: {marginTop: '10px'}}, pauseButton, cancelButton),
       errorText,
       errorDetails);
@@ -452,6 +478,14 @@ export const aiPage = {
       const total = Math.max(0, Number(current?.batchTotal ?? 0));
       const sessionIndex = Math.max(0, Number(current?.sessionBatchIndex ?? 0));
       const sessionTotal = Math.max(0, Number(current?.sessionBatchTotal ?? 0));
+      // The terminal stage used to fall back to "preparing" and show a broken
+      // "准备数据 · 95%" on a failed aggregate. Use the real task outcome.
+      if (current?.status === 'failed') {
+        return current.recovery ? t('ai.center.incomplete') : t('ai.center.failed');
+      }
+      if (current?.status === 'needs_action') return t('ai.center.needsAction');
+      if (current?.status === 'interrupted') return t('ai.center.interrupted');
+      if (current?.status === 'paused') return t('ai.v13.stage.paused');
       const keys = {
         preparing: 'ai.v13.stage.preparing',
         packaging_session: 'ai.v13.stage.packagingSession',
@@ -468,7 +502,11 @@ export const aiPage = {
         resuming: 'ai.v13.stage.resuming',
         paused: 'ai.v13.stage.paused',
         complete: 'ai.center.complete',
-        canceled: 'ai.center.canceled'
+        canceled: 'ai.center.canceled',
+        failed: 'ai.center.failed',
+        needs_action: 'ai.center.needsAction',
+        interrupted: 'ai.center.interrupted',
+        incomplete: 'ai.center.incomplete'
       };
       if (stage === 'session_analyzing' && sessionTotal > 1) {
         return t('ai.v13.stage.sessionBatchAnalyzing', {
@@ -526,11 +564,13 @@ export const aiPage = {
       const lines = [`${t('ai.center.errorMeta.code')}: ${error.code ?? latest?.code ?? '—'}`];
       if (error.stage) lines.push(`${t('ai.center.errorMeta.stage')}: ${error.stage}`);
       if (error.jobId) lines.push(`${t('ai.center.errorMeta.job')}: ${error.jobId}`);
-      if (error.batchIndex !== null && error.batchIndex !== undefined) {
+      if (Number.isInteger(Number(error.batchIndex)) && Number(error.batchIndex) >= 1) {
         lines.push(`${t('ai.center.errorMeta.batch')}: ${formatInteger(error.batchIndex, ctx.locale)}`
           + (error.batchId ? ` (${error.batchId})` : ''));
       } else if (error.batchId) {
         lines.push(`${t('ai.center.errorMeta.batch')}: ${error.batchId}`);
+      } else if (error.stage === 'session_aggregating') {
+        lines.push(`${t('ai.center.errorMeta.batch')}: ${t('ai.center.errorMeta.aggregateStage')}`);
       }
       if (fieldErrors.length > 0) {
         lines.push(`${t('ai.center.errorMeta.fields')}:`);
@@ -554,10 +594,20 @@ export const aiPage = {
       lines.push(`${t('ai.center.errorMeta.recoverable')}: ${error.recoverable === true
         ? t('ai.center.errorMeta.yes')
         : t('ai.center.errorMeta.no')}`);
+      if (error.finishReason) {
+        lines.push(`${t('ai.center.errorMeta.finishReason')}: ${error.finishReason}`);
+      }
       if (error.suggestedAction) {
-        lines.push(`${t('ai.center.errorMeta.action')}: ${error.suggestedAction === 'resume'
-          ? t('ai.center.errorMeta.actionResume')
-          : t('ai.center.errorMeta.actionCheck')}`);
+        const actionKeys = {
+          'resume-aggregate': 'actionResumeAggregate',
+          'resume-session': 'actionResumeSession',
+          'resume-memory': 'actionResumeMemory',
+          resume: 'actionResume',
+          'change-model': 'actionChangeModel'
+        };
+        lines.push(`${t('ai.center.errorMeta.action')}: ${t(
+          `ai.center.errorMeta.${actionKeys[error.suggestedAction] ?? 'actionCheck'}`
+        )}`);
       }
       return lines;
     }
@@ -703,23 +753,39 @@ export const aiPage = {
       if (Number.isFinite(elapsed)) parts.push(t('ai.center.task.elapsed', {elapsed: elapsedLabel(elapsed)}));
       if (current?.waitingAggregate) parts.push(t('ai.center.task.waitingAggregate'));
       if (current?.needsUserAction) parts.push(t('ai.center.task.needsAction'));
-      if (current?.canResume && current.status !== 'running') parts.push(t('ai.center.task.resumeHint'));
+      if (current?.canResume && current.status !== 'running' && !current.recovery) {
+        parts.push(t('ai.center.task.resumeHint'));
+      }
       budgetStatus.hidden = parts.length === 0;
       budgetStatus.textContent = parts.join(' · ');
     }
 
     function renderStats(current) {
       clear(statsHost);
+      statsNote.hidden = true;
+      statsNote.textContent = '';
       const attempts = current?.attemptStats;
       const requests = current?.requestStats;
+      const output = current?.outputStats;
       const rows = [];
       if (attempts && Number(attempts.total ?? 0) > 0) {
         rows.push([t('ai.center.stats.attempts'), formatInteger(attempts.total ?? 0, ctx.locale)]);
+        // These are API/provider request outcomes, not a claim that the model's
+        // answer passed validation or that the task is complete.
         rows.push([t('ai.center.stats.succeeded'), formatInteger(attempts.succeeded ?? 0, ctx.locale)]);
         rows.push([t('ai.center.stats.failed'), formatInteger(attempts.failed ?? 0, ctx.locale)]);
         rows.push([t('ai.center.stats.canceled'), formatInteger(attempts.canceled ?? 0, ctx.locale)]);
         rows.push([t('ai.center.stats.timedOut'), formatInteger(attempts.timedOut ?? 0, ctx.locale)]);
         rows.push([t('ai.center.stats.retried'), formatInteger(attempts.retried ?? 0, ctx.locale)]);
+      }
+      if (Number(output?.rejected ?? 0) > 0) {
+        rows.push([t('ai.center.stats.outputRejected'), formatInteger(output.rejected, ctx.locale)]);
+      }
+      if (output?.lastFinishReason) {
+        rows.push([t('ai.center.stats.finishReason'), output.lastFinishReason]);
+      }
+      if (Number(current?.savedResults ?? 0) > 0) {
+        rows.push([t('ai.center.stats.savedResults'), formatInteger(current.savedResults, ctx.locale)]);
       }
       if (requests) {
         rows.push([t('ai.center.stats.active'), `${formatInteger(requests.active ?? 0, ctx.locale)} / ${formatInteger(requests.concurrency ?? 0, ctx.locale)}`]);
@@ -763,6 +829,115 @@ export const aiPage = {
       statsHost.append(...rows.map(([key, value]) => el('div', {className: 'def-row'},
         el('span', {className: 'def-key', text: key}),
         el('span', {className: 'def-value', text: value}))));
+      if (!current.running && current.status !== 'complete' && Number(output?.rejected ?? 0) > 0) {
+        statsNote.hidden = false;
+        statsNote.textContent = t('ai.center.stats.apiNotAnalysis');
+      }
+    }
+
+    function renderRecovery(current) {
+      const recovery = current?.recovery ?? null;
+      recoveryPanel.hidden = !recovery;
+      if (!recovery) return;
+      const session = recovery.session ?? {};
+      const memory = recovery.memory ?? {};
+      const rows = [];
+      if (Number(session.batchTotal ?? 0) > 0) {
+        rows.push([
+          t('ai.center.recovery.sessionSaved'),
+          t('ai.center.recovery.valueSaved', {
+            saved: formatInteger(session.batchesSaved ?? 0, ctx.locale),
+            total: formatInteger(session.batchTotal ?? 0, ctx.locale)
+          })
+        ]);
+      }
+      if (session.aggregateRequired) {
+        rows.push([
+          t('ai.center.recovery.aggregate'),
+          session.aggregateDone
+            ? t('ai.center.recovery.aggregateDone')
+            : (current.status === 'failed' || current.status === 'partial'
+              ? t('ai.center.recovery.aggregateFailed')
+              : t('ai.center.recovery.aggregatePending'))
+        ]);
+      }
+      if (Number(memory.batchTotal ?? 0) > 0) {
+        rows.push([
+          t('ai.center.recovery.memorySaved'),
+          t('ai.center.recovery.valueSaved', {
+            saved: formatInteger(memory.batchesSaved ?? 0, ctx.locale),
+            total: formatInteger(memory.batchTotal ?? 0, ctx.locale)
+          })
+        ]);
+        if (Number(memory.viewersTotal ?? 0) > 0) {
+          rows.push([
+            t('ai.center.recovery.viewers'),
+            t('ai.center.recovery.valueSaved', {
+              saved: formatInteger(memory.viewersProcessed ?? 0, ctx.locale),
+              total: formatInteger(memory.viewersTotal ?? 0, ctx.locale)
+            })
+          ]);
+        }
+      }
+      if (Number(recovery.savedResults ?? 0) > 0) {
+        rows.push([
+          t('ai.center.recovery.savedResults'),
+          formatInteger(recovery.savedResults, ctx.locale)
+        ]);
+      }
+      recoverySummary.replaceChildren(...rows.map(([key, value]) => el('div', {className: 'def-row'},
+        el('span', {className: 'def-key', text: key}),
+        el('span', {className: 'def-value', text: value}))));
+      recoveryTitle.textContent = t('ai.center.recovery.title');
+      recoveryReason.textContent = `${t('ai.center.recovery.reason')}: ${current.error
+        ? reasonText(current.error.code)
+        : t('ai.center.recovery.noReason')}`;
+      const actionLabels = {
+        'resume-aggregate': 'resumeAggregate',
+        'resume-session': 'resumeSession',
+        'resume-memory': 'resumeMemory',
+        'change-model': 'changeModel'
+      };
+      recoveryPrimary.textContent = t(`ai.center.recovery.${actionLabels[recovery.action] ?? 'resumeSession'}`);
+      recoveryPrimary.disabled = !(recovery.action === 'change-model' || recovery.canResume === true);
+      const noteKeys = {
+        aggregate: 'noteAggregate',
+        session: 'noteSession',
+        memory: 'noteMemory',
+        config: 'noteConfig'
+      };
+      recoveryNote.textContent = t(`ai.center.recovery.${noteKeys[recovery.kind] ?? 'noteConfig'}`, {
+        saved: formatInteger(session.batchesSaved ?? 0, ctx.locale),
+        total: formatInteger(session.batchTotal ?? 0, ctx.locale)
+      });
+    }
+
+    async function activateRecovery() {
+      const recovery = status?.recovery;
+      if (!recovery || busy) return;
+      if (recovery.action === 'change-model') {
+        ctx.navigate('/settings');
+        return;
+      }
+      if (recovery.canResume !== true) return;
+      busy = true;
+      recoveryPrimary.disabled = true;
+      syncStartGate();
+      try {
+        const current = await api.post('/api/ai/analyze/resume', {
+          sessionId: selectedId,
+          consent: true
+        });
+        renderStatus(current);
+        if (current.running) timer = window.setTimeout(refreshStatus, 800);
+        ctx.toast(t('ai.center.recovery.resumed'), {tone: 'info'});
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        busy = false;
+        recoveryPrimary.disabled = false;
+        syncStartGate();
+      }
     }
 
     function syncRequestTicker(active) {
@@ -789,16 +964,18 @@ export const aiPage = {
         return;
       }
       const running = current.status === 'running';
-      const canResume = current.canResume === true && !running;
-      pauseButton.hidden = !running && !canResume;
-      pauseButton.disabled = !running && !canResume;
-      pauseButton.textContent = canResume ? t('ai.v13.run.resume') : t('ai.v13.run.pause');
+      // Recovery is no longer a relabelled pause button. Pause is only shown
+      // while running; every resumable terminal state gets the explicit panel.
+      pauseButton.hidden = !running;
+      pauseButton.disabled = !running;
+      pauseButton.textContent = t('ai.v13.run.pause');
       cancelButton.hidden = !running;
       startButton.disabled = running;
       renderProgress(current);
       renderRequestDetail(current);
       renderSaved(current);
       renderBudget(current);
+      renderRecovery(current);
       syncRequestTicker(running && Boolean(current.currentRequest));
       errorText.hidden = true;
       errorDetails.hidden = true;
@@ -860,6 +1037,10 @@ export const aiPage = {
             })
             : null
         ].filter(Boolean).join(' · ');
+        showError(reasonText(current.error?.code));
+      } else if (current.recovery) {
+        statusText.className = 'auto-status auto-status--warning';
+        statusText.textContent = t('ai.center.incomplete');
         showError(reasonText(current.error?.code));
       } else {
         statusText.textContent = t('ai.center.failed');
@@ -1096,6 +1277,13 @@ export const aiPage = {
     startButton.addEventListener('click', startAnalysis);
     cancelButton.addEventListener('click', cancelAnalysis);
     pauseButton.addEventListener('click', pauseOrResume);
+    recoveryPrimary.addEventListener('click', activateRecovery);
+    recoveryDetailsButton.addEventListener('click', () => {
+      errorDetails.hidden = false;
+      errorDetails.open = true;
+      errorDetails.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      errorDetails.querySelector('summary')?.focus?.();
+    });
     configSelect.addEventListener('change', renderAll);
     scopeSelect.addEventListener('change', () => {
       runScope = scopeSelect.value;

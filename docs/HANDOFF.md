@@ -1,10 +1,58 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 AI 分析输出语言、已保存报告翻译与长期画像多语言展示 · schema 14 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-13 · v0.13.2 最终汇总截断修复、「继续最终汇总」恢复与统计口径 · schema 14 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮使用 `tests/.tmp` 隔离数据与 Mock Provider；**未修改生产数据、未调用真实付费 API、未干扰直播采集、未重建 EXE**。
+> 本轮使用 `tests/.tmp` 隔离数据与 Mock Provider；**只读检查生产状态/日志/数据库副本，未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集、未重建正式 EXE**。
 
-## 0. 本轮（多语言输出与报告翻译）
+## 0. 本轮（最终汇总截断与恢复）
+
+完整证据：`log/2026-11-13-ai-aggregate-recovery.md`。
+
+### 0.1 真实根因（已确认）
+
+- 任务 `ses_01M77TM1Q80HQ4XSZTMV` / `aij_01M79KZEFWBCCJP8G1JK`：dashscope `qwen3.7-flash`，18 批全部保存，final 缺失。
+- 汇总 `maxTokens=8000`、`maxCompletionTokens=24000`、`estimatedInputTokens=34048`、199,729ms，`finish_reason=length` → `AUTO_OUTPUT_TRUNCATED`。输入 34k < 48k，不是输入超限。
+- 20 次请求全部 HTTP 成功（18 批 + 1 次批次修复 + 1 次汇总）；输出完整性失败发生在请求统计之后。
+- `Number(null)===0` 把汇总失败的 `batchIndex` 持久化为 0；旧库/旧状态出现假“批次 0”。
+- 旧 UI 只有与暂停共用的泛化「继续」按钮，没有汇总专属动作、说明或明确恢复面板；后端当时 `canResume=true`，未复现按钮被隐藏的具体渲染路径。
+
+### 0.2 修复
+
+- `src/ai/batching/tokens.mjs`：`resolveAggregateOutputTokens()`，12k–16k 独立预算，按上下文收缩。
+- `src/ai/api/compact.mjs`：`buildSessionAggregateAnswerSchema()` 有界汇总 schema（不改原 schema、不含 viewer_profiles）。
+- `src/ai/api/prompts.mjs`：三语汇总提示词加入输出上限、合并优先、每批覆盖；`condenseBatchResult()` 支持 compact 第二遍，保留全部批次/证据。
+- `src/ai/api/runner.mjs`：独立预算、compact 预检、`outputStats`/`outputRejected`、`finishReason`、`batchIndex` 规范化、`recovery` 状态、complete 时 resume 幂等。
+- `src/ai/tasks/recovery.mjs`：aggregate/session/memory/config 四类恢复动作与 `canResume`；18/18+final 缺失只给 `resume-aggregate`；装不下给 `change-model`。
+- `src/ai/tasks/status.mjs`、`src/storage/repositories/ai-jobs.mjs`：不再把 null/0 当批次；旧数据读取兼容。
+- `src/web/js/pages/ai.js` + `styles/pages.css`：独立恢复面板；「继续最终汇总」调用真实 `/api/ai/analyze/resume`；页面刷新/重启恢复；不再用共用暂停按钮充当恢复。
+- 三语 i18n：`ai.center.recovery.*`、`incomplete`、`errorMeta.*`、`stats.outputRejected|savedResults|apiNotAnalysis`；更新 `AUTO_OUTPUT_TRUNCATED` 文案。
+- 文档：STATUS、ROADMAP、AI_CONTRACT、UI_DESIGN、DATA_MODEL、TEST_PLAN、CHANGELOG、本文件、log。
+
+### 0.3 测试
+
+- 全量 **668 passed / 0 failed**（约 164 秒）。
+- 新增 `tests/integration/ai-aggregate-recovery.test.mjs`（18 批截断/重启后只发汇总/checksum 不变/重复点击幂等/无效汇总统计）、`tests/unit/ai-aggregate-budget.test.mjs`、`ai-recovery-state.test.mjs`、`ai-recovery-ui.test.mjs`。
+- 关键证据：继续前 18 条 batch 结果的 id/version/checksum 与继续后完全一致；继续请求 0 次批次、1 次汇总；重复 Continue 0 次 Provider 请求。
+- **未验证**：真实付费 Provider、真实生产任务 Resume、真实浏览器点击/截图、正式 EXE 重建。
+
+### 0.4 生产失败任务的安全恢复步骤（需用户明确授权）
+
+1. 完全退出 LiveMemory；备份整个数据目录（`E:\新建文件夹` 或设置页显示的真实位置），不要在运行时复制写入中的 SQLite。
+2. 替换为包含本轮修复的构建；在设置页「关于」核对 buildId。
+3. 打开 AI 分析中心 → 选择 `ses_01M77TM1Q80HQ4XSZTMV`；应显示「AI 分析未完成」、单场批次 18/18、最终汇总失败/未完成、原因与「继续最终汇总」。
+4. 选择与失败任务相同的 Provider/区域/模型；点击「继续最终汇总」。恢复只请求 final，不重发已保存的 18 批。
+5. 成功后 final 保存、任务 complete、按钮消失；若仍失败，查看技术详情（错误码/阶段/结束原因），不要新建整场分析、不要清空数据、不要删除已保存批次。
+6. 若错误为 `ANALYSIS_AGGREGATE_TOO_LARGE`（上下文不足），面板会显示「前往设置更换模型」而不是可用的「继续」；更换模型后从新任务继续前，应先备份并确认不会重做已保存批次（当前同任务 Resume 不允许更换模型）。
+
+### 0.5 下一轮注意
+
+1. 若要发布 EXE，必须重新构建，使本轮修复进入二进制；旧 EXE 没有独立汇总预算与恢复面板。
+2. 不要为了“重试”自动重发截断请求；截断后只允许用户点击 Continue，且只重做缺失的 final。
+3. `outputStats.rejected` 是“成功响应但输出不可用”的计数，不要加进 HTTP 失败数；也不要把 HTTP 成功解释为分析完成。
+4. 若未来允许“汇总阶段更换模型”，必须只允许在全部批次已保存且 final 缺失时进行，并保留同一 job / 同一批次 checksum，不得重做批次。
+5. 新增恢复类型时，必须同时更新 `recovery.mjs`、`ai.js`、三语 i18n 与测试。
+
+## 0.7 上一轮（多语言输出与报告翻译）
 
 完整记录：`log/2026-11-13-ai-report-translation.md`。
 

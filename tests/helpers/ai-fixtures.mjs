@@ -46,7 +46,8 @@ export function seedSession(db, {
   viewerUidPrefix = 'UC_VIEWER',
   startedAt = T0,
   archived = false,
-  simulated = true
+  simulated = true,
+  messagePadding = 0
 } = {}) {
   const session = createSession(db, {
     id,
@@ -63,6 +64,9 @@ export function seedSession(db, {
   });
   const ingest = new EventIngest({db});
   const identifiable = Number(viewerCount) > 0;
+  // Optional padding lets a test build a realistic multi-batch session without
+  // depending on real chat data; the default keeps existing fixtures unchanged.
+  const padding = Number(messagePadding) > 0 ? ` ${'x'.repeat(Math.floor(Number(messagePadding)))}` : '';
   for (let index = 0; index < messageCount; index += 1) {
     ingest.record({
       session_id: session.id,
@@ -71,7 +75,7 @@ export function seedSession(db, {
       viewer_uid: identifiable ? `${viewerUidPrefix}_${index % viewerCount}` : '',
       display_name: identifiable ? `Viewer ${index % viewerCount}` : 'Anonymous',
       occurred_at: startedAt + 1000 + index * 1000,
-      content: index === 0 ? 'Hello <script>alert(1)</script> 😂' : `Message ${index}`,
+      content: index === 0 ? 'Hello <script>alert(1)</script> 😂' : `Message ${index}${padding}`,
       external_id: `m6-${session.id}-${index}`,
       source_quality: 'mock'
     });

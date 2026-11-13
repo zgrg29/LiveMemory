@@ -105,9 +105,12 @@ export function computeJobStatus(db, job) {
   const batchErrors = Array.isArray(latestError?.batches)
     ? latestError.batches.filter((entry) => entry && typeof entry === 'object')
     : [];
+  // Batch indexes are 1-based. Older rows may contain `batchIndex: 0` because
+  // `Number(null)` coerced an aggregate failure into a fake batch; never expose
+  // that as a failed batch.
   const failedBatches = [...new Set(batchErrors
     .map((entry) => (Number.isInteger(Number(entry.batchIndex)) ? Number(entry.batchIndex) : null))
-    .filter((index) => index !== null))].sort((a, b) => a - b);
+    .filter((index) => index !== null && index >= 1))].sort((a, b) => a - b);
 
   return {
     status,

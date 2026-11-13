@@ -201,7 +201,10 @@ export function recordJobFailure(db, jobId, {
   } catch {
     previous = null;
   }
-  const normalizedIndex = Number.isInteger(Number(batchIndex)) ? Number(batchIndex) : null;
+  // Batch indexes are 1-based. `Number(null)` is 0, which previously wrote an
+  // aggregate failure as "batch 0" and confused recovery/UI conditions.
+  const indexNumber = batchIndex === null || batchIndex === undefined ? null : Number(batchIndex);
+  const normalizedIndex = Number.isInteger(indexNumber) && indexNumber >= 1 ? indexNumber : null;
   const normalizedBatchId = typeof batchId === 'string' && batchId.trim() ? batchId.slice(0, 200) : null;
   const entries = Array.isArray(previous?.batches) ? previous.batches.slice(0, 200) : [];
   const entry = {
@@ -274,10 +277,11 @@ export function clearJobFailure(db, jobId, {now = Date.now(), batchIndex = undef
     `).run(Number(now), String(jobId));
     return;
   }
-  const normalizedIndex = Number.isInteger(Number(batchIndex)) ? Number(batchIndex) : null;
+  const indexNumber = batchIndex === null || batchIndex === undefined ? null : Number(batchIndex);
+  const normalizedIndex = Number.isInteger(indexNumber) && indexNumber >= 1 ? indexNumber : null;
   const remaining = entries.filter((item) => (
     normalizedIndex === null
-      ? !(item?.batchIndex === null || item?.batchIndex === undefined)
+      ? !(item?.batchIndex === null || item?.batchIndex === undefined || Number(item?.batchIndex) === 0)
       : Number(item?.batchIndex) !== normalizedIndex
   ));
   if (remaining.length === 0) {

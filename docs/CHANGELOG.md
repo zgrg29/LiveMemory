@@ -1,5 +1,23 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r8 — 2026-11-13（最终汇总截断与「继续最终汇总」恢复）
+
+### 修复
+
+- **真实 18 批故障**：汇总沿用普通批次 8,000 输出预算；Provider 返回成功但 `finish_reason=length`。新增独立汇总预算 `clamp(ceil(batchResultTokens*0.6)+3000, 12000, 16000)`，按上下文收缩；18 批上限 16k，不再固定 8k。
+- **有界汇总契约**：汇总专用 schema（topics ≤24、sentiment ≤12、disputes ≤8、highlights ≤8、message_refs ≤4、无 viewer_profiles）；三语提示词明确输出上限、合并优先、覆盖全部批次；compact 第二遍保留全部批次与证据，装不下则 `ANALYSIS_AGGREGATE_TOO_LARGE` + `change-model`。
+- **恢复状态**：新增 `src/ai/tasks/recovery.mjs`；18/18 已保存且 final 缺失只提供 `resume-aggregate`；批次/画像/配置分别给出准确动作；`canResume=false` 时 UI 不显示假“继续”。
+- **幂等**：`resume()` 在 complete 时直接返回；重复点击不创建任务、不请求 Provider；继续只发缺失 final。
+- **`batchIndex`**：1-based 规范化，null/0/负数不再成为“批次 0”；旧数据读取兼容，`failedBatches` 不含 0。
+- **UI**：AI 中心新增独立恢复面板与「继续最终汇总」；显示已保存 18/18、final 状态、原因、已保存结果；「查看技术详情」显示整场汇总阶段与 `finishReason`；刷新/重启后恢复。
+- **统计**：新增 `outputStats.responses/rejected/lastFinishReason`；界面区分 API 请求成功、输出未通过完整性/结构校验、已保存结果，并说明 API 成功 ≠ 分析完成。
+
+### 验证
+
+- 全量 **668 passed / 0 failed**（约 164 秒）。
+- 新增 `ai-aggregate-recovery`（18 批截断、重启后只发汇总、checksum 不变、重复点击幂等、无效汇总统计）、`ai-aggregate-budget`、`ai-recovery-state`、`ai-recovery-ui`。
+- 未做：真实付费 Provider、真实生产任务 Resume、真实浏览器点击/截图、正式 EXE 重建。
+
 ## 0.13.2-r7 — 2026-11-13（AI 分析输出语言与报告翻译）
 
 ### 新增
