@@ -102,11 +102,16 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | `96,623,616` bytes（92.1 MB） |
-| SHA-256 | `93601325cd850159e97a4f2b17ca9a454d1dda2ac4b8b35a493119c795aad30a` |
+| SHA-256 | `178585a6f65bbffa7f657f3ecb9a7e5c7ce1ce954ef3c8570705ea1d131a73a3` |
 | buildId | `4a149ca7286e` |
-| commit（构建时 HEAD） | `021e2be1c4a953b1b121e297bb1afb1f0206d99a` |
-| builtAt | `2026-11-14T08:38:29.105Z` |
+| source hash | `4a149ca7286e435032a6e92d67b5a0952071357c02a1ef3da8ca77e7b36547a7` |
+| commit | `649f8192bc6fe53a4957d6c906bcc1e8bf4a212c`（本轮代码提交） |
+| builtAt | `2026-11-14T09:44:11.067Z` |
 | 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+
+- EXE 在代码提交**之后**重建，`build-info.commit` 与本轮提交一致；提交前的一次构建得到同一
+  buildId 与同一 source hash（`4a149ca7286e`），说明 buildId 只取决于源码内容。
+  两次构建的 SHA-256 不同（PE 时间戳等），上表是最终交付二进制。
 
 - `scripts/verify-ai-token-exe.mjs`（**本轮新增**）：**16/16**。正式 EXE + 本地 OpenAI-compatible
   Mock Provider + 隔离数据目录：
@@ -126,8 +131,8 @@
 - `scripts/verify-p0-2-exe.mjs`：**13/13**；`scripts/verify-p0-5-exe.mjs`：**12/12**；
   `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、
   不可写目录、异目录、解压复用、CLI 三语）。
-- EXE 在代码提交**之前**构建，因此 `build-info.commit` 是构建时 HEAD `021e2be`；`buildId` 由源码内容
-  哈希决定，用本轮提交可重建同一 buildId。
+- 上述 EXE 矩阵全部针对最终二进制（buildId `4a149ca7286e` / commit `649f819`）运行；AI 专项在
+  重建后的同一二进制上复跑仍为 **16/16**。
 - **性质**：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
   **不是**真实浏览器点击。
 

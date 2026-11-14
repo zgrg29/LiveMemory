@@ -46,7 +46,29 @@ Token 为"按真实请求字节模拟"的值（无 tokenizer、无付费调用�
 - `src/ai/export/split-jobs.mjs`：`viewersPerBatchHard`。
 - `src/web/js/pages/ai.js`、`ai-settings.js`、`src/web/i18n/*.json`：展示与三语文案。
 
-### 0.4 下一轮注意（P0-3 真实付费验收）
+### 0.4 正式 EXE 与验证结果
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,623,616` bytes（92.1 MB） |
+| SHA-256 | `178585a6f65bbffa7f657f3ecb9a7e5c7ce1ce954ef3c8570705ea1d131a73a3` |
+| buildId | `4a149ca7286e` |
+| commit | `649f8192bc6fe53a4957d6c906bcc1e8bf4a212c` |
+| builtAt | `2026-11-14T09:44:11.067Z` |
+| 资源 | `189` files；20 个必需模块；`asInvoker` |
+
+- 全量：**781 passed / 0 failed**（218,884 ms）。
+- `scripts/verify-ai-token-exe.mjs` **16/16**（新）：正式 EXE + 本地 Mock Provider：
+  40/40 观众、3 批、3 请求；usage 输入 20,893 / 输出 3,563 / 缓存 8,356；
+  `tokenSource=provider-reported`；估算费用 0.019663 USD、每百观众 0.049157 USD；
+  注入 500 后 failed=3、attempts 5 vs requests 2、failedBatches=[2]；
+  Resume 只重发 b02（1 次）后 40/40 完成；完成后重复 Continue 0 请求；重启后 token 一致。
+- `verify-p0-2-exe` **13/13**、`verify-p0-5-exe` **12/12**、`verify-exe` **10/10**。
+- **性质**：正式 EXE + 本地 Mock Provider + 合成数据；不是真实付费 Provider 验收，
+  也不是真实浏览器点击。
+
+### 0.5 下一轮注意（P0-3 真实付费验收）
 
 1. **首要待验收**：用真实付费 Provider 校准 `bytes/3` 估算与真实 tokenizer 的比值，
    并对照 `usage_json` 检查重试/补答占比。历史记录该比值约 1.366×，本轮未重新校准。
@@ -60,7 +82,7 @@ Token 为"按真实请求字节模拟"的值（无 tokenizer、无付费调用�
 6. 编辑器警告：本仓库内不要用 PowerShell 的 `Get-Content | Set-Content` 改文件（PS 5.1
    会以 ANSI 读写并破坏 UTF-8 中文），只能用编辑工具；`.git` 写入可能被沙箱拒绝。
 
-### 0.5 不要做
+### 0.6 不要做
 
 1. 不要为了省 Token 删除 Schema/证据/覆盖/语言/身份规则。
 2. 不要在未校验 structured outputs 的 Provider 上删除文本 schema。

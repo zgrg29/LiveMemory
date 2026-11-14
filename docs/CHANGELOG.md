@@ -31,6 +31,11 @@
 - 14 场景合计：请求 **216 → 150（-30.6%）**、请求字节 **9,274,013 → 8,312,569（-10.4%）**、总 Token（模拟）**3,029,258 → 2,723,048（-10.1%）**；观众覆盖 1715/1715 与有效事实 1715 均不变。
 - 新增 `tests/unit/ai-token-efficiency.test.mjs` 12 项；6 个既有断言把"10 观众/批"改为从规划器读回批次数量（覆盖/证据/恢复断言未放宽）。
 - 全量 **781 passed / 0 failed**（2026-11-14，218,884 ms）。
+- 正式 EXE：`dist/LiveMemory.exe` buildId `4a149ca7286e` / commit `649f819` /
+  SHA-256 `178585a6f65bbffa7f657f3ecb9a7e5c7ce1ce954ef3c8570705ea1d131a73a3` /
+  `96,623,616` bytes / `189` assets / `asInvoker`。
+  `verify-ai-token-exe` **16/16**、`verify-p0-2-exe` **13/13**、`verify-p0-5-exe` **12/12**、
+  `verify-exe` **10/10**。
 - 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词文本去重但版本仍 v13.2。
 - 未验证：真实付费 Provider 的 Token 校准与缓存命中率、自适应分批的语义质量影响（P0-3）。
 

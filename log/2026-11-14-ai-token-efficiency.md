@@ -120,3 +120,21 @@ Token 按固定规则模拟（`ceil(bytes/3.2)`）并明确标注为模拟。
 
 Token 归因、基线、浪费证据、优化、前后对比、质量回归均已落地；数据库 schema 未变更，
 备份格式与结果 Schema 不变。真实付费 Provider 的 Token 校准与语义质量属 P0-3 待验收。
+
+## 10. 本轮正式 EXE 与提交
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,623,616` bytes（92.1 MB） |
+| SHA-256 | `178585a6f65bbffa7f657f3ecb9a7e5c7ce1ce954ef3c8570705ea1d131a73a3` |
+| buildId | `4a149ca7286e` |
+| commit | `649f8192bc6fe53a4957d6c906bcc1e8bf4a212c` |
+| builtAt | `2026-11-14T09:44:11.067Z` |
+| 资源 | `189` files；20 个必需模块；`asInvoker` |
+
+- 提交前构建与提交后重建得到**同一 buildId 与同一 source hash**（`4a149ca7286e`）；
+  SHA-256 因 PE 时间戳不同而不同，最终交付的是提交后重建的二进制。
+- EXE 矩阵：`verify-ai-token-exe` **16/16**（新）、`verify-p0-2-exe` **13/13**、
+  `verify-p0-5-exe` **12/12**、`verify-exe` **10/10**。
+- 全量测试 **781 passed / 0 failed**（218,884 ms）。

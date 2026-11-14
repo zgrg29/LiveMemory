@@ -384,6 +384,36 @@ node scripts\ai-efficiency-baseline.mjs --label after
 
 :: 3) 对比
 node scripts\ai-efficiency-report.mjs --compare tests\.tmp\before-repo\tests\.tmp\ai-efficiency\baseline-head.json tests\.tmp\ai-efficiency\after.json
+
+:: 4) 正式 EXE 上的归因/Resume 验证（本地 Mock Provider）
+node scripts\verify-ai-token-exe.mjs
 ```
 
 产物：`tests/.tmp/ai-efficiency/*.json`（含逐场景分段字节与阶段明细），不进入 Git。
+
+## 14. 正式 EXE（本轮实测）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,623,616` bytes（92.1 MB） |
+| SHA-256 | `178585a6f65bbffa7f657f3ecb9a7e5c7ce1ce954ef3c8570705ea1d131a73a3` |
+| buildId | `4a149ca7286e` |
+| commit | `649f8192bc6fe53a4957d6c906bcc1e8bf4a212c` |
+| builtAt | `2026-11-14T09:44:11.067Z` |
+| 资源 | `189` files；20 个必需模块；`asInvoker` |
+
+`scripts/verify-ai-token-exe.mjs` **16/16**（正式 EXE + 本地 OpenAI-compatible Mock Provider）：
+
+- 分析完成 40/40 观众 / 3 批 / 3 请求；
+- usage 输入 20,893 / 输出 3,563 / **缓存命中 8,356** / requests 3 / attempts 3；
+- `tokenSource=provider-reported`，逐尝试账本 24,456 tokens；
+- 估算费用 0.019663 USD、每百观众 0.049157 USD、每百观众 Token 61,140、事实 40；
+- 每个计划批次只请求一次；便携备份仍可创建（768,515 B）；
+- 完成后重复 Continue **0 请求**；重启后 token 完全一致；
+- 注入 500：failed=3、unknownUsageAttempts=3、attempts 5 vs requests 2、failedBatches=[2]，
+  兄弟批次已保存（23/40）；
+- Resume 后 40/40 完成，且**只**重新请求 b02（1 次）。
+
+同轮回归：`verify-p0-2-exe` 13/13、`verify-p0-5-exe` 12/12、`verify-exe` 10/10。
+
