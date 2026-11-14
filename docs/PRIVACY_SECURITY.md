@@ -102,9 +102,9 @@
 - 旧版本可能在 `<数据目录>\secrets\` 留下 `youtube-oauth.json` / `.youtube-oauth-key`；v0.5.0 **不读取也不再使用**这些文件，也不会自动删除用户凭据。用户可用“恢复出厂设置”或自行删除；迁移不会把它们带进新的数据空间之外的任何位置（仍是受管 `secrets/`）。
 - `/api/youtube/status` 不再返回登录/令牌/配额字段；不提供伪造登录。
 - 日志脱敏规则仍覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值，作为纵深防御。
-- **撤销与删除**：退出登录会先调用 Google revoke 端点（尽力而为），再删除本地加密文件；跨电脑迁移需要重新登录（密钥不导出，这是刻意设计）。
-- **日志**：脱敏规则覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值；YouTube `code`/`state` 不写日志。
-- **回调安全**：回环接收器只绑定 `127.0.0.1`、只接受一次性随机端口与固定路径、校验 `state`、5 分钟超时、回调页无外部资源。
+- **无 OAuth 授权/撤销/回调流程**：v0.5.0 不再提供 Google 登录、账号授权、revoke 端点或 OAuth 回环回调；旧 `youtube-oauth.json` / `.youtube-oauth-key` 不会被读取、使用或自动删除，用户可自行清理或使用“恢复出厂设置”。
+- **日志**：脱敏规则覆盖 `authorization`、`token`、`api[-_]?key`、`secret`、`refresh_token` 等键名与 `Bearer …` 值；不再产生 YouTube `code`/`state`（旧代码已删除）。
+- **无回环回调接收器**：公开网页路径不需要 `127.0.0.1` OAuth 回调、`state` 校验或授权码交换。
 
 ## 14. YouTube 数据保留与外部 AI
 
