@@ -234,9 +234,38 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 - 不发送 Cookie、OAuth token 或用户 API Key；只使用公开页面自身的客户端上下文。
 - 只有这一条 YouTube 路径；官方 Data API/OAuth/API Key 实现已删除。
 - 该接口不是官方稳定 API，可能违反 YouTube ToS；不绕过访问控制，失败不伪装成功。
-- continuation：每页更新；400/`failedPrecondition` 重开 live_chat；429/网络指数退避；连续 8 次失败停止并保存。
+- continuation：每页更新；400/`failedPrecondition` 重开 live_chat；429/网络/5xx/异常 200 指数退避（上限 60 秒；429 至少 30 秒并尊重 `Retry-After`）；连续 8 次进入**可恢复** `failed` 状态，但继续低频重试，不结束场次。
 - 身份：`authorExternalChannelId` → `youtube:<channelId>`；新版 gift 无该字段时 `viewer_uid=null`，不按昵称合并。
 - 金额：只解析可确认的格式化金额；`amount_display` 保留原文，无法确认时 `amount_minor=null`。
+
+## 3.1.1 YouTube 连接状态与结束判定（v0.13.2 P0-4）
+
+```text
+会话 status = live（连接状态与直播生命周期分离）
+  ├─ connected         正常轮询
+  ├─ reconnecting      429 / 5xx / 网络 / 无效 200 / stale continuation
+  ├─ failed            连续 8 次传输失败：可恢复状态；同一 session 继续按 60s 上限重试
+  └─ stopped           用户停止、确认平台结束或聊天明确关闭
+
+暂时性故障（绝不触发 onEnd）
+  HTTP 429、500/502/503/504、断网/DNS/超时、HTTP 200 缺 continuationContents、
+  结构异常、continuation 缺失或无法解析、未知响应
+
+结束证据（必须可确认）
+  用户停止          → 独立路径，立即结束，reason=user
+  观看页 ended      → 间隔约 2s 再读一次；仍 ended → reason=platform_ended
+  聊天页 ended      → 观看页 ended，或第二次聊天页仍 ended → reason=chat_ended
+  聊天页 disabled   → 观看页 ended，或第二次聊天页仍 disabled → reason=chat_disabled
+
+恢复
+  stale continuation → 丢弃旧 token，openChat 取新 continuation 后再 poll
+  openChat 失败      → 按退避重试；不继续 poll 已知失效的 token
+  成功后             → 同一 session/adapter/continuation 继续；EventIngest 去重
+```
+
+- `onEnd` 每个 adapter 最多触发一次；`SessionManager` 只结束该 `sessionId`，不触碰其他直播。
+- 连续失败只改变连接状态和 UI 提示，不写 `sessions.end_reason`，不生成新场次，不重置计数。
+- 结束确认失败（网络/无法读取观看页）时保持采集与重试，不猜测平台已结束。
 
 ## 3.2 保留策略
 

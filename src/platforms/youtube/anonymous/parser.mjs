@@ -245,21 +245,48 @@ export function parseChatPage(html) {
   };
 }
 
-/** Parse one `get_live_chat` JSON response. */
-export function parseChatResponse(payload) {
-  const live = payload?.continuationContents?.liveChatContinuation;
-  if (!live) {
-    return {
-      actions: [],
-      continuation: null,
-      timeoutMs: null,
-      ended: true,
-      invalid: true
-    };
-  }
-  const continuation = extractContinuation(live.continuations);
+function invalidChatResponse(reason) {
   return {
-    actions: Array.isArray(live.actions) ? live.actions : [],
+    actions: [],
+    continuation: null,
+    timeoutMs: null,
+    continuationKind: null,
+    ended: false,
+    invalid: true,
+    invalidReason: reason
+  };
+}
+
+/**
+ * Parse one `get_live_chat` JSON response.
+ *
+ * A missing `continuationContents` is **not** proof that the broadcast ended:
+ * an HTTP 200 with an empty body, an error envelope or a changed structure also
+ * produces it. It is reported as `invalid` so the adapter can retry or confirm
+ * the end through an independent watch-page read. `ended` is reserved for an
+ * explicit platform end signal; this parser never infers one from absence.
+ */
+export function parseChatResponse(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return invalidChatResponse('payload-not-object');
+  }
+  const contents = payload.continuationContents;
+  if (!contents || typeof contents !== 'object' || Array.isArray(contents)) {
+    return invalidChatResponse('missing-continuation-contents');
+  }
+  const live = contents.liveChatContinuation;
+  if (!live || typeof live !== 'object' || Array.isArray(live)) {
+    return invalidChatResponse('missing-live-chat-continuation');
+  }
+  const actions = Array.isArray(live.actions) ? live.actions : [];
+  const continuation = extractContinuation(live.continuations);
+  if (!continuation.continuation) {
+    // Keeping the previous continuation would poll a page that can no longer
+    // advance. Treat it as a transient/invalid structure, not as an end.
+    return {...invalidChatResponse('missing-continuation-token'), actions};
+  }
+  return {
+    actions,
     continuation: continuation.continuation,
     timeoutMs: continuation.timeoutMs,
     continuationKind: continuation.kind,

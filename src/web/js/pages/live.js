@@ -75,6 +75,26 @@ function stateMeta(state, t) {
   return {...meta, text: t(meta.label)};
 }
 
+/**
+ * A `failed` transport during an active capture is recoverable: the parent
+ * session is still live and the adapter keeps retrying. Never present it with
+ * the terminal "ended" semantics used for a retired tab.
+ */
+function connectionStateMeta(recording, t) {
+  const state = recording?.connection?.state;
+  const detail = recording?.connection?.detail ?? {};
+  if (state === 'failed' && detail.retrying) {
+    return {
+      label: 'live.tabs.stateRecovering',
+      tone: 'warn',
+      dot: true,
+      ended: false,
+      text: t('live.tabs.stateRecovering')
+    };
+  }
+  return stateMeta(state, t);
+}
+
 function tabName(recording, t) {
   return recording?.broadcasterName
     || recording?.roomTitle
@@ -217,7 +237,7 @@ export const livePage = {
       function appendTab(recording, {isRetired = false} = {}) {
         const selected = recording.sessionId === selectedId;
         const state = isRetired ? (recording.finalState ?? 'stopped') : recording.connection.state;
-        const meta = stateMeta(state, t);
+        const meta = isRetired ? stateMeta(state, t) : connectionStateMeta(recording, t);
         const name = tabName(recording, t);
         const platformEnded = isRetired && (
           recording.finalReason === 'platform_ended'
@@ -457,7 +477,14 @@ export const livePage = {
       if (!recording) return;
       const state = recording.connection?.state;
       const detail = recording.connection?.detail ?? {};
+      const retrying = state === 'reconnecting' || (state === 'failed' && detail.retrying);
       if (state === 'reconnecting') host.append(chip(t('live.tabs.stateReconnecting'), 'warn'));
+      if (state === 'failed' && detail.retrying) host.append(chip(t('live.tabs.stateRecovering'), 'warn'));
+      if (retrying) {
+        const reason = videoReasonText(detail.lastFailureCode ?? detail.errorCode ?? detail.code);
+        if (reason) host.append(chip(t('live.connection.lastFailure', {reason}), 'warn'));
+        host.append(chip(t('live.connection.retryScheduled'), 'neutral'));
+      }
       if (Number.isFinite(detail.viewers) && detail.viewers !== null) {
         host.append(chip(t('live.source.youtubeHotness', {n: formatInteger(detail.viewers, ctx.locale)}), 'neutral'));
       }
@@ -473,13 +500,19 @@ export const livePage = {
       if (Number(detail.attempt) > 1 && state === 'reconnecting') {
         host.append(chip(t('live.tabs.retryAttempt', {n: detail.attempt}), 'neutral'));
       }
+      if (retrying) {
+        host.append(el('div', {
+          className: 'source-note',
+          text: t('live.connection.recoveringNote')
+        }));
+      }
     }
 
     function updateHeroConnection(recording) {
       if (!refs.stateHost) return;
       clear(refs.stateHost);
       const state = recording?.connection?.state ?? 'connected';
-      const meta = stateMeta(state, t);
+      const meta = connectionStateMeta(recording, t);
       const session = refs.session ?? null;
       const transportTrouble = ['connecting', 'reconnecting', 'auth_required', 'failed'].includes(state);
       if (session && !transportTrouble) {
@@ -1657,11 +1690,15 @@ export const livePage = {
         YOUTUBE_NOT_LIVE_ENDED: 'errors.youtubeEnded',
         YOUTUBE_NOT_LIVE_VIDEO: 'errors.youtubeNotLive',
         YOUTUBE_NOT_LIVE: 'errors.youtubeNotLive',
+        YOUTUBE_RATE_LIMITED: 'errors.youtubeRateLimit',
+        YOUTUBE_CHAT_ENDED: 'errors.youtubeChatEnded',
         YOUTUBE_CHAT_DISABLED: 'errors.youtubeChatDisabled',
         YOUTUBE_CHAT_NOT_FOUND: 'errors.youtubeChatUnavailable',
+        YOUTUBE_VIDEO_NOT_FOUND: 'errors.youtubeVideoNotFound',
         YOUTUBE_WEB_NETWORK: 'errors.youtubeWebNetwork',
         YOUTUBE_WEB_BLOCKED: 'errors.youtubeWebBlocked',
         YOUTUBE_WEB_PROTOCOL: 'errors.youtubeWebProtocol',
+        YOUTUBE_WEB_RESPONSE_INVALID: 'errors.youtubeWebResponseInvalid',
         YOUTUBE_WEB_STALE: 'errors.youtubeWebStale',
         YOUTUBE_WEB_RESTRICTED: 'errors.youtubeWebRestricted',
         YOUTUBE_WEB_NOT_CONFIGURED: 'errors.youtubeWebNotConfigured'

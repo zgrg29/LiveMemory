@@ -49,6 +49,14 @@ test('capture status never stays green after the platform reports an end', () =>
     {label: 'status.manualStopped', tone: 'neutral', dot: false}
   );
   assert.deepEqual(
+    captureStatusMeta({status: 'ended', endReason: 'chat_ended', platformStatus: 'live'}),
+    {label: 'status.chatEnded', tone: 'neutral', dot: false}
+  );
+  assert.deepEqual(
+    captureStatusMeta({status: 'ended', endReason: 'chat_disabled', platformStatus: 'live'}),
+    {label: 'status.chatDisabled', tone: 'neutral', dot: false}
+  );
+  assert.deepEqual(
     captureStatusMeta({status: 'interrupted', platformStatus: 'ended'}),
     {label: 'status.captureInterrupted', tone: 'warn', dot: false}
   );
@@ -68,6 +76,10 @@ test('platform status has its own labels and never maps into the live tone by ac
 test('end reasons stay distinguishable, including platform end versus user stop', () => {
   assert.equal(endReasonLabelKey('user'), 'history.endReason.user');
   assert.equal(endReasonLabelKey('platform_ended'), 'history.endReason.platformEnded');
+  assert.equal(endReasonLabelKey('chat_ended'), 'history.endReason.chatEnded');
+  assert.equal(endReasonLabelKey('chat_disabled'), 'history.endReason.chatDisabled');
+  assert.equal(endReasonLabelKey('broadcast_ended'), 'history.endReason.broadcastEnded');
+  assert.equal(endReasonLabelKey('connection_failed'), 'history.endReason.connectionFailed');
   assert.equal(endReasonLabelKey('startup_recovery'), 'history.endReason.startupRecovery');
   assert.equal(endReasonLabelKey('shutdown'), 'history.endReason.shutdown');
   assert.equal(endReasonLabelKey('failed'), 'history.endReason.failed');
@@ -87,6 +99,8 @@ test('all lifecycle strings exist in Chinese, Japanese and English', () => {
     'status.platformUnknown',
     'status.platformEnding',
     'status.platformPrefix',
+    'status.chatEnded',
+    'status.chatDisabled',
     'history.detail.lifecycleTitle',
     'history.detail.captureStatus',
     'history.detail.platformStatus',
@@ -98,11 +112,19 @@ test('all lifecycle strings exist in Chinese, Japanese and English', () => {
     'history.detail.platformEndedBody',
     'history.endReason.user',
     'history.endReason.platformEnded',
+    'history.endReason.broadcastEnded',
+    'history.endReason.chatEnded',
+    'history.endReason.chatDisabled',
+    'history.endReason.connectionFailed',
     'history.endReason.startupRecovery',
     'history.endReason.shutdown',
     'history.endReason.failed',
     'history.endReason.unknown',
     'live.hero.platformEndedNotice',
+    'live.tabs.stateRecovering',
+    'live.connection.lastFailure',
+    'live.connection.retryScheduled',
+    'live.connection.recoveringNote',
     'live.source.onlyLiveCanStart',
     'errors.bilibiliRoomNotLive',
     'errors.bilibiliRoomCarousel'
@@ -128,6 +150,8 @@ test('history and live pages render the platform state and the unknown-end note'
   const live = read('src/web/js/pages/live.js');
   assert.match(live, /platformStatusChip\(session, t\)/);
   assert.match(live, /live\.hero\.platformEndedNotice/);
+  assert.match(live, /live\.tabs\.stateRecovering/);
+  assert.match(live, /live\.connection\.recoveringNote/);
   assert.match(live, /status\.platformEnded/);
   assert.match(live, /onlyLiveCanStart/);
 

@@ -264,7 +264,14 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 ```
 
 - 普通视频、未开始、已结束、聊天关闭、网络/页面受限都有独立的可翻译错误码。
-- 轮询间隔取服务端 `timeoutMs`（clamp 2–30 秒）；400/`failedPrecondition` 重开聊天页；429 至少 30 秒退避并读取 `Retry-After`；网络/5xx 指数退避且**不结束场次**；每 60 秒检查 watch 页并自动结束已结束的直播。
+- 轮询间隔取服务端 `timeoutMs`（clamp 2–30 秒）。
+- **连接状态与直播生命周期分离（v0.13.2 P0-4）**：
+  - HTTP 429（至少 30 秒退避并读取 `Retry-After`）、500/502/503/504、断网/超时、HTTP 200 缺 `continuationContents`、结构异常、continuation 缺失或无法解析，都只进入 `reconnecting`/可恢复 `failed`，**不结束场次、不生成新 session**。
+  - 连续 8 次失败进入 `failed`，但适配器继续以指数退避（上限 60 秒）重试；`sessions.status` 保持 `live`，已采集消息/观众/时间线全部保留。UI 显示「连接中断，自动重试中」、最近一次故障与「采集尚未结束」说明。
+  - stale continuation：丢弃旧 token，通过 `openChat` 重新取得 continuation 后再轮询；不会反复 poll 已知失效的 token。
+  - 结束证据：观看页连续两次 `state=ended`（间隔约 2 秒）→ `platform_ended`；聊天页明确 `ended`/`disabled` 需观看页 ended 或第二次聊天页相同结果确认 → `chat_ended`/`chat_disabled`。缺 continuationContents 本身**不是**结束证据。
+  - `onEnd` 最多触发一次；用户主动停止是独立路径，立即结束且不受平台二次确认延迟影响。
+  - 失败期间仍每 60 秒检查一次 watch 页，以避免“聊天接口永久失效但直播已明确结束”永远停留在重连状态。
 - 相邻消息时间跳变 > 90 秒记 `gapSuspected`，UI 只显示“可能漏消息”。
 
 ### 3.4 身份、金额、表情
@@ -286,14 +293,16 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 ### 3.6 验证状态（必须如实区分）
 
 - **本地假网页端到端**：`tests/integration/youtube-anonymous-session.test.mjs` 覆盖检查、连接、聊天/SC/Sticker/会员/gift、badge、稳定身份、自动结束、保留上限、AI 包；`live-api-multi.test.mjs` 覆盖两个假直播的并发、隔离、Top 100、停止一场另一场继续、重启恢复。
+- **生命周期回归（v0.13.2 P0-4，Mock HTTP）**：`tests/unit/youtube-lifecycle-regression.test.mjs` 10 项 + `tests/integration/youtube-lifecycle.test.mjs` 2 项。覆盖连续 429、连续网络失败、500/502/503、缺 `continuationContents`、多种异常 200、stale token 重取、连续故障后同一 session 恢复、观看页两次 ended、聊天 ended/disabled 二次确认、用户停止、消息去重与单轮询器。全部通过。
 - **真实直播间并发采样（v0.6.0，2026-11-09）**：两个 YouTube（Lofi Girl + Al Jazeera English 当日直播）各收到 80 / 63 条事件；跨场 `wrongSession=0`；重复启动 409；停止 A 后 B 仍 connected。另与 Bilibili room 6、三场并发、构建后 EXE 附加验证均通过。详见 TEST_PLAN §12.3。
-- **未验证**：真实 429/验证码/consent/age wall、数小时长直播、不同地区币种、Super Sticker/会员/赠送会员真实样本、同一真实观众跨两个主播的观测、官方授权（不存在）。
+- **未验证**：真实 429/验证码/consent/age wall、真实网络级断网（拔网/切网）、真实 YouTube 直播的“网络中断→恢复→同一场次”端到端、数小时长直播、不同地区币种、Super Sticker/会员/赠送会员真实样本、同一真实观众跨两个主播的观测、官方授权（不存在）。
 - 该路径不是官方 API，可能违反 YouTube 服务条款；正式发布前仍需平台合规评估。
 
 ### 3.7 多直播间并发与资源控制（v0.6.0）
 
 - 每个 YouTube 直播一个独立 adapter 和 continuation 轮询定时器；Bilibili 每个房间一个 WebSocket + 心跳。
 - 轮询/重连完全由各 adapter 自身管理，避免全局轮询；一个直播的 429/断线退避不影响其他直播。
+- 每个 adapter 只有一个 poll 定时器、一个结束确认定时器和一个观看页元数据请求；重新调度会先清除旧 timer，停止/确认结束会清除全部 timer，不会产生重复轮询器或并发结束确认。
 - 重复启动同一视频/房间被 `SessionManager` 拒绝，不会重复请求页面或重复统计。
 - 没有人为并发上限；实际受 CPU、内存、网络与平台限流约束。每个直播的前端缓存上限为 40 条 feed + 100 行排行榜。
 - 长时间多场压力、内存增长与平台限流叠加尚未做 10+ 场数小时验证。

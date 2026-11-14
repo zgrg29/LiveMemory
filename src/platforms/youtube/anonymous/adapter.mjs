@@ -9,6 +9,16 @@ import {chatItemOfAction, DEFAULT_POLL_TIMEOUT_MS} from './parser.mjs';
  * Polling, continuation refresh, backoff and end detection live here. Every
  * parsed item still becomes a canonical draft through `../mapper.mjs` and is
  * written by SessionManager -> EventIngest; this adapter never touches SQLite.
+ *
+ * Connection health and broadcast lifecycle are deliberately separate:
+ *
+ * - HTTP 429, 5xx, network errors, malformed 200 responses and a missing
+ *   continuation are *transport* problems. They move the adapter to
+ *   `reconnecting`/`failed` (a recoverable state) and never call `onEnd`.
+ * - Only an explicit chat closure (the chat page says it has ended/disabled)
+ *   or an ended watch page, confirmed by a second independent read, ends the
+ *   session. The session row, its messages, viewers and timeline are untouched
+ *   by reconnects.
  */
 
 const DEFAULT_OPTIONS = Object.freeze({
@@ -17,8 +27,22 @@ const DEFAULT_OPTIONS = Object.freeze({
   metadataIntervalMs: 60000,
   backoffBaseMs: 1000,
   maxBackoffMs: 60000,
+  rateLimitMinBackoffMs: 30000,
+  maxRetryAfterMs: 300000,
   maxStartAttempts: 2,
-  maxConsecutiveFailures: 8
+  // Consecutive transport failures before the public state becomes `failed`.
+  // The adapter keeps retrying at maxBackoffMs; this is not an end condition.
+  maxConsecutiveFailures: 8,
+  // A single watch-page end read is only a candidate; wait briefly and read it
+  // again before closing the session.
+  endConfirmDelayMs: 2000,
+  // Do not probe the watch page more often than this after invalid 200s.
+  endProbeMinIntervalMs: 10000
+});
+
+const DEFAULT_TIMERS = Object.freeze({
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: (handle) => clearTimeout(handle)
 });
 
 function transientError(code, messageKey) {
@@ -45,7 +69,16 @@ export function checkAnonymousRecordable(video) {
 }
 
 export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
-  constructor({videoId, video = null, client, logger = null, now = Date.now, ...options} = {}) {
+  constructor({
+    videoId,
+    video = null,
+    client,
+    logger = null,
+    now = Date.now,
+    options = null,
+    timers = null,
+    ...rest
+  } = {}) {
     super({
       id: 'youtube-anonymous',
       platform: 'youtube',
@@ -57,11 +90,13 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     this.client = client;
     this.logger = logger;
     this.now = now;
-    this.options = {...DEFAULT_OPTIONS, ...options};
+    this.options = {...DEFAULT_OPTIONS, ...(options ?? {}), ...rest};
+    this.timers = {...DEFAULT_TIMERS, ...(timers ?? {})};
 
     this.session = null;
     this.continuation = null;
     this.pollTimer = null;
+    this.endConfirmTimer = null;
     this.generation = 0;
     this.started = false;
     this.ended = false;
@@ -82,19 +117,36 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     this.endReason = null;
     this.hotness = video?.concurrentViewers ?? null;
     this.onEnd = null;
+    this.onPlatformStatus = null;
     this.gl = null;
+
+    this.continuationNeedsRefresh = false;
+    this.lastFailureAt = null;
+    this.lastFailureCode = null;
+    this.lastRetryDelayMs = null;
+    this.nextRetryAt = null;
+    this.endPending = null;
+    this.lastEndProbeAt = 0;
     this._refreshingMetadata = false;
   }
 
-  async start({onEvent = () => {}, onStateChange = null, onEnd = null} = {}) {
+  async start({onEvent = () => {}, onStateChange = null, onEnd = null, onPlatformStatus = null} = {}) {
     this.onEvent = onEvent;
     this.onStateChange = onStateChange;
     this.onEnd = onEnd ?? this.onEnd;
+    this.onPlatformStatus = onPlatformStatus ?? this.onPlatformStatus;
     this.started = true;
     this.ended = false;
     this.generation += 1;
     this.failures = 0;
     this.consecutiveFailures = 0;
+    this.lastError = null;
+    this.lastFailureAt = null;
+    this.lastFailureCode = null;
+    this.lastRetryDelayMs = null;
+    this.nextRetryAt = null;
+    this.endPending = null;
+    this.continuationNeedsRefresh = false;
     this.setState(CONNECTION_STATE.CONNECTING, {
       mode: 'web',
       videoId: this.videoId
@@ -111,6 +163,7 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
         this.hotness = video.concurrentViewers ?? null;
         this.lastMetadataAt = this.now();
         const session = await this.client.openChat(this.videoId);
+        if (!this.started) return;
         this.session = session;
         this.continuation = session.continuation;
         this.gl = session.gl ?? null;
@@ -148,8 +201,10 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
   async stop() {
     this.started = false;
     this.generation += 1;
-    if (this.pollTimer) clearTimeout(this.pollTimer);
-    this.pollTimer = null;
+    this.#clearPollTimer();
+    this.#clearEndTimer();
+    this.endPending = null;
+    this.nextRetryAt = null;
     this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', videoId: this.videoId});
   }
 
@@ -174,11 +229,19 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
       giftEvents: this.giftEvents,
       gapSuspected: this.gapSuspected,
       lastEventAt: this.lastEventAt,
-      failures: this.failures,
+      failures: this.consecutiveFailures,
       pollingIntervalMs: this.pollingIntervalMs,
       lastPollAt: this.lastPollAt,
       endReason: this.endReason,
       errorCode: this.lastError?.code ?? null,
+      lastFailureCode: this.lastFailureCode,
+      lastFailureAt: this.lastFailureAt,
+      retrying: this.consecutiveFailures > 0 && !this.ended,
+      recoverable: this.consecutiveFailures > 0 && !this.ended,
+      retryInMs: this.lastRetryDelayMs,
+      nextRetryAt: this.nextRetryAt,
+      sessionPreserved: true,
+      confirmingEnd: this.endPending?.reason ?? null,
       ...extra
     };
   }
@@ -189,6 +252,18 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_POLL_TIMEOUT_MS;
     return Math.min(this.options.maxPollIntervalMs, Math.max(this.options.minPollIntervalMs, numeric));
+  }
+
+  #clearPollTimer() {
+    if (!this.pollTimer) return;
+    this.timers.clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  #clearEndTimer() {
+    if (!this.endConfirmTimer) return;
+    this.timers.clearTimeout(this.endConfirmTimer);
+    this.endConfirmTimer = null;
   }
 
   #consume(actions, {checkGap = false} = {}) {
@@ -226,18 +301,36 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
     }
   }
 
-  #maybeRefreshMetadata() {
-    if (this._refreshingMetadata) return;
-    if (this.now() - (this.lastMetadataAt ?? 0) < this.options.metadataIntervalMs) return;
-    this.lastMetadataAt = this.now();
+  #emitPlatformStatus(info) {
+    try {
+      this.onPlatformStatus?.(info);
+    } catch (error) {
+      this.logger?.warn({event: 'youtube.anonymous.platform.status.failed', code: error?.code ?? 'unknown'});
+    }
+  }
+
+  /**
+   * Read the public watch page. It is only used for metadata and for confirming
+   * an explicit end signal; a failed read never ends a session.
+   */
+  #refreshMetadata({force = false} = {}) {
+    if (!this.started || this.ended || this._refreshingMetadata) return;
+    const now = this.now();
+    if (!force && now - (this.lastMetadataAt ?? 0) < this.options.metadataIntervalMs) return;
+    this.lastMetadataAt = now;
     this._refreshingMetadata = true;
+    const generation = this.generation;
     this.client.getVideo(this.videoId)
       .then((video) => {
+        if (generation !== this.generation || !this.started || this.ended) return;
+        if (!video || (video.videoId && video.videoId !== this.videoId)) return;
         this.video = video;
         this.hotness = video.concurrentViewers ?? this.hotness;
-        if (video.state === 'ended' || video.state === 'video') {
-          this.#finish('broadcast_ended');
+        if (video.state === 'ended') {
+          this.#requestEndConfirmation('platform_ended', {source: 'watch', generation});
         }
+        // `video` (ordinary VOD) and `upcoming` are not proof of a *live*
+        // broadcast ending. A transient page variant must not close a session.
       })
       .catch((error) => {
         this.logger?.debug?.({event: 'youtube.anonymous.metadata.failed', code: error?.code ?? 'unknown'});
@@ -245,6 +338,13 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
       .finally(() => {
         this._refreshingMetadata = false;
       });
+  }
+
+  #endSignalOf(error) {
+    const code = error?.code;
+    if (code === YOUTUBE_ERRORS.CHAT_ENDED) return 'chat_ended';
+    if (code === YOUTUBE_ERRORS.CHAT_DISABLED) return 'chat_disabled';
+    return null;
   }
 
   #fatalReason(error) {
@@ -261,118 +361,308 @@ export class YouTubeAnonymousLiveChatAdapter extends PlatformAdapter {
 
   #scheduleNext(delayMs = this.pollingIntervalMs) {
     if (!this.started || this.ended) return;
-    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.#clearPollTimer();
     const generation = this.generation;
-    this.pollTimer = setTimeout(() => {
+    this.pollTimer = this.timers.setTimeout(() => {
       this.pollTimer = null;
       this.#poll(generation).catch(() => {});
     }, Math.max(0, delayMs));
-    this.pollTimer.unref?.();
+    this.pollTimer?.unref?.();
   }
 
   async #poll(generation) {
     if (!this.started || this.ended || generation !== this.generation) return;
     try {
+      if (this.continuationNeedsRefresh || !this.session || !this.continuation) {
+        await this.#reopenChat(generation);
+      }
+      if (!this.started || this.ended || generation !== this.generation) return;
+
       const page = await this.client.poll(this.session, this.continuation);
-      if (generation !== this.generation) return;
+      if (!this.started || this.ended || generation !== this.generation) return;
+
+      if (!page || page.invalid || (page.ended !== true && !page.continuation)) {
+        if (Array.isArray(page?.actions) && page.actions.length > 0) {
+          // A malformed page may still carry the last readable messages; ingest
+          // them, then treat the structure itself as a recoverable failure.
+          this.#consume(page.actions);
+        }
+        throw new YouTubeApiError(YOUTUBE_ERRORS.WEB_RESPONSE_INVALID, {
+          messageKey: 'errors.youtubeWebResponseInvalid',
+          httpStatus: 502,
+          details: {reason: page?.invalidReason ?? 'missing-continuation-token'}
+        });
+      }
+
+      if (page.ended === true) {
+        this.#consume(page.actions);
+        await this.#confirmEnd('chat_ended', {source: 'chat', generation});
+        return;
+      }
+
       this.consecutiveFailures = 0;
       this.failures = 0;
+      this.lastError = null;
+      this.lastRetryDelayMs = null;
+      this.nextRetryAt = null;
+      this.continuationNeedsRefresh = false;
       this.pollCount += 1;
       this.lastPollAt = this.now();
       if (page.continuation) this.continuation = page.continuation;
       if (page.timeoutMs) this.pollingIntervalMs = this.#clampInterval(page.timeoutMs);
-      if (page.ended) {
-        this.#consume(page.actions);
-        this.#finish('chat_ended');
-        return;
-      }
       if (this.state !== CONNECTION_STATE.CONNECTED) {
         this.setState(CONNECTION_STATE.CONNECTED, this.#detail({recovered: true}));
       }
       this.#consume(page.actions, {checkGap: true});
-      this.#maybeRefreshMetadata();
+      this.#refreshMetadata();
       if (!this.ended) this.#scheduleNext();
     } catch (error) {
-      if (generation !== this.generation) return;
+      if (!this.started || this.ended || generation !== this.generation) return;
       await this.#handlePollError(error);
     }
   }
 
+  async #reopenChat(generation) {
+    const session = await this.client.openChat(this.videoId);
+    if (!this.started || this.ended || generation !== this.generation) return;
+    if (!session?.continuation) {
+      throw new YouTubeApiError(YOUTUBE_ERRORS.WEB_RESPONSE_INVALID, {
+        messageKey: 'errors.youtubeWebResponseInvalid',
+        httpStatus: 502,
+        details: {reason: 'chat-page-missing-continuation'}
+      });
+    }
+    this.session = session;
+    this.continuation = session.continuation;
+    this.gl = session.gl ?? this.gl;
+    this.pollingIntervalMs = this.#clampInterval(session.timeoutMs);
+    this.continuationNeedsRefresh = false;
+    this.#consume(session.actions);
+    this.logger?.info({event: 'youtube.anonymous.chat.refreshed', videoId: this.videoId});
+  }
+
   async #handlePollError(error) {
     this.lastError = error;
-    const fatal = this.#fatalReason(error);
-    if (fatal) {
-      this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', reason: fatal});
-      this.#finish(fatal);
-      return;
+    this.lastFailureAt = this.now();
+    this.lastFailureCode = error?.code ?? 'unknown';
+    const code = this.lastFailureCode;
+
+    // An explicit "this chat has ended / is disabled" page is an end signal,
+    // but it is not trusted on its own: confirm it against the watch page (and,
+    // if the broadcast is still live, against a second chat-page read).
+    const endSignal = this.#endSignalOf(error);
+    if (endSignal) {
+      const outcome = await this.#confirmEnd(endSignal, {source: 'chat', generation: this.generation});
+      if (outcome === 'ended' || outcome === 'stale' || this.ended) return;
     }
+
     this.consecutiveFailures += 1;
     this.failures += 1;
-    const code = error?.code ?? 'unknown';
 
     if (code === YOUTUBE_ERRORS.WEB_STALE) {
-      const refreshed = await this.#refreshChat();
-      if (this.ended) return;
-      if (refreshed) {
-        this.setState(CONNECTION_STATE.CONNECTED, this.#detail({recovered: true, reason: 'continuation_refreshed'}));
-        this.consecutiveFailures = 0;
-        this.#scheduleNext(0);
-        return;
+      // The current continuation can no longer advance. Reopen the chat page
+      // before the next poll instead of retrying the same stale token.
+      this.continuationNeedsRefresh = true;
+    }
+    if (code === YOUTUBE_ERRORS.WEB_RESPONSE_INVALID) {
+      const now = this.now();
+      if (now - this.lastEndProbeAt >= this.options.endProbeMinIntervalMs) {
+        this.lastEndProbeAt = now;
+        // A missing continuationContents is the classic shape of an ended
+        // stream, but also of a temporary bad response. Probe the watch page;
+        // the confirmation step still needs a second ended read.
+        this.#refreshMetadata({force: true});
       }
     }
 
-    if (this.consecutiveFailures >= this.options.maxConsecutiveFailures) {
-      this.setState(CONNECTION_STATE.FAILED, {
-        mode: 'web',
-        reason: code,
-        failures: this.consecutiveFailures
-      });
-      this.logger?.warn({event: 'youtube.anonymous.stopped', code, failures: this.consecutiveFailures});
-      this.#finish('connection_failed');
-      return;
-    }
-
     const retryAfter = Number(error?.details?.retryAfterMs);
-    const backoff = code === YOUTUBE_ERRORS.RATE_LIMITED
-      ? Math.max(retryAfter || 0, 30000)
-      : Math.min(this.options.maxBackoffMs, this.options.backoffBaseMs * 2 ** Math.min(this.consecutiveFailures - 1, 6));
-    this.setState(CONNECTION_STATE.RECONNECTING, {
+    const exponential = Math.min(
+      this.options.maxBackoffMs,
+      this.options.backoffBaseMs * 2 ** Math.min(this.consecutiveFailures - 1, 10)
+    );
+    const rateLimited = code === YOUTUBE_ERRORS.RATE_LIMITED;
+    const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(0, retryAfter) : 0;
+    const backoff = rateLimited
+      ? Math.min(
+        this.options.maxRetryAfterMs,
+        Math.max(retryAfterMs, this.options.rateLimitMinBackoffMs)
+      )
+      : exponential;
+
+    const now = this.now();
+    this.lastRetryDelayMs = backoff;
+    this.nextRetryAt = now + backoff;
+    const escalated = this.consecutiveFailures >= this.options.maxConsecutiveFailures;
+    const detail = {
       mode: 'web',
+      reason: code,
+      code,
       failures: this.consecutiveFailures,
       retryInMs: backoff,
-      code
+      nextRetryAt: this.nextRetryAt,
+      retrying: true,
+      recoverable: true,
+      sessionPreserved: true,
+      lastFailureCode: code,
+      lastFailureAt: this.lastFailureAt
+    };
+    this.setState(escalated ? CONNECTION_STATE.FAILED : CONNECTION_STATE.RECONNECTING, detail);
+    this.logger?.warn({
+      event: 'youtube.anonymous.poll.failed',
+      code,
+      failures: this.consecutiveFailures,
+      retryInMs: backoff,
+      escalated
     });
-    this.logger?.warn({event: 'youtube.anonymous.poll.failed', code, failures: this.consecutiveFailures});
+    // Also check the watch page periodically while chat transport is failing:
+    // if the platform explicitly ended the broadcast and chat never recovers,
+    // the session must still be able to end from reliable evidence. The helper
+    // respects metadataIntervalMs, so a pure network outage adds no request
+    // storm.
+    this.#refreshMetadata();
     this.#scheduleNext(backoff);
   }
 
-  async #refreshChat() {
+  /**
+   * Confirm an end signal. `watch` means the watch page already says ended and
+   * is read a second time after a short delay. `chat` means the chat page
+   * explicitly reported ended/disabled; it is checked against the watch page,
+   * then against a second chat-page read.
+   *
+   * @returns {Promise<'ended'|'not-ended'|'unconfirmed'|'stale'>}
+   */
+  async #confirmEnd(reason, {source, generation}) {
+    if (!this.started || this.ended || generation !== this.generation) return 'stale';
+    const now = this.now();
+
+    if (source === 'watch') {
+      let video = null;
+      try {
+        video = await this.client.getVideo(this.videoId);
+      } catch (error) {
+        this.lastError = error;
+        this.lastFailureCode = error?.code ?? 'unknown';
+        this.lastFailureAt = this.now();
+        this.#clearEndPending({at: now});
+        return 'unconfirmed';
+      }
+      if (!this.started || this.ended || generation !== this.generation) return 'stale';
+      if (video?.videoId && video.videoId !== this.videoId) {
+        this.#clearEndPending({at: now});
+        return 'not-ended';
+      }
+      this.video = video ?? this.video;
+      if (video?.state === 'ended') {
+        this.#finishPlatformEnd(reason, now);
+        return 'ended';
+      }
+      this.#clearEndPending({at: now, live: video?.state === 'live'});
+      return 'not-ended';
+    }
+
+    let watch = null;
+    try {
+      watch = await this.client.getVideo(this.videoId);
+    } catch (error) {
+      this.logger?.debug?.({event: 'youtube.anonymous.end.confirm.watch.failed', code: error?.code ?? 'unknown'});
+    }
+    if (!this.started || this.ended || generation !== this.generation) return 'stale';
+    if (watch?.state === 'ended') {
+      this.video = watch;
+      this.#finishPlatformEnd(reason, now);
+      return 'ended';
+    }
+
     try {
       const session = await this.client.openChat(this.videoId);
+      if (!this.started || this.ended || generation !== this.generation) return 'stale';
       this.session = session;
       this.continuation = session.continuation;
       this.gl = session.gl ?? this.gl;
       this.pollingIntervalMs = this.#clampInterval(session.timeoutMs);
+      this.continuationNeedsRefresh = false;
       this.#consume(session.actions);
-      this.logger?.info({event: 'youtube.anonymous.chat.refreshed', videoId: this.videoId});
-      return true;
+      this.#clearEndPending({at: now, live: watch?.state === 'live'});
+      return 'not-ended';
     } catch (error) {
-      this.logger?.warn({event: 'youtube.anonymous.chat.refresh.failed', code: error?.code ?? 'unknown'});
-      const fatal = this.#fatalReason(error);
-      if (fatal) {
-        this.setState(CONNECTION_STATE.STOPPED, {mode: 'web', reason: fatal});
-        this.#finish(fatal);
+      if (!this.started || this.ended || generation !== this.generation) return 'stale';
+      if (this.#endSignalOf(error) === reason) {
+        // Two independent reads of the same explicit chat closure. The
+        // broadcast may still be live, but chat capture cannot continue.
+        this.#finishWithoutPlatformEnd(reason, now);
+        return 'ended';
       }
-      return false;
+      this.lastError = error;
+      this.lastFailureCode = error?.code ?? 'unknown';
+      this.lastFailureAt = this.now();
+      this.#clearEndPending({at: now});
+      return 'unconfirmed';
     }
   }
 
+  #requestEndConfirmation(reason, {source, generation = this.generation}) {
+    if (!this.started || this.ended || this.endPending || this.endConfirmTimer) return;
+    const now = this.now();
+    this.endPending = {reason, source, at: now};
+    this.#emitPlatformStatus({status: 'ending', at: now});
+    this.setState(this.state, this.#detail());
+    this.logger?.info({event: 'youtube.anonymous.end.pending', reason, source});
+    this.endConfirmTimer = this.timers.setTimeout(() => {
+      this.endConfirmTimer = null;
+      this.#confirmEnd(reason, {source, generation}).catch((error) => {
+        this.logger?.warn({
+          event: 'youtube.anonymous.end.confirm.failed',
+          reason,
+          code: error?.code ?? 'unknown'
+        });
+        this.#clearEndPending({at: this.now()});
+      });
+    }, Math.max(0, this.options.endConfirmDelayMs));
+    this.endConfirmTimer?.unref?.();
+  }
+
+  #clearEndPending({at = this.now(), live = false} = {}) {
+    this.#clearEndTimer();
+    const pending = this.endPending;
+    this.endPending = null;
+    if (!pending) return;
+    this.#emitPlatformStatus({
+      status: live ? 'live' : 'unknown',
+      at,
+      ...(live ? {lastLiveSeenAt: at} : {})
+    });
+    this.setState(this.state, this.#detail());
+  }
+
+  #finishPlatformEnd(reason, at) {
+    this.#emitPlatformStatus({
+      status: 'ended',
+      at,
+      platformEndedAt: at,
+      endQuality: 'poll'
+    });
+    this.setState(CONNECTION_STATE.STOPPED, this.#detail({reason, platformEnded: true}));
+    this.#finish(reason);
+  }
+
+  #finishWithoutPlatformEnd(reason, at) {
+    // The chat page explicitly closed, but the watch page was not available to
+    // confirm the broadcast state. Never claim the broadcast is either live or
+    // ended; record that the platform state is unknown.
+    this.#emitPlatformStatus({status: 'unknown', at});
+    this.setState(CONNECTION_STATE.STOPPED, this.#detail({reason}));
+    this.#finish(reason);
+  }
+
   #finish(reason) {
-    if (this.ended) return;
+    if (this.ended || !this.started) return;
     this.ended = true;
     this.endReason = reason;
-    if (this.pollTimer) clearTimeout(this.pollTimer);
-    this.pollTimer = null;
+    this.generation += 1;
+    this.endPending = null;
+    this.#clearPollTimer();
+    this.#clearEndTimer();
+    this.nextRetryAt = null;
     this.logger?.info({event: 'youtube.anonymous.ended', reason, videoId: this.videoId});
     try {
       this.onEnd?.({

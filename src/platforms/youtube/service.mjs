@@ -46,6 +46,7 @@ export function toApiError(error) {
     [YOUTUBE_ERRORS.WEB_NETWORK]: [502, 'errors.youtubeWebNetwork'],
     [YOUTUBE_ERRORS.WEB_BLOCKED]: [429, 'errors.youtubeWebBlocked'],
     [YOUTUBE_ERRORS.WEB_PROTOCOL]: [502, 'errors.youtubeWebProtocol'],
+    [YOUTUBE_ERRORS.WEB_RESPONSE_INVALID]: [502, 'errors.youtubeWebResponseInvalid'],
     [YOUTUBE_ERRORS.WEB_STALE]: [409, 'errors.youtubeWebStale'],
     [YOUTUBE_ERRORS.WEB_RESTRICTED]: [403, 'errors.youtubeWebRestricted'],
     [YOUTUBE_ERRORS.WEB_NOT_CONFIGURED]: [409, 'errors.youtubeWebNotConfigured']
@@ -64,13 +65,15 @@ export class YouTubeService {
     now = Date.now,
     fetchImpl = globalThis.fetch,
     webBase = null,
-    anonymousClient = null
+    anonymousClient = null,
+    adapterOptions = null
   } = {}) {
     this.sessionManager = sessionManager;
     this.db = db;
     this.settings = settings;
     this.logger = logger;
     this.now = now;
+    this.adapterOptions = adapterOptions;
     this.anonymous = anonymousClient ?? new YouTubeAnonymousClient({
       fetchImpl,
       now,
@@ -182,7 +185,8 @@ export class YouTubeService {
       video,
       client: this.anonymous,
       logger: this.logger,
-      now: this.now
+      now: this.now,
+      ...(this.adapterOptions ? {options: this.adapterOptions} : {})
     });
     const result = await this.sessionManager.startPlatform({
       platform: 'youtube',
@@ -229,7 +233,8 @@ export class YouTubeService {
       video,
       client: this.anonymous,
       logger: this.logger,
-      now: this.now
+      now: this.now,
+      ...(this.adapterOptions ? {options: this.adapterOptions} : {})
     });
     const result = await this.sessionManager.startPlatform({
       platform: 'youtube',

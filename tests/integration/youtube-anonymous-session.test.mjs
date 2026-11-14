@@ -221,11 +221,12 @@ function chatHtml(disabled = false) {
 async function startFakeWeb() {
   const calls = [];
   let pollCount = 0;
+  let ended = false;
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     calls.push({method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams)});
     if (req.method === 'GET' && url.pathname === '/watch') {
-      return html(res, watchHtml());
+      return html(res, watchHtml(!ended, ended));
     }
     if (req.method === 'GET' && url.pathname === '/live_chat') {
       return html(res, chatHtml(false));
@@ -245,6 +246,10 @@ async function startFakeWeb() {
           }
         });
       }
+      // A real ended broadcast can return a 200 without continuationContents.
+      // That is ambiguous on its own; the adapter confirms it against the
+      // watch page (which now reports the broadcast as ended).
+      ended = true;
       return json(res, 200, {});
     }
     return json(res, 404, {error: {code: 404}});

@@ -39,7 +39,9 @@
     "platformCarousel": "轮播中",
     "platformUnknown": "平台状态未知",
     "platformEnding": "正在确认下播",
-    "platformPrefix": "平台"
+    "platformPrefix": "平台",
+    "chatEnded": "聊天已结束",
+    "chatDisabled": "聊天功能已关闭"
   },
   "common": {
     "loading": "正在载入…",
@@ -90,9 +92,15 @@
       "stateConnecting": "连接中",
       "stateRecording": "记录中",
       "stateReconnecting": "重连中",
+      "stateRecovering": "连接中断，自动重试中",
       "stateStopped": "已停止",
       "stateFailed": "连接失败",
       "retryAttempt": "第 {n} 次重试"
+    },
+    "connection": {
+      "lastFailure": "最近一次故障：{reason}",
+      "retryScheduled": "自动重试中",
+      "recoveringNote": "采集尚未结束：已采集的聊天、观众和时间线都已保留。LiveMemory 正在自动恢复连接；你也可以手动停止记录。"
     },
     "new": {
       "eyebrow": "准备就绪",
@@ -337,6 +345,10 @@
     "endReason": {
       "user": "用户手动停止",
       "platformEnded": "平台下播",
+      "broadcastEnded": "平台直播已结束",
+      "chatEnded": "直播聊天已结束",
+      "chatDisabled": "聊天功能已关闭",
+      "connectionFailed": "连接中断后结束",
       "platformNotLive": "直播间未开播",
       "startupRecovery": "软件异常退出后重启恢复",
       "shutdown": "软件在记录期间退出",
@@ -1506,8 +1518,9 @@
     "youtubeChatEnded": "直播聊天已结束。",
     "youtubeLinkInvalid": "请输入 YouTube 直播链接或 11 位视频 ID。",
     "youtubeWebNetwork": "无法读取 YouTube 直播网页。请检查网络后重试。",
-    "youtubeWebBlocked": "YouTube 暂时限制了网页请求。请降低频率、稍后重试，或改用官方 API。",
-    "youtubeWebProtocol": "YouTube 网页聊天的响应结构已变化，当前版本无法解析。请改用官方 API 或等待更新。",
+    "youtubeWebBlocked": "YouTube 暂时限制了网页请求。LiveMemory 会降低频率并稍后重试。",
+    "youtubeWebProtocol": "YouTube 网页聊天返回了无法解析的数据，LiveMemory 会退避并重试；若持续出现，请稍后再试或更新版本。",
+    "youtubeWebResponseInvalid": "YouTube 返回的聊天数据结构不完整，LiveMemory 会退避并重试。",
     "youtubeWebStale": "聊天续页已失效，正在尝试重新连接。",
     "youtubeWebRestricted": "YouTube 要求登录或限制了该直播的网页访问。LiveMemory 不会绕过登录。",
     "maintenance": "正在处理数据，请稍候…",

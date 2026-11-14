@@ -36,7 +36,7 @@ app_meta(key TEXT PK, value TEXT, updated_at INTEGER)   -- 预留
 | broadcaster_id | TEXT | 外键 → `broadcasters`，可空；旧场次可能无法确定（schema v5） |
 | broadcaster_identity | TEXT | `verified` / `room_fallback` / `simulated` / `unresolved`（schema v5） |
 | status | TEXT | `live` / `ended` / `interrupted`；只描述本地采集 |
-| end_reason | TEXT | schema v7：`user` / adapter 原因 / `failed` / `shutdown` / `startup_recovery`；可空 |
+| end_reason | TEXT | schema v7：`user` / adapter 原因 / `failed` / `shutdown` / `startup_recovery`；v0.13.2 YouTube 确认结束为 `platform_ended` / `chat_ended` / `chat_disabled`；`connection_failed` 仅可能是旧版本误判留下的历史值；可空 |
 | archived_at | INTEGER | schema v7：归档时间；NULL = 未归档。独立管理属性，不覆盖 status |
 | storage_mode | TEXT | `compact` / `full`（场次级覆盖） |
 | source_quality | TEXT | `verified` / `estimated` / `unknown` / `mock` |
@@ -62,8 +62,10 @@ schema v7 新增 `idx_sessions_history (archived_at, started_at DESC)` 与
 
 **状态语义（v0.7.0 / v0.8.1）**：`status` 只表示本地采集（`live` / `ended` / `interrupted`）。
 `end_reason=user` 表示用户在应用内停止记录，**不代表 Bilibili/YouTube 直播结束**；
-`end_reason=platform_ended` 表示确认平台下播后自动结束；`startup_recovery` / `shutdown` 表示
-软件中断，不是平台结束。归档（`archived_at`）与状态正交：归档不改变 status，也不删除任何数据。
+`end_reason=platform_ended` 表示确认平台下播后自动结束；`chat_ended` 表示聊天页明确结束且已二次确认；
+`chat_disabled` 表示聊天功能被明确关闭（平台可能仍在直播，`platform_status` 可以是 `live` 或 `unknown`）；
+暂时性网络/429/5xx/异常 200 不会写入 `end_reason`。`startup_recovery` / `shutdown` 表示软件中断，不是平台结束。
+归档（`archived_at`）与状态正交：归档不改变 status，也不删除任何数据。
 
 平台状态在 `platform_status` 中独立记录：
 

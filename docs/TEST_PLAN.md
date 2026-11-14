@@ -1240,3 +1240,70 @@ duration ≈ 155s
 
 - 真实付费 Provider 下补答质量、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
 - 未修改生产数据库；未做 schema/历史数据回填。
+
+## 38. RC0 P0-4：YouTube 暂时性故障误判结束（v0.13.2，2026-11-14）
+
+### 38.1 修复前复现
+
+命令：`node --test --test-isolation=none tests/unit/youtube-lifecycle-regression.test.mjs`
+
+结果：**7 failed / 1 passed**。失败场景与当时实际行为：
+
+| # | 场景 | 修复前实际 | 期望 |
+| --- | --- | --- | --- |
+| 1 | 连续 10 次 HTTP 429 | 达到阈值后 `#finish('connection_failed')` | 保持 live/recoverable，继续退避 |
+| 2 | 连续 12 次网络失败 | 阈值后结束场次 | 保持 live/recoverable |
+| 3 | 500/502/503 | 结束场次 | 只退避重试 |
+| 4 | HTTP 200 缺 `continuationContents` | 立即 `chat_ended` | invalid/transient |
+| 5 | 6 种异常 200 结构 | 第一个异常即结束 | 全部 transient |
+| 6 | stale token + refresh 失败 | 继续 poll 同一失效 token | 先 openChat 重取 |
+| 7 | 单次观看页 `ended`/`video` | 立即结束 | 二次确认后才结束 |
+| 8 | 用户主动停止 | 正常 | 正常（唯一通过） |
+
+### 38.2 专项回归矩阵（修复后）
+
+| # | 文件 | 场景 | 关键断言 |
+| --- | --- | --- | --- |
+| 1 | `tests/unit/youtube-lifecycle-regression.test.mjs` | 10 次 429 | 无 onEnd；`reconnecting/failed(retrying)`；Retry-After 生效；恢复后 connected |
+| 2 | 同上 | 12 次网络失败 | 无 onEnd；failed 可恢复；同 adapter 恢复 |
+| 3 | 同上 | 9 次 500/502/503 | 无 onEnd；恢复 |
+| 4 | 同上 | 缺 continuationContents | parser `ended:false,invalid:true`；不结束 |
+| 5 | 同上 | 6 种异常 200 | 不结束；invalid 可观测 |
+| 6 | 同上 | stale + 2 次 refresh 失败 | poll 次数不增长；openChat 成功后恢复 |
+| 7 | 同上 | 单次 ended/`video` | 不结束；第二次 live 读取消确认 |
+| 8 | 同上 | 两次 ended | `platform_ended`；onEnd 一次；停止轮询 |
+| 9 | 同上 | 聊天 ended 二次确认 | `chat_ended`；平台状态 unknown，不伪造 |
+| 10 | 同上 | 第二次聊天读成功 | 不结束；恢复连接 |
+| 11 | 同上 | 用户 stop | 无 onEnd；无后续 poll |
+| 12 | `tests/integration/youtube-lifecycle.test.mjs` | 429/500/异常 200 + 恢复 | 同一 session、live、消息/观众不丢、事件去重、单 session |
+| 13 | 同上 | 明确 ended | `platform_ended`、`platform_status=ended`、结束只一次、结束前后计数一致 |
+| 14 | 同上 | 用户停止 | 立即 `user`；保留数据；platform_status 不变 |
+| 15 | `tests/unit/youtube-anonymous-parser.test.mjs` | 200 缺 continuation | invalid，不再 ended |
+| 16 | `tests/integration/youtube-anonymous-session.test.mjs` | 假直播结束 | 异常 200 + 观看页 ended → 正常结束 |
+| 17 | `tests/integration/youtube-auto-monitoring.test.mjs` | 自动监听两场 | 第一场确认结束后回 waiting；第二场新 session |
+| 18 | `tests/integration/live-api-multi.test.mjs` | 两场并发 | 既有并发/隔离/停止不回归 |
+
+### 38.3 全量与跨平台回归
+
+- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，191,207 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- Bilibili 专项：adapter/lifecycle/service/status/mapper/API + manual-stop + session-multi 共 **53 passed / 0 failed**。
+- 新增测试数：10 unit + 2 integration；parser 更新 1 项。
+
+### 38.4 断网/重连与结束/停止对照
+
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 429/5xx/断网 | 8 次后结束 session | `live` 保持；`reconnecting→failed`；继续 60s 上限退避 |
+| HTTP 200 缺 continuation | `chat_ended` | `invalid`；退避/重试；可触发观看页探测 |
+| continuation 失效 | 反复 poll 旧 token | `openChat` 重取；失败只退避 |
+| 观看页单次 ended | 立即结束 | 二次确认；矛盾读取取消 |
+| 聊天明确 ended/disabled | 依赖页面文本（未测试） | 观看页 or 第二次聊天页确认 |
+| 平台确认结束 | 可重复/无保护 | 只结束一次，清 timer |
+| 用户停止 | 立即 | 立即；不受二次确认延迟 |
+| 重连后的 session | 理论上保留 | 集成测试证明同一 session、消息去重、观众保留 |
+
+### 38.5 未验证
+
+- 真实 YouTube 直播的拔网/切网 3 分钟、真实 429/验证码/consent、数小时长直播。
+- 正式 EXE 与本地假 YouTube 的 3 分钟断网回放（如未完成会明确标注）。
+- 真实 UAC 双击、真实浏览器点击；未访问真实平台高频请求。

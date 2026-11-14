@@ -50,6 +50,25 @@ function buildPortCandidates(preferred) {
   return candidates;
 }
 
+/**
+ * Test-only loopback override used by the packaged EXE lifecycle replay.
+ * It is restricted to http(s) on 127.0.0.1/localhost so it cannot redirect
+ * public page reads to a remote host or carry credentials anywhere.
+ */
+function resolveYouTubeWebBase(explicit, env) {
+  if (explicit) return explicit;
+  const raw = env?.LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE;
+  if (!raw) return null;
+  try {
+    const url = new URL(String(raw));
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function startServer({
   dataDir,
   port = null,
@@ -58,6 +77,7 @@ export async function startServer({
   webRoot = null,
   systemLocale = null,
   youtubeWebBase = null,
+  youtubeAdapterOptions = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -101,7 +121,8 @@ export async function startServer({
       settings: settingsStore,
       logger,
       now,
-      webBase: youtubeWebBase
+      webBase: resolveYouTubeWebBase(youtubeWebBase, env),
+      ...(youtubeAdapterOptions ? {adapterOptions: youtubeAdapterOptions} : {})
     });
     const monitoring = new MonitoringManager({
       db,

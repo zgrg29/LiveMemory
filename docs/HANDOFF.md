@@ -1,10 +1,69 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0 P0-1 AI 定向补答回归修复 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0 P0-4 YouTube 暂时性故障误判结束修复 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮未修改生产数据库、未 Resume 真实生产任务、未调用真实付费 API、未干扰直播采集。自动化使用 `tests/.tmp` 隔离数据 + Mock Provider；真实数据只读副本 + Mock EXE 回放见 §0.4。
+> 本轮未修改生产数据库、未访问真实 YouTube 做长时断网测试、未调用真实付费 AI、未干扰正在采集的直播。自动化使用 `tests/.tmp` 隔离数据与本地假 YouTube 网页；正式 EXE 的本地假服务验证见 §0.4。
 
-## 0. 本轮（P0-1 定向补答回归修复）
+## 0. 本轮（P0-4 YouTube 暂时性故障误判结束）
+
+完整证据：`log/2026-11-14-youtube-lifecycle-p0.md`。
+
+### 0.1 原始故障与根因
+
+1. `parser.mjs` 把 HTTP 200 缺 `continuationContents` 解析为 `ended:true, invalid:true`；adapter 只看到 `ended` 就 `#finish('chat_ended')`。
+2. `adapter.mjs` 在 429/网络/5xx 连续 8 次后 `#finish('connection_failed')`；`SessionManager` 随即将 `sessions.status` 写成 `ended`。
+3. 观看页只读一次 `state='ended'`（甚至 `'video'`）就结束，没有二次确认；`onEnd` 后缺少 generation 失效保护。
+4. `openChat` 刷新失败后继续 poll 同一个 stale continuation；有 actions 但无新 token 的响应被当作成功并复用旧 token。
+5. `PLATFORM_INTEGRATIONS.md` 与代码相反；错误文案仍建议使用已删除的官方 API。
+
+### 0.2 修复
+
+- `src/platforms/youtube/anonymous/parser.mjs`：缺 `continuationContents` / `liveChatContinuation` / 新 continuation 一律 `invalid:true, ended:false` + `invalidReason`；异常页中可读 actions 先入库，再作为可恢复结构错误处理。
+- `src/platforms/youtube/anonymous/adapter.mjs`：
+  - 429/5xx/网络/异常 200 只进入 `reconnecting` → 阈值后 `failed`（`retrying/recoverable/sessionPreserved`），继续 60 秒上限退避；429 至少 30 秒且尊重 `Retry-After`；**绝不 `onEnd`**。
+  - 观看页 ended 二次确认（约 2 秒）→ `platform_ended`；聊天页 ended/disabled 需观看页 ended 或第二次聊天页相同结果 → `chat_ended`/`chat_disabled`。
+  - 确认期间 `platform_status=ending`；确认失败回到 live/unknown，不伪造结束。
+  - stale continuation 丢弃旧 token，先 `openChat` 再 poll；失败只退避重取。
+  - 每 adapter 一个 poll timer + 一个结束确认 timer + 一个元数据请求；`onEnd` 最多一次；`stop()` 清全部 timer。
+- `src/platforms/youtube/errors.mjs`、`client.mjs`、`service.mjs`：新增 `YOUTUBE_WEB_RESPONSE_INVALID`；`openChat`/`getVideo` 的 5xx 归为可重试网络错误。
+- `src/server/index.mjs`：`youtubeAdapterOptions` 测试注入；`LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE` 仅允许 loopback，用于正式 EXE 假服务回放。
+- `src/web/js/pages/shared.js`、`live.js` + 三语 i18n：可恢复连接状态、最近故障、数据保留说明、聊天结束/关闭结束原因；移除「改用官方 API」的过期文案。
+- **未改** Bilibili adapter、共享 `SessionManager`/`EventIngest`、数据库 schema、AI 架构。
+
+### 0.3 修复前复现与测试
+
+- 修复前 `tests/unit/youtube-lifecycle-regression.test.mjs` **7/8 失败**：429、连续网络失败、500/502/503、缺 continuationContents、异常 200、stale token 复用、单次 ended/`video` 全部触发 `onEnd`。
+- 修复后新增 **10 个 unit + 2 个 integration**；全量 **721 passed / 0 failed**（191,207 ms，2026-11-14）。
+- 集成测试使用真实 server/SessionManager/SQLite + 假 YouTube 网页，验证：同一 session、同一 viewer、消息不丢、replay 去重、单轮询器、平台结束只一次、用户停止独立。
+
+### 0.4 正式 EXE 与本地假 YouTube
+
+（构建与运行结果见本轮最终报告 / `log/2026-11-14-youtube-lifecycle-p0.md`；若未完成会用“未验证”明确标注，不写成真实验收。）
+
+- 正式构建：`dist/LiveMemory.exe`，buildId / commit / SHA-256 / assets 见最终报告。
+- asInvoker 测试副本 + `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>` + 本地假 YouTube：正常采集 → 模拟断网/429/异常 200 → 恢复 → 同一 session 继续 → 明确 ended → 结束；消息数/观众数/结束原因核对。
+- 不是真实 YouTube 网络断网，不是 UAC 双击，不是真实浏览器点击。
+
+### 0.5 P0-4 结论与下一轮 P0-5 交接
+
+- **P0-4 代码级可关闭**：根因确认、修复前失败可复现、修复后 12 个专项用例 + 721 全量通过；Bilibili 生命周期测试 53 项通过；无 schema/生产数据改动。
+- **待用户验收**：真实 YouTube 直播的 429/断网 3 分钟/恢复、真实长直播、真实 UAC 双击、真实浏览器点击。
+- **下一轮 P0-5「本地 HTTP API 无鉴权 + 管理员进程」交接**：
+  - 现状：服务只监听 `127.0.0.1`，但所有 `/api/*` 无认证；仅对带 `Origin` 的写请求做同源校验（`src/server/app.mjs`）。本机任意进程可省略 `Origin` 直接调用 GET/POST/PATCH/DELETE。
+  - 发布 EXE 以 `requireAdministrator` 运行，因此上述请求会以管理员权限执行（改设置、停止/删除场次、迁移数据目录、读取观众与聊天数据）。
+  - 建议复现：从普通 PowerShell 直接 `PATCH /api/settings`、`POST /api/sessions/:id/stop`、`GET /api/viewers`、`POST /api/storage/relocate`（先只读/测试数据目录），确认无 token 也成功；再用非管理员进程验证权限继承。
+  - 建议修复方向（需单独评审）：启动器生成每次运行随机 token；通过同源 `HttpOnly; SameSite=Strict` cookie 或 bootstrap 注入 + `Authorization` 校验所有 `/api/*`；SSE 同样校验；拒绝 `Origin: null` 与缺失 token；限制 CORS；把危险操作（迁移/删除/恢复出厂）放到需要用户确认的独立高权限 broker，而不是让任意本地 HTTP 调用提升权限；对 `runtime/` 与数据目录做 ACL 收紧。
+  - 不要在本轮顺手加认证：会牵涉启动器、浏览器引导、SSE、测试与用户体验，需要独立回归。
+
+### 0.6 不要做
+
+1. 不要把 429/5xx/网络/异常 200 重新当作结束；结束必须有可确认证据。
+2. 不要为了让测试通过把 `continuationContents` 缺失改回 `ended:true`。
+3. 不要用无限高频重试代替“不误判结束”；保持指数退避、上限与用户停止能力。
+4. 不要在重连时新建 session、清空 continuation/消息/观众，或绕过 EventIngest 去重。
+5. 不要修改 Bilibili 的结束判定来“统一”两平台；如需改共享代码，必须补跨平台回归。
+
+## 0.8 上一轮（P0-1 定向补答回归修复）
 
 完整证据：`log/2026-11-14-ai-memory-supplement-p0.md`。
 

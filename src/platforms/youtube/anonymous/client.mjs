@@ -104,6 +104,11 @@ export class YouTubeAnonymousClient {
         details: {status: response.status}
       });
     }
+    if (RETRYABLE_STATUS.has(response.status)) {
+      throw webError(YOUTUBE_ERRORS.WEB_NETWORK, 'errors.youtubeWebNetwork', {
+        details: {status: response.status}
+      });
+    }
     if (!response.ok) {
       throw webError(
         response.status === 404 ? YOUTUBE_ERRORS.VIDEO_NOT_FOUND : YOUTUBE_ERRORS.WEB_PROTOCOL,
@@ -142,6 +147,11 @@ export class YouTubeAnonymousClient {
     }
     if (response.status === 403 || response.status === 401) {
       throw webError(YOUTUBE_ERRORS.WEB_RESTRICTED, 'errors.youtubeWebRestricted');
+    }
+    if (RETRYABLE_STATUS.has(response.status)) {
+      throw webError(YOUTUBE_ERRORS.WEB_NETWORK, 'errors.youtubeWebNetwork', {
+        details: {status: response.status}
+      });
     }
     if (!response.ok) {
       throw webError(YOUTUBE_ERRORS.WEB_PROTOCOL, 'errors.youtubeWebProtocol', {

@@ -54,7 +54,7 @@ function channelHtml() {
 </body></html>`;
 }
 
-function watchHtml(videoId) {
+function watchHtml(videoId, ended = false) {
   const player = {
     playabilityStatus: {status: 'OK'},
     videoDetails: {
@@ -62,14 +62,18 @@ function watchHtml(videoId) {
       title: `Auto broadcast ${videoId}`,
       author: 'Auto Channel',
       channelId: CHANNEL,
-      isLive: true,
+      isLive: !ended,
       isLiveContent: true,
       isUpcoming: false
     },
     microformat: {
       playerMicroformatRenderer: {
         isFamilySafe: true,
-        liveBroadcastDetails: {isLiveNow: true, startTimestamp: '2026-11-10T09:00:00.000Z'}
+        liveBroadcastDetails: {
+          isLiveNow: !ended,
+          startTimestamp: '2026-11-10T09:00:00.000Z',
+          ...(ended ? {endTimestamp: '2026-11-10T10:00:00.000Z'} : {})
+        }
       }
     }
   };
@@ -128,8 +132,11 @@ async function startFakeWeb() {
       res.end(body);
     };
     if (req.method === 'GET' && url.pathname === '/@auto') return respond(200, channelHtml(), 'text/html');
+    if (req.method === 'GET' && url.pathname === '/watch') {
+      return respond(200, watchHtml(state.videoId, state.ended), 'text/html');
+    }
     if (req.method === 'GET' && url.pathname === `/channel/${CHANNEL}/live`) {
-      return respond(200, state.live ? watchHtml(state.videoId) : channelHtml(), 'text/html');
+      return respond(200, state.live ? watchHtml(state.videoId, state.ended) : channelHtml(), 'text/html');
     }
     if (req.method === 'GET' && url.pathname === `/channel/${CHANNEL}`) {
       return respond(200, channelHtml(), 'text/html');

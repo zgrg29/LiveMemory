@@ -39,7 +39,9 @@
     "platformCarousel": "Carousel",
     "platformUnknown": "Platform status unknown",
     "platformEnding": "Confirming end",
-    "platformPrefix": "Platform"
+    "platformPrefix": "Platform",
+    "chatEnded": "Chat ended",
+    "chatDisabled": "Chat disabled"
   },
   "common": {
     "loading": "Loading…",
@@ -90,9 +92,15 @@
       "stateConnecting": "Connecting",
       "stateRecording": "Recording",
       "stateReconnecting": "Reconnecting",
+      "stateRecovering": "Connection lost — retrying",
       "stateStopped": "Stopped",
       "stateFailed": "Connection failed",
       "retryAttempt": "Retry {n}"
+    },
+    "connection": {
+      "lastFailure": "Last failure: {reason}",
+      "retryScheduled": "Retrying automatically",
+      "recoveringNote": "Capture has not ended: collected chat, viewers and timeline are preserved. LiveMemory is reconnecting automatically; you can also stop the recording manually."
     },
     "new": {
       "eyebrow": "Ready to record",
@@ -337,6 +345,10 @@
     "endReason": {
       "user": "Stopped by the user",
       "platformEnded": "The platform ended the broadcast",
+      "broadcastEnded": "The broadcast ended",
+      "chatEnded": "The live chat ended",
+      "chatDisabled": "Chat was disabled",
+      "connectionFailed": "Ended after a connection failure",
       "platformNotLive": "The room was not live",
       "startupRecovery": "The app restarted after an abnormal exit",
       "shutdown": "The app shut down while recording",
@@ -1506,8 +1518,9 @@
     "youtubeChatEnded": "The live chat has ended.",
     "youtubeLinkInvalid": "Enter a YouTube live link or an 11-character video ID.",
     "youtubeWebNetwork": "Could not read the YouTube live web page. Check the network and try again.",
-    "youtubeWebBlocked": "YouTube is temporarily limiting web requests. Slow down, try again later, or use the official API.",
-    "youtubeWebProtocol": "YouTube’s web chat response changed and this version cannot parse it. Use the official API or wait for an update.",
+    "youtubeWebBlocked": "YouTube is temporarily limiting web requests. LiveMemory will slow down and retry later.",
+    "youtubeWebProtocol": "YouTube's web chat returned data this version cannot parse. LiveMemory will back off and retry; if it persists, try again later or update.",
+    "youtubeWebResponseInvalid": "YouTube returned an incomplete chat data structure. LiveMemory will back off and retry.",
     "youtubeWebStale": "The chat continuation expired; reconnecting.",
     "youtubeWebRestricted": "YouTube requires a sign-in or restricts web access to this broadcast. LiveMemory does not bypass login.",
     "maintenance": "Data is being processed. Please wait…",

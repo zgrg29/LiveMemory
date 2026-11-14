@@ -77,7 +77,14 @@ export function captureStatusMeta(session) {
   if (session.endReason === 'user') {
     return {label: 'status.manualStopped', tone: 'neutral', dot: false};
   }
+  if (session.endReason === 'chat_disabled') {
+    return {label: 'status.chatDisabled', tone: 'neutral', dot: false};
+  }
+  if (session.endReason === 'chat_ended') {
+    return {label: 'status.chatEnded', tone: 'neutral', dot: false};
+  }
   if (session.endReason === 'platform_ended'
+    || session.endReason === 'broadcast_ended'
     || session.platformStatus === 'ended'
     || session.platformStatus === 'carousel') {
     return {label: 'status.platformEnded', tone: 'neutral', dot: false};
@@ -94,6 +101,10 @@ export function statusChip(session, t) {
 const END_REASON_KEYS = Object.freeze({
   user: 'history.endReason.user',
   platform_ended: 'history.endReason.platformEnded',
+  broadcast_ended: 'history.endReason.broadcastEnded',
+  chat_ended: 'history.endReason.chatEnded',
+  chat_disabled: 'history.endReason.chatDisabled',
+  connection_failed: 'history.endReason.connectionFailed',
   platform_not_live: 'history.endReason.platformNotLive',
   startup_recovery: 'history.endReason.startupRecovery',
   shutdown: 'history.endReason.shutdown',

@@ -1,5 +1,24 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r12 — 2026-11-14（RC0 P0-4：YouTube 暂时性故障误判结束）
+
+### 修复
+
+- **HTTP 200 缺 `continuationContents` 被当作结束**：解析器改为 `invalid:true, ended:false`，不再从结构缺失推断直播结束；异常页中可读消息仍先入库。
+- **429/网络/5xx 连续失败结束场次**：改为可恢复 `reconnecting`/`failed`，继续指数退避（上限 60 秒；429 至少 30 秒并尊重 `Retry-After`），`sessions.status` 保持 `live`，不调用 `onEnd`。
+- **观看页单次 ended 立即结束**：改为约 2 秒后二次读取；仍 ended 才 `platform_ended`；单次 ended/`video`/读取失败都不结束。
+- **聊天明确关闭**：聊天页 stopped/disabled 需观看页 ended 或第二次聊天页相同结果；分别结束为 `chat_ended`/`chat_disabled`，不伪造平台下播。
+- **stale continuation 反复 poll**：先 `openChat` 重取 continuation 再 poll；失败只退避，不重试已知失效 token。
+- **重复结束/定时器**：每 adapter 单轮询 timer、单结束确认 timer、单元数据请求；`onEnd` 最多一次，stop/确认结束清全部 timer。
+- **UI**：可恢复连接显示「重连中」/「连接中断，自动重试中」、最近故障与数据保留说明；新增聊天结束/关闭的三语结束原因；移除「改用官方 API」的过期文案。
+
+### 验证
+
+- 修复前新增用例 **7/8 失败**；修复后 **10 unit + 2 integration** 专项全部通过。
+- 全量 **721 passed / 0 failed**（2026-11-14，191,207 ms）。
+- Bilibili adapter/lifecycle/service/status/mapper/API + manual-stop + session-multi **53 passed**，未改 Bilibili 结束逻辑。
+- 未验证：真实 YouTube 断网 3 分钟/恢复、真实 429/长直播、真实 UAC 双击、真实浏览器点击。
+
 ## 0.13.2-r11 — 2026-11-14（RC0 P0-1：AI 定向补答回归修复）
 
 ### 修复

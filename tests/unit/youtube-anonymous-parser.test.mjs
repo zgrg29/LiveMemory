@@ -222,9 +222,25 @@ test('a continuation response with a new token and actions is normalized', () =>
     }
   });
   assert.equal(page.ended, false);
+  assert.equal(page.invalid, false);
   assert.equal(page.continuation, 'NEXT');
   assert.equal(page.actions.length, 1);
-  assert.equal(parseChatResponse({}).ended, true);
+});
+
+test('a 200 response without continuationContents is invalid, never an end', () => {
+  for (const payload of [
+    null,
+    {},
+    {continuationContents: null},
+    {continuationContents: {}},
+    {continuationContents: {liveChatContinuation: {}}},
+    {continuationContents: {liveChatContinuation: {actions: [{addChatItemAction: {item: {}}}]}}}
+  ]) {
+    const page = parseChatResponse(payload);
+    assert.equal(page.ended, false, `ended must stay false for ${JSON.stringify(payload)}`);
+    assert.equal(page.invalid, true);
+    assert.ok(page.invalidReason);
+  }
 });
 
 test('anonymous text mapping uses the real channel id and no nickname identity', () => {

@@ -1,8 +1,53 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-1：定向补答合并/部分保存；708 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-14（RC0 P0-4：YouTube 暂时性故障不再误判结束；721 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.23 RC0 P0-4：YouTube 暂时性故障误判结束（2026-11-14）
+
+完整证据与复现见 `log/2026-11-14-youtube-lifecycle-p0.md`。**未修改生产数据库、未干扰正在采集的直播、未调用真实付费 AI、未访问真实 YouTube 进行长时断网测试。** 自动化使用 `tests/.tmp` 隔离数据与本地假 YouTube 网页；真实网络级断网与正式 EXE 验证结论见 §0.23.5。
+
+### 0.23.1 原始故障与根因（已确认）
+
+- `src/platforms/youtube/anonymous/parser.mjs`：HTTP 200 但缺少 `continuationContents` 时返回 `ended:true, invalid:true`；adapter 直接 `#finish('chat_ended')`，把空响应、异常结构和真实结束混为一谈。
+- `src/platforms/youtube/anonymous/adapter.mjs`：429/网络/5xx 连续 8 次后调用 `#finish('connection_failed')`，`SessionManager` 因而结束 `sessions` 行；暂时性故障被写成直播结束。
+- 适配器只根据一次观看页 `state='ended'`（或 `'video'`）立即结束，没有二次确认；`onEnd` 触发后也没有 generation 失效保护。
+- stale continuation 在 `openChat` 刷新失败后继续 poll 同一个失效 token，形成“假装恢复”的重复请求。
+- 解析器对“有 actions 但没有新 continuation”的响应当作成功并复用旧 token，页面无法推进。
+- `docs/PLATFORM_INTEGRATIONS.md` 声明网络/5xx 退避且不结束，与实际“8 次后结束”相反；相关错误文案仍建议使用已删除的官方 API。
+
+### 0.23.2 修复
+
+- **解析器**：缺少 `continuationContents` / `liveChatContinuation` / 新 continuation token 一律返回 `invalid:true, ended:false`，并记录 `invalidReason`；不再从“缺失”推断结束。若异常页仍带可读 actions，先入库再由 EventIngest 去重。
+- **连接状态**：429/5xx/网络/异常 200 只进入 `reconnecting`；连续失败达到阈值进入 `failed`（`retrying/recoverable/sessionPreserved=true`），继续指数退避（上限 60 秒；429 至少 30 秒并尊重 `Retry-After`），**不再调用 `onEnd`**。
+- **结束判定**：观看页 ended → 约 2 秒后再读一次仍 ended → `platform_ended`；聊天页明确 ended/disabled → 观看页 ended 或第二次聊天页相同结果 → `chat_ended`/`chat_disabled`。仅一次 ended 读取、`state='video'`、网络失败、不可读观看页都不会结束。
+- **确认期间**：观看页显示 `platform_status=ending`，UI 显示「正在确认下播」；确认失败恢复为 live/unknown，不伪造结束。
+- **continuation 恢复**：`WEB_STALE` 只标记失效；下一次轮询先 `openChat` 取新 continuation，失败则退避重取，不再 poll 旧 token。
+- **session 连续性**：适配器从不创建/替换 session；重连沿用同一 adapter、session、continuation 与 EventIngest 去重键。每个 adapter 只有一个 poll timer、一个结束确认 timer、一个元数据请求。
+- **UI**：`reconnecting`/`failed(可恢复)` 显示「重连中」/「连接中断，自动重试中」、最近一次故障与「采集尚未结束：已采集的聊天、观众和时间线都已保留」；只有确认结束才显示已下播。新增三语文案与历史结束原因（聊天结束/聊天关闭）。
+- **Bilibili 未改动**：共享 `SessionManager`/`EventIngest` 未改；新增测试只驱动 YouTube adapter。Bilibili 现有生命周期测试全部通过。
+
+### 0.23.3 修复前复现与修复后测试
+
+- 修复前运行新增 `tests/unit/youtube-lifecycle-regression.test.mjs`：**7/8 失败**。具体为连续 429、连续网络失败、500/502/503、缺 `continuationContents`、多种异常 200、stale token 复用、单次观看页 ended/`video` 均触发 `onEnd`；只有用户停止用例通过。
+- 修复后新增/更新：
+  - `tests/unit/youtube-lifecycle-regression.test.mjs` **10 项**：10 次 429、12 次网络失败、9 次 5xx、缺 continuationContents、6 种异常 200、stale token 重取、单次 ended 不成结论、两次 ended 只结束一次、聊天 ended 二次确认、用户停止。
+  - `tests/integration/youtube-lifecycle.test.mjs` **2 项**：假 YouTube 网页 + 真实 HTTP/SessionManager/SQLite，验证 429/500/异常 200 期间同一 session 保持 live、消息/观众不丢、恢复后继续采集且去重、明确 ended 只结束一次；用户停止立即结束且保留数据。
+  - `tests/unit/youtube-anonymous-parser.test.mjs` 更新：缺 `continuationContents` 断言为 invalid 而非 ended。
+  - 既有 `youtube-anonymous-session`、`youtube-auto-monitoring`、`live-api-multi` 已改为“异常 200 + 观看页 ended”的真实形状，而不是依赖 `{}` 直接结束。
+
+### 0.23.4 全量与 EXE
+
+- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，191,207 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 正式 EXE：见 §0.23.6（构建与本地假 YouTube 验证结果）。
+
+### 0.23.5 边界与待验收
+
+- **真实网络级断网未验证**：未在真实 YouTube 直播上拔网/切网 3 分钟；自动化使用可控假 HTTP 故障。
+- **真实 YouTube 长直播/429/验证码/consent 未验证**：本轮不发送真实平台高频请求，也不绕过限流。
+- **未验证真实 UAC 双击与真实浏览器点击**：EXE 验证使用 asInvoker 测试副本与本地假 YouTube（如完成）。
+- 平台若把真实结束表现为“200 空响应 + 观看页仍短暂 live”，会先留在重连状态，待观看页更新后结束；这是刻意的保守行为。
 
 ## 0.22 RC0 P0-1：AI 定向补答回归修复（2026-11-14）
 
