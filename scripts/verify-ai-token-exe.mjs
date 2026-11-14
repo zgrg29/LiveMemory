@@ -26,12 +26,10 @@ import {spawn} from 'node:child_process';
 import {createServer as createHttpServer} from 'node:http';
 import {createServer as createNetServer} from 'node:net';
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
   readFileSync,
-  readdirSync,
   rmSync,
   statSync
 } from 'node:fs';
