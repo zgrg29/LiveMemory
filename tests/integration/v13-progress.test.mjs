@@ -80,9 +80,11 @@ test('analysis status advances batch and viewer progress while the task is runni
   }
   assert.ok(seen.length > 0);
   assert.ok(seen.some((entry) => entry.status === 'running'));
-  assert.ok(seen.some((entry) => entry.batches > 0 && entry.batches < 3));
+  // Progress must advance strictly between 0 and completion, whatever the
+  // planner chose as the batch count.
+  assert.ok(seen.some((entry) => entry.batches > 0 && entry.batches < seen.at(-1).batches));
   assert.ok(seen.some((entry) => entry.covered > 0 && entry.covered < 30));
   assert.equal(seen.at(-1).status, 'complete');
-  assert.equal(seen.at(-1).batches, 3);
+  assert.ok(seen.at(-1).batches >= 2, 'multiple planned batches');
   assert.equal(seen.at(-1).covered, 30);
 });

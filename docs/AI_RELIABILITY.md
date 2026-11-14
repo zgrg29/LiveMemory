@@ -322,3 +322,43 @@ AI 分析中心新增/明确显示：
 - 新增 10 个集成回归（含补答仍缺、错误观众、跨观众证据、重复事实、非法 JSON、空+length、重启、并发）。
 - 全量 **708 passed / 0 failed**（2026-11-14，186,397 ms）。
 - 仍未验证：真实付费 Provider 的补答质量、真实生产任务 Resume、真实 UAC/浏览器点击。
+
+## 12. RC0-AI-EFFICIENCY：用量归因与重复输入（2026-11-14）
+
+完整报告：`docs/AI_TOKEN_EFFICIENCY.md`。
+
+### 12.1 归因（不改变请求行为）
+
+- 每次尝试都写一行 `ai.request.attempt`，包含 job/kind/batch/attempt/model、input/output/
+  reasoning/cached token、`usageSource`、`requestBytes`、`estimatedInputTokens`、`finishReason`、
+  耗时与重试标记；不含正文与 Key。
+- `ai_jobs.usage_json` 新增 `reasoningTokens`、`cachedInputTokens`、`cacheWriteInputTokens`、
+  `attempts`、`unknownUsageAttempts`、`usageReported`；`requests` 仍是「带 usage 的响应数」。
+- **无 usage 的成功响应**与**失败的尝试**都计一次 attempt，token 保持 `null`；取消不计。
+  旧行为会让这类请求既不出现在 `usage.requests` 也不出现在 `usageUnknownAttempts`。
+- Provider 能力测试（4–5 次真实请求）与翻译失败/重试尝试也累计 usage；前者写入
+  `lastTestStatus.usage` 并在设置页显示。
+- `GET /api/ai/analyze/status` 新增 `efficiency`（`tokenSource`、`attempts`、reasoning/cached、
+  `retryTokens`/`retryShare`、每百观众/每百事实 Token、`cost`、`costPer100Viewers`）。
+
+### 12.2 减少重复输入（有实测证据）
+
+- Schema 在 `response_format` 与提示词里各发一份 → 已校验 structured outputs 时只留
+  `response_format` 那一份；其他 Provider 仍发文本 Schema。
+- 画像提示词把同一份输出示例发两次 → 只留一份。
+- 契约重复 `memory_context.json` 的逐观众数组 → 以 `memory_context` 为唯一权威。
+
+### 12.3 动态分批
+
+- `viewerCap` 变为偏好值；直播分析传 `viewersPerBatchHard = 20`（与既有 200k 上下文模型上限一致）。
+- 增长仍受输出预算（`outputBudget * 0.8`）、摘录上限 600、内容预算约束；密集观众不会被强行打包。
+- 未显式传 `viewersPerBatchHard` 的调用方（含直接调用 `createViewerMemoryJob` 的测试）保持旧语义。
+
+### 12.4 验证与风险
+
+- 14 场景基线：请求 **-30.6%**、总 Token（按实测字节模拟）**-10.1%**、覆盖与事实完全不变。
+- 新增 `tests/unit/ai-token-efficiency.test.mjs` 12 项；全量 **781 passed / 0 failed**。
+- **风险（需 P0-3 复核）**：单请求观众数上限从 10 增至最多 20，可能提高真实模型的漏写率；
+  兜底仍是「定向补答 + 观众级 Resume」，回退方式是停止传 `viewersPerBatchHard`。
+- **风险**：真实 tokenizer 与 `bytes/3` 估算的偏差未在本轮重新校准（历史约 1.366×）。
+

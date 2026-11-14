@@ -1387,3 +1387,57 @@ duration ≈ 155s
 - 真实桌面 UAC 不再适用（asInvoker）；本机 Low Mandatory Level 启动成功是普通权限证据。
 - 同 Windows 用户恶意软件、共享/同步目录 ACL、真实平台长时运行、真实付费 Provider。
 - 自动化 EXE 验证使用与浏览器相同的 HTTP 握手，不等于真实浏览器交互。
+
+## 40. RC0-AI-EFFICIENCY：Token 归因、重复输入与动态分批（2026-11-14）
+
+### 40.1 单元测试
+
+`tests/unit/ai-token-efficiency.test.mjs`（12 项）：
+
+1. OpenAI `prompt_tokens_details.cached_tokens` 解析为输入子集。
+2. DeepSeek `prompt_cache_hit_tokens` 解析（`raw.source=deepseek-cache-fields`）。
+3. Anthropic `cache_read` + `cache_creation` 归一到总输入（`input = 200 + 700 + 100`）。
+4. 空 `usage` / 无 `usage` 返回 `null`，不返回 0。
+5. 累计保留 input/output/reasoning/cached，`requests` 与 `attempts` 语义不同。
+6. 缓存命中按配置的缓存单价计价（`cachePriced=true`）。
+7. 未知价格返回 `null` 且不阻断（仍记录 token）。
+8. 无 usage 的请求计一次 attempt、`unknownUsageAttempts+1`、token 不变。
+9. attempt 记录 `usageSource`/`estimateSource`，未知字段为 `null`。
+10. 画像提示词：非 structured 有 1 份文本 schema；structured 为 0 份但 `answerSchema` 仍在。
+11. 画像提示词只出现 1 份输出示例（不再有 `## Output example (compact)`）。
+12. 单场提示词同样只有 1 份 schema；structured 时 `estimatedTokens` 更小。
+13. 稀疏观众：`viewerCapHard=20` 的批次数少于硬上限 10，且不丢/不重观众。
+14. 密集观众：自适应不越过输出预算，仍按 10 人/批。
+
+### 40.2 既有测试调整（语义不变）
+
+| 文件 | 调整 |
+| --- | --- |
+| `tests/integration/v13-scheduler.test.mjs` | 批次数从 3 改为从 `batchTotal` 读回；保留"每次计划批次只请求一次""b01 不重复请求" |
+| `tests/integration/v13-progress.test.mjs` | 进度断言改为"严格递增至完成" |
+| `tests/integration/v13-memory-batches.test.mjs` | 未改（直接调用 `createViewerMemoryJob` 仍按 `viewersPerBatch` 硬上限） |
+| `tests/integration/ai-memory-reliability.test.mjs` | 4 处：批次数量、语义/客观事实数、facts 数改为按 `batchTotal` 派生 |
+| `tests/integration/ai-memory-supplement-regression.test.mjs` | 1 处：批次数量按 `batchTotal` 派生 |
+| `tests/integration/ai-memory-output-recovery.test.mjs` | 2 处：90 位观众保证 ≥3 批；975 人任务按 `batchTotal` 断言 |
+| `tests/unit/ai-compact-memory.test.mjs` | ref 表断言改为 `memory_context` 中的权威副本 |
+| 3 个集成测试 + 测量脚本 | 改用 `parsePromptMemoryRefs()` 解析 `memory_context` |
+
+### 40.3 测量（脚本，不进 CI）
+
+```bat
+node scripts/ai-efficiency-baseline.mjs --label after
+node scripts/ai-efficiency-report.mjs --compare <before.json> <after.json>
+```
+
+14 场景；"优化前"来自 `git archive HEAD` 的未修改副本。
+
+### 40.4 正式 EXE（本轮实测）
+
+`scripts/verify-ai-token-exe.mjs`：见 `docs/STATUS.md` §0.26.7 的实际输出（16 项检查）。
+另运行 `verify-p0-2-exe` / `verify-p0-5-exe` / `verify-exe` 确认备份、认证与 asInvoker 未回归。
+
+### 40.5 未验证
+
+- 真实付费 Provider 的 tokenizer 校准、缓存命中率、自适应分批的语义质量。
+- 真实浏览器点击 UI 统计面板。
+

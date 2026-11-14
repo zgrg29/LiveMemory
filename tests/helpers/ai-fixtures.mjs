@@ -89,8 +89,43 @@ export function seedSession(db, {
   return session;
 }
 
-export function readBatchPackage(exportsDir, pkg) {
-  const buffer = readFileSync(join(exportsDir, pkg.fileName));
+/**
+ * Parse the ref table a memory prompt actually sends.
+ *
+ * The authoritative per-ref index is the `memory_context.json` block (ref,
+ * nickname, `evidence_seqs`, `zero_excerpt`). The prompt used to repeat that
+ * table a second time in a "ref N: nickname=..." line; that duplicate was
+ * removed because it was pure repeated input, so tests and mocks must read the
+ * single canonical copy.
+ */
+export function parsePromptMemoryRefs(text) {
+  const marker = text.indexOf('## memory_context.json');
+  if (marker < 0) return new Map();
+  const rest = text.slice(marker);
+  const headerEnd = rest.indexOf('\n');
+  const afterHeader = rest.slice(headerEnd + 1);
+  const nextBlock = afterHeader.indexOf('\n\n## ');
+  const jsonText = (nextBlock < 0 ? afterHeader : afterHeader.slice(0, nextBlock)).trim();
+  let context;
+  try {
+    context = JSON.parse(jsonText);
+  } catch {
+    return new Map();
+  }
+  const refs = new Map();
+  for (const viewer of context?.viewers ?? []) {
+    if (!Number.isInteger(Number(viewer?.ref))) continue;
+    refs.set(Number(viewer.ref), {
+      ref: Number(viewer.ref),
+      evidence: Array.isArray(viewer.evidence_seqs) ? viewer.evidence_seqs : [],
+      zeroExcerpt: viewer.zero_excerpt === true,
+      nickname: viewer.nickname ?? null
+    });
+  }
+  return refs;
+}
+
+export function readBatchPackage(exportsDir, pkg) {  const buffer = readFileSync(join(exportsDir, pkg.fileName));
   return {
     buffer,
     manifest: JSON.parse(readZipEntry(buffer, 'manifest.json').toString('utf8')),

@@ -108,7 +108,10 @@ test('provider memory prompts ignore a stale packaged shape and keep one compact
   assert.equal(prompt.locale, 'ja');
   assert.match(user, /自然な日本語/);
   assert.match(user, /ギターを始めました/);
-  assert.match(user, /- ref 1: nickname="A"; evidence_seqs=\[1\]; zero_excerpt=false/);
+  assert.match(user, /- Cover exactly these refs, once each: 1, 2\./);
+  assert.match(user, /"ref":1,"nickname":"A","evidence_seqs":\[1\]/);
+  assert.match(user, /"ref":2,"nickname":"B","evidence_seqs":\[2\]/);
+  assert.doesNotMatch(user, /^- ref 1: nickname=/m, 'the ref table is not repeated a second time');
   assert.doesNotMatch(user, /"locale": "en"/);
   assert.doesNotMatch(user, /youtube:UC_exact/);
   assert.ok(user.includes('"ref": 1'));
@@ -228,7 +231,9 @@ test('prompt lines carry ref and seq separately so ref 1 can own seq 2', () => {
   const prompt = buildMemoryPrompt(files);
   const user = prompt.messages.find((message) => message.role === 'user').content;
   assert.match(user, /`ref` and `seq` are different namespaces/);
-  assert.match(user, /- ref 1: nickname="B"; evidence_seqs=\[2\]; zero_excerpt=false/);
+  assert.match(user, /- Cover exactly these refs, once each: 1, 2\./);
+  assert.match(user, /"ref":1,"nickname":"B","evidence_seqs":\[2\]/);
+  assert.match(user, /"ref":2,"nickname":"A","evidence_seqs":\[1\]/);
   assert.match(user, /"seq":1[^\n]*"ref":2/);
   assert.match(user, /"seq":2[^\n]*"ref":1/);
   assert.deepEqual(prompt.viewerIds, ['youtube:UC_B', 'youtube:UC_A']);

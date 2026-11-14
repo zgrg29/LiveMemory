@@ -797,3 +797,40 @@ request gate (src/server/app.mjs)
 
 详细威胁模型与边界见 `docs/PRIVACY_SECURITY.md` §31，Windows 验证见 `docs/WINDOWS_RUNTIME.md` §12。
 
+## 1.10 RC0-AI-EFFICIENCY 用量与提示词组装（2026-11-14）
+
+```text
+AnalysisRunner.requestOnce()                  ← 唯一 Provider 请求出口
+  ├─ 传输层重试 / 空响应重试 / 流式回退
+  ├─ #attributeRequestUsage()                 ← 唯一 usage 写路径
+  │    ├─ 有 usage → addUsage()（含 reasoning / cached / attempts）
+  │    └─ 无 usage → countRequestWithoutUsage()（token 未知，attempts+1）
+  │    └─ 目标：ai_jobs.usage_json（按 job 归属）+ runtime 状态
+  ├─ #recordAttempt()                         ← 逐尝试归因
+  │    └─ attemptStats（token 账本 / retryTokens / repairTokens）
+  │    └─ 日志 ai.request.attempt（无正文、无 Key）
+  └─ getStatus().efficiency                   ← 派生指标（标注 estimated）
+
+提示词组装（prompts.mjs）
+  ├─ answerSchemaBlock()：structured-outputs 已校验 → 只发送 response_format；
+  │                       否则 → 完整文本 schema（契约不降级）
+  ├─ buildMemoryPrompt()：instructions（含唯一示例）+ memory_context + excerpts
+  │                       + memoryContract（规则 + ref 列表，不重复逐观众属性）
+  └─ buildTargetedMemoryPrompt()：只含缺失观众
+
+分批（batching/tokens.mjs + export/split-jobs.mjs）
+  ├─ 会话：按序列化 token 连续切分（batchInputTokens 24k 默认）
+  └─ 画像：viewerCap（偏好）→ viewerCapHard（默认=偏好，直播分析 20）
+           受 outputBudget×0.8 / excerptCap 600 / contentBudget 三重约束
+```
+
+关键性质：
+
+- 每个作业的 usage 只写自己的 job；session 与 memory 互不污染，任务合计由两者相加。
+- 未知用量永远是 `null`，不是 0；界面用 `efficiency.tokenSource` 区分 reported/partial/unknown。
+- 归因只记录 ID、计数、耗时、token 与错误码；**提示词、回答、聊天正文、Key 都不进日志**。
+- 去重只删除重复副本，不删除 Schema 版本、身份映射、证据规则、语言要求或隐私边界。
+- 无数据库 schema 变更；`runtime/ai-v13.json` 仍被备份排除。
+- 测量工具（`scripts/ai-efficiency-*.mjs`）在独立进程内运行，不进入产品路径。
+
+

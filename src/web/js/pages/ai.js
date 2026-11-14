@@ -849,19 +849,62 @@ export const aiPage = {
         rows.push([t('ai.center.stats.throttleWait'), t('ai.center.stats.msValue', {ms: formatInteger(requests.throttleWaitMs ?? 0, ctx.locale)})]);
         rows.push([t('ai.center.stats.rateLimited'), formatInteger(requests.rateLimited ?? 0, ctx.locale)]);
       }
-      if (current?.usage) {
+      const efficiency = current?.efficiency ?? null;
+      const reportedRequests = Number(current?.usage?.requests ?? 0);
+      if (current?.usage && reportedRequests > 0) {
         rows.push([t('ai.center.stats.tokens'), t('ai.v13.run.usageTokens', {
           input: formatInteger(current.usage.inputTokens ?? 0, ctx.locale),
           output: formatInteger(current.usage.outputTokens ?? 0, ctx.locale)
         })]);
+        if (Number(efficiency?.reasoningTokens ?? 0) > 0) {
+          rows.push([t('ai.center.stats.reasoningTokens'),
+            formatInteger(efficiency.reasoningTokens, ctx.locale)]);
+        }
+        if (Number(efficiency?.cachedInputTokens ?? 0) > 0) {
+          rows.push([t('ai.center.stats.cachedTokens'),
+            formatInteger(efficiency.cachedInputTokens, ctx.locale)]);
+        }
         if (current.usage.cost) {
+          // A token x published-price calculation, never a provider invoice.
           rows.push([t('ai.center.stats.cost'), t('ai.v13.run.usageCost', {
             amount: Number(current.usage.cost.amount).toFixed(4),
             currency: current.usage.cost.currency
           })]);
+        } else {
+          rows.push([t('ai.center.stats.cost'), t('ai.center.stats.costUnknown')]);
         }
       } else if (Number(current?.usageUnknownAttempts ?? 0) > 0) {
         rows.push([t('ai.center.stats.usage'), t('ai.center.stats.usageUnknown')]);
+      }
+      if (efficiency) {
+        const unknown = Number(efficiency.unknownUsageAttempts ?? 0);
+        if (efficiency.tokenSource === 'partial' || efficiency.tokenSource === 'unknown') {
+          rows.push([t('ai.center.stats.usageSource'), t('ai.center.stats.usageSourceValue', {
+            known: formatInteger(Math.max(0, Number(efficiency.requestsWithUsage ?? 0)), ctx.locale),
+            unknown: formatInteger(unknown, ctx.locale)
+          })]);
+        }
+        if (Number(efficiency.retryTokens ?? 0) > 0) {
+          const share = Number(efficiency.retryShare ?? 0);
+          rows.push([t('ai.center.stats.retryCost'), t('ai.center.stats.retryCostValue', {
+            tokens: formatInteger(efficiency.retryTokens, ctx.locale),
+            percent: (share * 100).toFixed(1)
+          })]);
+        }
+        if (efficiency.tokensPer100Viewers !== null && Number(efficiency.viewersCovered ?? 0) > 0) {
+          rows.push([t('ai.center.stats.per100Viewers'),
+            formatInteger(efficiency.tokensPer100Viewers, ctx.locale)]);
+        }
+        if (efficiency.costPer100Viewers !== null) {
+          rows.push([t('ai.center.stats.costPer100Viewers'), t('ai.v13.run.usageCost', {
+            amount: Number(efficiency.costPer100Viewers).toFixed(4),
+            currency: efficiency.costCurrency ?? ''
+          })]);
+        }
+        if (efficiency.tokensPer100Facts !== null && Number(efficiency.factsSaved ?? 0) > 0) {
+          rows.push([t('ai.center.stats.per100Facts'),
+            formatInteger(efficiency.tokensPer100Facts, ctx.locale)]);
+        }
       }
       const perJob = current?.usageByJob;
       if (perJob?.session && perJob?.memory) {

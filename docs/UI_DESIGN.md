@@ -733,3 +733,32 @@ LiveMemory 已锁定
 - 未授权页面不建立 SSE；已打开页面收到 401 时替换为锁定页，不继续轮询。
 - 正常页面加载顺序：`js/auth.js` 建立会话 → `/api/bootstrap` → 页面渲染；fragment 在交换成功后从地址栏移除。
 
+### 7.22 Token 与成本展示（RC0-AI-EFFICIENCY，2026-11-14）
+
+复用既有「AI 分析中心 → 技术详情 / 用量」区块，**不新增配置页、不新增高级 Token 设置**。
+
+```text
+已使用 Token        Provider 报告用量：输入 20,893 / 输出 3,563 tokens
+其中推理 Token      0
+其中缓存命中 Token   8,356
+估算费用（Token × 已填价格）  估算费用约 0.0197 USD
+用量来源            Provider 报告 3 次 / 未返回 usage 0 次
+重试与补答开销       1,234 tokens（占 5.0%）
+每 100 位观众 Token  61,140
+每 100 位观众估算费用 估算费用约 0.0492 USD
+每 100 条有效事实 Token 61,140
+```
+
+规则：
+
+- 「已使用 Token」的值来自 Provider `usage`；缺失时不显示 0，而是「用量未知」。
+- 未填价格时费用行显示「费用未知（未填该模型价格；Token 用量不受影响）」，**不再静默隐藏**。
+- 任何费用数字都带「估算」字样；不出现"已知实际费用"或"账单"。
+- 推理/缓存 Token 为 0 或 Provider 未返回时**整行不显示**（不制造噪声）。
+- 每百观众/每百事实只在有观众覆盖/有效事实时显示。
+- 新增键：`ai.center.stats.{costUnknown,reasoningTokens,cachedTokens,usageSource,usageSourceValue,retryCost,retryCostValue,per100Viewers,costPer100Viewers,per100Facts}`；
+  设置页新增 `ai.v13.providers.testUsage`。三语键集合一致（各 1857+ 键）。
+- 统计不阻塞分析：全部来自已返回的状态对象，不额外请求 Provider。
+- 窄屏沿用 `def-row` 纵向排列，不横向溢出；不使用 `innerHTML`。
+
+

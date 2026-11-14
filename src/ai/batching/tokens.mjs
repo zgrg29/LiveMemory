@@ -55,6 +55,26 @@ export const MEMORY_MAX_FACTS_PER_VIEWER = 12;
 export const MAX_MEMORY_SPLIT_DEPTH = 2;
 
 /**
+ * Hard ceiling on how many viewers one request may cover.
+ *
+ * The provider-derived viewer cap (10/15/20) is a *preferred* size, not a token
+ * limit. For a large but sparse audience - the common shape of a real stream,
+ * where most viewers wrote a handful of lines - ten viewers used only a small
+ * part of the configured input budget while every request still paid the fixed
+ * prompt cost (instructions, memory contract, compact schema, output example).
+ * Measured on a synthetic 1,000-viewer / 6,000-message session: 100 requests at
+ * 28.3 KiB each, of which ~8 KiB per request was fixed overhead.
+ *
+ * The planner is therefore allowed to keep growing a batch past the preferred
+ * cap while the *real* limits still hold: estimated output stays inside the
+ * answer budget, excerpts stay inside the excerpt cap, and input stays inside
+ * the content budget. 20 is the same ceiling the code already used for
+ * 200k-context models, so this does not invent a new batch size; it stops the
+ * cap from being the binding constraint on sparse audiences.
+ */
+export const MEMORY_MAX_VIEWERS_PER_BATCH = 20;
+
+/**
  * 24k input + 8k output fits a 32k-context model with a small safety margin and
  * is the smallest default that keeps a large session at a handful of requests.
  */
@@ -448,6 +468,7 @@ export function resolveMemoryOutputTokens({
 export function planMemoryViewerBatches({
   viewers = [],
   viewerCap = 10,
+  viewerCapHard = null,
   excerptCap = 600,
   contentBudget = null,
   overheadTokens = 0,
@@ -458,6 +479,13 @@ export function planMemoryViewerBatches({
   outputSafetyShare = MEMORY_OUTPUT_SAFETY_SHARE
 } = {}) {
   const cap = Math.max(1, Math.floor(Number(viewerCap) || 10));
+  // `viewerCap` is the preferred size; `viewerCapHard` is the absolute ceiling.
+  // Growth beyond the preferred size is still bounded by the output budget,
+  // the excerpt cap and the content budget below.
+  const hardCap = Math.max(cap, Math.min(
+    MEMORY_MAX_VIEWERS_PER_BATCH,
+    Math.floor(Number(viewerCapHard) || cap) || cap
+  ));
   const excerptLimit = Math.max(1, Math.floor(Number(excerptCap) || 600));
   const overhead = Math.max(0, Number(overheadTokens) || 0);
   const available = contentBudget !== null && contentBudget !== undefined
@@ -518,7 +546,7 @@ export function planMemoryViewerBatches({
     const nextOutputTokens = current.estimatedOutputTokens + outputTokens;
     const outputWouldOverflow = current.viewerIds.length > 0
       && nextOutputTokens > outputCapacity;
-    const wouldOverflow = current.viewerIds.length >= cap
+    const wouldOverflow = current.viewerIds.length >= hardCap
       || outputWouldOverflow
       || (current.viewerIds.length > 0 && (nextExcerpts > excerptLimit || nextTokens > available + overhead));
     if (wouldOverflow) {

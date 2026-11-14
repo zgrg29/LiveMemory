@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
-import {T0, addBroadcaster, seedSession} from '../helpers/ai-fixtures.mjs';
+import {T0, addBroadcaster, seedSession, parsePromptMemoryRefs} from '../helpers/ai-fixtures.mjs';
 
 /**
  * Bounded output recovery for long-term viewer profiles.
@@ -24,16 +24,7 @@ function jsonResponse(content, {input = 50, output = 10, finishReason = 'stop'} 
 
 function parseMemoryPrompt(text) {
   const batchId = /^- batch_id: "([^"]+)"/m.exec(text)?.[1] ?? null;
-  const refs = new Map();
-  for (const line of text.split('\n')) {
-    const match = /^- ref (\d+): nickname=.*; evidence_seqs=(\[[^\]]*\]); zero_excerpt=(true|false)\r?$/.exec(line);
-    if (!match) continue;
-    refs.set(Number(match[1]), {
-      ref: Number(match[1]),
-      evidence: JSON.parse(match[2]),
-      zeroExcerpt: match[3] === 'true'
-    });
-  }
+  const refs = parsePromptMemoryRefs(text);
   return {batchId, refs, repair: /Return the missing viewers only\./.test(text)};
 }
 
@@ -301,8 +292,10 @@ test('batch 2 failure keeps saved batches 1 and 3 and resumes only batch 2', asy
   addBroadcaster(server.db);
   const session = seedSession(server.db, {
     id: 'ses_mem_noncontiguous',
-    messageCount: 30,
-    viewerCount: 30,
+    // Enough viewers that the planner produces at least three batches even with
+    // the adaptive viewer cap; the test is about non-contiguous saved batches.
+    messageCount: 90,
+    viewerCount: 90,
     startedAt: T0
   });
   const config = makeConfig(server);
@@ -310,13 +303,16 @@ test('batch 2 failure keeps saved batches 1 and 3 and resumes only batch 2', asy
   let status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
   assert.notEqual(status.status, 'complete');
   assert.equal(status.canResume, true);
-  assert.equal(status.memoryJob.batchTotal, 3);
-  assert.equal(status.memoryJob.batchesImported, 2, 'batches 1 and 3 were saved');
-  assert.equal(status.memoryJob.batchesCompleted, 2);
+  assert.ok(status.memoryJob.batchTotal >= 3, `expected at least 3 planned batches, got ${status.memoryJob.batchTotal}`);
+  assert.equal(status.memoryJob.batchesImported, status.memoryJob.batchTotal - 1, 'every batch except 2 was saved');
+  assert.equal(status.memoryJob.batchesCompleted, status.memoryJob.batchTotal - 1);
   assert.equal(status.memoryJob.pendingBatches, 1);
   assert.deepEqual(status.memoryJob.failedBatches, [2]);
-  assert.equal(status.memoryJob.memoryCoverage.covered, 20);
-  assert.equal(status.memoryJob.memoryCoverage.pending, 10);
+  const failedViewers = server.db.prepare(
+    'SELECT COUNT(*) AS n FROM ai_job_memory_viewers WHERE job_id = ? AND batch_index = 2'
+  ).get(status.memoryJobId).n;
+  assert.equal(status.memoryJob.memoryCoverage.covered, 90 - failedViewers);
+  assert.equal(status.memoryJob.memoryCoverage.pending, failedViewers);
   const savedBefore = server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n;
   const resultIdsBefore = server.db.prepare('SELECT id FROM ai_results ORDER BY id').all().map((row) => row.id);
 
@@ -327,7 +323,7 @@ test('batch 2 failure keeps saved batches 1 and 3 and resumes only batch 2', asy
   assert.equal(status.status, 'complete', JSON.stringify(status));
   assert.equal(calls.length, 1, 'resume must request only the unfinished batch');
   assert.match(calls[0], /-b02$/);
-  assert.equal(status.memoryJob.memoryCoverage.covered, 30);
+  assert.equal(status.memoryJob.memoryCoverage.covered, 90);
   const resultIdsAfter = server.db.prepare('SELECT id FROM ai_results ORDER BY id').all().map((row) => row.id);
   assert.ok(resultIdsBefore.every((id) => resultIdsAfter.includes(id)), 'saved results were not rewritten');
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, savedBefore + 1,
@@ -429,12 +425,16 @@ test('a 975-viewer memory job reaches 975/975 coverage without dropping a viewer
   await startMemory(server, session.id, config);
   const status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action'], {attempts: 5000});
   assert.equal(status.status, 'complete', JSON.stringify(status));
-  assert.equal(status.memoryJob.batchTotal, 98);
-  assert.equal(status.memoryJob.batchesCompleted, 98);
+  // The exact planned batch count depends on the viewer/output budget, so it is
+  // not hard-coded: what matters is that every viewer was planned exactly once
+  // and every batch completed.
+  assert.ok(status.memoryJob.batchTotal >= 2, `expected multiple batches, got ${status.memoryJob.batchTotal}`);
+  assert.equal(status.memoryJob.batchesCompleted, status.memoryJob.batchTotal);
   assert.equal(status.memoryJob.memoryCoverage.total, 975);
   assert.equal(status.memoryJob.memoryCoverage.covered, 975);
   assert.equal(status.memoryJob.memoryCoverage.pending, 0);
   assert.equal(status.memoryJob.memoryCoverage.failed, 0);
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_job_memory_viewers WHERE status = ?').get('pending').n, 0);
   assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM ai_job_memory_viewers').get().n, 975);
+  assert.equal(calls, status.memoryJob.batchTotal, 'one request per planned batch, no repeats');
 });

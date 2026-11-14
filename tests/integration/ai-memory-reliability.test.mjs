@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
-import {T0, addBroadcaster, seedSession} from '../helpers/ai-fixtures.mjs';
+import {T0, addBroadcaster, seedSession, parsePromptMemoryRefs} from '../helpers/ai-fixtures.mjs';
 import {giftEvent} from '../helpers/fixtures.mjs';
 import {createSession, endSession} from '../../src/storage/repositories/sessions.mjs';
 import {EventIngest} from '../../src/platforms/shared/ingest.mjs';
@@ -42,16 +42,7 @@ function jsonResponse(content, {input = 50, output = 10} = {}) {
 
 function parseMemoryPrompt(text) {
   const batchId = /^- batch_id: "([^"]+)"/m.exec(text)?.[1] ?? null;
-  const refs = new Map();
-  for (const line of text.split('\n')) {
-    const match = /^- ref (\d+): nickname=.*; evidence_seqs=(\[[^\]]*\]); zero_excerpt=(true|false)\r?$/.exec(line);
-    if (!match) continue;
-    refs.set(Number(match[1]), {
-      ref: Number(match[1]),
-      evidence: JSON.parse(match[2]),
-      zeroExcerpt: match[3] === 'true'
-    });
-  }
+  const refs = parsePromptMemoryRefs(text);
   const repair = /Return the missing viewers only\./.test(text);
   return {batchId, refs, repair};
 }
@@ -698,23 +689,28 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
 
   const report = await fetch(`${server.url}api/ai/sessions/${encodeURIComponent(session.id)}/report`)
     .then((response) => response.json());
-  assert.deepEqual(report.longTermProfiles.stats, {
-    jobId: failed.memoryJobId,
-    status: 'partial',
-    total: 40,
-    processed: 39,
-    semantic: 3,
-    objectiveOnly: 36,
-    pending: 0,
-    failed: 1,
-    failedBatches: [2],
-    complete: false
-  });
+  const stats = report.longTermProfiles.stats;
+  // The planner decides the batch count from the token/output budget, so the
+  // semantic count is derived from it: every successfully imported batch
+  // contributes exactly one stated fact, and the rejected one contributes none.
+  const successfulBatches = failed.memoryJob.batchTotal - 1;
+  assert.equal(stats.jobId, failed.memoryJobId);
+  assert.equal(stats.status, 'partial');
+  assert.equal(stats.total, 40);
+  assert.equal(stats.processed, 39);
+  assert.equal(stats.semantic, successfulBatches);
+  assert.equal(stats.objectiveOnly, 39 - successfulBatches);
+  assert.equal(stats.pending, 0);
+  assert.equal(stats.failed, 1);
+  assert.deepEqual(stats.failedBatches, [2]);
+  assert.equal(stats.complete, false);
 
   const firstRunBatchCalls = calls.filter((entry) => entry.phase === 'first' && !entry.repair);
-  assert.deepEqual([...new Set(firstRunBatchCalls.map((entry) => entry.batchId.slice(-3)))].sort(), [
-    'b01', 'b02', 'b03', 'b04'
-  ]);
+  assert.equal(
+    new Set(firstRunBatchCalls.map((entry) => entry.batchId.slice(-3))).size,
+    failed.memoryJob.batchTotal,
+    'every planned batch was requested exactly once'
+  );
 
   // Restart the process against the same isolated data directory.
   await server.close();
@@ -744,11 +740,15 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
   const secondRunCalls = calls.filter((entry) => entry.phase === 'second');
   assert.equal(secondRunCalls.length, 1, JSON.stringify(secondRunCalls));
   assert.ok(secondRunCalls[0].batchId.endsWith('b02'), 'only the failed viewer batch is retried');
-  assert.equal(secondRunCalls[0].refs, 1, 'only the failed viewer is sent, not the 9 salvaged ones');
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 4);
+  assert.equal(secondRunCalls[0].refs, 1, 'only the failed viewer is sent, not the other salvaged ones');
+  // One stated fact per successfully imported batch on the first run, plus the
+  // single fact recovered for the previously failed viewer.
+  const expectedFacts = successfulBatches + 1;
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, expectedFacts);
   // Batch 2 now has the original partial result (v1) plus the recovery result
   // (v2) for the single failed viewer; results are not facts and are versioned.
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 5);
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n,
+    successfulBatches + 2);
 
   // Re-submitting the same recovery result is an idempotent duplicate.
   const batchTwo = listResults(restarted.db, completed.memoryJobId, {includeJson: true})
@@ -762,8 +762,9 @@ test('four concurrent memory batches keep batch 2 failure after siblings succeed
     viewerIds: failedViewerId ? [failedViewerId] : null
   });
   assert.equal(duplicate.duplicate, true);
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 4);
-  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n, 5);
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, expectedFacts);
+  assert.equal(restarted.db.prepare('SELECT COUNT(*) AS n FROM ai_results').get().n,
+    successfulBatches + 2);
 });
 
 test('a failed validation batch does not block later batches when concurrency is 1', async (t) => {
@@ -811,16 +812,25 @@ test('a failed validation batch does not block later batches when concurrency is
   });
   const partial = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action']);
   assert.equal(partial.status, 'partial', JSON.stringify(partial));
-  // b01: 9 valid + 1 failed; b02/b03 still run and import.
+  // b01: every valid viewer salvaged, one failed; the remaining batches still run
+  // and import even though concurrency is 1 (a validation failure must not stop
+  // scheduling).
   assert.equal(partial.memoryJob.memoryCoverage.total, 30);
   assert.equal(partial.memoryJob.memoryCoverage.covered, 29);
   assert.equal(partial.memoryJob.memoryCoverage.failed, 1);
   assert.deepEqual(partial.memoryJob.failedBatches, [1]);
   const firstPhase = requested.filter((entry) => entry.phase === 'first');
-  assert.deepEqual([...new Set(firstPhase.map((entry) => entry.batchId.slice(-3)))].sort(), [
-    'b01', 'b02', 'b03'
-  ]);
-  assert.equal(firstPhase.filter((entry) => entry.batchId.endsWith('b01')).length, 3);
+  const plannedBatchIds = [...new Set(firstPhase.map((entry) => entry.batchId.slice(-3)))].sort();
+  assert.equal(plannedBatchIds.length, partial.memoryJob.batchTotal,
+    'every planned batch was attempted despite the failed one');
+  assert.deepEqual(plannedBatchIds, Array.from(
+    {length: partial.memoryJob.batchTotal},
+    (_unused, index) => `b${String(index + 1).padStart(2, '0')}`
+  ));
+  // At least one attempted re-ask for b01 (whole-batch and/or viewer-scoped
+  // repair); the exact number depends on how much of the answer was salvaged.
+  assert.ok(firstPhase.filter((entry) => entry.batchId.endsWith('b01')).length >= 2,
+    'the rejected batch is re-asked, not silently dropped');
 
   phase = 'second';
   const failedViewerId = server.db.prepare(
@@ -835,7 +845,10 @@ test('a failed validation batch does not block later batches when concurrency is
   assert.equal(secondPhase.length, 1);
   assert.ok(secondPhase[0].batchId.endsWith('b01'));
   assert.equal(secondPhase[0].refs, 1, 'resume sends only the failed viewer');
-  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 3);
+  // One stated fact per imported batch, including the recovered viewer; the
+  // batch count comes from the planner, not from a fixed ten-viewer assumption.
+  assert.equal(server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n,
+    partial.memoryJob.batchTotal);
 });
 
 test('session success with a failed memory half is partial and keeps the report', async (t) => {

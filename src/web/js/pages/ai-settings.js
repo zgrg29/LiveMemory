@@ -1,6 +1,6 @@
 import {api} from '../api.js';
 import {createModal} from '../dialog.js';
-import {chip, el} from '../ui.js';
+import {chip, el, formatInteger} from '../ui.js';
 
 /**
  * Settings → AI providers. All values come from the local server; no API key is
@@ -78,6 +78,15 @@ export async function renderProviderSettingsCard(ctx) {
           t('ai.v13.providers.testFailureDetail', {
             detail: String(failedStage.detail).slice(0, 300)
           }))
+        : null,
+      // A capability test performs real billable requests. Show what the last
+      // test used instead of leaving those calls invisible.
+      config.lastTestStatus?.usage
+        ? el('div', {className: 'small tertiary', text: t('ai.v13.providers.testUsage', {
+          requests: formatInteger(config.lastTestStatus.usage.requests ?? 0),
+          input: formatInteger(config.lastTestStatus.usage.inputTokens ?? 0),
+          output: formatInteger(config.lastTestStatus.usage.outputTokens ?? 0)
+        })})
         : null,
       el('div', {className: 'inline', style: {marginTop: '8px'}},
         !config.isDefault ? el('button', {

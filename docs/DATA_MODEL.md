@@ -726,3 +726,67 @@ ai_job_memory_viewers
 - 拆分只发生在当前待处理子集的观众上；路径最多 2 层。
 - 计划批次进度按“该 `batch_index` 下全部观众均已覆盖”计算；存在某个子结果但仍有 pending/failed 时不计为完成。
 - `GET /api/ai/analyze/status` 的 `memoryJob.splitBatches`、`pendingSplitBatches`、`splits[]` 来自这些列；`batchesImported` 仍是已保存结果行数。
+
+## 20. 用量字段扩展（RC0-AI-EFFICIENCY，**无 schema 变更**）
+
+本轮**没有**新增表或列，数据库仍为 **schema 16**，备份格式仍为 `.livememory` v1。
+所有新增信息都写进既有的 JSON 列，读取端对缺失字段全部容错（旧数据照常显示）。
+
+### 20.1 `ai_jobs.usage_json`（扩展，向后兼容）
+
+```json
+{
+  "inputTokens": 20893,
+  "outputTokens": 3563,
+  "reasoningTokens": 0,
+  "cachedInputTokens": 8356,
+  "cacheWriteInputTokens": 0,
+  "requests": 3,
+  "attempts": 3,
+  "unknownUsageAttempts": 0,
+  "usageReported": true,
+  "cost": {
+    "amount": 0.019663,
+    "currency": "USD",
+    "inputTokens": 20893,
+    "outputTokens": 3563,
+    "cachedInputTokens": 8356,
+    "cachePriced": false,
+    "basis": "estimated_tokens_x_published_price"
+  }
+}
+```
+
+- `requests` 保持历史语义：**带 `usage` 的响应数**。
+- `attempts`：实际发出的请求数（含失败、含未返回 usage 的尝试）；用户取消不计。
+- `unknownUsageAttempts`：没有 usage 的尝试数；这些请求的 token 保持未知，不写 0。
+- `cachedInputTokens`：已包含在 `inputTokens` 内的缓存命中子集（Anthropic 已按
+  `input + cache_read + cache_creation` 归一）。
+- `cost=null` 表示没有可靠价格或币种不一致；**不是 0 元**。
+- 旧数据缺这些字段时按 0/未知处理，不猜测、不回填。
+
+### 20.2 `ai_aggregate_nodes.usage_json`
+
+沿用既有结构；本轮只保证其中的 `inputTokens/outputTokens/reasoningTokens/cachedInputTokens`
+来自新的 `addUsage()`，因此分层汇总的推理与缓存 Token 不再丢失。
+
+### 20.3 `ai_translation_runs.usage_json`
+
+沿用既有结构；失败/重试尝试现在也计入 `attempts` 与 `unknownUsageAttempts`。
+翻译 usage 仍**不写入** `ai_jobs.usage_json`。
+
+### 20.4 `ai_provider_tests` 与配置 JSON
+
+- `ai_provider_tests` 表**未改**（仍无 usage 列）。
+- 能力测试的 usage 写入 `config/ai-providers.json` 的 `lastTestStatus.usage`（设置页显示），
+  以及 `POST /api/ai/providers/configs/:id/test` 的响应 `result.usage`。
+
+### 20.5 运行时状态 `runtime/ai-v13.json`
+
+- `sessions[sessionId].attemptStats` 新增 token 账本：`inputTokens`、`outputTokens`、
+  `reasoningTokens`、`cachedInputTokens`、`cacheWriteInputTokens`、`retryTokens`、`repairTokens`、
+  `repairAttempts`。
+- `lastRequest` 新增 `usageSource`、`inputTokens`、`outputTokens`、`cachedInputTokens`、
+  `cacheWriteInputTokens`。
+- 该文件仍**不包含**提示词、回答或聊天正文；备份继续排除 `runtime/`。
+

@@ -25,10 +25,16 @@ export function normalizePricing(input) {
   if (!Number.isFinite(outputPerMillion) || outputPerMillion < 0) return null;
   const currency = String(input.currency ?? 'USD').toUpperCase().slice(0, 8);
   if (!/^[A-Z]{3,8}$/.test(currency)) return null;
+  // Optional: providers with prompt caching usually publish a lower price for
+  // cache hits. It is never required, and an absent value is never treated as 0.
+  const cachedInputPerMillion = Number(input.cachedInputPerMillion);
   return {
     currency,
     inputPerMillion,
     outputPerMillion,
+    cachedInputPerMillion: Number.isFinite(cachedInputPerMillion) && cachedInputPerMillion >= 0
+      ? cachedInputPerMillion
+      : null,
     sourceUrl: typeof input.sourceUrl === 'string' && input.sourceUrl.trim()
       ? input.sourceUrl.trim().slice(0, 500)
       : null,
@@ -84,41 +90,111 @@ export function estimateTokensFromText(text) {
 /**
  * Estimate a request cost. Returns null when pricing is absent or the currency
  * does not match. The result is an estimate, never a final bill.
+ *
+ * Cache-hit input is billed separately when the user has stored a cache price;
+ * otherwise cached tokens are still costed at the normal input price and the
+ * result says so (`cachePriced: false`). The estimate therefore never invents a
+ * discount the user did not configure.
  */
-export function estimateCost({pricing, inputTokens, outputTokens, currency = null}) {
+export function estimateCost({
+  pricing,
+  inputTokens,
+  outputTokens,
+  cachedInputTokens = 0,
+  cacheWriteInputTokens = 0,
+  currency = null
+}) {
   if (!pricing) return null;
   if (currency && pricing.currency !== currency) return null;
   const input = Math.max(0, Number(inputTokens) || 0);
   const output = Math.max(0, Number(outputTokens) || 0);
-  const amount = (input / 1_000_000) * Number(pricing.inputPerMillion ?? 0)
-    + (output / 1_000_000) * Number(pricing.outputPerMillion ?? 0);
+  const cached = Math.min(input, Math.max(0, Number(cachedInputTokens) || 0));
+  const cacheWrite = Math.min(input, Math.max(0, Number(cacheWriteInputTokens) || 0));
+  const inputPrice = Number(pricing.inputPerMillion ?? 0);
+  const outputPrice = Number(pricing.outputPerMillion ?? 0);
+  const cachePriceKnown = Number.isFinite(Number(pricing.cachedInputPerMillion));
+  const cachedPrice = cachePriceKnown ? Number(pricing.cachedInputPerMillion) : inputPrice;
+  // Cache *writes* are always costed at the normal input price (the provider's
+  // write surcharge is not guessed). Cache hits use the configured cache price
+  // when present, otherwise the normal input price - so the estimate never
+  // invents a discount the user did not configure.
+  const uncached = Math.max(0, input - cached);
+  const amount = (uncached / 1_000_000) * inputPrice
+    + (cached / 1_000_000) * cachedPrice
+    + (output / 1_000_000) * outputPrice;
   if (!Number.isFinite(amount) || amount < 0) return null;
   return {
     amount,
     currency: pricing.currency,
     inputTokens: input,
     outputTokens: output,
+    cachedInputTokens: cached,
+    cacheWriteInputTokens: cacheWrite,
+    cachePriced: cachePriceKnown,
     basis: 'estimated_tokens_x_published_price'
   };
 }
 
-/** Add usage returned by a provider and cost it if pricing is available. */
+/**
+ * Add usage returned by a provider and cost it if pricing is available.
+ *
+ * Every measured component is carried forward: input, output, reasoning (billed
+ * inside the output tokens), cache hits and cache writes. The previous version
+ * silently dropped reasoning tokens and all cache counters, so a long-running
+ * task could not report them at all.
+ */
 export function addUsage(total, usage, pricing) {
+  const inputTokens = Number(total?.inputTokens ?? 0) + Number(usage?.inputTokens ?? 0);
+  const outputTokens = Number(total?.outputTokens ?? 0) + Number(usage?.outputTokens ?? 0);
   const next = {
-    inputTokens: Number(total?.inputTokens ?? 0) + Number(usage?.inputTokens ?? 0),
-    outputTokens: Number(total?.outputTokens ?? 0) + Number(usage?.outputTokens ?? 0),
+    inputTokens,
+    outputTokens,
+    reasoningTokens: Number(total?.reasoningTokens ?? 0) + Number(usage?.reasoningTokens ?? 0),
+    cachedInputTokens: Number(total?.cachedInputTokens ?? 0) + Number(usage?.cachedInputTokens ?? 0),
+    cacheWriteInputTokens: Number(total?.cacheWriteInputTokens ?? 0)
+      + Number(usage?.cacheWriteInputTokens ?? 0),
+    // `requests` keeps its historical meaning: responses that carried a usage
+    // block. `attempts` counts every request actually sent, so a provider that
+    // omits usage can no longer make a task look smaller than it was.
     requests: Number(total?.requests ?? 0) + 1,
+    attempts: Math.max(Number(total?.requests ?? 0), Number(total?.attempts ?? 0)) + 1,
+    unknownUsageAttempts: Number(total?.unknownUsageAttempts ?? 0),
+    usageReported: total?.usageReported === false ? false : true,
     cost: total?.cost ?? null
   };
   if (pricing) {
-    const cost = estimateCost({
+    next.cost = estimateCost({
       pricing,
       inputTokens: next.inputTokens,
-      outputTokens: next.outputTokens
+      outputTokens: next.outputTokens,
+      cachedInputTokens: next.cachedInputTokens,
+      cacheWriteInputTokens: next.cacheWriteInputTokens
     });
-    next.cost = cost;
   }
   return next;
+}
+
+/**
+ * Record one request that produced no usage block. Tokens stay unknown (never
+ * zero), but the request is still counted so retry/progress accounting cannot
+ * silently under-report how many billable calls were made.
+ */
+export function countRequestWithoutUsage(total) {
+  const previous = total ?? {};
+  const requests = Number(previous.requests ?? 0);
+  const attempts = Math.max(requests, Number(previous.attempts ?? 0));
+  return {
+    inputTokens: Number(previous.inputTokens ?? 0),
+    outputTokens: Number(previous.outputTokens ?? 0),
+    reasoningTokens: Number(previous.reasoningTokens ?? 0),
+    cachedInputTokens: Number(previous.cachedInputTokens ?? 0),
+    cacheWriteInputTokens: Number(previous.cacheWriteInputTokens ?? 0),
+    requests,
+    attempts: attempts + 1,
+    unknownUsageAttempts: Number(previous.unknownUsageAttempts ?? 0) + 1,
+    usageReported: false,
+    cost: previous.cost ?? null
+  };
 }
 
 /**

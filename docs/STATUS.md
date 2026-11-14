@@ -1,8 +1,136 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-2：完整备份/恢复/跨电脑迁移；769 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-14（RC0-AI-EFFICIENCY：Token 归因、重复输入、动态分批与成本口径；24 项新测试；schema 16；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.26 RC0-AI-EFFICIENCY：Token 利用率与 API 成本量化审计（2026-11-14）
+
+完整报告：`docs/AI_TOKEN_EFFICIENCY.md`；开发日志：`log/2026-11-14-ai-token-efficiency.md`。
+**未修改生产数据库、未调用真实付费 Provider、未发送真实弹幕、未 Push/Tag/发布。**
+测量在 `tests/.tmp` 隔离目录中用合成数据 + Mock Provider 完成；"优化前"数据来自
+`git archive HEAD` 导出的未修改仓库副本。
+
+### 0.26.1 Token 归因体系（无 schema 变更）
+
+- 缓存 Token：`normalizeUsage()` 现在解析 OpenAI `prompt_tokens_details.cached_tokens`、DeepSeek
+  `prompt_cache_hit_tokens`、Anthropic `cache_read_input_tokens` + `cache_creation_input_tokens`
+  （Anthropic 的 `input_tokens` 不含缓存，已按 `input + read + creation` 归一）。
+- 推理 Token：`addUsage()` 不再丢弃 `reasoningTokens`，并同时保留缓存与尝试计数。
+- 逐请求归因：日志 `ai.request.attempt` 与 `runtime/ai-v13.json` 的 `lastRequest`/`attemptStats`
+  记录 job、kind、batch、attempt、model、input/output/reasoning/cached token、`usageSource`、
+  `requestBytes`、`estimatedInputTokens`（标注 `estimateSource`）、finishReason、耗时、重试标记。
+- 每个 job 的 `ai_jobs.usage_json` 新增 `reasoningTokens`、`cachedInputTokens`、
+  `cacheWriteInputTokens`、`attempts`、`unknownUsageAttempts`、`usageReported`；
+  `requests` 仍表示"带 usage 的响应数"。
+- **无 usage 的请求不再消失**：成功但 Provider 未返回 usage、以及失败的尝试都计入 `attempts`
+  与 `unknownUsageAttempts`，token 保持 `null`（不填 0）。用户取消的请求仍不计入。
+- 能力测试与翻译：`verifyProviderConfig` 汇总 4–5 个真实请求的 usage 并计价，写入
+  `lastTestStatus.usage`（配置 JSON，非 schema）；翻译失败/重试尝试也累计 usage。
+- `GET /api/ai/analyze/status` 新增 `efficiency`：`tokenSource`（provider-reported/partial/unknown）、
+  `attempts`、`requestsWithUsage`、`unknownUsageAttempts`、`input/output/reasoning/cached`、
+  `retryTokens`、`retryShare`、`viewersCovered`、`factsSaved`、`tokensPer100Viewers`、
+  `tokensPer100Facts`、`cost`、`costPer100Viewers`、`cachePriced`。
+
+### 0.26.2 发现的真实浪费（实测）
+
+| 浪费 | 实测 |
+| --- | --- |
+| JSON Schema 同时出现在提示词文本与 `response_format` | 1.5 KiB/请求（画像）、3.9 KiB/请求（单场） |
+| 画像提示词内整份输出示例重复两次（同一函数） | 0.7–0.9 KiB/请求 |
+| 记忆契约重复 `memory_context.json` 的逐观众 `evidence_seqs`/nickname | 2.7 KiB/请求（稀疏）、3.9 KiB（高密度） |
+| 固定 10 观众/批的上限 | 1000 稀疏观众 → 100 请求，固定开销占 33.1% |
+| 归因缺口（缓存/推理/无 usage/测试/翻译） | 见 0.26.1 |
+
+### 0.26.3 优化
+
+1. **Schema 只发一次**：仅对 `capabilities.structuredOutputs === true`（实测通过
+   `response_format: json_schema`）且 Provider 目录声明支持的 OpenAI/OpenRouter 生效；
+   DeepSeek/DashScope/MiniMax/Anthropic/custom 仍收到完整文本 schema。
+2. **删除重复输出示例**：只保留 `buildMemoryInstructions()` 内那一份。
+3. **契约去重**：`memoryContract()` 只保留规则与 `Cover exactly these refs` 列表；
+   逐观众属性以 `memory_context.json` 为唯一权威（excerpt 行仍带 `ref`）。
+4. **自适应分批**：`planMemoryViewerBatches()` 新增 `viewerCapHard`（上限 20）；`viewerCap` 变偏好值，
+   增长仍受输出预算、摘录上限、内容预算约束。`createViewerMemoryJob()` 未显式传
+   `viewersPerBatchHard` 时保持旧的硬上限语义。
+5. **UI**：显示推理/缓存 Token、用量来源、重试与补答开销占比、每百观众/每百事实 Token、
+   每百观众估算费用；`cost=null` 时明确显示「费用未知（未填价格）」而不是隐藏；
+   「已知实际费用」改为「估算费用（Token × 已填价格）」。设置页显示上次能力测试的真实用量。三语同步。
+
+未实施（已在报告 §5.1 说明原因）：压缩 `messages.jsonl`（实测 93.8% 字节是 JSON 结构）、
+把观众上限提到 20 以上、任务级时间/费用预算、失败回答加密暂存。
+
+### 0.26.4 优化前后（14 场景，Token 为按实测字节的模拟值）
+
+| 指标 | 优化前 | 优化后 | 变化 |
+| --- | --- | --- | --- |
+| 总请求数 | 216 | 150 | -30.6% |
+| 输入 Token（模拟） | 2,867,221 | 2,560,520 | -10.7% |
+| 输出 Token（模拟） | 162,037 | 162,528 | +0.3% |
+| 总 Token（模拟） | 3,029,258 | 2,723,048 | -10.1% |
+| 请求字节（实测） | 9,274,013 | 8,312,569 | -10.4% |
+| 观众覆盖 | 1715/1715 | 1715/1715 | 0 |
+| 有效事实 | 1715 | 1715 | 0 |
+| 重试/补答 Token | 48,402 | 53,052 | +9.6%（分母变小、单请求变大） |
+
+单场景：大场次 -17.3%、小场次 -14.4%、多语言 -8.1%、both -7.1%、高密度 -2.0%；
+单场报告（custom，`json_object`）0.0%（schema 本就只在提示词里，无可删重复）；
+单场报告（openai，structured）**-6.1%**。
+
+### 0.26.5 测试
+
+- 新增 `tests/unit/ai-token-efficiency.test.mjs` **12 项**：三类 Provider 的缓存/推理解析、
+  未知不为 0、累计与计价（含可选缓存单价）、无 usage 计一次 attempt、attempt 记录标注、
+  画像/单场提示词 schema 只发一次、输出示例只出现一次、稀疏观众自适应分批、密集观众不被强行打包。
+- `tests/helpers/ai-fixtures.mjs` 新增 `parsePromptMemoryRefs()`；3 个集成测试与 Mock 改用它。
+- 6 个既有断言从「写死 10 观众/批」改为从规划器读回批次数量（语义不变，见 §0.26.6）。
+- 全量结果见 §0.26.7。
+
+### 0.26.6 未放宽的断言
+
+覆盖、事实、跨观众证据、Resume 只重试失败观众、校验失败不阻塞兄弟批次、完成后 Continue
+0 请求、重复事实为 0 —— 这些断言**均未放宽**。只把"批次数=3"这类与规划器实现相关的数字
+改为从 job 读回，并新增等价断言（例如"每个计划批次只请求一次"）。
+
+### 0.26.7 全量与正式 EXE
+
+- 全量：**781 passed / 0 failed / 0 skipped（218,884 ms，2026-11-14，`node --test --test-isolation=none
+  "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**；上一轮 769，本轮 +12。
+- 专项：`tests/unit/ai-token-efficiency.test.mjs` 12/12；既有 AI/画像/汇总/翻译/调度/进度套件全部通过。
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,623,616` bytes（92.1 MB） |
+| SHA-256 | `93601325cd850159e97a4f2b17ca9a454d1dda2ac4b8b35a493119c795aad30a` |
+| buildId | `4a149ca7286e` |
+| commit（构建时 HEAD） | `021e2be1c4a953b1b121e297bb1afb1f0206d99a` |
+| builtAt | `2026-11-14T08:38:29.105Z` |
+| 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+
+- `scripts/verify-ai-token-exe.mjs`（**本轮新增**）：**16/16**。正式 EXE + 本地 OpenAI-compatible
+  Mock Provider + 隔离数据目录：
+  - asInvoker；启动即 `/api/health` 返回同一 buildId；
+  - 未认证 `/api/ai/analyze/status` 401；
+  - 长期画像分析完成 **40/40 观众、3 批、3 次请求**；
+  - usage 落库：输入 **20,893** / 输出 **3,563** / requests 3 / attempts 3；
+  - **缓存命中 8,356**（单独记录，不与新输入合并）；
+  - `efficiency.tokenSource=provider-reported`、`attemptLedgerTokens=24,456`；
+  - 估算费用 **0.019663 USD**、每百观众 **0.049157 USD**、每百观众 Token **61,140**、事实 40；
+  - 每个计划批次只请求一次；
+  - 便携备份仍可创建（`.livememory` 768,515 bytes）；
+  - 完成后重复 Continue **0 请求**；重启后仍 complete 且 token 完全一致；
+  - 注入 500：`failed=3`、`unknownUsageAttempts=3`、`attempts 5 vs requests 2`、
+    `failedBatches=[2]`；兄弟批次已保存（23/40）；
+  - Resume 后 40/40 完成，且**只**重新请求 `-b02`（1 次），已保存批次未重发。
+- `scripts/verify-p0-2-exe.mjs`：**13/13**；`scripts/verify-p0-5-exe.mjs`：**12/12**；
+  `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、
+  不可写目录、异目录、解压复用、CLI 三语）。
+- EXE 在代码提交**之前**构建，因此 `build-info.commit` 是构建时 HEAD `021e2be`；`buildId` 由源码内容
+  哈希决定，用本轮提交可重建同一 buildId。
+- **性质**：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
+  **不是**真实浏览器点击。
+
 
 ## 0.25 RC0 P0-2：完整备份、恢复与跨电脑迁移（2026-11-14）
 

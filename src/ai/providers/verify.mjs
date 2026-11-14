@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {callProvider, listProviderModels, ProviderHttpError, PROVIDER_ERROR} from './adapters.mjs';
 import {PRICING_STATUS} from './catalog.mjs';
-import {estimateTokensFromText} from './pricing.mjs';
+import {addUsage, estimateTokensFromText} from './pricing.mjs';
 import {assertSafeResolvedUrl} from './url-safety.mjs';
 import {assembleSessionAnswer, assembleMemoryCompact, buildMemoryRefs} from '../api/compact.mjs';
 import {validateAgainstSchema} from '../import/schema-validator.mjs';
@@ -416,6 +416,30 @@ export async function verifyProviderConfig({
   const status = failed.length === 0
     ? (capabilities.memory ? 'passed' : 'partial')
     : (capabilities.text || capabilities.session ? 'partial' : 'failed');
+  // The capability test performs real, billable requests. Their usage was
+  // previously only visible per stage and never summed or priced, so a user
+  // pressing "Test" several times paid for calls the console never showed.
+  // Sum every stage that reported usage; stages without usage stay unknown.
+  let usageTotal = null;
+  let usageComplete = true;
+  let requestsWithUsage = 0;
+  let stagesWithoutUsage = 0;
+  for (const stage of Object.values(stages)) {
+    if (!stage || stage.status === 'skipped') continue;
+    if (!stage.usage) {
+      // A failed stage may legitimately have no usage (the provider rejected the
+      // request). Count it, never zero-fill it.
+      if (stage.status === 'passed') usageComplete = false;
+      stagesWithoutUsage += 1;
+      continue;
+    }
+    requestsWithUsage += 1;
+    usageTotal = addUsage(usageTotal, stage.usage, config.pricing ?? null);
+  }
+  const estimate = {
+    inputTokens: estimateTokensFromText(memoryProbeMessages().map((message) => message.content).join('\n')),
+    requests: Object.keys(stages).filter((key) => stages[key].status !== 'skipped').length
+  };
   return {
     status,
     startedAt,
@@ -427,10 +451,11 @@ export async function verifyProviderConfig({
     capabilities,
     stages,
     error: failed.length > 0 ? stages[failed[0]]?.code ?? 'PROVIDER_TEST_FAILED' : null,
-    estimate: {
-      inputTokens: estimateTokensFromText(memoryProbeMessages().map((message) => message.content).join('\n')),
-      requests: Object.keys(stages).filter((key) => stages[key].status !== 'skipped').length
-    }
+    usage: usageTotal,
+    usageKnown: Boolean(usageTotal) && usageComplete,
+    usageRequests: requestsWithUsage,
+    usageUnknownStages: stagesWithoutUsage,
+    estimate
   };
 }
 

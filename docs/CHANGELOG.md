@@ -1,5 +1,39 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r15 — 2026-11-14（RC0-AI-EFFICIENCY：Token 利用率与 API 成本）
+
+### Token 归因（无 schema 变更）
+
+- `normalizeUsage()` 解析缓存字段：OpenAI `prompt_tokens_details.cached_tokens`、DeepSeek `prompt_cache_hit_tokens`、Anthropic `cache_read_input_tokens` + `cache_creation_input_tokens`（Anthropic 的 `input_tokens` 不含缓存，已归一到总输入）。
+- `addUsage()` 保留 `reasoningTokens`、`cachedInputTokens`、`cacheWriteInputTokens`、`attempts`、`unknownUsageAttempts`、`usageReported`；新增 `countRequestWithoutUsage()`：无 usage 的请求计一次 attempt，token 保持未知。
+- `estimateCost()` 支持可选 `cachedInputPerMillion`；未填时缓存按输入单价计并标 `cachePriced=false`，不虚构折扣。未填价格仍是 `cost=null`。
+- 日志 `ai.request.attempt` 与 `runtime/ai-v13.json` 的 `lastRequest`/`attemptStats` 记录逐尝试 token、`usageSource`、`estimateSource`、请求字节；失败与无 usage 的尝试也计入。用户取消不计入。
+- `GET /api/ai/analyze/status` 新增 `efficiency`：token 来源、attempts、reasoning/cached、`retryTokens`/`retryShare`、每百观众/每百事实 Token、`cost`、`costPer100Viewers`、`cachePriced`。
+- Provider 能力测试的 4–5 次真实请求用量汇总并计价，写入 `lastTestStatus.usage` 并在设置页显示；翻译失败/重试尝试也累计 usage。
+
+### 减少不必要的 Token
+
+- **Schema 只发一次**：已校验 `structured_outputs` 的 Provider（当前为 OpenAI / OpenRouter）不再在提示词里重复 JSON Schema，只保留一句指向 `response_format` 的说明；未校验的 Provider（DeepSeek/DashScope/MiniMax/Anthropic/custom 走 `json_object`）继续收到完整文本 schema。
+- **删除重复输出示例**：画像提示词曾把同一份 `memoryCompactShape()` 发送两次。
+- **记忆契约去重**：不再重复 `memory_context.json` 的 nickname/`evidence_seqs`/`zero_excerpt`，只保留规则与覆盖 ref 列表。
+- **自适应分批**：`planMemoryViewerBatches()` 新增 `viewerCapHard`；画像观众上限从写死 10 改为"偏好 10、受输出预算/摘录上限/内容预算约束最多 20"。`createViewerMemoryJob()` 未显式传 `viewersPerBatchHard` 时保持旧硬上限。
+
+### UI
+
+- AI 分析中心显示推理 Token、缓存命中 Token、用量来源、重试与补答开销占比、每百观众/每百事实 Token、每百观众估算费用。
+- 「已知实际费用」改为「估算费用（Token × 已填价格）」；未填价格时明确显示「费用未知（Token 用量不受影响）」，不再静默隐藏。
+- 设置页显示上次能力测试的真实用量。三语（zh-CN / ja / en）同步，键集合保持一致。
+
+### 测量与验证
+
+- 新增 `scripts/ai-efficiency-baseline.mjs`（14 场景，真实请求字节 + 模拟 Token）与 `scripts/ai-efficiency-report.mjs`（分段归因与前后对比）。
+- 优化前数据来自 `git archive HEAD` 的未修改副本，不是推算。
+- 14 场景合计：请求 **216 → 150（-30.6%）**、请求字节 **9,274,013 → 8,312,569（-10.4%）**、总 Token（模拟）**3,029,258 → 2,723,048（-10.1%）**；观众覆盖 1715/1715 与有效事实 1715 均不变。
+- 新增 `tests/unit/ai-token-efficiency.test.mjs` 12 项；6 个既有断言把"10 观众/批"改为从规划器读回批次数量（覆盖/证据/恢复断言未放宽）。
+- 全量 **781 passed / 0 failed**（2026-11-14，218,884 ms）。
+- 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词文本去重但版本仍 v13.2。
+- 未验证：真实付费 Provider 的 Token 校准与缓存命中率、自适应分批的语义质量影响（P0-3）。
+
 ## 0.13.2-r14 — 2026-11-14（RC0 P0-2：完整备份、恢复与跨电脑迁移）
 
 ### 新增

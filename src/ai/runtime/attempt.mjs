@@ -97,6 +97,10 @@ export function shouldRetryAttempt(error, {attempt = 0, maxRetries = 2, random =
  * Build the safe, content-free record written to the log and to the status
  * object after every attempt. No prompt text, response text, URL query or API
  * key is included.
+ *
+ * Token counts are the provider's own numbers. When the provider returned no
+ * usage block the fields stay `null` (unknown), never 0, and `usageKnown` is
+ * false so a reader cannot mistake "not reported" for "free".
  */
 export function attemptRecord({
   kind,
@@ -123,6 +127,9 @@ export function attemptRecord({
   reasoningTokens = null,
   finishReason = null
 } = {}) {
+  const tokenOrNull = (value) => (value === null || value === undefined
+    ? null
+    : Math.max(0, Math.round(Number(value) || 0)));
   return {
     kind: kind ?? null,
     batchIndex: batchIndex === null || batchIndex === undefined ? null : Number(batchIndex),
@@ -140,6 +147,11 @@ export function attemptRecord({
     retry: retry === true,
     nextRetryAt: nextRetryAt ?? null,
     usageKnown: Boolean(usage),
+    usageSource: usage ? 'provider-reported' : 'unknown',
+    inputTokens: tokenOrNull(usage?.inputTokens),
+    outputTokens: tokenOrNull(usage?.outputTokens),
+    cachedInputTokens: tokenOrNull(usage?.cachedInputTokens),
+    cacheWriteInputTokens: tokenOrNull(usage?.cacheWriteInputTokens),
     model: model ?? null,
     maxTokens: maxTokens === null ? null : Math.max(0, Math.round(Number(maxTokens))),
     maxCompletionTokens: maxCompletionTokens === null
@@ -148,6 +160,10 @@ export function attemptRecord({
     estimatedInputTokens: estimatedInputTokens === null
       ? null
       : Math.max(0, Math.round(Number(estimatedInputTokens))),
+    // The program's own tokenizer-free estimate. It is kept next to the real
+    // numbers so the estimate/actual ratio can be audited, but it is never
+    // presented as provider usage.
+    estimateSource: estimatedInputTokens === null ? null : 'bytes-per-3-estimate',
     requestBytes: requestBytes === null ? null : Math.max(0, Math.round(Number(requestBytes))),
     reasoningChars: Math.max(0, Math.round(Number(reasoningChars) || 0)),
     reasoningTokens: reasoningTokens === null ? null : Math.max(0, Math.round(Number(reasoningTokens) || 0)),

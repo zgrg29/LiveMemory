@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
-import {T0, addBroadcaster, seedSession} from '../helpers/ai-fixtures.mjs';
+import {T0, addBroadcaster, seedSession, parsePromptMemoryRefs} from '../helpers/ai-fixtures.mjs';
 
 /**
  * P0-1 regression: a first memory answer that omits one viewer must be merged
@@ -23,17 +23,7 @@ function jsonResponse(content, {input = 50, output = 10, finishReason = 'stop'} 
 }
 
 function parseRefLines(text) {
-  const refs = new Map();
-  for (const line of text.split('\n')) {
-    const match = /^- ref (\d+): nickname=.*; evidence_seqs=(\[[^\]]*\]); zero_excerpt=(true|false)\r?$/.exec(line);
-    if (!match) continue;
-    refs.set(Number(match[1]), {
-      ref: Number(match[1]),
-      evidence: JSON.parse(match[2]),
-      zeroExcerpt: match[3] === 'true'
-    });
-  }
-  return refs;
+  return parsePromptMemoryRefs(text);
 }
 
 function viewerUpdate(ref, evidence, {statement, topic}) {
@@ -633,14 +623,16 @@ test('concurrent batches: one partial supplement never discards sibling batches,
   await startMemory(server, session.id, config);
   let status = await waitFor(server.analysisRunner, session.id, ['complete', 'failed', 'partial', 'needs_action'], {attempts: 5000});
   assert.notEqual(status.status, 'complete');
-  assert.equal(status.memoryJob.batchTotal, 3);
-  assert.equal(status.memoryJob.batchesCompleted, 2, 'sibling batches still completed');
+  const batchTotal = status.memoryJob.batchTotal;
+  assert.ok(batchTotal >= 2, `expected multiple planned batches, got ${batchTotal}`);
+  assert.equal(status.memoryJob.batchesCompleted, batchTotal - 1, 'sibling batches still completed');
   assert.equal(status.memoryJob.memoryCoverage.covered, 29);
   assert.equal(status.memoryJob.memoryCoverage.failed, 1);
   assert.equal(status.canResume, true);
   const savedResults = server.db.prepare('SELECT id, batch_index FROM ai_results ORDER BY batch_index, id').all();
-  assert.equal(savedResults.length, 3, 'batch 1, 2 (partial) and 3 each saved a result');
-  assert.deepEqual([...new Set(savedResults.map((row) => row.batch_index))], [1, 2, 3]);
+  assert.equal(savedResults.length, batchTotal, 'every batch except the failed viewer saved a result');
+  assert.deepEqual([...new Set(savedResults.map((row) => row.batch_index))],
+    Array.from({length: batchTotal}, (_unused, index) => index + 1));
   const savedFactCount = server.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n;
   assert.equal(savedFactCount, 29);
 

@@ -1,6 +1,6 @@
 import {callProvider} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
-import {addUsage} from '../providers/pricing.mjs';
+import {addUsage, countRequestWithoutUsage} from '../providers/pricing.mjs';
 import {providerFromConfig} from '../api/runner.mjs';
 import {extractJsonObject, sleepWithSignal, cancellationError} from '../runtime/json.mjs';
 import {retryDelayMs} from '../runtime/scheduler.mjs';
@@ -390,6 +390,10 @@ export class ReportTranslationService {
             canceled.kind = ERROR_KIND.CANCELED;
             throw canceled;
           }
+          // A failed attempt can still be billable (for example an empty answer
+          // that the provider charged for). Only a user cancel is excluded.
+          // Requests without a usage block are counted as unknown, never zero.
+          usage = this.#addUsage(usage, error?.usage ?? null, provider.pricing);
           const retry = shouldRetryAttempt(error, {
             attempt,
             maxRetries: this.maxRetries,
@@ -490,12 +494,7 @@ export class ReportTranslationService {
 
   #addUsage(total, usage, pricing) {
     if (usage) return addUsage(total, usage, pricing);
-    return {
-      inputTokens: Number(total?.inputTokens ?? 0),
-      outputTokens: Number(total?.outputTokens ?? 0),
-      requests: Number(total?.requests ?? 0) + 1,
-      cost: total?.cost ?? null
-    };
+    return countRequestWithoutUsage(total);
   }
 
   #parseAnswer(text, ids) {

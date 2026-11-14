@@ -25,7 +25,7 @@ import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-j
 import {ANALYSIS_MODE, TASK_KIND} from '../constants.mjs';
 import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
-import {addUsage} from '../providers/pricing.mjs';
+import {addUsage, countRequestWithoutUsage} from '../providers/pricing.mjs';
 import {AnalysisState} from '../runtime/state.mjs';
 import {
   extractJsonObject,
@@ -47,6 +47,7 @@ import {
   MAX_AGGREGATE_DEPTH,
   MAX_AGGREGATE_NODES,
   MAX_MEMORY_SPLIT_DEPTH,
+  MEMORY_MAX_VIEWERS_PER_BATCH,
   estimateJsonTokens,
   estimateMemoryViewerOutputTokens,
   estimateTokens,
@@ -237,6 +238,20 @@ function emptyAttemptStats() {
     timedOut: 0,
     retried: 0,
     usageUnknown: 0,
+    // Attempt-level token ledger. These are provider-reported tokens summed over
+    // every attempt, including failures that carried usage. They make the retry
+    // share and the input/output split auditable without storing prompt text.
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    // Tokens spent on attempts that were sent again (transport retry) or on a
+    // second logical request for the same batch (schema repair / viewer
+    // supplement). This is the numerator of the retry-overhead rate.
+    retryTokens: 0,
+    repairTokens: 0,
+    repairAttempts: 0,
     // A provider HTTP success is not a usable analysis result. This counter
     // records successful responses whose output was truncated, degenerate or
     // rejected by JSON/Schema/coverage validation, so the console can explain
@@ -288,14 +303,31 @@ function jobIdForRequestKind(entry, kind) {
 function sumUsageValues(values) {
   const list = (values ?? []).filter((value) => value && typeof value === 'object');
   if (list.length === 0) return null;
-  const total = {inputTokens: 0, outputTokens: 0, requests: 0, cost: null};
+  const total = {
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
+    requests: 0,
+    attempts: 0,
+    unknownUsageAttempts: 0,
+    usageReported: true,
+    cost: null
+  };
   let costAmount = 0;
   let costCurrency = null;
   let costKnown = true;
   for (const usage of list) {
     total.inputTokens += Number(usage.inputTokens ?? 0);
     total.outputTokens += Number(usage.outputTokens ?? 0);
+    total.reasoningTokens += Number(usage.reasoningTokens ?? 0);
+    total.cachedInputTokens += Number(usage.cachedInputTokens ?? 0);
+    total.cacheWriteInputTokens += Number(usage.cacheWriteInputTokens ?? 0);
     total.requests += Number(usage.requests ?? 0);
+    total.attempts += Math.max(Number(usage.requests ?? 0), Number(usage.attempts ?? 0));
+    total.unknownUsageAttempts += Number(usage.unknownUsageAttempts ?? 0);
+    if (usage.usageReported === false) total.usageReported = false;
     const cost = usage.cost;
     if (!cost || !Number.isFinite(Number(cost.amount)) || !cost.currency) {
       // Unknown is not zero: if any child job has no reliable cost, the task
@@ -316,6 +348,7 @@ function sumUsageValues(values) {
       amount: costAmount,
       inputTokens: total.inputTokens,
       outputTokens: total.outputTokens,
+      cachedInputTokens: total.cachedInputTokens,
       basis: 'sum_of_jobs'
     }
     : null;
@@ -866,9 +899,21 @@ export class AnalysisRunner {
         memory: entry.memoryJobId ? (entry.usageByJob?.[entry.memoryJobId] ?? memoryJob?.usage ?? null) : null
       },
       usageAttribution: entry.usageAttribution ?? 'per_job',
-      usageKnown: entry.usage !== null && entry.usage !== undefined,
+      // "Known" means at least one response actually carried a usage block.
+      // A job whose only requests were rejected without usage still has an
+      // attempt record, but its token count is unknown, never zero.
+      usageKnown: Number(entry.usage?.requests ?? 0) > 0,
       usageUnknownAttempts: Number(attemptStats.usageUnknown ?? 0),
       estimatedCost: entry.estimatedCost ?? null,
+      // Token-efficiency summary. Provider-reported usage and the derived
+      // per-100 numbers are kept separate so the console never presents an
+      // estimate as a bill.
+      efficiency: this.#efficiencyStatus({
+        entry,
+        usage: entry.usage ?? null,
+        attemptStats,
+        memoryCoverage
+      }),
       requestStats,
       attemptStats,
       recoveryStats: {...emptyRecoveryStats(), ...(entry.recoveryStats ?? {})},
@@ -930,6 +975,135 @@ export class AnalysisRunner {
       updatedAt: entry.updatedAt ?? null,
       error
     };
+  }
+
+  /**
+   * Attribute one provider request to the child job that owns it.
+   *
+   * This is the single write path for `ai_jobs.usage_json`. It is called for
+   * every attempt, including attempts whose provider omitted the usage block:
+   * those increment `attempts`/`unknownUsageAttempts` while leaving token counts
+   * unknown, so the stored usage can never under-report how many calls were made
+   * and can never present an unknown request as a free one.
+   */
+  #attributeRequestUsage({
+    context,
+    kind,
+    usage,
+    provider,
+    lastProvider = null,
+    lastModel = null,
+    lastRoutedProvider = null,
+    responseMode = null
+  }) {
+    const entry = this.state.get(context.sessionId);
+    const targetJobId = jobIdForRequestKind(entry, kind);
+    const usageByJob = {...(entry?.usageByJob ?? {})};
+    let jobUsage = null;
+    if (targetJobId) {
+      jobUsage = usage
+        ? addUsage(usageByJob[targetJobId], usage, provider?.pricing ?? null)
+        : countRequestWithoutUsage(usageByJob[targetJobId]);
+      usageByJob[targetJobId] = jobUsage;
+    }
+    const totalUsage = sumUsageValues(Object.values(usageByJob)) ?? (entry?.usage ?? null);
+    this.state.set(context.sessionId, {
+      usage: totalUsage,
+      usageByJob,
+      usageAttribution: 'per_job',
+      ...(lastProvider ? {lastProvider} : {}),
+      ...(lastModel ? {lastModel} : {}),
+      lastRoutedProvider,
+      ...(responseMode ? {responseMode} : {})
+    });
+    if (targetJobId && jobUsage) {
+      setJobUsage(this.db, targetJobId, jobUsage, {now: this.now()});
+    }
+    return jobUsage;
+  }
+
+  /**
+   * Token-efficiency numbers for the console.
+   *
+   * Rules that must not be broken here:
+   *   - a number the provider did not report stays `null`, never 0;
+   *   - `tokenSource` distinguishes real usage from partial/unknown usage;
+   *   - per-100-viewer / per-100-fact / cost values are derived arithmetic over
+   *     reported usage, never a provider bill, so `estimated` is always true;
+   *   - when no price is stored, `cost` is null and the console must say
+   *     "unknown" instead of showing a made-up amount.
+   */
+  #efficiencyStatus({entry, usage, attemptStats, memoryCoverage}) {
+    const reportedAttempts = Number(usage?.attempts ?? usage?.requests ?? 0);
+    const attempts = Math.max(Number(attemptStats.total ?? 0), reportedAttempts);
+    const unknownUsageAttempts = Math.max(
+      Number(attemptStats.usageUnknown ?? 0),
+      Number(usage?.unknownUsageAttempts ?? 0)
+    );
+    const tokenSource = attempts === 0
+      ? 'none'
+      : (unknownUsageAttempts > 0
+        ? (unknownUsageAttempts >= attempts ? 'unknown' : 'partial')
+        : 'provider-reported');
+    const hasUsage = Boolean(usage);
+    const inputTokens = hasUsage ? Number(usage.inputTokens ?? 0) : null;
+    const outputTokens = hasUsage ? Number(usage.outputTokens ?? 0) : null;
+    const reasoningTokens = hasUsage ? Number(usage.reasoningTokens ?? 0) : null;
+    const cachedInputTokens = hasUsage ? Number(usage.cachedInputTokens ?? 0) : null;
+    const totalTokens = hasUsage ? inputTokens + outputTokens : null;
+    const retryTokens = Math.max(0, Number(attemptStats.retryTokens ?? 0))
+      + Math.max(0, Number(attemptStats.repairTokens ?? 0));
+    const retryShare = totalTokens && totalTokens > 0
+      ? Math.min(1, retryTokens / totalTokens)
+      : null;
+    const viewersCovered = Number(memoryCoverage?.covered ?? 0);
+    const viewersTotal = Number(memoryCoverage?.total ?? 0);
+    const factsSaved = this.#countJobFacts(entry.memoryJobId);
+    const cost = usage?.cost && Number.isFinite(Number(usage.cost.amount)) ? usage.cost : null;
+    const per100 = (value, base) => (base > 0 ? Math.round((value / base) * 100) : null);
+    return {
+      tokenSource,
+      estimated: true,
+      attempts,
+      requestsWithUsage: Number(usage?.requests ?? 0),
+      unknownUsageAttempts,
+      inputTokens,
+      outputTokens,
+      reasoningTokens,
+      cachedInputTokens,
+      cacheWriteInputTokens: hasUsage ? Number(usage.cacheWriteInputTokens ?? 0) : null,
+      totalTokens,
+      // Sum of the per-attempt ledger persisted in runtime state. It can differ
+      // from `usage` when a request reported usage but was not attributed to a
+      // job; exposing both makes that visible instead of silently picking one.
+      attemptLedgerTokens: Number(attemptStats.inputTokens ?? 0) + Number(attemptStats.outputTokens ?? 0),
+      retryTokens,
+      retryShare,
+      repairAttempts: Number(attemptStats.repairAttempts ?? 0),
+      viewersCovered,
+      viewersTotal,
+      factsSaved,
+      tokensPer100Viewers: totalTokens === null ? null : per100(totalTokens, viewersCovered),
+      tokensPer100Facts: totalTokens === null ? null : per100(totalTokens, factsSaved),
+      cost,
+      costKnown: Boolean(cost),
+      costPer100Viewers: cost && viewersCovered > 0
+        ? Number(((cost.amount / viewersCovered) * 100).toFixed(6))
+        : null,
+      costCurrency: cost?.currency ?? null,
+      cachePriced: usage?.cost?.cachePriced === true
+    };
+  }
+
+  #countJobFacts(memoryJobId) {
+    if (!memoryJobId) return 0;
+    try {
+      const row = this.db.prepare('SELECT COUNT(*) AS n FROM memory_facts WHERE source_job_id = ?')
+        .get(memoryJobId);
+      return Number(row?.n ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   #setRunning(sessionId, patch) {
@@ -1016,6 +1190,26 @@ export class AnalysisRunner {
     else stats.failed += 1;
     if (record.retry) stats.retried += 1;
     if (record.outcome !== 'succeeded' && record.usageKnown !== true) stats.usageUnknown += 1;
+    // Provider-reported tokens per attempt. Unknown usage contributes nothing to
+    // the token sums (never zero-filled) but is counted separately above.
+    const attemptInput = Number(record.inputTokens);
+    const attemptOutput = Number(record.outputTokens);
+    const attemptTokens = (Number.isFinite(attemptInput) ? Math.max(0, attemptInput) : 0)
+      + (Number.isFinite(attemptOutput) ? Math.max(0, attemptOutput) : 0);
+    stats.inputTokens += Number.isFinite(attemptInput) ? Math.max(0, attemptInput) : 0;
+    stats.outputTokens += Number.isFinite(attemptOutput) ? Math.max(0, attemptOutput) : 0;
+    stats.reasoningTokens += Math.max(0, Number(record.reasoningTokens) || 0);
+    stats.cachedInputTokens += Math.max(0, Number(record.cachedInputTokens) || 0);
+    stats.cacheWriteInputTokens += Math.max(0, Number(record.cacheWriteInputTokens) || 0);
+    const isRepair = String(record.kind ?? '').includes('repair')
+      || String(record.kind ?? '').includes('supplement');
+    if (isRepair) {
+      stats.repairTokens += attemptTokens;
+      stats.repairAttempts += 1;
+    } else if (record.retry) {
+      // A transport retry re-sends work that already consumed tokens.
+      stats.retryTokens += attemptTokens;
+    }
     const lastRequest = {
       kind: record.kind ?? null,
       batchIndex: record.batchIndex ?? null,
@@ -1031,6 +1225,11 @@ export class AnalysisRunner {
       receivedOutput: record.receivedOutput === true,
       timeToFirstByteMs: record.timeToFirstByteMs ?? null,
       usageKnown: record.usageKnown === true,
+      usageSource: record.usageSource ?? (record.usageKnown === true ? 'provider-reported' : 'unknown'),
+      inputTokens: record.inputTokens ?? null,
+      outputTokens: record.outputTokens ?? null,
+      cachedInputTokens: record.cachedInputTokens ?? null,
+      cacheWriteInputTokens: record.cacheWriteInputTokens ?? null,
       model: record.model ?? null,
       maxTokens: record.maxTokens ?? null,
       maxCompletionTokens: record.maxCompletionTokens ?? null,
@@ -1064,6 +1263,11 @@ export class AnalysisRunner {
       receivedOutput: record.receivedOutput === true,
       retry: record.retry === true,
       usageKnown: record.usageKnown === true,
+      usageSource: record.usageSource ?? null,
+      inputTokens: record.inputTokens ?? null,
+      outputTokens: record.outputTokens ?? null,
+      cachedInputTokens: record.cachedInputTokens ?? null,
+      cacheWriteInputTokens: record.cacheWriteInputTokens ?? null,
       timeToFirstByteMs: record.timeToFirstByteMs ?? null,
       timeToFirstTokenMs: record.timeToFirstTokenMs ?? null,
       model: record.model ?? null,
@@ -1485,7 +1689,7 @@ export class AnalysisRunner {
         });
         if (!pkg) throw Object.assign(new Error('PACKAGE_MISSING'), {code: 'ANALYSIS_PACKAGE_MISSING'});
         const files = readAnalysisPackage(join(this.paths.exports, pkg.file_name), SESSION_FILES);
-        const prompt = buildSessionPrompt(files);
+        const prompt = buildSessionPrompt(files, {structuredOutputs: this.#structuredOutputs(provider)});
         prompt.files = files;
         active += 1;
         this.#setRunning(sessionId, {
@@ -1743,7 +1947,8 @@ export class AnalysisRunner {
         }),
         resultSchema,
         answerSchema,
-        requireCoverage: true
+        requireCoverage: true,
+        structuredOutputs: this.#structuredOutputs(provider)
       });
       const batchResultTokens = estimateJsonTokens(batchResults);
       const outputTokens = resolveAggregateOutputTokens({
@@ -1795,7 +2000,8 @@ export class AnalysisRunner {
       resultSchema,
       answerSchema,
       requireCoverage: true,
-      retryNote
+      retryNote,
+      structuredOutputs: this.#structuredOutputs(provider)
     });
     const batchResultTokens = estimateJsonTokens(batchResults);
     const outputTokens = resolveAggregateOutputTokens({
@@ -1859,7 +2065,8 @@ export class AnalysisRunner {
       coverage,
       resultSchema,
       answerSchema,
-      requireCoverage: true
+      requireCoverage: true,
+      structuredOutputs: this.#structuredOutputs(provider)
     });
     const outputTokens = resolveAggregateOutputTokens({
       batchResultTokens: estimateJsonTokens(partialReports),
@@ -1897,7 +2104,8 @@ export class AnalysisRunner {
       resultSchema,
       answerSchema: plan.answerSchema,
       requireCoverage: true,
-      retryNote
+      retryNote,
+      structuredOutputs: this.#structuredOutputs(provider)
     });
     const outputTokens = resolveAggregateOutputTokens({
       batchResultTokens: estimateJsonTokens(plan.partialReports),
@@ -1907,7 +2115,16 @@ export class AnalysisRunner {
     return {prompt, outputTokens, limits};
   }
 
-  #emptyDigestPromptTokens({job, resultSchema, sourceKind = 'batches'}) {
+  /**
+   * True only when the provider has a *verified* structured-output path. The
+   * capability test records it after a real `response_format: json_schema`
+   * request succeeded, so it is safe to drop the duplicate textual schema.
+   */
+  #structuredOutputs(provider) {
+    return provider?.supportsStructuredOutputs === true;
+  }
+
+  #emptyDigestPromptTokens({job, resultSchema, sourceKind = 'batches', structuredOutputs = false}) {
     try {
       return buildAggregateDigestPrompt({
         manifest: this.#aggregateManifest(job),
@@ -1917,7 +2134,8 @@ export class AnalysisRunner {
         childItems: [],
         coverage: [],
         limits: DIGEST_AGGREGATE_LIMITS,
-        resultSchema
+        resultSchema,
+        structuredOutputs: structuredOutputs === true
       }).estimatedTokens;
     } catch {
       return 4000;
@@ -1995,7 +2213,12 @@ export class AnalysisRunner {
       contextLength: provider.contextLength,
       outputReserve: DIGEST_OUTPUT_TOKENS
     });
-    let fixedOverhead = this.#emptyDigestPromptTokens({job, resultSchema, sourceKind: 'batches'});
+    let fixedOverhead = this.#emptyDigestPromptTokens({
+      job,
+      resultSchema,
+      sourceKind: 'batches',
+      structuredOutputs: this.#structuredOutputs(provider)
+    });
     let level = 1;
     let items = entries.map((entry) => ({
       kind: 'batch',
@@ -2136,7 +2359,12 @@ export class AnalysisRunner {
         });
       }
       const nextSourceKind = 'nodes';
-      fixedOverhead = this.#emptyDigestPromptTokens({job, resultSchema, sourceKind: nextSourceKind});
+      fixedOverhead = this.#emptyDigestPromptTokens({
+        job,
+        resultSchema,
+        sourceKind: nextSourceKind,
+        structuredOutputs: this.#structuredOutputs(provider)
+      });
       items = nodes.map((node) => ({
         kind: 'node',
         node,
@@ -2213,7 +2441,8 @@ export class AnalysisRunner {
         coverage,
         limits,
         resultSchema,
-        retryNote
+        retryNote,
+        structuredOutputs: this.#structuredOutputs(provider)
       });
       return {prompt, childItems, limits};
     };
@@ -2810,6 +3039,11 @@ export class AnalysisRunner {
         locale: entry?.locale ?? 'en',
         exportsDir: this.paths.exports,
         viewersPerBatch: memoryViewersPerBatch(provider),
+        // Sparse audiences leave most of the configured input/output budget
+        // unused at the preferred batch size; let the planner grow the batch
+        // while the real limits (output budget, excerpt cap, content budget)
+        // still hold.
+        viewersPerBatchHard: MEMORY_MAX_VIEWERS_PER_BATCH,
         excerptCap: 600,
         providerConfigId: provider.configId ?? null,
         providerId: provider.providerId,
@@ -2949,7 +3183,10 @@ export class AnalysisRunner {
             };
             try {
               for (const group of groups) {
-                const prompt = buildMemoryPrompt(files, {viewerIds: group.viewerIds});
+                const prompt = buildMemoryPrompt(files, {
+                  viewerIds: group.viewerIds,
+                  structuredOutputs: this.#structuredOutputs(provider)
+                });
                 prompt.files = files;
                 this.state.set(sessionId, {
                   stage: 'memory_analyzing',
@@ -3214,7 +3451,10 @@ export class AnalysisRunner {
           });
           const chunks = [];
           for (const [group, childPath] of [[left, leftPath], [right, rightPath]]) {
-            const childPrompt = buildMemoryPrompt(prompt.files, {viewerIds: group});
+            const childPrompt = buildMemoryPrompt(prompt.files, {
+              viewerIds: group,
+              structuredOutputs: prompt.structuredOutputs === true
+            });
             childPrompt.files = prompt.files;
             const result = await this.#generateMemoryGroup({
               context,
@@ -3734,7 +3974,10 @@ export class AnalysisRunner {
         if (prompt.files && salvaged.viewerFailures.length > 0) {
           const failedIds = salvaged.viewerFailures.map((entry) => entry.viewerId);
           try {
-            const targetedPrompt = buildMemoryPrompt(prompt.files, {viewerIds: failedIds});
+            const targetedPrompt = buildMemoryPrompt(prompt.files, {
+              viewerIds: failedIds,
+              structuredOutputs: prompt.structuredOutputs === true
+            });
             const targeted = await this.requestOnce({
               context,
               prompt: targetedPrompt,
@@ -4122,33 +4365,24 @@ export class AnalysisRunner {
           onProgress: reportProgress
         }), {signal});
         const usage = result.usage ?? null;
-        const entry = this.state.get(context.sessionId);
-        if (usage) {
-          // Attribute this request to the child job that actually owns it. The
-          // previous code wrote the cumulative task total into the memory job as
-          // soon as it existed, so session and memory both displayed a request
-          // count and token total that included the other half.
-          const targetJobId = jobIdForRequestKind(entry, kind);
-          const usageByJob = {...(entry?.usageByJob ?? {})};
-          let jobUsage = null;
-          if (targetJobId) {
-            jobUsage = addUsage(entry?.usageByJob?.[targetJobId], usage, provider.pricing);
-            usageByJob[targetJobId] = jobUsage;
-          }
-          const totalUsage = sumUsageValues(Object.values(usageByJob)) ?? (entry?.usage ?? null);
-          this.state.set(context.sessionId, {
-            usage: totalUsage,
-            usageByJob,
-            usageAttribution: 'per_job',
-            lastProvider: result.providerId,
-            lastModel: result.model,
-            lastRoutedProvider: result.routedProvider ?? null,
-            responseMode: result.responseMode ?? mode
-          });
-          if (targetJobId && jobUsage) {
-            setJobUsage(this.db, targetJobId, jobUsage, {now: this.now()});
-          }
-        }
+        // Attribute this request to the child job that actually owns it. The
+        // previous code wrote the cumulative task total into the memory job as
+        // soon as it existed, so session and memory both displayed a request
+        // count and token total that included the other half.
+        //
+        // A successful response with no usage block is still a billable request:
+        // it is counted as an attempt with unknown tokens, never as zero tokens,
+        // and never dropped.
+        this.#attributeRequestUsage({
+          context,
+          kind,
+          usage,
+          provider,
+          lastProvider: result.providerId,
+          lastModel: result.model,
+          lastRoutedProvider: result.routedProvider ?? null,
+          responseMode: result.responseMode ?? mode
+        });
         // A provider that ignores `stream` and returns JSON is handled by the
         // adapter, but remember the verified mode so the next batch does not
         // repeat the probe.
@@ -4206,21 +4440,17 @@ export class AnalysisRunner {
         // A failed response can still carry provider usage (for example a
         // reasoning-only `length` answer). Counting it keeps the token/cost
         // statistics truthful; the old code reported such an attempt as
-        // "usage unknown" even though the provider had billed it.
-        if (!canceled && error?.usage) {
-          const entry = this.state.get(context.sessionId);
-          const targetJobId = jobIdForRequestKind(entry, kind);
-          if (targetJobId) {
-            const usageByJob = {...(entry?.usageByJob ?? {})};
-            const jobUsage = addUsage(usageByJob[targetJobId], error.usage, provider.pricing);
-            usageByJob[targetJobId] = jobUsage;
-            this.state.set(context.sessionId, {
-              usage: sumUsageValues(Object.values(usageByJob)) ?? entry?.usage ?? null,
-              usageByJob,
-              usageAttribution: 'per_job'
-            });
-            setJobUsage(this.db, targetJobId, jobUsage, {now: this.now()});
-          }
+        // "usage unknown" even though the provider had billed it. A failure with
+        // no usage block is still one billable attempt and is counted as such.
+        // Canceled requests are excluded on purpose: the user stopped them, they
+        // have no remote result, and counting them would inflate retry cost.
+        if (!canceled) {
+          this.#attributeRequestUsage({
+            context,
+            kind,
+            usage: error?.usage ?? null,
+            provider
+          });
         }
         const recordFailure = (extra = {}) => this.#recordAttempt(context, attemptRecord({
           kind,

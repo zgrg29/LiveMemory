@@ -110,26 +110,88 @@ export function reasoningCharsFromPayload(payload) {
   return typeof reasoning === 'string' ? reasoning.length : 0;
 }
 
+/**
+ * Normalize the `usage` block of any supported provider into one shape.
+ *
+ * Three families disagree about what "input tokens" means:
+ *   - OpenAI-compatible: `prompt_tokens` already includes cached tokens, and
+ *     `prompt_tokens_details.cached_tokens` is the cached *subset*;
+ *   - DeepSeek: `prompt_tokens` includes the cached part, reported separately as
+ *     `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`;
+ *   - Anthropic: `input_tokens` EXCLUDES both `cache_read_input_tokens` and
+ *     `cache_creation_input_tokens`, so a cache hit is billed separately and must
+ *     be added to get the real input size.
+ *
+ * The earlier version dropped all cache information. That made cached input
+ * indistinguishable from fresh input, so the console overstated cost for
+ * providers with prompt caching and could not report the "cached tokens" metric
+ * at all. Cache counts are recorded, but they never replace the provider's own
+ * numbers: a missing field stays 0 with `cacheReported: false`.
+ */
 export function normalizeUsage(payload) {
   const usage = payload?.usage ?? {};
-  const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0);
-  const output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0);
+  const promptDetails = usage.prompt_tokens_details ?? usage.input_tokens_details ?? {};
+  const outputDetails = usage.completion_tokens_details ?? usage.output_tokens_details ?? {};
+  const rawInput = usage.input_tokens ?? usage.prompt_tokens;
+  const rawOutput = usage.output_tokens ?? usage.completion_tokens;
+  const input = Number(rawInput);
+  const output = Number(rawOutput);
   if (!Number.isFinite(input) && !Number.isFinite(output)) return null;
+  const baseInput = Number.isFinite(input) ? input : 0;
+  const baseOutput = Number.isFinite(output) ? output : 0;
+
+  const anthropicCache = usage.cache_read_input_tokens !== undefined
+    || usage.cache_creation_input_tokens !== undefined;
+  const cacheReadRaw = anthropicCache
+    ? Number(usage.cache_read_input_tokens ?? 0)
+    : Number(promptDetails.cached_tokens
+      ?? usage.prompt_cache_hit_tokens
+      ?? usage.cached_tokens
+      ?? 0);
+  const cacheWriteRaw = anthropicCache
+    ? Number(usage.cache_creation_input_tokens ?? 0)
+    : Number(usage.prompt_cache_write_tokens ?? promptDetails.cache_creation_tokens ?? 0);
+  const cachedInput = Number.isFinite(cacheReadRaw) ? Math.max(0, cacheReadRaw) : 0;
+  const cacheWriteInput = Number.isFinite(cacheWriteRaw) ? Math.max(0, cacheWriteRaw) : 0;
+  // Anthropic excludes cache tokens from `input_tokens`; every other family
+  // includes them. Normalize to "total input tokens billed", then clamp the
+  // cached subset so it can never exceed the total.
+  const inputTokens = anthropicCache
+    ? baseInput + cachedInput + cacheWriteInput
+    : baseInput;
+  const cachedClamped = Math.min(cachedInput, inputTokens);
+
   const reasoning = Number(
-    usage.completion_tokens_details?.reasoning_tokens
+    outputDetails.reasoning_tokens
+    ?? usage.completion_tokens_details?.reasoning_tokens
     ?? usage.output_tokens_details?.reasoning_tokens
     ?? usage.reasoning_tokens
     ?? 0
   );
+  const reasoningTokens = Number.isFinite(reasoning) ? Math.max(0, reasoning) : 0;
+  const cacheReported = anthropicCache
+    || usage.prompt_cache_hit_tokens !== undefined
+    || promptDetails.cached_tokens !== undefined
+    || usage.cached_tokens !== undefined;
   return {
-    inputTokens: Number.isFinite(input) ? input : 0,
-    outputTokens: Number.isFinite(output) ? output : 0,
-    reasoningTokens: Number.isFinite(reasoning) ? reasoning : 0,
-    totalTokens: Number(usage.total_tokens ?? (input + output)) || 0,
+    inputTokens,
+    outputTokens: baseOutput,
+    reasoningTokens,
+    cachedInputTokens: cachedClamped,
+    cacheWriteInputTokens: cacheWriteInput === 0 ? 0 : Math.min(cacheWriteInput, inputTokens),
+    cacheReported,
+    totalTokens: Number(usage.total_tokens ?? (inputTokens + baseOutput)) || 0,
     raw: {
-      input_tokens: Number.isFinite(input) ? input : 0,
-      output_tokens: Number.isFinite(output) ? output : 0,
-      reasoning_tokens: Number.isFinite(reasoning) ? reasoning : 0
+      input_tokens: inputTokens,
+      output_tokens: baseOutput,
+      reasoning_tokens: reasoningTokens,
+      cached_input_tokens: cachedClamped,
+      cache_write_input_tokens: cacheWriteInput === 0 ? 0 : cacheWriteInput,
+      // The provider's own field names, kept so a future audit can tell which
+      // family produced this usage without guessing.
+      source: anthropicCache
+        ? 'anthropic-cache-fields'
+        : (usage.prompt_cache_hit_tokens !== undefined ? 'deepseek-cache-fields' : 'openai-usage')
     }
   };
 }

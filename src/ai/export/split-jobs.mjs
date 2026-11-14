@@ -47,6 +47,7 @@ import {buildSessionInstructions, buildMemoryInstructions} from '../prompts/spli
 import {
   MEMORY_BASE_OUTPUT_TOKENS,
   MEMORY_MAX_FACTS_PER_VIEWER,
+  MEMORY_MAX_VIEWERS_PER_BATCH,
   estimateJsonTokens,
   estimateMemoryViewerOutputTokens,
   estimateTokens,
@@ -584,6 +585,7 @@ export async function createViewerMemoryJob({
   locale = 'en',
   exportsDir,
   viewersPerBatch = 10,
+  viewersPerBatchHard = null,
   excerptCap = 600,
   maxBatches = Number.MAX_SAFE_INTEGER,
   providerConfigId = null,
@@ -709,6 +711,11 @@ export async function createViewerMemoryJob({
       };
     }),
     viewerCap: viewersPerBatch,
+    // The preferred size is `viewersPerBatch`; callers that want the planner to
+    // use spare input/output budget on a sparse audience pass an explicit hard
+    // ceiling. Omitted, the preferred size is also the hard cap, so a direct
+    // caller keeps exact control.
+    viewerCapHard: viewersPerBatchHard ?? viewersPerBatch,
     excerptCap,
     contentBudget: batchBudget.contentTokens,
     overheadTokens: batchBudget.overheadTokens,

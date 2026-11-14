@@ -70,7 +70,7 @@ function normalizeCapabilities(input) {
 
 function normalizeTestStatus(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return {status: 'untested', at: null, error: null, stages: null};
+    return {status: 'untested', at: null, error: null, stages: null, usage: null};
   }
   return {
     status: ['untested', 'running', 'passed', 'failed', 'partial'].includes(input.status)
@@ -79,6 +79,12 @@ function normalizeTestStatus(input) {
     at: typeof input.at === 'string' ? input.at : null,
     error: typeof input.error === 'string' ? input.error.slice(0, 200) : null,
     stages: input.stages && typeof input.stages === 'object' ? input.stages : null,
+    // A capability test makes real billable requests. Keeping its usage next to
+    // the status lets the settings page show what the last test cost instead of
+    // hiding those requests.
+    usage: input.usage && typeof input.usage === 'object' && !Array.isArray(input.usage)
+      ? input.usage
+      : null,
     testedAt: typeof input.testedAt === 'string' ? input.testedAt : null
   };
 }
@@ -462,6 +468,7 @@ export class ProviderConfigStore {
       at: result.at ?? new Date(this.now()).toISOString(),
       error: result.error ?? null,
       stages: result.stages ?? null,
+      usage: result.usage ?? null,
       testedAt: result.at ?? new Date(this.now()).toISOString()
     });
     config.updatedAt = this.now();

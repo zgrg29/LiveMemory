@@ -1248,3 +1248,63 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - **有界**：补答仍只有一次请求；定向提示词超过同一输入上限时不发送，首答合法结果保留，缺失观众可恢复；不新增无上限 token/重试。
 - **统计**：补答空/截断计入 `outputStats`；部分保存/合并/失败/超限分别记录 `supplement.partial/merged/failed/too_large` 日志。
 - **不改**：结果 Schema 1.3.0、数据库 schema 16、提示词版本 v13.2、金额/身份/去重规则、Provider/调度/翻译/汇总流程。
+
+## 27. Token 归因、用量来源与提示词去重（v0.13.2 / RC0-AI-EFFICIENCY）
+
+本节只描述**测量与提示词组装**，不改变包协议、结果 Schema 1.3.0 或数据库 schema 16。
+
+### 27.1 用量来源必须可区分
+
+- `provider-reported`：Provider 响应带 `usage`，原样保存，界面显示「Provider 报告用量」。
+- `unknown`：失败或成功但无 `usage`。token 保持 `null`，**从不写 0**；计入 `attempts` 与
+  `unknownUsageAttempts`。用户取消的请求不计入（无远端结果）。
+- `estimated`：本地 `bytes/3` 预算、每百观众/每百事实派生值、费用估算，一律标 `estimated`
+  （attempt 记录里的 `estimateSource=bytes-per-3-estimate`）。
+- 模拟数据（测量脚本里的 `ceil(bytes/3.2)`）**只出现在测量产物中**，不进入数据库或界面。
+
+### 27.2 缓存与推理 Token
+
+| Provider 家族 | 字段 | 归一 |
+| --- | --- | --- |
+| OpenAI 兼容 | `prompt_tokens_details.cached_tokens` | 输入的子集 |
+| DeepSeek | `prompt_cache_hit_tokens` | 输入的子集 |
+| Anthropic | `cache_read_input_tokens` + `cache_creation_input_tokens` | `input_tokens` **不含**缓存，总输入 = input + read + creation |
+
+`reasoningTokens` 取自 `completion_tokens_details.reasoning_tokens` / `output_tokens_details` /
+`reasoning_tokens`；推理 Token 含在输出 Token 内，不重复计入总量。
+
+### 27.3 逐请求归因（不含正文）
+
+每次尝试记录：`jobId`、`kind`（session/memory/repair/supplement/viewer-repair/digest/final）、
+`batchIndex`、`attempt`、`model`、`mode`、input/output/reasoning/cached token、`usageSource`、
+`requestBytes`、`estimatedInputTokens`、`finishReason`、`elapsedMs`、`retry`、`errorCode`。
+落点：日志 `ai.request.attempt`、`runtime/ai-v13.json` 的 `lastRequest`/`attemptStats`、
+`ai_jobs.usage_json`（按 job 归属）。**不记录提示词、回答、聊天正文、API Key。**
+
+### 27.4 提示词去重规则
+
+- **答案 Schema**：Provider 已验证 `response_format: json_schema`
+  （`capabilities.structuredOutputs` 与目录能力同时为真）时，提示词只保留一句指向
+  `response_format` 的说明；否则仍发送完整文本 Schema。**任何情况下都必须恰好有一份
+  机器可执行或文本可读的 Schema。**
+- **输出示例**：只允许一份；`buildMemoryInstructions()` 内的示例是权威副本。
+- **逐观众属性**：`memory_context.json` 是 nickname / `evidence_seqs` / `zero_excerpt` 的唯一权威；
+  契约文本只保留规则与覆盖 ref 列表。
+- 去重**不得**删除：Schema 版本、`viewer_id`/ref 映射、证据归属、长期事实规则、语言要求、
+  隐私边界、错误处理、身份隔离。
+
+### 27.5 分批与输出预算
+
+- `viewerCap` 是偏好值；`viewerCapHard`（默认等于 `viewerCap`，直播分析传 20）是硬上限。
+- 增长仍受 `outputBudget * 0.8`、摘录上限 600、内容预算三重约束；任何一项不满足就换批。
+- 单观众超输出份额时独占一批；仍截断时先拆分、再提预算（上限 8192），不重复同一请求。
+- 不允许为「填满上下文」增加批次；目标是「有效结果 / 成本」最优。
+
+### 27.6 费用口径
+
+- 未填价格：`cost=null`，界面「费用未知」，**不阻断任务**。
+- 已填价格：`basis=estimated_tokens_x_published_price`，界面标「估算费用」。
+- 缓存命中：有缓存单价则按该价，否则按输入单价并标 `cachePriced=false`；缓存写入按输入单价，
+  不猜测倍率。厂商返回的 `usage.cost`（OpenRouter）不作为本地账单。
+- 能力测试与翻译的用量独立记录，不混入 `ai_jobs.usage_json`。
+

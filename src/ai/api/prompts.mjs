@@ -48,6 +48,23 @@ function block(name, text) {
   return `## ${name}\n${String(text).trimEnd()}`;
 }
 
+/**
+ * The JSON Schema is transmitted twice when a provider supports structured
+ * output: once as prompt text and once inside `response_format.json_schema`.
+ * Both copies are billed as input tokens, and the schema block is a measurable
+ * share of every request (about 1.5 KB for a memory batch and 4 KB for a
+ * session batch). When the provider has *verified* structured-output support,
+ * the textual copy adds no information, so only a one-line pointer is kept.
+ * Providers without a verified structured-output path still receive the full
+ * textual schema - the contract is never weakened, only de-duplicated.
+ */
+const SCHEMA_POINTER = 'The answer JSON Schema is supplied in the request `response_format` (json_schema). '
+  + 'Follow it exactly; do not restate, extend or rename its properties.';
+
+function answerSchemaBlock(name, schema, structuredOutputs) {
+  return structuredOutputs ? SCHEMA_POINTER : block(name, JSON.stringify(schema));
+}
+
 export const SESSION_FILES = Object.freeze([
   'manifest.json',
   'session_context.json',
@@ -65,7 +82,7 @@ export const MEMORY_FILES = Object.freeze([
   'result.schema.json'
 ]);
 
-export function buildSessionPrompt(files) {
+export function buildSessionPrompt(files, {structuredOutputs = false} = {}) {
   const manifest = JSON.parse(files['manifest.json']);
   const instructions = files['instructions.md'];
   const schemaText = files['result.schema.json'];
@@ -80,12 +97,13 @@ export function buildSessionPrompt(files) {
     'If `viewer_profiles` is included, include only viewers with direct evidence in this package and keep each profile short. It is a per-batch highlight, not the complete long-term profile set; complete viewer coverage is produced by the separate memory stage.',
     block('session_context.json', compactJson(files['session_context.json'])),
     block('messages.jsonl', files['messages.jsonl']),
-    block('compact answer schema', JSON.stringify(answerSchema)),
+    answerSchemaBlock('compact answer schema', answerSchema, structuredOutputs),
     'Return only the JSON object for the session report. Do not output viewer_memory_updates.'
   ].join('\n\n');
   return {
     locale: manifest.locale,
     manifest,
+    structuredOutputs: structuredOutputs === true,
     messages: [
       {role: 'system', content: SYSTEM[manifest.locale] ?? SYSTEM.en},
       {role: 'user', content: user}
@@ -161,6 +179,13 @@ function memoryContract(manifest, refs, onlyRefs = null) {
     `- locale: ${JSON.stringify(locale)}`,
     `- Return {"viewers":[{"ref":n,"memory":{"no_new_information":bool,"operations":[...]}}]}.`,
     `- Cover exactly these refs, once each: ${list.map((entry) => entry.ref).join(', ')}.`,
+    // The per-ref nickname / allowed evidence seqs / zero_excerpt flag are part
+    // of `memory_context.json` above. Repeating those arrays here duplicated a
+    // measurable share of every request (up to ~3 KB for a dense batch), so the
+    // contract keeps the rules and the coverage list only. Nothing is dropped:
+    // the authoritative values stay in memory_context and each excerpt line
+    // carries its own `ref`.
+    '- For every ref, `memory_context.json` lists its nickname, `evidence_seqs` (the only seqs allowed as evidence for that ref) and the `zero_excerpt` flag.',
     '- CRITICAL: `ref` and `seq` are different namespaces. A viewer with `ref` 5 may own evidence seq 3; never assume ref number equals seq number.',
     '- Use only the evidence_seq numbers listed for the same ref. A seq belonging to another ref is invalid even if the number looks related.',
     '- Each excerpt line carries both `seq` and `ref`; `ref` identifies the viewer and `seq` is the only evidence identifier.',
@@ -173,13 +198,10 @@ function memoryContract(manifest, refs, onlyRefs = null) {
     '- Writing no_new_information is valid and counts as processed; never invent facts to fill the batch.',
     `- Language: ${MEMORY_LANGUAGE_RULE[locale] ?? MEMORY_LANGUAGE_RULE.en}`
   ];
-  for (const entry of list) {
-    lines.push(`- ref ${entry.ref}: nickname=${JSON.stringify(entry.nickname)}; evidence_seqs=${JSON.stringify(entry.evidenceSeqs)}; zero_excerpt=${entry.zeroExcerpt}`);
-  }
   return lines.join('\n');
 }
 
-export function buildMemoryPrompt(files, {viewerIds = null} = {}) {
+export function buildMemoryPrompt(files, {viewerIds = null, structuredOutputs = false} = {}) {
   const manifest = JSON.parse(files['manifest.json']);
   const fullContext = JSON.parse(files['memory_context.json']);
   const schema = JSON.parse(files['result.schema.json']);
@@ -218,15 +240,21 @@ export function buildMemoryPrompt(files, {viewerIds = null} = {}) {
     block('memory_context.json (ids replaced by ref)', JSON.stringify(compactContext)),
     block('viewer_excerpts.jsonl (seq + ref)', annotatedExcerpts),
     memoryContract(manifest, refs),
-    block('compact answer schema', JSON.stringify(answerSchema)),
-    `## Output example (compact, ${locale})\nReturn only one object shaped like this example. The example text is not data and must not be copied.`,
-    memoryCompactShape(locale)
+    answerSchemaBlock('compact answer schema', answerSchema, structuredOutputs),
+    // The compact answer example is already part of `buildMemoryInstructions`
+    // (the instructions are rebuilt at runtime, not read from an old package).
+    // Repeating the identical example here was pure duplicate input on every
+    // request, so the single copy inside the instructions is authoritative.
+    instructions.includes(memoryCompactShape(locale))
+      ? `Return only one JSON object shaped like the compact example in the instructions (${locale}).`
+      : `## Output example (compact, ${locale})\nReturn only one object shaped like this example. The example text is not data and must not be copied.\n\n${memoryCompactShape(locale)}`
   ].join('\n\n');
   return {
     locale,
     manifest,
     memoryContext,
     refs,
+    structuredOutputs: structuredOutputs === true,
     viewerIds: refs.map((entry) => entry.viewerId),
     answerSchema,
     resultSchema: schema,
@@ -276,11 +304,12 @@ export function buildTargetedMemoryPrompt({prompt, missingRefs}) {
       ? [block('viewer_excerpts.jsonl (missing viewers only, seq + ref)', annotatedExcerpts)]
       : []),
     memoryContract(prompt.manifest, prompt.refs, missingRefs),
-    block('compact answer schema', JSON.stringify(schema))
+    answerSchemaBlock('compact answer schema', schema, prompt.structuredOutputs === true)
   ].join('\n\n');
   return {
     manifest: prompt.manifest,
     refs: prompt.refs,
+    structuredOutputs: prompt.structuredOutputs === true,
     answerSchema: schema,
     messages: [
       {role: 'system', content: SYSTEM[prompt.locale] ?? SYSTEM.en},
@@ -309,7 +338,8 @@ export function buildSessionAggregatePrompt({
   partialReports = null,
   coverage = null,
   requireCoverage = false,
-  retryNote = null
+  retryNote = null,
+  structuredOutputs = false
 }) {
   const locale = manifest.locale ?? 'en';
   const schema = answerSchema ?? buildSessionAggregateAnswerSchema(resultSchema);
@@ -385,11 +415,12 @@ export function buildSessionAggregatePrompt({
     block(Array.isArray(partialReports)
       ? 'partial_reports (validated bounded nodes; evidence refs are batch-qualified)'
       : 'batch_results (validated, evidence refs are batch-qualified)', JSON.stringify(data)),
-    block('compact answer schema (bounded aggregate)', JSON.stringify(schema))
+    answerSchemaBlock('compact answer schema (bounded aggregate)', schema, structuredOutputs)
   ].join('\n\n');
   return {
     locale,
     manifest,
+    structuredOutputs: structuredOutputs === true,
     answerSchema: schema,
     messages: [
       {role: 'system', content: SYSTEM[locale] ?? SYSTEM.en},
@@ -413,7 +444,8 @@ export function buildAggregateDigestPrompt({
   coverage = null,
   limits = null,
   resultSchema = null,
-  retryNote = null
+  retryNote = null,
+  structuredOutputs = false
 }) {
   const locale = manifest.locale ?? 'en';
   const schema = buildAggregateDigestSchema(resultSchema, {
@@ -479,11 +511,12 @@ export function buildAggregateDigestPrompt({
     block(sourceKind === 'nodes'
       ? 'partial_reports (lower-level bounded summaries)'
       : 'batch_results (validated, evidence refs are batch-qualified)', JSON.stringify(childItems)),
-    block('compact answer schema (bounded partial summary)', JSON.stringify(schema))
+    answerSchemaBlock('compact answer schema (bounded partial summary)', schema, structuredOutputs)
   ].join('\n\n');
   return {
     locale,
     manifest,
+    structuredOutputs: structuredOutputs === true,
     answerSchema: schema,
     messages: [
       {role: 'system', content: SYSTEM[locale] ?? SYSTEM.en},

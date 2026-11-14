@@ -1,10 +1,74 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0 P0-2 完整备份、恢复与跨电脑迁移 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-AI-EFFICIENCY Token 利用率与 API 成本专项 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮未修改生产数据库、未对真实用户数据执行恢复/覆盖/清空、未调用真实付费 AI、未干扰正在采集的直播、未 Push/Tag/发布。自动化使用 `tests/.tmp` 隔离数据；正式 EXE 使用本机构建与临时数据目录。
+> 本轮未修改生产数据库、未调用真实付费 AI、未发送真实弹幕、未干扰正在采集的直播、未 Push/Tag/发布。
+> 全部测量在 `tests/.tmp` 隔离目录中用合成数据 + Mock Provider 完成。
 
-## 0. 本轮（P0-2 完整备份与恢复）
+## 0. 本轮（AI Token 效率与成本）
+
+完整报告：`docs/AI_TOKEN_EFFICIENCY.md`；日志：`log/2026-11-14-ai-token-efficiency.md`。
+
+### 0.1 本轮做了什么
+
+1. **建立 Token 归因**（无 schema 变更）：缓存命中 Token、推理 Token、逐尝试 token 账本、
+   `usageSource`、`attempts`/`unknownUsageAttempts`；能力测试与翻译失败尝试也计入。
+2. **建立可复现基线**：`scripts/ai-efficiency-baseline.mjs` 14 个场景；"优化前"由
+   `git archive HEAD` 的未修改副本真实跑出，不是推算。
+3. **删除可证明的重复输入**：Schema 只发一次（仅已校验 structured outputs 的 Provider）、
+   删除重复输出示例、记忆契约不再重复 `memory_context` 的逐观众数组。
+4. **自适应分批**：观众上限从"写死 10"改为"偏好 10、按输出预算/摘录上限/内容预算最多 20"。
+5. **UI 与口径**：推理/缓存 Token、用量来源、重试开销占比、每百观众/每百事实 Token、
+   每百观众估算费用；无价格时明确「费用未知」；「已知实际费用」改为「估算费用」。三语同步。
+
+### 0.2 结果
+
+| 指标 | 优化前 | 优化后 | 变化 |
+| --- | --- | --- | --- |
+| 总请求数 | 216 | 150 | -30.6% |
+| 输入 Token（模拟） | 2,867,221 | 2,560,520 | -10.7% |
+| 总 Token（模拟） | 3,029,258 | 2,723,048 | -10.1% |
+| 请求字节（实测） | 9,274,013 | 8,312,569 | -10.4% |
+| 观众覆盖 / 事实 | 1715 / 1715 | 1715 / 1715 | 不变 |
+
+Token 为"按真实请求字节模拟"的值（无 tokenizer、无付费调用），只用于同规则前后比较；
+界面与数据库里的用量一律是 Provider 自报值。
+
+### 0.3 关键实现位置
+
+- `src/ai/providers/adapters.mjs#normalizeUsage()`：三类 Provider 的缓存/推理解析。
+- `src/ai/providers/pricing.mjs`：`addUsage()` / `countRequestWithoutUsage()` / `estimateCost()`。
+- `src/ai/runtime/attempt.mjs`：尝试记录（token/usageSource/estimateSource）。
+- `src/ai/api/runner.mjs`：`#attributeRequestUsage()`（唯一 usage 写路径）、`#efficiencyStatus()`、
+  `#structuredOutputs()`；prompt 构造传入 `structuredOutputs`。
+- `src/ai/api/prompts.mjs`：`answerSchemaBlock()`、删除重复示例、契约去重。
+- `src/ai/batching/tokens.mjs`：`MEMORY_MAX_VIEWERS_PER_BATCH`、`viewerCapHard`。
+- `src/ai/export/split-jobs.mjs`：`viewersPerBatchHard`。
+- `src/web/js/pages/ai.js`、`ai-settings.js`、`src/web/i18n/*.json`：展示与三语文案。
+
+### 0.4 下一轮注意（P0-3 真实付费验收）
+
+1. **首要待验收**：用真实付费 Provider 校准 `bytes/3` 估算与真实 tokenizer 的比值，
+   并对照 `usage_json` 检查重试/补答占比。历史记录该比值约 1.366×，本轮未重新校准。
+2. **必须复核自适应分批的语义影响**：单请求观众数从 10 增到最多 20。观察
+   `MEMORY_VIEWER_UPDATE_MISSING` 与补答率是否上升。若上升，最省事的回退是
+   `config` 不再传 `viewersPerBatchHard`（或把 `MEMORY_MAX_VIEWERS_PER_BATCH` 调回 10）。
+3. **缓存命中率**：本轮只解析 Provider 字段；真实命中率、缓存写入成本需真实数据验证。
+4. **不要**把本轮"模拟 Token"写进任何对外结论；不要把估算费用说成账单。
+5. 若要继续压输入，最大空间是 `messages.jsonl` 的结构开销（实测 93.8% 字节为 JSON 结构），
+   但会改变证据行格式，必须先做真实模型质量对照。
+6. 编辑器警告：本仓库内不要用 PowerShell 的 `Get-Content | Set-Content` 改文件（PS 5.1
+   会以 ANSI 读写并破坏 UTF-8 中文），只能用编辑工具；`.git` 写入可能被沙箱拒绝。
+
+### 0.5 不要做
+
+1. 不要为了省 Token 删除 Schema/证据/覆盖/语言/身份规则。
+2. 不要在未校验 structured outputs 的 Provider 上删除文本 schema。
+3. 不要把未知用量当 0，或把估算费用显示成"实际费用"。
+4. 不要把 `messages.jsonl` 的改动与"省 Token"一起提交而不做质量对照。
+5. 不要用提高 `max_tokens` 的方式"解决"截断；先缩小批次。
+
+## 0-A 上一轮（P0-2 完整备份与恢复）
 
 完整证据：`log/2026-11-14-backup-restore-p02.md`；格式：`docs/BACKUP_FORMAT.md`；流程：`docs/BACKUP_RESTORE.md`。
 

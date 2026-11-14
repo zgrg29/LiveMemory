@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.2（2026-11-14，RC0-AI-EFFICIENCY）：Token 归因、重复输入、动态分批与成本口径。缓存/推理 Token 归因、逐尝试 token 账本、无 usage 请求不再消失；删除三处可证明的重复输入（structured-output Provider 的 schema、画像重复示例、契约逐观众数组）；画像观众上限从写死 10 改为"偏好 10、按预算最多 20"；三语界面显示重试开销占比与每百观众/每百事实 Token，无价格时明确「费用未知」。14 场景基线：请求 -30.6%、总 Token（按实测字节模拟）-10.1%、覆盖与事实完全不变；781 自动化测试。完整说明见 `docs/AI_TOKEN_EFFICIENCY.md`、`docs/STATUS.md` §0.26、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-token-efficiency.md`。
 > v0.13.2（2026-11-14，RC0 P0-2）：完整备份、恢复与跨电脑迁移。新增 `.livememory` v1（STORE ZIP + manifest + SHA-256/CRC + schema/format 兼容检查）、SQLite `VACUUM INTO` 一致快照、事务化恢复 + `runtime/restore-journal.json` 崩溃回滚、ZIP Slip/压缩炸弹/超大/损坏/未来版本拒绝、三语设置页备份/预览/验证/恢复/进度/取消；备份明确排除 API Key 与平台登录。24 个专项测试、全量通过；正式 EXE 完成“备份 → 全新目录恢复 → 重启 → 再次备份”闭环。完整说明见 `docs/BACKUP_FORMAT.md`、`docs/BACKUP_RESTORE.md`、`docs/STATUS.md` §0.25、`docs/HANDOFF.md` §0 与 `log/2026-11-14-backup-restore-p02.md`。
 > v0.13.2（2026-11-14，RC0 P0-5）：本地 HTTP API 会话认证 + 发布 EXE 改为 `asInvoker`。除 health/auth 外所有 `/api/*`（含 SSE）要求启动器建立的一次性 fragment token → `HttpOnly; SameSite=Strict` Cookie；`Origin:null`/伪造 Origin/恶意 Host/跨站元数据拒绝；重启旧凭据失效；删除管理员检查。正式 EXE `75588ba16aec` 在 Low Mandatory Level 直接启动，12/12 安全矩阵 + 10/10 功能矩阵通过。完整说明见 `docs/STATUS.md` §0.24、`docs/HANDOFF.md` §0 与 `log/2026-11-14-local-api-auth-p0.md`。
 > v0.13.2（2026-11-14，RC0 P0-4）：YouTube 暂时性故障不再误判直播结束；429/5xx/断网/异常 200 进入可恢复重连，连续失败只进入可恢复 `failed` 并继续退避；缺 `continuationContents` 改为 invalid；stale continuation 先重取再 poll；观看页两次 ended 或聊天明确关闭才结束；UI 显示重连/最近故障/数据保留。10 个 unit + 2 个 integration 专项、721 自动化测试；Bilibili 53 项生命周期回归通过；正式 EXE `59b7928cb78a`（commit `31886b2`）asInvoker 副本 + 本地假 YouTube 实跑 3 分钟断连 → 同 session 恢复 → 去重 → `platform_ended`。完整说明见 `docs/STATUS.md` §0.23、`docs/HANDOFF.md` §0-A 与 `log/2026-11-14-youtube-lifecycle-p0.md`。
@@ -13,7 +14,21 @@
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
-> 仍未完成：P0-3 真实付费 API 验收；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-2 与 P0-5 代码级与正式 EXE 级已关闭（真实桌面文件对话框交互列为用户待验收）。
+> 仍未完成：P0-3 真实付费 API 验收（含 Token 估算校准与自适应分批语义复核）；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭（真实桌面交互与真实付费 Provider 列为用户待验收）。
+
+## P20 RC0-AI-EFFICIENCY Token 利用率与 API 成本（v0.13.2，2026-11-14）✅
+
+- ✅ Token 归因：缓存命中/缓存写入/推理 Token；逐尝试 token 账本；`usageSource`；`attempts` 与 `unknownUsageAttempts`；无 usage 的请求不再消失
+- ✅ 能力测试与翻译失败尝试的用量也被记录与计价（不再有"已付费但不可见"的调用）
+- ✅ 删除三处可证明的重复输入：structured-output Provider 的文本 schema、画像重复输出示例、契约逐观众数组
+- ✅ 自适应分批：观众上限从写死 10 改为"偏好 10、受输出预算/摘录上限/内容预算约束最多 20"；`viewersPerBatchHard` 未传时保持旧语义
+- ✅ 14 场景确定性基线（`scripts/ai-efficiency-baseline.mjs`）：请求 -30.6%、总 Token（按实测字节模拟）-10.1%、请求字节 -10.4%
+- ✅ 质量：观众覆盖 1715/1715 不变、有效事实 1715 不变、重复事实 0、Resume 只重试失败观众、完成后 Continue 0 请求
+- ✅ 三语 UI：推理/缓存 Token、用量来源、重试与补答开销占比、每百观众/每百事实 Token、每百观众估算费用；无价格时明确「费用未知」
+- ✅ 无 schema 变更（16）、备份格式不变、结果 Schema 1.3.0、提示词 v13.2；全量测试见 `docs/STATUS.md` §0.26
+- ⬜ 真实付费 Provider 的 Token 校准、缓存命中率、自适应分批的语义影响（P0-3 待验收）
+- ⬜ `messages.jsonl` 结构开销（实测 93.8% 字节为 JSON 结构）未压缩：需真实模型质量对照
+- 完整证据：`docs/AI_TOKEN_EFFICIENCY.md`、`log/2026-11-14-ai-token-efficiency.md`
 
 ## P19 RC0 P0-2 完整备份、恢复与跨电脑迁移（v0.13.2，2026-11-14）✅
 
