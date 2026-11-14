@@ -5,11 +5,12 @@
 ### 真实 Provider 验收（用户授权）
 
 - 用户授权：DeepSeek `deepseek-flash`、$1.25 上限、仅合成数据；Key 由用户在隔离控制台的真实浏览器 UI 输入，Harness 未接触明文 Key。
-- 真实请求 50 次，估算费用 **$0.2553**（高峰单价、缓存按输入价、故意保守；授权额度 20.4%）。
+- 真实请求：in-process **50 次 / $0.2553** + 正式 EXE **16 次 / $0.0891** = **66 次 / $0.3444**（高峰单价、缓存按输入价、故意保守；授权额度 27.6%）。
 - 能力检测：首次 `finish-reason-length-empty-content` → 修复后 `passed`（577 输入 / 237 输出 / 推理 0）。
 - 单场 + 画像：80/80 观众、85 条事实、session 4 批 + final、schema 1.3.0、11 请求、$0.07833。
 - 100 观众 + Resume：100/100、243 条事实、暂停/重启/Resume 后完成、$0.07007。
 - 日语 60 观众：60/60、83 条事实、kana 0.649 / CJK 0.984、无英语回退、$0.03017。
+- 正式 EXE 真实验收 **11/11**：40/40、79 条事实、8 请求、输入 105,982 / 输出 10,356 / 缓存 17,408、$0.04422、备份 1,169,923 B、重启后 complete、Resume 0 请求。第一次 10/11 只是脚本把已完成 Resume 的 202 当成 200；修正断言后重跑。
 - 全部真实任务：0 重复 topic/statement、0 跨观众证据、0 无证据事实。
 
 ### 20 人上限回退
@@ -26,7 +27,11 @@
 ### 测试与构建
 
 - 新增 16 项自动化（13 unit + 3 integration）；全量 **797 passed / 0 failed / 0 skipped**。
-- 正式 EXE 重建与矩阵见 `docs/STATUS.md` §0.27（buildId / commit / SHA-256）。
+- 正式 EXE：buildId `69ec022cee31` / commit `f9b0cda` /
+  SHA-256 `20d7a58b1fbf4ea788b5cc3f4c0deb14528cf762ebcb0df101b7e8ef6c1fc1fd` /
+  `96,640,000` bytes / `189` assets / `asInvoker`。
+  Mock 矩阵 `verify-ai-token-exe` 16/16、`verify-exe` 10/10、`verify-p0-5-exe` 12/12、
+  `verify-p0-2-exe` 13/13；真实 DeepSeek EXE 11/11。
 - 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
 
 ### 未完成

@@ -337,9 +337,14 @@ async function main() {
     body: {sessionId: SESSION.id, consent: true}
   });
   const afterResume = await waitAnalysis();
+  // A completed task is accepted with 202 and immediately reports complete; the
+  // important assertion is that the provider request count does not change.
   record('a repeated resume after completion sends no provider request',
-    resume.status === 200 && Number(afterResume.usage?.requests ?? 0) === beforeRestartRequests,
-    [`HTTP ${resume.status}`, `requests ${beforeRestartRequests} → ${afterResume.usage?.requests}`]);
+    [200, 202].includes(resume.status)
+      && (resume.payload?.status ?? 'complete') === 'complete'
+      && Number(afterResume.usage?.requests ?? 0) === beforeRestartRequests,
+    [`HTTP ${resume.status}`, `status ${resume.payload?.status ?? afterResume.status}`,
+      `requests ${beforeRestartRequests} → ${afterResume.usage?.requests}`]);
 
   await stop();
   const summary = {

@@ -99,10 +99,10 @@
 见 `docs/AI_PROVIDER_COMPATIBILITY.md` §2。结论：7 个 Provider 全部 L1+L2；
 **没有一个达到 L3（真实 Provider 已验证）**。
 
-## 7. 正式 EXE
+## 7. 正式 EXE（阶段 A 构建；最终构建与真实请求见 §13）
 
-- 构建：`node scripts/build-windows.mjs`（代码提交 `aac812f` 后构建，build-info.commit 与提交一致）。
-- 构建标识：`dist/LiveMemory.exe` / `96,637,952` bytes（92.2 MB）/
+- 构建：`node scripts/build-windows.mjs`（代码提交后构建，build-info.commit 与提交一致）。
+- 阶段 A 构建标识：`dist/LiveMemory.exe` / `96,637,952` bytes（92.2 MB）/
   SHA-256 `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` /
   buildId `b0df3d53ff22` / source hash `b0df3d53ff22216ada0cf22cbc3ef31018f7ef573d6f005428a471fdf2900588` /
   builtAt `2026-11-14T10:38:00.559Z` / `189` assets / 20 个必需模块 / RT_MANIFEST `asInvoker`。
@@ -114,12 +114,75 @@
 - 性质：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
   **不是**真实浏览器点击，**不是**用户在 UI 中输入真实 Key。
 
-## 8. 未验证（阶段 B 或后续）
+## 8. 阶段 A 未验证（后续由阶段 B 覆盖）
 
 - 真实 Provider 的 `json_schema` 大 Schema 接受度、真实 429/5xx/空响应/截断。
 - 真实 usage 与 tokenizer 校准、真实缓存命中率、真实费用与账单核对。
-- 真实长期画像语义（10 vs 20 盲评）、三语言真实输出、Resume 后语言一致性。
+- 真实长期画像语义（10 vs 20）、三语言真实输出、Resume 后语言一致性。
 - 真实浏览器点击；正式 EXE 中用户通过 UI 填 Key 的完整流程。
 
-**P0-3 未完成，不得宣称通过。** 下一步是用户批准 `docs/AI_PROVIDER_COMPATIBILITY.md` §7
-的方案与费用上限。
+## 9. 阶段 B 授权与执行
+
+- 用户明确授权：**Plan A / DeepSeek `deepseek-flash` / 硬上限 $1.25 / 仅合成数据**。
+- 隔离目录 `tests/.tmp/paid-p03/`；用户在真实浏览器 UI 中输入 Key；Harness 未接触明文 Key，
+  未读取生产 `secrets/`，未修改生产数据库。
+- 实际请求：in-process 50 次 + 正式 EXE 16 次 = **66 次**；估算 **$0.3444**
+  （高峰单价、缓存按输入价，故意保守），占授权额度 27.6%。
+
+## 10. 第一个真实缺陷：DeepSeek thinking 耗尽探测预算
+
+- 首次能力检测 `partial`，`text` 阶段 `finish-reason-length-empty-content`；
+  2 次请求、输入 140 / 输出 8 Tokens。
+- 根因：DeepSeek V4 默认 thinking（effort=high），32 Token 探测预算被隐藏推理耗尽。
+- 修复：`thinking: {type: "disabled"}`（官方参数）。重新检测 `passed`：
+  network/auth/text/json/session/memory/multilingual=true，structuredOutputs=false；
+  4 次 usage 请求、输入 577 / 输出 237 / 推理 0，$0.0004575。
+
+## 11. 真实任务结果
+
+| 任务 | 数据 | 状态 | 覆盖 | 事实 | 请求 | 输入 | 输出 | 缓存 | 费用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| T1 单场 + 画像 | 80 / 800 / zh-CN | complete | 80/80 | 85 | 11 | 201,271 | 14,960 | 18,944 | $0.07833 |
+| T2 cap10 #1 | 25 / 200 / zh-CN | complete | 25/25 | 67 | 7 | 62,048 | 9,209 | 32,000 | $0.02967 |
+| T2 cap20 #1 | 25 / 200 / zh-CN | complete | 25/25 | 49 | 2 | 24,487 | 3,297 | 1,536 | $0.01130 |
+| T3 100 观众 + Resume | 100 / 1,000 / zh-CN | complete | 100/100 | 243 | 10（8 usage + 2 取消） | 155,578 | 19,499 | 81,280 | $0.07007 |
+| T4 日语 | 60 / 600 / ja | complete（先被 Harness 上限中断后 Resume） | 60/60 | 83 | 7 | 72,464 | 7,023 | 3,456 | $0.03017 |
+| T2 cap10 #2 | 25 / 200 / zh-CN | complete | 25/25 | 74 | 6 | 50,088 | 8,104 | 22,912 | $0.02475 |
+| T2 cap20 #2 | 25 / 200 / zh-CN | complete | 25/25 | 38 | 2 | 24,475 | 2,686 | 1,536 | $0.01057 |
+
+- 所有任务：0 重复 topic/statement、0 跨观众证据、0 无证据事实。
+- T1 单场报告 schema 1.3.0，4 批 + final；final 正确概括 13 分钟、固定话题循环、
+  无打赏/争论、第 3 批起模板化、设备求助未获回应；topics 6 / sentiment 6 / highlights 6。
+- 日语：kana 0.649 / CJK 0.984，无英语回退。
+- T3：暂停后 2 次在途请求被取消（可能计费但未计入 usage）；重启 Resume 后 100/100，
+  未重发已完成批次。
+- T4：Harness 请求上限在第 3 次触发本地停止（未发送的第 4 次不计费），Resume 后 60/60。
+
+## 12. 10 vs 20：真实语义回归与回退
+
+- 事实保留率：第 1 次 49/67 = **73%**；第 2 次 38/74 = **51%**；覆盖均 25/25。
+- cap20 第一个批次 17 位观众只产生 17 条操作（每人 1 条）；cap10 的 10 人批次产生
+  37 / 11 / 26 条。
+- 抽样：观众 15 的 8 条消息，cap10 提取 4 条，cap20 只 1 条；观众 0：4 vs 3。
+- **RC0 恢复默认 10 人/批**；`MEMORY_MAX_VIEWERS_PER_BATCH=20` 仅保留为技术上限与实验参数。
+- 这不是“20 人请求更少所以更好”的结论；正好相反，请求更少伴随事实损失。
+
+## 13. 正式 EXE 真实验收
+
+`scripts/ai-paid-exe-acceptance.mjs`：**11/11**（`69ec022cee31` / commit `f9b0cda`，
+40 位合成观众）：
+
+- 未认证 401；combined 202 → complete 40/40；报告 schema 1.3.0、topics 5；
+  画像 79 条事实、semantic 40/40；usage 8 requests / 8 attempts、
+  输入 105,982 / 输出 10,356 / 缓存 17,408；$0.04422；
+  备份 1,169,923 B；重启后 complete、requests 8→8；完成后 Resume 0 请求。
+- 第一次 10/11 只是脚本把已完成 Resume 的 202 当成 200；实际 8→8。修正后重跑 11/11。
+- 两次 EXE 真跑 16 次 / $0.0891；总计 66 次 / $0.3444。
+
+## 14. 最终费用与剩余
+
+- 估算 $0.3444（高峰单价；DeepSeek 缓存命中价更低，实际账单应更低）。
+- 2 次取消请求的输入费用未计入（保守上界 +$0.012）；DeepSeek 不返回 `usage.cost`，
+  官方账单需用户在控制台核对。
+- **P0-3 不能整体关闭**：只有 DeepSeek 是 L3；其他 Provider 仍 L2/L4；
+  cap10 仍漏部分事实；真实 429/5xx/截断、真实浏览器截图、官方账单未验证。

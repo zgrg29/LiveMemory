@@ -27,7 +27,7 @@
 - ✅ 真实 A/B 发现 **20 人上限事实保留率仅 73% / 51%**；RC0 恢复默认 **10 人/批**，20 只保留为技术上限与实验参数
 - ✅ 修复 **DeepSeek V4 默认 thinking 耗尽输出预算**：显式 `thinking:{type:"disabled"}`
 - ✅ 新增 16 项自动化（13 unit + 3 integration）；全量 **797 passed / 0 failed**
-- 🟡 正式 EXE 重建与真实 EXE 验收（buildId / 结果见 `docs/STATUS.md` §0.27）
+- ✅ 正式 EXE `69ec022cee31`（commit `f9b0cda`）：Mock 矩阵 `verify-ai-token-exe` 16/16、`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13；真实 DeepSeek EXE 验收 **11/11**（40/40、79 事实、8 请求、$0.04422、备份、重启、Resume 0 请求）
 - ⬜ 其他 Provider 的真实 `json_schema`/429/5xx/截断、真实缓存与费用（仍 L2/L4）
 - ⬜ 真实官方账单核对、取消请求计费、thinking 开启时的质量/费用对照
 - ⬜ cap10 仍会漏部分事实；长期画像质量只达到“20 明显更差、10 较保守”的结论

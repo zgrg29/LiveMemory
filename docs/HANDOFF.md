@@ -31,14 +31,14 @@
 | --- | --- |
 | 全量测试 | **797 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27） |
 | 新增测试 | 13 unit + 3 integration |
-| 真实请求 / 估算费用 | 50 次 / **$0.2553**（缓存按输入价，故意保守；授权 $1.25） |
+| 真实请求 / 估算费用 | in-process 50 次 / $0.2553 + 正式 EXE 16 次 / $0.0891 = **66 次 / $0.3444**（授权 $1.25） |
 | 能力检测 | 首次 `length` 空内容 → 关闭 DeepSeek thinking → `passed` |
 | 10 vs 20（第 1 次） | 67 vs 49 条事实；7 vs 2 请求；覆盖 25/25 |
 | 10 vs 20（第 2 次） | 74 vs 38 条事实；6 vs 2 请求；覆盖 25/25 |
 | 单场 + 画像 | 80/80，85 条事实，session 4 批 + final，11 请求，$0.07833 |
 | 100 观众 + Resume | 100/100，243 条事实，6 批；暂停/重启/Resume 后完成；$0.07007 |
 | 日语 60 观众 | 60/60，83 条事实；kana 0.649 / CJK 0.984，无英语回退；$0.03017 |
-| 正式 EXE | buildId / commit / SHA-256 与真实 EXE 结果见 `docs/STATUS.md` §0.27 |
+| 正式 EXE | buildId `69ec022cee31` / commit `f9b0cda` / SHA-256 `20d7a58b1fbf4ea788b5cc3f4c0deb14528cf762ebcb0df101b7e8ef6c1fc1fd` / `96,640,000` bytes / `189` assets / `asInvoker`；真实 DeepSeek EXE 验收 **11/11**（40/40、79 事实、8 请求、$0.04422、备份、重启、Resume 0 请求） |
 
 ### 0.3 关键实现位置
 

@@ -1475,8 +1475,10 @@ RC0 恢复默认 10 人/批**；20 只保留为技术上限与实验参数。
 
 ### 41.4 正式 EXE
 
-见 `docs/STATUS.md` §0.27：buildId / commit / SHA-256 与 `verify-ai-token-exe`、
-`verify-exe`、`verify-p0-5-exe`、`verify-p0-2-exe`，以及真实 DeepSeek EXE 验收结果。
+见 `docs/STATUS.md` §0.27：buildId `69ec022cee31` / commit `f9b0cda` / SHA-256
+`20d7a58b…`；Mock 矩阵 `verify-ai-token-exe` 16/16、`verify-exe` 10/10、
+`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13；真实 DeepSeek EXE 验收 **11/11**
+（40/40、79 事实、8 请求、$0.04422、备份、重启、Resume 0 请求）。
 
 ### 41.5 阶段 B 已覆盖
 

@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费计划；15 项新测试；796 全量；正式 EXE `b0df3d53ff22`）
+最后更新：2026-11-14（RC0 P0-3：DeepSeek 真实付费验收、20→10 回退与正式 EXE 真实请求；797 全量；EXE `69ec022cee31`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -112,29 +112,51 @@
   “synthetic schema failure” 被当成格式拒绝并多发一次请求（预期 2、实际 3）。收窄匹配后复跑。
 - 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
 
-### 0.27.6 正式 EXE
+### 0.27.6 正式 EXE（Mock 回归）
 
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| 大小 | `96,637,952` bytes（92.2 MB） |
-| SHA-256 | `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` |
-| buildId | `b0df3d53ff22` |
-| source hash | `b0df3d53ff22216ada0cf22cbc3ef31018f7ef573d6f005428a471fdf2900588` |
-| commit | `aac812f994c78aa616b5d9c0c8b220389130062d` |
-| builtAt | `2026-11-14T10:38:00.559Z` |
+| 大小 | `96,640,000` bytes（92.2 MB） |
+| SHA-256 | `20d7a58b1fbf4ea788b5cc3f4c0deb14528cf762ebcb0df101b7e8ef6c1fc1fd` |
+| buildId | `69ec022cee31` |
+| source hash | `69ec022cee31a872a81afa7b4747cc09da81ab3fa355f3786ac7ca5137a8bb4c` |
+| commit | `f9b0cdaa88abaeb6ba9cd9b9789f51c46646862e` |
+| builtAt | `2026-11-14T11:23:54.184Z` |
 | 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
 
-- `scripts/verify-ai-token-exe.mjs`：**16/16**。正式 EXE + 本地 OpenAI-compatible Mock Provider
-  + 隔离目录：40/40 观众、3 批、3 请求；输入 20,893 / 输出 3,563 / 缓存 8,356；
-  `tokenSource=provider-reported`；估算费用 0.019663 USD；注入 500 后 failed=3、
-  attempts 5 vs requests 2；Resume 只重发 b02 后 40/40；完成后重复 Continue 0 请求；
-  重启后 token 一致；便携备份 768,515 B。
+- `scripts/verify-ai-token-exe.mjs`：**16/16**。正式 EXE + 本地 Mock Provider：40/40 观众、
+  4 个计划批次（默认 10 人/批）、注入 500 后只重发 b02、完成后 Continue 0 请求、
+  重启后 token 一致、便携备份可创建。
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、
-  不可写目录、异目录、解压复用、CLI 三语）。`--version` 返回 buildId `b0df3d53ff22`。
+  不可写目录、异目录、解压复用、CLI 三语）。`--version` 返回 buildId `69ec022cee31`。
 - `scripts/verify-p0-5-exe.mjs`：**12/12**；`scripts/verify-p0-2-exe.mjs`：**13/13**。
-- **性质**：正式 EXE + 本地 Mock + 合成数据；**不是**真实付费 Provider 验收，
-  **不是**真实浏览器点击，**不是**用户在 UI 中输入真实 Key。
+- **性质**：正式 EXE + 本地 Mock + 合成数据；**不是**真实付费 Provider 验收。
+
+### 0.27.8 正式 EXE 的真实 DeepSeek 验收
+
+`scripts/ai-paid-exe-acceptance.mjs`：**11/11**（正式 EXE + 隔离目录 + 用户已录入的
+DeepSeek 配置 + 真实请求；40 位合成观众 / 400 条消息 / zh-CN）：
+
+| 检查 | 结果 |
+| --- | --- |
+| EXE 启动、buildId | `69ec022cee31` / commit `f9b0cda` |
+| 未认证 AI 状态 | 401 |
+| 真实 combined 任务 | HTTP 202，`complete`，40/40，failed 0 |
+| usage | 8 requests / 8 attempts；输入 105,982 / 输出 10,356 / 缓存 17,408（第 2 次运行） |
+| 估算费用 | **$0.0442218** |
+| 单场报告 | schema 1.3.0，mode final，topics 5 |
+| 长期画像 | 79 条事实，semantic 40/40 |
+| 备份 | `.livememory` 1,169,923 bytes，job completed |
+| 重启后状态 | `complete`，requests 8 → 8 |
+| 完成后重复 Resume | HTTP 202、status complete、requests 8 → 8（0 Provider 请求） |
+
+- 第 1 次运行 10/11：唯一的 FAIL 是脚本断言要求 HTTP 200，而 API 对已完成 Resume 返回 202；
+  实际 requests 8 → 8，产品行为正确。修正脚本断言后重跑 **11/11**（第 2 次）。
+- 两次 EXE 真实运行合计 **16 次请求 / $0.0891**；加上 in-process 的 50 次 / $0.2553，
+  总计 **66 次 / $0.3444**，仍远低于用户批准的 $1.25。
+- **性质**：正式 EXE + 隔离目录 + 真实 DeepSeek 请求；**不是**生产数据，**不是** Mock。
+  用户通过真实浏览器 UI 在隔离控制台录入 Key 并完成能力检测；EXE 复用该隔离配置。
 
 ### 0.27.7 结论与待验收
 
@@ -156,7 +178,7 @@
    仍为 L2/L4，必须分别授权与验收。
 2. **官方账单核对**：DeepSeek 不返回 `usage.cost`，$0.2553 是按填写单价的估算；
    2 次暂停取消请求是否计费未确认；thinking 开启的质量/费用未对照。
-3. **真实 EXE 的 Key 流程**：见 §0.27.8（若已完成则按该节；否则仍待验收）。
+3. **真实 EXE 的 Key 流程**：见 §0.27.8（11/11，已完成）。
 4. 真实浏览器截图、真实 429/5xx/截断样本（未刻意制造）；cap10 仍会漏部分事实。
 5. 长期画像质量只达到“20 明显更差、10 较保守”的结论，不是“已解决质量”。
 
