@@ -7,7 +7,7 @@ import {randomBytes, timingSafeEqual} from 'node:crypto';
  * ------------
  * The HTTP server only listens on 127.0.0.1, but loopback is not an
  * authorization boundary: any process running as the same Windows user (and,
- * with the old requireAdministrator manifest, any process that could reach the
+ * because the EXE requests administrator rights, any process that can reach the
  * elevated listener) could call `/api/*`. A browser on a malicious page is a
  * second, different threat: it has no access to the console's cookie because
  * the cookie is HttpOnly and SameSite=Strict, and the Host/Origin checks in

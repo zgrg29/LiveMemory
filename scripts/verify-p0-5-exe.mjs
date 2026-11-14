@@ -13,13 +13,14 @@ import {
 import {join, resolve} from 'node:path';
 import {request as httpRequest} from 'node:http';
 import {manifestLevel} from './pe-manifest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 /**
  * RC0 P0-5 formal EXE verification.
  *
  * Proves, against the packaged binary and an isolated data directory:
- * - the shipped manifest is asInvoker (it launches without UAC in this
- *   low-integrity session);
+ * - the shipped manifest is requireAdministrator (Windows shows the standard UAC
+ *   prompt on double-click);
  * - unauthenticated API/SSE access is rejected;
  * - the launcher-provided fragment token exchanges for the real HttpOnly
  *   SameSite=Strict cookie;
@@ -27,6 +28,10 @@ import {manifestLevel} from './pe-manifest.mjs';
  * - a restart invalidates the old cookie/token and a new launch works;
  * - shutdown stops the HTTP listener and removes runtime files;
  * - the token/cookie never appears in runtime.json or logs.
+ *
+ * RC0-ADMIN-MANIFEST: an automated session cannot accept the interactive UAC
+ * prompt, so the functional checks launch a test-only asInvoker copy of the same
+ * binary. The shipped EXE is never modified and its manifest is checked directly.
  *
  * This is NOT a real browser click test and NOT a real UAC interaction test.
  * It uses the same HTTP handshake a browser performs.
@@ -40,6 +45,7 @@ const root = resolve('tests', '.tmp', `p05-exe-${stamp}`);
 const dataDir = join(root, 'data');
 const bootstrapFile = join(root, 'bootstrap.url');
 mkdirSync(dataDir, {recursive: true});
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 const results = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -166,7 +172,7 @@ let child = null;
 let exitInfo = null;
 
 function launch() {
-  child = spawn(distExe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
+  child = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
     cwd: root,
     env: {
       ...process.env,
@@ -201,10 +207,14 @@ function logText() {
 }
 
 try {
-  log(`exe ${distExe}`);
+  log(`shipped exe ${distExe}`);
+  log(`test copy ${exe}`);
   log(`data ${dataDir}`);
   const manifest = manifestLevel(readFileSync(distExe));
-  record('packaged EXE manifest is asInvoker (no UAC elevation)', manifest === 'asInvoker', [`manifest: ${manifest}`]);
+  record('shipped EXE requests administrator rights (requireAdministrator, UAC prompt)', manifest === 'requireAdministrator', [
+    `manifest: ${manifest}`,
+    `functional checks use a test-only asInvoker copy: ${exe}`
+  ]);
 
   launch();
   const health = await waitFor(async () => {
@@ -217,7 +227,7 @@ try {
     }
   }, {timeout: 45000, label: 'health'});
   const buildInfo = JSON.parse(readFileSync(join(resolve('build'), 'build-info.json'), 'utf8'));
-  record('the EXE launches as the current user and serves /api/health', health.buildId === buildInfo.buildId, [
+  record('the test copy launches and serves /api/health', health.buildId === buildInfo.buildId, [
     `buildId ${health.buildId}`,
     `commit ${health.commit}`,
     `port ${health.port}`

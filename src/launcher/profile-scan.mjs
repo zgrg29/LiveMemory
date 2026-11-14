@@ -4,13 +4,12 @@ import {join, resolve} from 'node:path';
 /**
  * Find existing LiveMemory data folders in other Windows user profiles.
  *
- * Older LiveMemory builds used a `requireAdministrator` manifest, so Windows
- * could run the elevated process under a different administrator account and
- * `%LOCALAPPDATA%` pointed at that account. The packaged EXE is now asInvoker,
- * but the conservative scan remains: before creating a new empty database, the
- * launcher checks whether exactly one existing LiveMemory database can be found
- * in the local user profiles. If there are several, it refuses to guess and asks
- * for `--data-dir`.
+ * LiveMemory ships with a `requireAdministrator` manifest (RC0-ADMIN-MANIFEST),
+ * so Windows can run the elevated process under a different administrator
+ * account and `%LOCALAPPDATA%` may point at that account. The conservative scan
+ * remains: before creating a new empty database, the launcher checks whether
+ * exactly one existing LiveMemory database can be found in the local user
+ * profiles. If there are several, it refuses to guess and asks for `--data-dir`.
  */
 export function findExistingUserDataDirs({
   env = process.env,

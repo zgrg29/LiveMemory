@@ -4,6 +4,7 @@ import {mkdirSync, openSync, readFileSync, existsSync, writeFileSync} from 'node
 import {join, resolve} from 'node:path';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
 import {manifestLevel} from './pe-manifest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 /**
  * Packaged usage-guide verification.
@@ -14,16 +15,22 @@ import {manifestLevel} from './pe-manifest.mjs';
  * reachable from the packaged navigation/router, is translated in all three
  * languages and does not weaken the existing local API authentication.
  *
+ * RC0-ADMIN-MANIFEST: the shipped EXE is requireAdministrator. Automated
+ * sessions cannot accept the interactive UAC prompt, so functional checks launch
+ * a test-only asInvoker copy of the same binary; the shipped manifest is checked
+ * separately and real UAC acceptance remains a manual user step.
+ *
  * A real browser cannot start inside this sandbox (Chromium's mojo channel is
  * denied), so this script checks the exact files the browser receives. The DOM
  * rendering itself is covered by tests/unit/help-ui.test.mjs with a read-only DOM
  * shim over the same dictionaries.
  */
 
-const exe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
+const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = resolve('tests', '.tmp', `verify-help-${stamp}`);
 mkdirSync(root, {recursive: true});
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 const results = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -136,13 +143,17 @@ const SECTION_IDS = ['start', 'connect', 'records', 'providers', 'analysis', 'me
 
 async function main() {
   log('LiveMemory packaged usage-guide verification');
-  log(`  exe:    ${exe}`);
-  log(`  sha256: ${createHash('sha256').update(readFileSync(exe)).digest('hex')}`);
+  log(`  shipped exe: ${distExe}`);
+  log(`  shipped sha256: ${createHash('sha256').update(readFileSync(distExe)).digest('hex')}`);
+  log(`  test copy: ${exe} (asInvoker; automated sessions cannot accept UAC)`);
   log(`  work:   ${root}`);
   log('');
 
-  const manifest = manifestLevel(readFileSync(exe));
-  record('release EXE still runs with the current user rights (asInvoker)', manifest === 'asInvoker', [`manifest: ${manifest}`]);
+  const manifest = manifestLevel(readFileSync(distExe));
+  record('shipped EXE requests administrator rights (requireAdministrator, UAC prompt)', manifest === 'requireAdministrator', [
+    `manifest: ${manifest}`,
+    `functional checks use a test-only asInvoker copy: ${exe}`
+  ]);
 
   const dataDir = join(root, 'data');
   const app = launch(['--no-open', '--data-dir', dataDir, '--port', '49260', '--lang', 'en']);

@@ -14,6 +14,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ### 现在能做什么（v0.13.2）
 
+- **双击启动请求管理员权限（v0.13.2 RC0-ADMIN）**：正式 EXE 使用 `requireAdministrator`，双击时 Windows 显示标准 UAC 确认；同意后以管理员权限启动，拒绝则由 Windows 取消启动。不需要右键“以管理员身份运行”，程序不会绕过或关闭 UAC。
 - **内置三语使用说明（v0.13.2 RC0 封版）**：侧栏新增「使用说明」，用简体中文 / 日本語 / English 说明首次启动、Bilibili 与 YouTube 连接、记录与观众数据、AI Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移和常见问题。页面只读，不修改设置、不弹确认、不新增任何使用限制。
 - **单一 AI 分析入口**：五步完成——选择直播 → 选择 API 配置 → 选择内容（单场 / 长期画像 / 两者）→ 确认任务规模 → 开始分析。单场报告与长期画像独立保存，画像失败不会删除已完成的单场报告。
 - **长期画像可靠性（v0.13.2）**：模型的 Compact 回答必须经过完整 Schema/身份/证据/覆盖校验；ref 覆盖完整不再等于合法。可修复错误最多自动修复一次，修复后仍须重新完整校验。模型不能改写稳定 `viewer_id`；跨观众证据被拒绝。日语任务使用日语语义事实（示例不再固定英文）。
@@ -176,7 +177,7 @@ node scripts/build-windows.mjs
 ### 数据与隐私
 
 - 只监听 `127.0.0.1`，端口动态选择，不暴露公网
-- 不写入注册表、不写 `Program Files`；发布 EXE 的 Manifest 为 `asInvoker`（RC0 P0-5），不请求管理员权限
+- 不写入注册表、不写 `Program Files`；发布 EXE 的 Manifest 为 `requireAdministrator`（v0.13.2 RC0-ADMIN），双击时由 Windows 显示标准 UAC 确认
 - 本地 `/api/*` 要求启动器建立的随机会话 Cookie（health/auth 除外）；token 不进入 URL 查询串、日志或 runtime.json
 - 日志不记录 Cookie、Token、聊天正文；备份默认不包含任何登录凭据
 - 关闭控制台窗口应使用 Ctrl+C，程序会刷新数据并关闭数据库
@@ -187,6 +188,7 @@ node scripts/build-windows.mjs
 
 LiveMemory は、配信のチャット・ギフト・スーパーチャット・メンバーシップを**自分の PC 上**に記録し、視聴者ごとの長期プロフィールを作るローカル優先のツールです。v0.13.1 以降、AI 分析は**自分で設定した API キー**を使う 1 つの入口だけです。配信・モデル・分析範囲を選び、「AI 分析を開始」を押すと、ローカルプログラムが生成・検証・保存まで行います。匿名無料 AI、プロンプトのコピー、JSON の貼り付けはありません。
 
+- **管理者権限での起動（v0.13.2 RC0-ADMIN）**: 正式 EXE は `requireAdministrator` で、ダブルクリック時に Windows の標準 UAC 確認が表示されます。承認すると管理者として起動し、拒否すると Windows が起動をキャンセルします。右クリックで「管理者として実行」を選ぶ必要はなく、プログラムが UAC を回避・無効化することもありません。
 - **単一の AI 分析センター（v0.13.1）**: 配信を選択 → API 設定を選択 → 内容（単一配信／長期プロフィール／両方）→ 費用・予算の確認 → 開始。単一配信レポートと長期プロフィールは別々に保存され、プロフィール失敗でレポートは消えません。プロバイダーごとに独立した同時実行（1–8、既定 3）、429 は `Retry-After`、5xx/タイムアウトは指数バックオフ＋ジッター。匿名無料の 2 リクエスト/分制限はありません。
 - **内蔵の三言語ガイド（v0.13.2 RC0）**: サイドバーの「使い方」で、初回起動、Bilibili / YouTube への接続、記録と視聴者データ、AI プロバイダーと API キー、単一配信の分析と長期プロフィール、長期メモリと根拠、進捗と失敗からの再開、バックアップ／復元／移行、よくある質問を説明します。ページは読み取り専用で、設定を変更せず、確認ダイアログも出さず、利用制限も追加しません。
 - **長期プロフィールの検証・言語・復旧（v0.13.2）**: Compact 回答は Schema・身元・証拠・カバレッジの完全検証を通ります。ref が揃っていても合法とは限りません。修復可能な誤りは最大 1 回だけ自動修復し、再検証後にのみ保存します。モデルは安定した `viewer_id` を書き換えられません。日本語タスクは日本語の意味的事実を生成し、固定英語例は使いません。失敗はバッチ単位で理由と技術情報を保持し、成功した兄弟バッチが消しません。「続行」は未完了バッチだけを実行し、再起動後も回復できます。
@@ -224,6 +226,8 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 ## English
 
 LiveMemory records chat, gifts, Super Chats and membership events **on your own computer**, and builds long-term viewer profiles keyed by stable platform IDs. All AI analysis uses **your own API key** and is called directly by the local program. There is no anonymous free AI, no manual prompt/JSON round trip, no cloud account and no developer server.
+
+**v0.13.2 RC0-ADMIN restores the administrator manifest**: double-clicking the EXE shows the standard Windows UAC prompt; accepting starts it with administrator rights, and declining simply cancels the launch. Users do not need to right-click and choose Run as administrator, and the program never bypasses or disables UAC.
 
 **v0.13.2 RC0 adds a built-in trilingual guide**: the sidebar's User guide (`#/help`) explains first launch, connecting Bilibili and YouTube, recordings and viewer data, AI providers and API keys, single-session analysis and long-term profiles, long-term memory and evidence, analysis progress and recovery, backup/restore/migration and common questions. The page is read-only: it changes no settings, shows no confirmation dialogs and adds no usage limits.
 

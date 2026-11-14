@@ -533,4 +533,33 @@
 **后果**：本机任意进程不再能直接读写 API；浏览器刷新、多个标签页和 SSE 共享同一个 Cookie。
 服务重启后旧 Cookie/token 全部失效，必须由启动器重新打开控制台。无法防御同一 Windows 用户下
 的恶意软件（可读浏览器配置/注入浏览器/抢占启动参数）；这是本地单用户应用的明确边界。
-真实浏览器点击、真实 Ctrl+C/关闭窗口与 UAC 不再适用（asInvoker）仍需人工验收。
+真实浏览器点击、真实 Ctrl+C/关闭窗口仍需人工验收。Manifest 的 asInvoker 决定已被 ADR-037 取代；
+认证设计继续有效。
+
+## ADR-037 恢复 requireAdministrator（取代 ADR-036 的 Manifest 决定）
+
+**状态**：已采纳（RC0-ADMIN-MANIFEST，2026-11-14，用户明确决定）
+
+**背景**：ADR-036 把发布 EXE 改为 `asInvoker` 并保留 API 会话认证。用户在实际电脑上双击该 EXE 时
+无法启动，失败步骤 `Bootstrap`，详情 `No writable application folder`。用户明确要求：**不再调查
+目录权限、不修改 Bootstrap 目录选择策略，只恢复 EXE 启动时自动请求管理员权限。**
+
+**决定**：
+
+- 正式 `LiveMemory.exe` 的 PE `RT_MANIFEST` 改为 `requireAdministrator`。双击时由 Windows 显示
+  标准 UAC 确认，同意后以管理员权限启动；不要求右键“以管理员身份运行”；不绕过、不关闭 UAC；
+  用户拒绝时由 Windows 取消启动，不额外设计降级/补偿机制。
+- 构建脚本在 postject 注入前后都断言 `requireAdministrator`，最终 EXE 再读取一次。
+- 不修改 Bootstrap 目录选择、启动器目录解析、AI、直播采集、长期画像、Provider、备份恢复逻辑。
+- ADR-036 的 API 会话认证、Bootstrap token、Origin/Host/SSE 校验、API Key 与凭据保护全部保留；
+  提权不放宽任何安全或数据完整性规则。管理员权限不是 API 的授权边界。
+- 自动化测试无法接受交互式 UAC：正式二进制单独断言 Manifest，功能场景使用 `tests/.tmp/` 中
+  测试专用的 asInvoker 副本；真实 UAC 双击列为本轮用户人工验收项。
+
+**后果**：
+
+- 双击会弹出 UAC；拒绝即取消启动。程序不再保证“无提权也能启动”。
+- 提权可能让进程运行在另一个管理员账户下，`profile-scan` 的“恰好一个现有数据库才使用”保守
+  扫描继续保留。
+- 同一 Windows 用户的恶意软件风险仍在，且可能继承提权令牌；文档不得把提权描述为安全增强。
+- 版本、数据库 schema、结果 Schema、提示词版本与备份格式均不变。

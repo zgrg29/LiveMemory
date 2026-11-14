@@ -2,12 +2,12 @@
  * Minimal PE resource manifest reader/patcher for the Windows EXE build.
  *
  * Windows reads the RT_MANIFEST resource to decide the UAC level. Node's
- * official node.exe contains an asInvoker manifest. RC0 P0-5 keeps the packaged
- * EXE asInvoker and normalizes/verifies that text explicitly; the helper still
- * supports requireAdministrator so an old binary can be inspected or patched in
- * a controlled test. The new manifest must fit in the existing .rsrc padding
- * (it does for the official x64 node.exe); the build fails rather than
- * corrupting the binary.
+ * official node.exe contains an asInvoker manifest. RC0-ADMIN-MANIFEST patches
+ * the packaged EXE to requireAdministrator so Windows shows the standard UAC
+ * prompt on double-click; the helper still supports asInvoker for test-only
+ * copies used by automated functional verification, and for inspecting older
+ * binaries. The new manifest must fit in the existing .rsrc padding (it does for
+ * the official x64 node.exe); the build fails rather than corrupting the binary.
  */
 
 function peSections(buffer) {

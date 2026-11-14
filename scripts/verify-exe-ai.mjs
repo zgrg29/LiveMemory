@@ -8,8 +8,9 @@
  *
  *   1. creates a real schema-v7 data folder with a seeded broadcast, so the
  *      packaged EXE must perform the v7 → v8 upgrade;
- *   2. launches dist/LiveMemory.exe directly (RC0 P0-5 ships an asInvoker
- *      manifest) with a test-only bootstrap URL and exchanges it for a session;
+ *   2. launches a test-only asInvoker copy of dist/LiveMemory.exe (the shipped
+ *      EXE requests administrator rights, and automated runs cannot accept UAC)
+ *      with a test-only bootstrap URL and exchanges it for a session;
  *   3. launches the EXE and drives the real console through headless Chrome:
  *      create a 3-batch task, import each batch JSON via paste, create the
  *      aggregate package, import the final JSON and read the report;
@@ -40,6 +41,7 @@ import {createSession, endSession} from '../src/storage/repositories/sessions.mj
 import {upsertBroadcaster} from '../src/storage/repositories/broadcasters.mjs';
 import {EventIngest} from '../src/platforms/shared/ingest.mjs';
 import {readZipEntry} from '../src/shared/zip.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 
 const args = process.argv.slice(2);
@@ -151,7 +153,7 @@ record('fixture is a real schema-v7 database with a recorded broadcast', existsS
 
 const distExe = resolve('dist', 'LiveMemory.exe');
 if (!existsSync(distExe)) throw new Error('dist/LiveMemory.exe is missing; run scripts/build-windows.mjs first');
-const exe = distExe;
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 async function authenticate() {
   const deadline = Date.now() + 15000;

@@ -1,5 +1,33 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r20 — 2026-11-14（RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限）
+
+### 变更
+
+- 正式 Windows EXE 的 RT_MANIFEST 从 `asInvoker` 改为 **`requireAdministrator`**：双击时由 Windows
+  显示标准 UAC 确认；同意后以管理员权限启动；拒绝则取消。不要求右键“以管理员身份运行”，
+  不绕过、不关闭 UAC。
+- 构建脚本在 postject 注入前后都断言 `requireAdministrator`；最终 EXE 再读取一次。
+- 新增 `scripts/test-exe-copy.mjs`：自动化测试无法接受交互式 UAC，因此正式 EXE 单独断言 Manifest，
+  功能场景使用 `tests/.tmp/` 中的 asInvoker 测试副本；正式 EXE 不被修改。
+- `verify-exe` / `verify-help-exe` / `verify-p0-5-exe` / `verify-p0-2-exe` / `verify-ai-token-exe`
+  与历史 UI 脚本同步改为“断言正式 Manifest + 测试副本运行”；`pe-manifest` 单测更新。
+- 未修改 Bootstrap 目录选择、数据目录解析、AI、直播采集、长期画像、Provider、备份恢复逻辑。
+
+### 安全
+
+- 本地 API 会话认证、Bootstrap token、Origin/Host 检查、SSE 认证、API Key/凭据保护、数据库与
+  备份恢复机制全部保留；提权不放宽任何校验，管理员权限不是 API 授权边界。
+
+### 验证
+
+- 全量 **828 passed / 0 failed / 0 skipped**（212,358 ms）。
+- `verify-exe` **10/10**、`verify-help-exe` **14/14**、`verify-p0-5-exe` **12/12**、
+  `verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16**（功能场景使用 asInvoker 测试副本）。
+- 正式 EXE：buildId `e438e74803cb` / SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` /
+  `96,733,184` bytes / `192` assets / RT_MANIFEST `requireAdministrator`。
+- **真实 UAC 双击未自动化验收**，列用户人工验收；未 Push / 未 Tag / 未发布。
+
 ## 0.13.2-r19 — 2026-11-14（RC0-USAGE-GUIDE：三语使用说明与 RC0 封版）
 
 ### 新增

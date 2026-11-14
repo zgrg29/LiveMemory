@@ -1,8 +1,75 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-USAGE-GUIDE：三语使用说明、828 全量、正式 EXE `74ed76e88a51`；RC0 封版）
+最后更新：2026-11-14（RC0-ADMIN-MANIFEST：恢复 requireAdministrator、828 全量、正式 EXE `e438e74803cb`；RC0 重新封版）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.31 RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（2026-11-14）✅
+
+范围：只恢复正式 EXE 启动时自动请求管理员权限，并更新构建断言、测试与文档。**没有修改 Bootstrap 目录选择逻辑、数据目录解析、AI、直播采集、长期画像、Provider、备份恢复或任何业务功能；没有放宽本地 API 会话认证、Bootstrap token、Origin/Host 检查、SSE 认证、API Key/凭据保护、数据库与备份恢复机制。**
+
+### 0.31.1 原因与决定
+
+- 用户在实际电脑上双击上一版（`asInvoker`）EXE 时无法启动，失败步骤 `Bootstrap`，详细信息 `No writable application folder`。
+- 用户明确决定：不继续调查目录权限、不修改 Bootstrap 目录选择策略、不做额外架构重构，**只恢复 EXE 启动时自动请求管理员权限**。
+- 正式 EXE 的 RT_MANIFEST 改为 **`requireAdministrator`**：双击时由 Windows 显示标准 UAC 确认；同意后以管理员权限启动；用户拒绝时由 Windows 取消启动。不要求右键“以管理员身份运行”，不绕过或关闭 UAC。
+
+### 0.31.2 修改内容
+
+- `scripts/build-windows.mjs`：postject 注入前后都把 Manifest 设为并断言 `requireAdministrator`；最终 EXE 再读取一次。
+- `scripts/pe-manifest.mjs`：注释更新；助手仍支持为测试副本生成 `asInvoker`。
+- `scripts/test-exe-copy.mjs`（新增）：自动化测试无法接受交互式 UAC，因此读取正式 EXE、确认其确为 `requireAdministrator`，只在内存中把副本改为 `asInvoker` 并写入 `tests/.tmp/`；**正式 EXE 不被修改**。
+- `scripts/verify-exe.mjs`、`verify-help-exe.mjs`、`verify-p0-5-exe.mjs`、`verify-p0-2-exe.mjs`、`verify-ai-token-exe.mjs`：先断言正式 Manifest，再用测试副本运行原场景；历史 UI 脚本（history / ai / live-status / YouTube lifecycle）同步改为测试副本。
+- `tests/unit/pe-manifest.test.mjs`：断言构建脚本使用 `requireAdministrator`，保留测试副本能力。
+- 注释同步：`src/launcher/launcher.mjs`、`src/launcher/profile-scan.mjs`、`src/server/auth.mjs`（仅注释，无行为变化）。
+
+### 0.31.3 保持不变的安全机制
+
+- 除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）仍要求随机会话 Cookie；未认证仍 401。
+- Bootstrap token 仍只放在 URL fragment，一次使用、5 分钟过期，不进入查询串、日志或 runtime.json。
+- 全方法 Origin 同源、`Origin:null` 拒绝、跨站 `Sec-Fetch-Site` 拒绝、Host 严格校验、无 CORS 放行。
+- API Key 仍只写入本地加密凭据库；备份仍排除凭据；恢复 journal、ZIP/路径/大小/CRC 校验与删除范围限制不变。
+- 管理员权限不是 API 授权边界；提权不放宽任何认证或数据完整性规则。
+
+### 0.31.4 测试
+
+- `tests/unit/pe-manifest.test.mjs`：2/2（测试副本能力 + 构建脚本 `requireAdministrator` 断言）。
+- 全量：**828 passed / 0 failed / 0 skipped（212,358 ms，2026-11-14）**；上一轮 828，测试数量不变（仅更新断言）。
+- 正式 EXE 矩阵（全部针对本轮 `e438e74803cb` 二进制；功能场景使用测试专用 asInvoker 副本，Manifest 单独断言）：
+  - `verify-exe`：**10/10**；
+  - `verify-help-exe`：**14/14**；
+  - `verify-p0-5-exe`（认证/Origin/Host/SSE/重启）：**12/12**；
+  - `verify-p0-2-exe`（备份 → 全新目录恢复 → 重启 → 再备份）：**13/13**；
+  - `verify-ai-token-exe`（AI 分析 + Token 归因 + Resume）：**16/16**。
+
+### 0.31.5 正式 EXE（本轮）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,733,184` bytes（92.3 MB） |
+| SHA-256 | `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` |
+| buildId | `e438e74803cb` |
+| source hash | `e438e74803cbd92ff07fc85db47acada2d3b8f9d2f794f83c0982c03d6817392` |
+| commit | `0dd9eab2ac5fe157e80ab48c3de6573a6f7e05e4`（构建时 HEAD；代码提交见 §0.31.7） |
+| builtAt | `2026-11-14T15:21:43.509Z` |
+| RT_MANIFEST | **`requireAdministrator`** |
+| 资源 | `192` files；21 个必需模块 |
+
+- 版本保持 **0.13.2**；数据库 schema **16**、结果 Schema **1.3.0**、提示词 **v13.2**、默认 10 人/批、金额/身份/去重、备份格式均未改动。
+
+### 0.31.6 边界与待验收
+
+- **真实 UAC 双击/点击未完成自动化验收**：本轮自动化在非交互、非提升会话运行，无法点击 UAC；只验证了正式 Manifest 与同一二进制的功能副本。**真实 Windows UAC 交互列为用户人工验收项**，不声称已通过真实双击测试。
+- 未验证拒绝 UAC 后的系统行为（预期由 Windows 直接取消启动，程序没有额外补偿路径）。
+- 未在干净 Windows 账户/另一台电脑上验证提权后的数据目录（`profile-scan` 保守逻辑保留，未改 Bootstrap）。
+- 未 Push / 未 Tag / 未发布。
+
+### 0.31.7 提交与构建记录
+
+- 代码与文档提交：待本轮提交后填写（`fix: restore administrator manifest for the Windows EXE`）。
+- 构建时间与 SHA-256 见 §0.31.5；若在提交后重建，`build-info.commit` 会记录该提交，`buildId` 只由源码内容决定。
+- 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
 
 ## 0.30 RC0-USAGE-GUIDE：三语使用说明与 RC0 封版（2026-11-14）✅
 

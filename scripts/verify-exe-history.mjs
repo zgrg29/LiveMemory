@@ -4,8 +4,9 @@
  * What it does:
  *   1. creates a schema-v6 data folder with seeded history (so the packaged EXE
  *      must perform the real v6 → v7 upgrade);
- *   2. launches dist/LiveMemory.exe directly (RC0 P0-5 ships an asInvoker
- *      manifest) with a test-only bootstrap URL and exchanges it for a session;
+ *   2. launches a test-only asInvoker copy of dist/LiveMemory.exe (the shipped
+ *      EXE requests administrator rights, and automated runs cannot accept UAC)
+ *      with a test-only bootstrap URL and exchanges it for a session;
  *   3. launches that EXE, then drives its console through headless Chrome:
  *      search, archive, stop a simulated recording and permanent delete;
  *   4. restarts the EXE and checks that archive state and remaining history
@@ -34,6 +35,7 @@ import {currentSchemaVersion, MIGRATIONS} from '../src/storage/database/migratio
 import {createSession} from '../src/storage/repositories/sessions.mjs';
 import {upsertBroadcaster} from '../src/storage/repositories/broadcasters.mjs';
 import {EventIngest} from '../src/platforms/shared/ingest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 
 const args = process.argv.slice(2);
@@ -172,7 +174,7 @@ record('fixture is a real schema-v6 database', existsSync(dbFile));
 
 const distExe = resolve('dist', 'LiveMemory.exe');
 if (!existsSync(distExe)) throw new Error('dist/LiveMemory.exe is missing; run scripts/build-windows.mjs first');
-const exe = distExe;
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 async function authenticate() {
   const deadline = Date.now() + 15000;

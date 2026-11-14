@@ -4,9 +4,9 @@
 
 - 单一可执行文件 `LiveMemory.exe`（当前构建约 90.3 MB）。
 - 用户无需安装 Python、Node.js、npm、数据库或任何开发依赖。
-- 双击运行，PE RT_MANIFEST 为 **`asInvoker`**：不触发 UAC，以当前用户权限显示命令行窗口并打开默认浏览器控制台（RC0 P0-5 起；v0.5.0 的 `requireAdministrator` 已撤销）。
+- 双击运行，PE RT_MANIFEST 为 **`requireAdministrator`**：由 Windows 显示标准 UAC 确认，用户同意后以管理员权限显示命令行窗口并打开默认浏览器控制台（RC0-ADMIN-MANIFEST，2026-11-14；用户明确决定取代 RC0 P0-5 的 `asInvoker`）。
 - 安装目录可以只读；用户数据仍写入 `%LOCALAPPDATA%\LiveMemory\`（或显式指定的可写目录）。
-- 开发模式与打包 EXE 使用相同的普通用户权限；没有防御性管理员检查，也没有 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 生产绕过。
+- 开发模式仍以当前用户权限运行；打包 EXE 因 Manifest 请求管理员权限，但**没有**额外的“必须管理员”运行时检查，也没有 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 生产绕过。UAC 由 Windows 负责，拒绝即取消启动。
 
 ## 2. 启动流程（实现位置：`src/launcher/launcher.mjs`）
 
@@ -95,9 +95,9 @@
 
 ## 5. 权限
 
-- 打包 EXE 的 Manifest 为 `asInvoker`，与开发模式一样以当前用户权限运行；不请求 UAC，不需要管理员批准。
-- 日常采集、`node:sqlite`、导出、数据目录选择、AI Provider 请求与软件更新均不需要管理员权限。RC0 P0-5 已用正式 EXE 在 Low Mandatory Level 会话启动验证（见 §12）。
-- 历史上 UAC 可能把旧版 `requireAdministrator` 进程切换到另一个管理员账号；应用仍保留“扫描本地用户配置、恰好一个现有数据库才使用，多个则拒绝猜测”的保守逻辑，避免旧数据被误判为新库。
+- 打包 EXE 的 Manifest 为 `requireAdministrator`（RC0-ADMIN-MANIFEST）：双击时 Windows 显示标准 UAC 确认，同意后以管理员权限运行；拒绝则 Windows 取消启动，程序不额外设计绕过机制。
+- 提权**不放宽**任何安全或数据规则：本地 API 仍要求会话 Cookie，Origin/Host/SSE 校验、API Key 与凭据保护、数据目录校验、迁移 staging/回滚、删除范围与备份/恢复完整性检查全部保持不变。管理员权限不是 API 的授权边界。
+- 历史上 UAC 可能把 `requireAdministrator` 进程切换到另一个管理员账号；应用保留“扫描本地用户配置、恰好一个现有数据库才使用，多个则拒绝猜测”的保守逻辑，避免旧数据被误判为新库。这也是本轮用户遇到 Bootstrap 失败后选择恢复提权的直接原因。
 - 不写注册表、不写 `Program Files`、不写 EXE 所在目录。
 - **可写性探测是真实写探测**：`src/shared/write-probe.mjs` 依次执行「创建目录 → 创建文件 → 写入 → 读回 → 删除」，失败时返回具体步骤和 Windows 错误码（`EPERM`/`EACCES`/`ENOSPC`…）。Windows 上 `fs.accessSync(dir, W_OK)` 只检查存在，不能作为权限判断，已移除。
 - 目录解析顺序：
@@ -181,7 +181,7 @@ Node SEA（Single Executable Application）+ postject 注入。
 
 1. 校验 Windows x64。
 2. 下载 postject 固定版本 tarball，校验 SHA-256 后解压（构建期依赖，不进入产品）。
-3. 读取官方 node.exe 的 PE `RT_MANIFEST`，显式把 `requestedExecutionLevel` 归一为 `asInvoker`（防止旧构建残留 `requireAdministrator`），更新资源 data-entry size；新 Manifest 必须能放入 `.rsrc` 的现有 padding（容量不足时构建直接失败，不写坏二进制）。postject 注入后再次读取最终 EXE 并断言 `asInvoker`。
+3. 读取官方 node.exe 的 PE `RT_MANIFEST`，显式把 `requestedExecutionLevel` 归一为 `requireAdministrator`，更新资源 data-entry size；新 Manifest 必须能放入 `.rsrc` 的现有 padding（容量不足时构建直接失败，不写坏二进制）。postject 注入后再次读取最终 EXE 并断言 `requireAdministrator`。
 4. 遍历 `src/`，生成 `manifest.json`（文件列表 + 内容哈希 + 版本）。
 5. 生成 `sea-config.json`（assets + bootstrap），运行 `node --experimental-sea-config` 生成 blob。
 6. 复制当前 `node.exe`，将 PE Subsystem 改为 `IMAGE_SUBSYSTEM_WINDOWS_CUI`（3，可见控制台）。
@@ -261,7 +261,9 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 对照方法：设置页关于的 Build ID 必须等于构建输出；旧 EXE 会显示旧 buildId（或 `dev-<commit>`），不能只看版本号。
 - 仍未验证：真实 UAC 双击与提升后的出站请求；本机以同一二进制的 asInvoker 临时副本启动验证了 buildId、HTTP 与缓存复用。
 
-## 12. RC0 P0-5：asInvoker 与本地 API 会话认证（2026-11-14）
+## 12. RC0 P0-5：本地 API 会话认证（2026-11-14，Manifest 部分已被 §13 取代）
+
+> 本节保留 P0-5 的认证设计与证据。其中“发布 EXE 改为 asInvoker”的 Manifest 决定已被 §13（RC0-ADMIN-MANIFEST）取代；认证、Origin/Host/SSE 校验与凭据保护继续有效，且不因提权而放宽。
 
 ### 12.1 为什么撤销管理员权限
 
@@ -297,3 +299,65 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 - `scripts/verify-p0-5-exe.mjs`：**12/12**。正式 EXE 在 Low Mandatory Level 会话直接启动（无 UAC）；未认证读/写/危险操作/SSE 全部 401；伪造 Origin、`Origin:null`、恶意 Host 403；fragment token 换取 Cookie；认证后 bootstrap/status/settings/simulate/SSE/stop 全部成功；token 不进入 runtime.json 与日志；重启后旧 Cookie/token 401、新 URL 可用且数据保留。
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker manifest、全新数据目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录运行、解压复用、CLI 三语）。
 - **未验证**：真实浏览器点击/自动打开、真实 Ctrl+C 或关闭命令行窗口的优雅退出、真实桌面 UAC（asInvoker 已不需要 UAC）。这些列为本轮用户待验收项。
+
+## 13. RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（2026-11-14）
+
+### 13.1 决定与原因
+
+用户在实际电脑上双击上一版（`asInvoker`）EXE 时无法启动，失败步骤为 `Bootstrap`，详细信息为
+`No writable application folder`。用户明确决定：**不再调查目录权限或修改 Bootstrap 目录选择策略，
+而是让正式 EXE 每次启动自动请求管理员权限。**
+
+- 正式 `LiveMemory.exe` 的 PE `RT_MANIFEST` 改为 **`requireAdministrator`**。
+- 双击时由 Windows 自动显示标准 UAC 确认；同意后以管理员权限启动。
+- 不要求用户右键选择“以管理员身份运行”；不关闭、不绕过 UAC；用户拒绝时由 Windows 正常取消启动。
+- **未修改** Bootstrap 目录选择逻辑、启动器目录解析、数据目录迁移、AI、直播采集、长期画像、
+  Provider、备份恢复或任何业务功能。
+- 版本仍为 **0.13.2**；数据库 schema 16、结果 Schema 1.3.0、提示词 v13.2 均未变。
+
+### 13.2 安全机制保持不变
+
+提权只改变进程令牌，不改变以下规则：
+
+- 除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）仍要求启动器建立的随机会话 Cookie；
+- 一次性 Bootstrap token 仍只放在 URL fragment，换取 `HttpOnly; SameSite=Strict` Cookie 后从地址栏移除；
+- 全方法 Origin 同源校验、`Origin:null` 拒绝、跨站 `Sec-Fetch-Site` 拒绝、Host 严格校验继续生效；
+- API Key 仍只写入本地加密凭据库，不进入配置 JSON、日志、备份或 HTML；
+- 备份格式、恢复 journal、ZIP/路径/大小/CRC 校验、删除范围与数据目录迁移保护均未放宽；
+- 管理员权限**不是** API 授权边界：能访问监听的进程仍需有效会话 Cookie。
+
+### 13.3 构建与自动化测试适配
+
+- `scripts/build-windows.mjs`：注入前后都把 RT_MANIFEST 设为并断言 `requireAdministrator`；
+  最终 EXE 再读取一次，错误信息为 `final EXE manifest is not requireAdministrator`。
+- `tests/unit/pe-manifest.test.mjs`：断言构建脚本使用 `requireAdministrator`，并保留 manifest 助手
+  生成 asInvoker 测试副本的能力。
+- 自动化在非交互、非提升会话中运行，**无法接受 UAC 弹窗**。因此新增
+  `scripts/test-exe-copy.mjs`：读取正式 EXE、确认其确为 `requireAdministrator`，只在内存中把副本
+  改为 `asInvoker`，写入 `tests/.tmp/` 后用于功能验证；**正式 EXE 本身不被修改**。
+- `verify-exe` / `verify-help-exe` / `verify-p0-5-exe` / `verify-p0-2-exe` / `verify-ai-token-exe`
+  都先单独断言正式 EXE 的 Manifest，再用测试副本运行原有场景。历史上直接启动 `dist` 的 UI 脚本
+  （history / ai / live-status / YouTube lifecycle）同步改为测试副本。
+- **真实 UAC 双击未完成自动化验收**：当前会话无法交互点击 UAC，因此列为本轮用户人工验收项，
+  不声称已通过真实双击测试。
+
+### 13.4 本轮 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,733,184` bytes（92.3 MB） |
+| SHA-256 | `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` |
+| buildId | `e438e74803cb` |
+| RT_MANIFEST | `requireAdministrator` |
+| commit（构建时） | `0dd9eab2ac5fe157e80ab48c3de6573a6f7e05e4` |
+| builtAt | `2026-11-14T15:21:43.509Z` |
+| 资源 | `192` files；21 个必需模块 |
+
+### 13.5 用户验收步骤
+
+1. 完全退出旧版 LiveMemory。
+2. 双击新的 `LiveMemory.exe`；Windows 应弹出标准 UAC 确认，标题/发布者按系统实际显示。
+3. 点击“是”：应以管理员权限启动，控制台显示数据目录与 `Build ID: e438e74803cb`。
+4. 若点击“否”：Windows 会取消启动；这是预期行为，不需要额外处理。
+5. 启动后确认直播记录、历史、观众、AI 分析、备份与使用说明入口仍可正常使用。

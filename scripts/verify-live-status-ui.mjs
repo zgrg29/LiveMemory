@@ -6,7 +6,8 @@
  *   - a capture ended automatically by the platform (`platform_ended`);
  *   - a user stop while the platform was last confirmed live.
  *
- * Then launches dist/LiveMemory.exe directly (asInvoker since RC0 P0-5) with a
+ * Then launches a test-only asInvoker copy of dist/LiveMemory.exe (the shipped
+ * EXE requests administrator rights, and automated runs cannot accept UAC) with a
  * test-only bootstrap URL and checks the real console through headless Chrome:
  *   - no green "Live" chip for a finished platform broadcast;
  *   - platform state and capture state are visibly separate;
@@ -32,6 +33,7 @@ import {createServer} from 'node:net';
 import {openDatabase, closeDatabase} from '../src/storage/database/connection.mjs';
 import {migrate} from '../src/storage/database/migrations/index.mjs';
 import {createSession} from '../src/storage/repositories/sessions.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 
 const args = process.argv.slice(2);
@@ -159,7 +161,7 @@ record('fixture is a real schema-9 database', existsSync(dbFile));
 
 const distExe = resolve('dist', 'LiveMemory.exe');
 if (!existsSync(distExe)) throw new Error('dist/LiveMemory.exe is missing; run scripts/build-windows.mjs first');
-const exe = distExe;
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 async function authenticate() {
   const deadline = Date.now() + 15000;

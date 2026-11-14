@@ -19,6 +19,10 @@
  * synthetic fixtures. This is a packaged-binary + local-mock verification, not a
  * real-provider acceptance test.
  *
+ * RC0-ADMIN-MANIFEST: the shipped EXE is requireAdministrator, so automated
+ * checks (which cannot accept the interactive UAC prompt) launch a test-only
+ * asInvoker copy of the same binary. The shipped manifest is checked directly.
+ *
  * Usage: node scripts/verify-ai-token-exe.mjs [path/to/LiveMemory.exe]
  */
 
@@ -38,12 +42,14 @@ import {createHash} from 'node:crypto';
 import {startServer} from '../src/server/index.mjs';
 import {addBroadcaster, seedSession, T0, parsePromptMemoryRefs} from '../tests/helpers/ai-fixtures.mjs';
 import {manifestLevel} from './pe-manifest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = resolve('tests', '.tmp', `ai-token-exe-${stamp}`);
 const bootstrapFile = join(root, 'bootstrap.url');
 mkdirSync(root, {recursive: true});
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 const results = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -291,7 +297,7 @@ async function launch({dataDir}) {
   port = await freePort();
   cookie = null;
   rmSync(bootstrapFile, {force: true});
-  child = spawn(distExe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
+  child = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
     cwd: root,
     env: {...process.env, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile},
     stdio: ['ignore', openSync(join(root, 'stdout.log'), 'a'), openSync(join(root, 'stderr.log'), 'a')],
@@ -357,11 +363,13 @@ async function waitForAnalysis(sessionId, {timeout = 120000} = {}) {
 
 let provider = null;
 try {
-  log(`exe ${distExe}`);
+  log(`shipped exe ${distExe}`);
+  log(`test copy ${exe}`);
   log(`work ${root}`);
   const manifest = manifestLevel(readFileSync(distExe));
-  record('packaged EXE manifest is asInvoker (no UAC elevation)', manifest === 'asInvoker', [
+  record('shipped EXE requests administrator rights (requireAdministrator, UAC prompt)', manifest === 'requireAdministrator', [
     `manifest: ${manifest}`,
+    `functional checks use a test-only asInvoker copy: ${exe}`,
     `sha256 ${sha256File(distExe)}`,
     `bytes ${statSync(distExe).size}`
   ]);
@@ -376,7 +384,7 @@ try {
   await launch({dataDir: dirA});
   const health = await json('/api/health');
   const buildInfo = JSON.parse(readFileSync(join(resolve('build'), 'build-info.json'), 'utf8'));
-  record('the EXE launches as the current user and serves /api/health',
+  record('the test copy launches and serves /api/health',
     health.status === 200 && health.payload?.buildId === buildInfo.buildId,
     [`buildId ${health.payload?.buildId}`, `commit ${health.payload?.commit}`]);
 

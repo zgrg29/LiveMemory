@@ -1,11 +1,59 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-USAGE-GUIDE：三语使用说明与 RC0 封版 · 828 全量 · 正式 EXE `74ed76e88a51` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限 · 828 全量 · 正式 EXE `e438e74803cb` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮**未调用任何真实付费 API**、未发送真实聊天到第三方、未修改生产数据库、未 Push/Tag/发布。
-> 本轮只用只读说明页与本地自动化；测试使用 `tests/.tmp` 隔离目录。
+> 本轮只改 EXE Manifest、构建断言、测试启动方式与相关文档；**未调用真实付费 API、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布**。
+> 自动化使用 `tests/.tmp` 隔离目录；真实 UAC 交互未自动化，列用户人工验收。
 
-## 0. 本轮（RC0-USAGE-GUIDE 封版）
+## 0. 本轮（RC0-ADMIN-MANIFEST）
+
+完整报告：`docs/STATUS.md` §0.31；日志：`log/2026-11-14-admin-manifest.md`；Windows 细节：`docs/WINDOWS_RUNTIME.md` §13。
+
+### 0.1 做了什么
+
+1. **正式 EXE Manifest**：`asInvoker` → **`requireAdministrator`**。双击时 Windows 显示标准 UAC；同意后以管理员权限启动；拒绝则取消。不右键、不绕过/关闭 UAC。
+2. **构建**：`scripts/build-windows.mjs` 在 postject 注入前后都断言 `requireAdministrator`；最终 EXE 再读取一次，错误即失败。
+3. **测试方式**：新增 `scripts/test-exe-copy.mjs`；非交互自动化无法接受 UAC，因此正式 EXE 单独断言 Manifest，功能场景使用 `tests/.tmp/` 中的 asInvoker 测试副本，正式文件不被修改。
+4. **测试脚本**：`verify-exe` / `verify-help-exe` / `verify-p0-5-exe` / `verify-p0-2-exe` / `verify-ai-token-exe` 与历史 UI 脚本同步改为“断言正式 Manifest + 测试副本运行”。
+5. **单测**：`tests/unit/pe-manifest.test.mjs` 断言构建脚本使用 `requireAdministrator`，并保留生成测试副本的能力。
+6. **注释**：`src/launcher/launcher.mjs`、`profile-scan.mjs`、`src/server/auth.mjs` 更新为提权后事实，无行为变化。
+7. **未改**：Bootstrap 目录选择、数据目录解析、AI、直播采集、长期画像、Provider、备份恢复；版本/DB schema/结果 Schema/提示词/备份格式全部不变。
+8. **文档**：README、STATUS、HANDOFF、CHANGELOG、WINDOWS_RUNTIME、PRIVACY_SECURITY、ARCHITECTURE、DECISIONS、AGENTS、TEST_PLAN、本日志。
+
+### 0.2 结果
+
+| 指标 | 值 |
+| --- | --- |
+| Manifest | **`requireAdministrator`**（构建脚本与正式 EXE 双重断言） |
+| 全量测试 | **828 passed / 0 failed / 0 skipped**（212,358 ms，2026-11-14） |
+| EXE 矩阵 | `verify-exe` **10/10**、`verify-help-exe` **14/14**、`verify-p0-5-exe` **12/12**、`verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16** |
+| 正式 EXE | buildId `e438e74803cb` / SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` / `96,733,184` B / `192` assets / `192` files |
+| 版本/Schema | 0.13.2 / DB 16 / 结果 1.3.0 / 提示词 v13.2（未改） |
+
+### 0.3 用户验收步骤
+
+1. 完全退出旧版 LiveMemory。
+2. 双击新的 `LiveMemory.exe`，确认 Windows 弹出标准 UAC。
+3. 点击“是”：应以管理员权限启动，控制台显示 `Build ID: e438e74803cb`。
+4. 点击“否”：Windows 取消启动，这是预期行为。
+5. 进入控制台检查直播、历史、观众、AI 分析、备份与使用说明入口。
+
+### 0.4 下一轮必须先做 / 不要做
+
+1. 先等用户回报真实双击 UAC 结果；未回报前不要宣称“已通过真实 UAC 验收”。
+2. **不要再改回 `asInvoker`**，除非用户再次明确决定；这是用户本轮亲自要求的修复。
+3. 不得因为提权而放宽 API 认证、Origin/Host/SSE 校验、凭据保护、备份/恢复或删除范围。
+4. 不要借本轮继续调查 Bootstrap 目录权限或修改目录选择策略（用户已明确排除）。
+5. 不要新增目录权限诊断、自动提权 broker、计划任务或其他无关功能。
+
+### 0.5 边界与提交
+
+- **真实 UAC 交互未自动化**：本机沙箱无法启动交互式桌面，自动化只验证 Manifest 与功能副本；拒绝 UAC 的系统行为也未实测。
+- 自动化功能场景使用测试专用 asInvoker 副本；**正式 EXE 仍是 requireAdministrator**，测试副本不交付、不提交。
+- 代码与文档提交：本轮提交后为 `fix: restore administrator manifest for the Windows EXE`（Hash 见最终报告；若提交后重建，`build-info.commit` 记录该提交）。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（RC0-USAGE-GUIDE 封版）
 
 完整报告：`docs/STATUS.md` §0.30；日志：`log/2026-11-14-rc0-usage-guide.md`；界面规范：`docs/UI_DESIGN.md` §7.23。
 
@@ -54,7 +102,7 @@
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
 - **环境备注**：本机 DSH 沙箱下 `.git` 为中等完整性，受限进程写入会 `Permission denied`；本轮在一次性 full access 下执行 `git add`/`git commit`。该环境的 Git 还会把已暂存改动判为“空提交”，需加 `--allow-empty` 才能生成提交（提交 tree 与文件内容不受影响）。真实用户环境不需要这些处理。
 
-## 0-A 上一轮（RC0-FINAL-ACCEPTANCE）
+## 0-B 上一轮（RC0-FINAL-ACCEPTANCE）
 
 完整报告：`docs/RC0_FINAL_ACCEPTANCE.md`；日志：`log/2026-11-14-rc0-final-acceptance.md`。
 

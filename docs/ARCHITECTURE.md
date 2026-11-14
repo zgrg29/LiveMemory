@@ -793,7 +793,7 @@ request gate (src/server/app.mjs)
 - 认证失败统一 401，不泄露 token 是否存在；日志只记录原因，不记录 token。
 - 服务重启重建两个 token；旧 Cookie/旧 fragment URL 都失效。
 - SSE 与普通 fetch 共用同一 Cookie；不引入 `/api/token` 这类 token 分发端点。
-- 发布 EXE 的 Manifest 为 `asInvoker`；认证不依赖管理员权限。
+- 发布 EXE 的 Manifest 为 `requireAdministrator`（RC0-ADMIN-MANIFEST，2026-11-14 用户决定）；Windows 显示标准 UAC，认证不依赖管理员权限，提权也不放宽任何 API 校验。
 
 详细威胁模型与边界见 `docs/PRIVACY_SECURITY.md` §31，Windows 验证见 `docs/WINDOWS_RUNTIME.md` §12。
 

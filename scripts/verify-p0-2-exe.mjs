@@ -15,6 +15,7 @@ import {
 import {join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {manifestLevel} from './pe-manifest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 import {startServer} from '../src/server/index.mjs';
 import {inspectBackup} from '../src/server/backup/inspect.mjs';
 import {importSessionAnalysis} from '../tests/helpers/memory-fixtures.mjs';
@@ -24,7 +25,9 @@ import {mergeSessionIntoMemory} from '../src/memory/local.mjs';
  * RC0 P0-2 formal EXE verification.
  *
  * Proves, against the packaged binary and isolated data directories:
- * - the manifest is asInvoker and the EXE serves the console without UAC;
+ * - the shipped manifest is requireAdministrator (Windows shows the standard UAC
+ *   prompt on double-click); automated runs use a test-only asInvoker copy of the
+ *   same binary because they cannot accept the interactive prompt;
  * - backup creation, verification and the pre-restore safety snapshot;
  * - restore into a brand-new absolute data directory;
  * - restart of the restored installation;
@@ -52,6 +55,7 @@ const firstBackup = join(backupDir, 'before.livememory');
 const secondBackup = join(backupDir, 'after.livememory');
 const bootstrapFile = join(root, 'bootstrap.url');
 mkdirSync(backupDir, {recursive: true});
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 const results = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -143,7 +147,7 @@ async function launchExe(dataDir, tag) {
   }
   const stdoutFile = join(root, `${tag}-stdout.log`);
   const stderrFile = join(root, `${tag}-stderr.log`);
-  child = spawn(distExe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
+  child = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', dataDir, '--lang', 'en'], {
     cwd: root,
     env: {
       ...process.env,
@@ -258,15 +262,16 @@ async function seedFixture() {
 }
 
 try {
-  log(`exe ${distExe}`);
+  log(`shipped exe ${distExe}`);
+  log(`test copy ${exe}`);
   log(`root ${root}`);
 
   const exeBytes = readFileSync(distExe);
   const sha256 = createHash('sha256').update(exeBytes).digest('hex');
   const buildInfo = JSON.parse(readFileSync(join(resolve('build'), 'build-info.json'), 'utf8'));
   const manifest = manifestLevel(exeBytes);
-  record('packaged EXE is asInvoker and matches build-info', (
-    manifest === 'asInvoker'
+  record('shipped EXE requests administrator rights and matches build-info', (
+    manifest === 'requireAdministrator'
     && exeBytes.includes(Buffer.from(buildInfo.buildId, 'utf8'))
     && exeBytes.includes(Buffer.from('src/server/backup/restore.mjs', 'utf8'))
   ), [
@@ -274,7 +279,8 @@ try {
     `buildId ${buildInfo.buildId}`,
     `commit ${buildInfo.commit}`,
     `sha256 ${sha256}`,
-    `size ${statSync(distExe).size} bytes`
+    `size ${statSync(distExe).size} bytes`,
+    `functional checks use a test-only asInvoker copy`
   ]);
 
   // Seed data with the same source tree, then copy it so the EXE works on a

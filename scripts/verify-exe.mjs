@@ -16,23 +16,27 @@ import {join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
 import {manifestLevel} from './pe-manifest.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 /**
  * Real executable verification matrix.
  *
  * Usage: node scripts/verify-exe.mjs [path\to\LiveMemory.exe]
  *
- * RC0 P0-5: the packaged EXE is asInvoker, so this matrix runs directly with the
- * current user's rights. Every launched server writes its one-time browser URL
- * to a temporary bootstrap file; the script exchanges it for a session cookie
- * before calling protected APIs. This is the same path the default browser uses.
+ * RC0-ADMIN-MANIFEST: the shipped EXE is requireAdministrator, so Windows shows
+ * the standard UAC prompt on double-click. An automated session cannot accept
+ * that prompt, so the functional scenarios launch a test-only asInvoker copy of
+ * the same binary (never the shipped file). Every launched server writes its
+ * one-time browser URL to a temporary bootstrap file; the script exchanges it for
+ * a session cookie before calling protected APIs, the same path the browser uses.
+ * Real UAC acceptance remains a manual user check.
  */
 
 const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
-const exe = distExe;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = resolve('tests', '.tmp', `verify-${stamp}`);
 mkdirSync(root, {recursive: true});
+const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 
 const results = [];
 let childCounter = 0;
@@ -49,8 +53,9 @@ function record(name, passed, details = []) {
 }
 
 const distManifest = manifestLevel(readFileSync(distExe));
-record('EXE manifest runs as the current user (asInvoker, no UAC)', distManifest === 'asInvoker', [
-  `manifest level: ${distManifest}`
+record('shipped EXE requests administrator rights (requireAdministrator, UAC prompt)', distManifest === 'requireAdministrator', [
+  `manifest level: ${distManifest}`,
+  `functional scenarios use a test-only asInvoker copy: ${exe}`
 ]);
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -523,9 +528,9 @@ async function scenarioCli() {
 
 async function main() {
   log(`LiveMemory executable verification`);
-  log(`  exe:  ${exe}`);
-  log(`  size: ${(statSync(exe).size / 1024 / 1024).toFixed(1)} MB`);
-  log(`  sha256: ${createHash('sha256').update(readFileSync(exe)).digest('hex')}`);
+  log(`  shipped exe: ${distExe}`);
+  log(`  shipped sha256: ${createHash('sha256').update(readFileSync(distExe)).digest('hex')}`);
+  log(`  test copy: ${exe} (asInvoker; automated sessions cannot accept UAC)`);
   log(`  work: ${root}`);
   log('');
 

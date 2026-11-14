@@ -1586,3 +1586,57 @@ RT_MANIFEST `asInvoker`，构建时 HEAD `bc48a943af943cf8f7ae9abbbe1e3376669fb5
   建议用户在本机打开 `#/help` 做一次明暗主题与窄屏目视确认。
 - 未在干净 Windows 账户或另一台电脑上双击；未做屏幕阅读器实测。
 - 未 Push / 未 Tag / 未发布；等待用户决定。
+## 43. RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（v0.13.2，2026-11-14）
+
+### 43.1 范围
+
+只恢复正式 EXE 的 `requireAdministrator` Manifest，并更新构建断言、测试脚本与文档。
+不修改 Bootstrap 目录选择、数据目录解析、AI、直播采集、长期画像、Provider、备份恢复或任何业务逻辑；
+不改数据库 schema（16）、结果 Schema（1.3.0）、提示词（v13.2）与备份格式。
+
+### 43.2 构建与单测
+
+- `scripts/build-windows.mjs`：`setManifestLevel(binary, 'requireAdministrator')`，注入前后断言；
+  最终 EXE 再次读取，非 `requireAdministrator` 即构建失败。
+- `tests/unit/pe-manifest.test.mjs`（2/2）：
+  1. manifest 助手仍可生成 `asInvoker` 测试副本；
+  2. 构建脚本断言 `requireAdministrator`，且不再包含 `setManifestLevel(binary, 'asInvoker')`。
+
+### 43.3 自动化测试如何面对 UAC
+
+自动化在非交互、非提升会话运行，无法点击 UAC；测试**不绕过 UAC**，而是：
+
+1. 直接读取 `dist/LiveMemory.exe`，断言 Manifest 为 `requireAdministrator`；
+2. 用新增的 `scripts/test-exe-copy.mjs` 生成测试专用 `asInvoker` 副本（只改内存副本，
+   写入 `tests/.tmp/`，正式 EXE 不变）；
+3. 在副本上运行原有功能场景。测试输出明确打印“functional checks use a test-only asInvoker copy”。
+
+### 43.4 全量回归
+
+```text
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+```
+
+结果：**828 passed / 0 failed / 0 skipped（212,358 ms，2026-11-14）**。测试数量不变（上一轮 828），
+仅更新 Manifest 断言与测试启动方式；金额、身份、去重、AI、备份恢复、认证测试均未放宽。
+
+### 43.5 正式 EXE 矩阵
+
+| 脚本 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `scripts/verify-exe.mjs` | **10/10** | 正式 Manifest `requireAdministrator` + 功能副本：全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语 |
+| `scripts/verify-help-exe.mjs` | **14/14** | 正式 Manifest + 使用说明入口、未认证 401、schema 16、三语内容、响应式、切日语 |
+| `scripts/verify-p0-5-exe.mjs` | **12/12** | 正式 Manifest + 未认证读写/SSE 401、伪造 Origin/null/恶意 Host 403、fragment→Cookie、一次性 token、重启失效、token 不泄漏 |
+| `scripts/verify-p0-2-exe.mjs` | **13/13** | 正式 Manifest + 备份 → 全新目录恢复 → 重启 → 再次备份，凭据排除 |
+| `scripts/verify-ai-token-exe.mjs` | **16/16** | 正式 Manifest + AI 画像分析、Token/缓存归因、失败批次、Resume、备份 |
+
+EXE：`dist/LiveMemory.exe`，buildId `e438e74803cb`，`96,733,184` bytes，
+SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb`，
+`192` assets，RT_MANIFEST **`requireAdministrator`**。
+
+### 43.6 未验证 / 用户验收
+
+- **真实 UAC 双击、UAC 拒绝、提权后的真实桌面交互未自动化**：本会话无法与 UAC 对话框交互，
+  也未在干净 Windows 账户/另一台电脑上验证。需要用户按 `docs/WINDOWS_RUNTIME.md` §13.5 人工验收。
+- 未验证提权后 `profile-scan` 是否会命中另一个管理员账户的旧数据目录（逻辑未改，仍拒绝多库猜测）。
+- 未 Push / 未 Tag / 未发布。

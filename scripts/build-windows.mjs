@@ -177,14 +177,15 @@ execFileSync(process.execPath, ['--experimental-sea-config', 'build/sea-config.j
 const exe = 'dist/LiveMemory.exe';
 const binary = await readFile(process.execPath);
 
-// RC0 P0-5: the packaged EXE runs with the current user's rights. Node's
-// official node.exe already ships an asInvoker manifest, but a previous
-// LiveMemory build patched it to requireAdministrator. Normalize it explicitly
-// and verify the final binary after postject injection so a build can never
-// silently ship the old elevated manifest.
-setManifestLevel(binary, 'asInvoker');
-if (manifestLevel(binary) !== 'asInvoker') {
-  throw new Error('failed to apply asInvoker manifest');
+// RC0-ADMIN-MANIFEST: the user explicitly chose to restore automatic UAC
+// elevation because the packaged EXE failed on their PC during Bootstrap
+// ("No writable application folder"). Windows itself presents the UAC prompt for
+// a requireAdministrator image; the program does not bypass or disable UAC, and
+// denying the prompt simply cancels the launch. Patch before and verify after
+// postject injection so a build can never silently ship the wrong level.
+setManifestLevel(binary, 'requireAdministrator');
+if (manifestLevel(binary) !== 'requireAdministrator') {
+  throw new Error('failed to apply requireAdministrator manifest');
 }
 
 // PE layout: DOS header -> PE header -> optional header.
@@ -232,8 +233,8 @@ for (const needle of [
     throw new Error(`built EXE does not contain expected build marker: ${needle}`);
   }
 }
-if (manifestLevel(exeBytes) !== 'asInvoker') {
-  throw new Error('final EXE manifest is not asInvoker');
+if (manifestLevel(exeBytes) !== 'requireAdministrator') {
+  throw new Error('final EXE manifest is not requireAdministrator');
 }
 console.log(`Built ${exe}`);
 console.log(`  size:    ${(size / 1024 / 1024).toFixed(1)} MB`);

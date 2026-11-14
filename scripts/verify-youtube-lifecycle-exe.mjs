@@ -3,9 +3,10 @@ import {readFileSync, mkdirSync, rmSync, openSync, existsSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 /**
- * RC0 P0-4 packaged replay (asInvoker EXE, local fake YouTube).
+ * RC0 P0-4 packaged replay (test-only asInvoker copy, local fake YouTube).
  *
  * This is NOT a real YouTube test and NOT a UAC double-click test. It verifies
  * that the shipped binary keeps one live session through a three-minute
@@ -25,7 +26,7 @@ const workRoot = join(root, 'tests', '.tmp', `p04-exe-${Date.now()}`);
 mkdirSync(workRoot, {recursive: true});
 const dataDir = join(workRoot, 'data');
 const bootstrapFile = join(workRoot, 'bootstrap.url');
-const exe = distExe;
+const exe = prepareTestExe({source: distExe, target: join(workRoot, 'LiveMemory-asInvoker.exe')});
 const videoId = 'anonP04EXE1';
 let cookie = null;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));

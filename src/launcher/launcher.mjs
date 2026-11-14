@@ -513,9 +513,10 @@ export async function runLauncher({
       system: systemLocale
     });
 
-    // The packaged EXE uses an asInvoker manifest: normal recording, SQLite,
-    // exports, the folder picker and software updates all work as the current
-    // user. There is intentionally no elevation requirement or admin check.
+    // RC0-ADMIN-MANIFEST: the packaged EXE requests administrator rights so
+    // Windows shows the standard UAC prompt on double-click. The program never
+    // bypasses UAC; declining the prompt simply cancels the launch. The console
+    // still explains the actual data directory and any fallback.
     ui.banner({name: APP_NAME, version: buildInfo.version ?? APP_VERSION, productLine: t(locale, 'productLine')});
     ui.info(`build: ${describeBuild(buildInfo)}`);
     ui.info(t(locale, 'checkingEnvironment'));

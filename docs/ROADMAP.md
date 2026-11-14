@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.2（2026-11-14，RC0-ADMIN-MANIFEST）：恢复正式 EXE 双击自动请求管理员权限。RT_MANIFEST 从 `asInvoker` 改为 **`requireAdministrator`**：Windows 显示标准 UAC，同意后提权启动，拒绝即取消；不右键、不绕过 UAC。构建注入前后双重断言；自动化因无法接受 UAC，改用测试专用 asInvoker 副本运行功能场景，正式 EXE 单独断言 Manifest。未改 Bootstrap 目录选择与任何业务逻辑；API 认证、Origin/Host/SSE、凭据与备份恢复规则不变。全量 **828 passed / 0 failed**；`verify-exe` 10/10、`verify-help-exe` 14/14、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16；正式 EXE `e438e74803cb`。**真实 UAC 双击待用户验收；未 Push/Tag/Release。** 完整说明见 `docs/STATUS.md` §0.31 与 `docs/WINDOWS_RUNTIME.md` §13。
 > v0.13.2（2026-11-14，RC0-USAGE-GUIDE）：内置三语使用说明与 RC0 封版。侧栏新增「使用说明 / 使い方 / User guide」（`#/help`），覆盖首次启动、Bilibili/YouTube 连接、记录与历史、Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移、FAQ（8 条）；112 个 `help.*` 键三语一致；只读、无 API 调用、无新增使用限制、无强制审核。新增 9 项 UI 测试；全量 **828 passed / 0 failed**；正式 EXE `74ed76e88a51`（asInvoker，`96,733,184` B）`verify-help-exe` 14/14、`verify-exe` 10/10。真实浏览器截图因本机沙箱禁止 Chromium mojo 未执行，由 DOM 渲染与打包资源检查覆盖。**未 Push/Tag/Release，等待用户决定。** 完整说明见 `docs/STATUS.md` §0.30。
 > v0.13.2（2026-11-14，RC0-AI-EFFICIENCY）：Token 归因、重复输入、动态分批与成本口径。缓存/推理 Token 归因、逐尝试 token 账本、无 usage 请求不再消失；删除三处可证明的重复输入（structured-output Provider 的 schema、画像重复示例、契约逐观众数组）；画像观众上限从写死 10 改为"偏好 10、按预算最多 20"；三语界面显示重试开销占比与每百观众/每百事实 Token，无价格时明确「费用未知」。14 场景基线：请求 -30.6%、总 Token（按实测字节模拟）-10.1%、覆盖与事实完全不变；781 自动化测试。完整说明见 `docs/AI_TOKEN_EFFICIENCY.md`、`docs/STATUS.md` §0.26、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-token-efficiency.md`。
 > v0.13.2（2026-11-14，RC0-FINAL-ACCEPTANCE）：最终综合验收。修复无证据 `confirm+stated` 提升（P0-A）与旧导入路径跨观众证据（P0-B）；819 自动化测试；正式 EXE `7016d4295d0e`（commit `996f992`，asInvoker）10/10 + 12/12 + 13/13 + 16/16 + YouTube 生命周期；真实 Bilibili 5050 与 YouTube Sky News 采集、真实 Chrome + EXE 认证。长期画像语义质量仍未达标（严格召回 15%–30%，错误 stated 25%–31%），同 topic 静默 confirm 为 P1。建议 RC0 小范围闭源内测，不建议公开发布。完整报告 `docs/RC0_FINAL_ACCEPTANCE.md`。
@@ -17,6 +18,20 @@
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
+
+## P25 RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（v0.13.2，2026-11-14）✅
+
+- ✅ 正式 EXE RT_MANIFEST：`asInvoker` → **`requireAdministrator`**；Windows 显示标准 UAC，同意后提权启动，拒绝即取消
+- ✅ 不要求右键“以管理员身份运行”，不绕过/关闭 UAC；用户拒绝时由 Windows 取消启动
+- ✅ 构建脚本 postject 注入前后双重断言；最终 EXE 再读取一次
+- ✅ 自动化无法接受 UAC：正式 Manifest 单独断言，功能场景使用 `tests/.tmp/` 的 asInvoker 测试副本；正式 EXE 不被修改
+- ✅ `pe-manifest` 单测 2/2；全量 **828 passed / 0 failed / 0 skipped**
+- ✅ `verify-exe` 10/10、`verify-help-exe` 14/14、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16
+- ✅ 正式 EXE `e438e74803cb` / SHA-256 `a8c9f12d…` / `96,733,184` B / `192` assets / `requireAdministrator`
+- ✅ 未改 Bootstrap 目录选择、数据目录解析与任何业务逻辑；API 认证、Origin/Host/SSE、凭据与备份恢复规则不变
+- 🟡 **真实 UAC 双击/拒绝未自动化验收**，等待用户人工双击确认
+- ⬜ Push / Tag / 发布：等待用户决定
+- 完整说明：`docs/STATUS.md` §0.31、`docs/WINDOWS_RUNTIME.md` §13、`log/2026-11-14-admin-manifest.md`
 
 ## P24 RC0-USAGE-GUIDE：三语使用说明与 RC0 封版（v0.13.2，2026-11-14）✅
 

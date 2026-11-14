@@ -76,10 +76,11 @@
 
 ## 10. 权限
 
-- 打包 EXE 的 RT_MANIFEST 为 `asInvoker`（RC0 P0-5），正常运行与开发模式都不需要管理员权限；不请求 UAC。
-- 数据目录不可写时给出本地化错误与替代方案，不默认提权，也不要求管理员。
+- 打包 EXE 的 RT_MANIFEST 为 `requireAdministrator`（RC0-ADMIN-MANIFEST，2026-11-14 用户明确决定；取代 RC0 P0-5 的 `asInvoker`）：双击时由 Windows 显示标准 UAC 确认，同意后以管理员权限运行，拒绝则取消启动。程序不绕过、不关闭 UAC。
+- 提权不改变认证与数据保护：本地 API 仍要求会话 Cookie，Origin/Host/SSE 校验、凭据保护、数据目录校验、迁移回滚与备份完整性检查均不放宽。管理员权限不是 API 的授权边界。
+- 数据目录不可写时仍给出本地化错误与替代方案；提权不是把所有启动失败统一归因于权限的理由。
 - EXE 不写注册表、不写 `Program Files`；卸载时用户可自行删除数据目录。
-- 同一 Windows 用户的进程仍可读取 `%LOCALAPPDATA%` 下的数据目录、`secrets/` 与浏览器资料；这是本地单用户应用的边界，不是可以通过 HTTP 认证消除的威胁（见 §31）。
+- 同一 Windows 用户的进程仍可读取 `%LOCALAPPDATA%` 下的数据目录、`secrets/` 与浏览器资料；提升进程令牌不会消除该本地单用户威胁（见 §31）。
 
 ## 11. 敏感数据提示
 
@@ -162,7 +163,7 @@
 - 迁移前停止适配器、checkpoint、关闭 SQLite；复制到目标卷 staging，校验 SQLite `integrity_check`、表计数、schema 版本与配置/凭据/导出文件 SHA-256；成功后移入目标并切换运行时。
 - **原目录永远不由应用自动删除**；失败回滚到原目录。旧目录可能仍含敏感聊天与凭据，用户确认新目录可用后需自行安全删除。
 - 目录选择器：本地服务用 `spawn(..., {stdio:'ignore'})` 启动固定 PowerShell 脚本，调用 WinForms FolderBrowserDialog；选择结果经临时文件返回，不经过 stdout 管道，不执行用户输入的命令，不使用 `cmd /c`。打开文件夹只接受 `data/exports/backups/logs` 四个受管键，不拼接任意路径。
-- 权限：发布 EXE 的 Manifest 为 `asInvoker`（RC0 P0-5），数据目录校验、迁移 staging/回滚、删除范围不因权限变化放宽。旧版跨管理员账号可能留下其他 profile 的数据目录；应用仍会扫描本地用户配置，恰好一个库则使用，多个则拒绝猜测。
+- 权限：发布 EXE 的 Manifest 为 `requireAdministrator`（RC0-ADMIN-MANIFEST），但数据目录校验、迁移 staging/回滚、删除范围与备份恢复完整性检查不因提权放宽。旧版跨管理员账号可能留下其他 profile 的数据目录；应用仍会扫描本地用户配置，恰好一个库则使用，多个则拒绝猜测。
 - 迁移期间 API 进入维护模式，除 relocation/clear/health/status 外返回 503，避免并发写库。
 
 ## 17. 清空数据与恢复出厂（v0.4.0）
@@ -400,7 +401,9 @@ AI 结果是**外部输入**，按不可信数据处理：
 - **残余风险**：翻译缓存可能保留已不再使用的旧段落（按 hash 不应用但未主动清理），直到场次/记忆删除或清空数据；它仍是本地 AI 派生文本，用户应把数据目录视为敏感数据。
 - **真实 Provider 未验证**：本机没有可用 Key；无法证明第三方对翻译内容的处理或费用精度，界面与文档不得声称已验证。
 
-## 31. 本地 HTTP API 会话认证与 asInvoker（RC0 P0-5）
+## 31. 本地 HTTP API 会话认证（RC0 P0-5，Manifest 部分见 §31.5）
+
+> 本节的认证设计继续有效。RC0-ADMIN-MANIFEST（2026-11-14）恢复了 `requireAdministrator`，但认证、Origin/Host/SSE 校验与凭据保护没有放宽；管理员权限不是 API 的授权边界。
 
 ### 31.1 威胁模型
 
@@ -409,7 +412,7 @@ AI 结果是**外部输入**，按不可信数据处理：
 | 本机任意进程直接调用 `/api/*` | 无认证，可读观众/聊天、改设置、停止/删除场次、迁移目录 | 除 health/auth 外要求随机会话 Cookie；无 Cookie/错误 Cookie 401 | 同一 Windows 用户下能读取浏览器 Cookie 库或注入浏览器的恶意软件 |
 | 恶意网页跨站读取 | 本机 API 无认证；CORS 只阻止读取响应，不阻止请求副作用 | `SameSite=Strict` Cookie + 全方法 Origin + `Sec-Fetch-Site` + 无 CORS 放行 | 浏览器/插件漏洞；用户主动把一次性 URL 复制给他人 |
 | DNS rebinding | Host 已校验 | 保持严格 Host 校验；API 仍需 Cookie | 本机 hosts/DNS 被篡改且 Host 仍伪装成允许值（端口/路径仍受限） |
-| 管理员权限放大 | EXE 以 `requireAdministrator` 运行，API 调用继承管理员令牌 | Manifest 改为 `asInvoker`，日常无提权 | 用户手动以管理员身份启动（不推荐） |
+| 管理员权限放大 | EXE 曾以 `requireAdministrator` 运行且 API 无认证，API 调用继承管理员令牌 | 认证先于权限决定；RC0-ADMIN-MANIFEST 恢复提权后仍要求会话 Cookie，提权不再作为 API 授权边界 | 同一 Windows 用户下能读取浏览器 Cookie 库或注入浏览器的恶意软件 |
 | 重启后旧凭据长期有效 | 不适用（无凭据） | token 只在进程内存；重启后旧 Cookie/旧 URL 都 401 | 进程运行期间的 7 天 Cookie（服务重启即失效） |
 | SSE 绕过认证 | `/api/events/stream` 无认证 | SSE 走同一 Cookie 校验；未认证 401，不返回 `text/event-stream` | 已认证页面被本地恶意扩展读取 |
 
@@ -435,3 +438,11 @@ CORS 与 SameSite 只约束**浏览器**如何发送/读取跨站请求；本机
 - **Cookie 非 Secure**：服务使用回环 HTTP，无法使用 `Secure` 属性；Cookie 只在 `127.0.0.1` 上有效，不跨网络发送。
 - **进程运行期**：会话最多 7 天；期间同一浏览器可继续使用。需要立即失效时退出并重启 LiveMemory。
 - **真实浏览器自动打开/点击**：未在真实桌面交互中验收；自动化只验证了与浏览器相同的 HTTP 握手。
+
+### 31.5 提权后的认证边界（RC0-ADMIN-MANIFEST，2026-11-14）
+
+- 发布 EXE 恢复 `requireAdministrator`，双击时由 Windows 显示标准 UAC；程序不绕过、不关闭 UAC，用户拒绝即取消启动。
+- 提权只改变进程令牌，不改变 API 认证：除 health/auth 外所有 `/api/*`（含 SSE）仍要求会话 Cookie；Bootstrap token 仍只在 URL fragment 与进程内存中，不进入查询串、日志或 runtime.json。
+- Origin 同源、`Origin:null` 拒绝、跨站 `Sec-Fetch-Site` 拒绝、Host 严格校验与 CORS 策略全部保持；不存在因为管理员权限而放行的端点。
+- 管理员权限会放大“本机同一用户进程能做什么”，但不会让 HTTP 调用绕过 Cookie。同一 Windows 用户的恶意软件仍是本地威胁，且可能继承提升后的令牌，因此不得把提权描述为安全增强。
+- 用户拒绝 UAC 时 Windows 直接取消启动；程序没有“失败后降级为非提权运行”的隐藏路径。
