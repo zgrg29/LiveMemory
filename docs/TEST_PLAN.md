@@ -40,6 +40,25 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 - 既有 AI/画像/补答/Token/备份/认证/平台/UI 测试全部通过；未放宽任何断言。
 - EXE 矩阵结果见 `docs/MEMORY_QUALITY.md` §10 与 `docs/STATUS.md` §0.28.5。
 
+## 2.2 本轮结果（2026-11-14，RC0-FINAL-ACCEPTANCE）
+
+- 全量：**819 passed / 0 failed / 0 skipped / 0 cancelled / 0 todo（397,114.9 ms）**。
+- 新增 **5** 项，对应本轮 2 个 P0：
+  - `tests/unit/memory-engine.test.mjs`：confirm 无证据不得提升 inferred→stated；
+  - `tests/unit/memory-engine.test.mjs`：匹配 add 无证据不得提升/激活；
+  - `tests/integration/memory-ai-workflow.test.mjs`：stated confirm 无证据被跳过，不创建版本；
+  - `tests/integration/unified-analysis-memory.test.mjs`：嵌入分析中的 stated confirm 无证据不得提升；
+  - `tests/integration/memory-ai-workflow.test.mjs`：同 batch 跨观众证据返回 `MEMORY_EVIDENCE_OTHER_VIEWER`，0 写入。
+- 既有断言未放宽；未用修改断言掩盖缺陷。
+- 正式 EXE 矩阵：`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、
+  `verify-ai-token-exe` 16/16、`verify-youtube-lifecycle-exe` PASS。
+- 真实平台：Bilibili 5050（9 chat / 4 viewers / ended）、YouTube Sky News `LXQz2kkE-C0`
+  （8 chat / 8 channel id / 7 active / ended）。
+- 真实浏览器：外部 Chrome 154 + 正式 EXE，fragment→Cookie `authenticated: true`；页面无异常。
+- 归档质量：严格召回 15.1% / 24.5% / 29.5% / 18.0%；错误 stated 25.0%–31.1%；跨观众 0；重复 0。
+- 已知脚本陈旧：`scripts/verify-memory-ui.mjs` 15/21，6 项针对已移除的 `/memory` 工作区或检查了错误观众；
+  不作为产品失败，列入 P2 测试债。完整报告 `docs/RC0_FINAL_ACCEPTANCE.md`。
+
 ## 3. 覆盖清单
 
 ### 3.1 单元

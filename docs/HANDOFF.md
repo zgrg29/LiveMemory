@@ -1,11 +1,46 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-FINAL-ACCEPTANCE：最终综合验收、2 个 P0 修复、819 全量 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮**未调用任何真实付费 API**、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布。
+> 本轮**未调用任何真实付费 API**、未发送真实聊天到第三方、未修改生产数据库、未 Push/Tag/发布。
 > 归档真实结果只读重评；全部新测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock。
 
-## 0. 本轮（RC0-MEMORY-QUALITY）
+## 0. 本轮（RC0-FINAL-ACCEPTANCE）
+
+完整报告：`docs/RC0_FINAL_ACCEPTANCE.md`；日志：`log/2026-11-14-rc0-final-acceptance.md`。
+
+### 0.1 做了什么
+
+1. **P0-A**：无 evidence 的 `confirm + stated` 会把 `inferred` 提升为 `stated`。两个 validator 现在跳过无证据的 stated confirm；
+   engine 要求 evidence 才允许提升/激活；无证据的匹配 add 也跳过。
+2. **P0-B**：旧 `/api/memory/import` 路径未比较 `events.viewer_id`，同 batch 内可跨观众引用证据。
+   现在返回 `MEMORY_EVIDENCE_OTHER_VIEWER` 并拒绝整份答案。
+3. 新增 5 项测试；全量 **819 passed / 0 failed / 0 skipped（397,114.9 ms）**；既有断言未放宽。
+4. 正式 EXE：`7016d4295d0e` / SHA-256 `861eeaef...` / commit `996f992` / 96,668,160 B / asInvoker；
+   `verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16、
+   YouTube 生命周期 PASS。
+5. 真实平台：Bilibili 5050（9 chat / 4 viewers / ended）；YouTube Sky News `LXQz2kkE-C0`
+   （8 chat / 8 channel id / 7 active / ended）。
+6. 真实浏览器：外部 Chrome 154 + 正式 EXE，fragment→Cookie `authenticated: true`，`#/live`、`#/viewers`、`#/ai` 无异常。
+7. 归档质量：严格召回 15.1% / 24.5% / 29.5% / 18.0%；错误 stated 25.0%–31.1%；跨观众 0；重复 0。
+
+### 0.2 下一轮必须先做
+
+1. **不要直接公开发布**；先做 RC0 小范围闭源内测，明确标注“长期画像需复核”。
+2. **P1-A**：同 `kind+topic` 不同 statement 的静默 confirm 必须处理（statement 等价检查/复核队列/提示 update-supersede），
+   但不要破坏“一 live fact/topic”、版本快照与跨场次累积。
+3. **P1-B**：优先修“引用原文不支持结论”（25%–31% stated），而不是继续加批次或提示词。
+4. **P1-C/D**：临时事实长期化、摘要无证据级校验；UI 标注或 TTL。
+5. 其他 Provider、真实账单、5 人语义批次、原生对话框、干净 Windows 账户人工双击仍待验收。
+
+### 0.3 不要做
+
+1. 不要把 819 测试通过等同于“语义质量通过”；召回与证据支持仍低。
+2. 不要因为 P0-A/B 已修复就恢复默认 20 人/批；默认 10 不变。
+3. 不要把旧 `verify-memory-ui.mjs` 的 15/21 当产品失败；它是 v0.10 陈旧脚本（`/memory` 已移除）。
+4. 不要为了提高召回而放宽证据/身份/金额/去重规则。
+
+## 0.28 上一轮（RC0-MEMORY-QUALITY）
 
 完整报告：`docs/MEMORY_QUALITY.md`；日志：`log/2026-11-14-memory-quality.md`。
 

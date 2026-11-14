@@ -1,8 +1,31 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正；814 全量；EXE `d951f89fe379`）
+最后更新：2026-11-14（RC0-FINAL-ACCEPTANCE：最终综合验收、2 个 P0 修复、819 全量；EXE `7016d4295d0e`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.29 RC0-FINAL-ACCEPTANCE：最终综合验收与发布阻断项审计（2026-11-14）
+
+完整报告：`docs/RC0_FINAL_ACCEPTANCE.md`；日志：`log/2026-11-14-rc0-final-acceptance.md`。
+**未调用真实付费 Provider、未修改生产数据库、未发送真实聊天到第三方、未 Push/Tag/发布。**
+
+- **修复 2 个 P0**：
+  1. 无 evidence 的 `confirm + stated` 会把 `inferred` 提升为 `stated`；`validate.mjs`、`embedded.mjs` 跳过无证据 confirm，`engine.mjs` 要求 evidence 才允许提升/激活，无证据的匹配 add 也跳过。
+  2. 旧 `/api/memory/import` 路径只按 batch 内 seq 校验证据，未比较 `events.viewer_id`；现在同 batch 跨观众证据返回 `MEMORY_EVIDENCE_OTHER_VIEWER` 并拒绝整份答案。
+- 新增 **5** 项测试（2 unit + 3 integration）；全量 **819 passed / 0 failed / 0 skipped（397,114.9 ms，2026-11-14）**。
+- 正式 EXE：`dist/LiveMemory.exe`，**96,668,160 B**，SHA-256 `861eeaef3fd647732436809aedfa655da69db0d1ce1c11bbb76d8769972ff447`，
+  buildId `7016d4295d0e`，commit `996f99266b9159efb8ff8c7186163061adc73fed`，schema 16，asInvoker。
+- EXE 矩阵：`verify-exe` **10/10**、`verify-p0-5-exe` **12/12**、`verify-p0-2-exe` **13/13**、
+  `verify-ai-token-exe` **16/16**、`verify-youtube-lifecycle-exe` PASS（181s 断网恢复）。
+- 真实平台：Bilibili 房间 5050（9 chat / 4 viewers / ended）；YouTube Sky News `LXQz2kkE-C0`
+  （8 chat / 8 channel id / 7 active / ended）。
+- 真实浏览器：外部 Chrome 154 + 正式 EXE，fragment→Cookie `authenticated: true`；
+  `#/live`、`#/viewers`、`#/ai` 无页面异常（清理 EPERM 为脚本未等待 EXE 退出）。
+- 归档真实质量（只读重评）：严格召回 15.1% / 24.5% / 29.5% / 18.0%，重要召回 7.7% / 23.1% / 19.2% / 19.2%，
+  错误 stated 25.0%–31.1%；跨观众 0；重复 0。
+- **P1**：同 `kind+topic` 不同 statement 被静默 confirm（可确定性复现，旧“在便利店打工”+新“在医院工作”仍显示旧说法）；
+  25%–31% stated 引用不支持结论；临时信息（生日/当天状态）被长期化；摘要无证据级校验。
+- **结论：建议进入 RC0 小范围闭源内测；不建议公开发布。**
 
 ## 0.28 RC0-MEMORY-QUALITY：长期画像事实完整性与语义质量专项（2026-11-14）
 
