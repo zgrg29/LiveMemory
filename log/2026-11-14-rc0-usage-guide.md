@@ -93,7 +93,7 @@
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-**828 passed / 0 failed / 0 skipped（240,768.1329 ms，2026-11-14）**；上一轮 819，+9。
+**828 passed / 0 failed / 0 skipped（209,636.8539 ms，2026-11-14）**；上一轮 819，+9。
 未修改任何既有断言。
 
 ### 4.4 正式 EXE
@@ -104,9 +104,9 @@ node scripts/verify-help-exe.mjs
 node scripts/verify-exe.mjs
 ```
 
-- `dist/LiveMemory.exe`：`96,733,184` B（92.3 MB），buildId `09545e3611f2`，
-  SHA-256 `bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22`，
-  `192` assets，21 个必需模块，`asInvoker`；构建时 HEAD `fbd90be`。
+- `dist/LiveMemory.exe`：`96,733,184` B（92.3 MB），buildId `74ed76e88a51`，
+  SHA-256 `0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd`，
+  `192` assets，21 个必需模块，`asInvoker`；构建时 HEAD `bc48a94`。
 - `verify-help-exe` **14/14**：asInvoker、启动/buildId、未认证 401、schema 16、
   导航/路由/模块/图标/响应式 CSS、三语键一致与内容覆盖、无限制文案、切日语生效。
 - `verify-exe` **10/10**：asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、

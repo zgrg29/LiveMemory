@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-USAGE-GUIDE：三语使用说明、828 全量、正式 EXE `09545e3611f2`；RC0 封版）
+最后更新：2026-11-14（RC0-USAGE-GUIDE：三语使用说明、828 全量、正式 EXE `74ed76e88a51`；RC0 封版）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -22,7 +22,7 @@
 
 - 新增 `tests/unit/help-ui.test.mjs` **9** 项：导航/路由/图标接线；9 章节顺序、`aria-labelledby` 与锚点；三语真实字典渲染且无未解析键；连接/历史/Provider/分析/记忆/恢复/备份/FAQ 内容覆盖；无限制与无强制审核文案；目录滚动与操作按钮跳转；FAQ 8 条问答；只读（无 `innerHTML` / `alert` / API 调用）；响应式 CSS 断言。
 - `tests/unit/i18n.test.mjs` 全部通过（三语键集、占位符、非空、CLI 三语）。
-- 全量：**828 passed / 0 failed / 0 skipped（240,768 ms，2026-11-14，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**；上一轮 819，本轮 +9。
+- 全量：**828 passed / 0 failed / 0 skipped（209,637 ms，2026-11-14，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**；上一轮 819，本轮 +9。
 - 新增 `scripts/verify-help-exe.mjs`：正式 EXE **14/14**（启动与 buildId、未认证 401 未被放宽、schema 16、导航/路由/模块/图标/响应式 CSS、三语键一致与内容覆盖、无限制文案、切换日语生效）。
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
 - 构建脚本把 `src/web/js/pages/help.js` 加入 `REQUIRED_MODULES`：缺少说明页的构建直接失败。
@@ -33,11 +33,11 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | `96,733,184` bytes（92.3 MB） |
-| SHA-256 | `bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22` |
-| buildId | `09545e3611f2` |
-| source hash | `09545e3611f2c018b0900b4d746de46c6c874c4b46b3a5aec6f6251a66f14d1b` |
-| commit | `fbd90be541378ecf9f1e9dbb46651529e2f189c6`（构建时 HEAD） |
-| builtAt | `2026-11-14T13:54:56.173Z` |
+| SHA-256 | `0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd` |
+| buildId | `74ed76e88a51` |
+| source hash | `74ed76e88a519ac90af5b7705abd5c167bbf598825ed9f205c400cb32bd7a8e5` |
+| commit | `bc48a943af943cf8f7ae9abbbe1e3376669fb5ca`（构建时 HEAD） |
+| builtAt | `2026-11-14T14:21:47.608Z` |
 | 资源 | `192` files；21 个必需模块；RT_MANIFEST `asInvoker` |
 
 - 构建与验证均在 `asInvoker` 正式二进制上完成；未使用 Mock Provider、未调用真实付费 API、未发送真实聊天、未修改生产数据库。
@@ -55,6 +55,14 @@
 - 既有能力回归：全量 828 项通过，正式 EXE 功能矩阵 10/10、说明页专项 14/14。
 - 长期画像语义质量仍是已知 P1（§0.29），本轮按用户要求在说明中客观解释，**没有**以此限制操作。
 - **状态：RC0 封版完成；等待用户决定 Push / Tag / 发布。**
+
+### 0.30.6 提交与构建记录
+
+- 代码与文档提交：`bc48a943af943cf8f7ae9abbbe1e3376669fb5ca`（`feat: add tri-language in-app usage guide`，19 files，+1899/−9）。
+- 正式 EXE 在该提交**之后**重建，`build-info.commit` = `bc48a94`，`--version` 输出 `Build: 0.13.2 (commit bc48a94, assets 74ed76e88a519ac90af5)`。
+- `buildId` 只由源码内容决定。提交前把 `pages.css` 的行尾统一为 LF，因此中间态构建（`09545e3611f2`）不是交付物；最终交付 buildId 为 `74ed76e88a51`。
+- 最终构建记录补充提交：本文件所在的后续提交（HEAD）。
+- 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
 
 ## 0.29 RC0-FINAL-ACCEPTANCE：最终综合验收与发布阻断项审计（2026-11-14）
 

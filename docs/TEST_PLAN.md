@@ -1564,7 +1564,7 @@ RC0 恢复默认 10 人/批**；20 只保留为技术上限与实验参数。
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-结果：**828 passed / 0 failed / 0 skipped（240,768 ms，2026-11-14）**。上一轮 819，本轮 +9。
+结果：**828 passed / 0 failed / 0 skipped（209,637 ms，2026-11-14）**。上一轮 819，本轮 +9。
 未修改任何既有断言；金额、身份、去重、AI 批次/恢复、备份/恢复、认证测试保持原样并通过。
 
 ### 42.4 正式 EXE 验证
@@ -1574,9 +1574,9 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `scripts/verify-help-exe.mjs` | **14/14** | asInvoker；启动与 buildId；未认证 `/api/bootstrap` 401；认证后 schema 16；导航/路由/help 模块；导航图标；响应式 CSS；三语键一致；9 主题内容；无限制文案；切换日语生效 |
 | `scripts/verify-exe.mjs` | **10/10** | asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语 |
 
-EXE：`dist/LiveMemory.exe`，buildId `09545e3611f2`，`96,733,184` bytes，SHA-256
-`bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22`，`192` assets，
-RT_MANIFEST `asInvoker`，构建时 HEAD `fbd90be541378ecf9f1e9dbb46651529e2f189c6`。
+EXE：`dist/LiveMemory.exe`，buildId `74ed76e88a51`，`96,733,184` bytes，SHA-256
+`0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd`，`192` assets，
+RT_MANIFEST `asInvoker`，构建时 HEAD `bc48a943af943cf8f7ae9abbbe1e3376669fb5ca`。
 
 ### 42.5 未验证 / 边界
 

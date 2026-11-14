@@ -1,6 +1,6 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-USAGE-GUIDE：三语使用说明与 RC0 封版 · 828 全量 · 正式 EXE `09545e3611f2` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-USAGE-GUIDE：三语使用说明与 RC0 封版 · 828 全量 · 正式 EXE `74ed76e88a51` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
 > 本轮**未调用任何真实付费 API**、未发送真实聊天到第三方、未修改生产数据库、未 Push/Tag/发布。
 > 本轮只用只读说明页与本地自动化；测试使用 `tests/.tmp` 隔离目录。
@@ -16,17 +16,17 @@
 3. **三语一致**：112 个 `help.*` 键 + `nav.help`；复用 `pageHead`/`card`/`callout`/`details`，只新增 `.help-*` 样式与一个书页图标。
 4. **布局**：桌面 sticky 目录 + 两栏；≤1000px 单列胶囊目录；≤700px 术语表单列；≤520px 缩小字号；长文本不横向溢出。
 5. **文案边界**：客观解释 AI 画像可能不准确、证据只保证引用合法；明确写出没有观众数/消息数/时长/分析次数/Token/费用/运行时间/批次限制，也不强制审核。
-6. **测试**：新增 `help-ui` 9 项；全量 **828 passed / 0 failed / 0 skipped（240,768 ms）**；`verify-help-exe` **14/14**；`verify-exe` **10/10**。
-7. **打包**：`src/web/js/pages/help.js` 加入构建必需模块；正式 EXE `09545e3611f2` / SHA-256 `bf9fcc49…` / `96,733,184` B / `192` assets / asInvoker。
+6. **测试**：新增 `help-ui` 9 项；全量 **828 passed / 0 failed / 0 skipped（209,637 ms）**；`verify-help-exe` **14/14**；`verify-exe` **10/10**。
+7. **打包**：`src/web/js/pages/help.js` 加入构建必需模块；正式 EXE `74ed76e88a51` / SHA-256 `0f4cf0a3…` / `96,733,184` B / `192` assets / asInvoker。
 8. **文档**：README、STATUS、HANDOFF、ROADMAP、CHANGELOG、TEST_PLAN、UI_DESIGN 与本日志已更新。
 
 ### 0.2 结果
 
 | 指标 | 值 |
 | --- | --- |
-| 全量测试 | **828 passed / 0 failed / 0 skipped**（240,768 ms，2026-11-14） |
+| 全量测试 | **828 passed / 0 failed / 0 skipped**（209,637 ms，2026-11-14） |
 | 新增测试 | `tests/unit/help-ui.test.mjs` 9 项（i18n 键集由既有 `i18n.test.mjs` 覆盖） |
-| 正式 EXE | buildId `09545e3611f2` / commit（构建时）`fbd90be541378ecf9f1e9dbb46651529e2f189c6` / SHA-256 `bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22` / `96,733,184` B / 92.3 MB / asInvoker |
+| 正式 EXE | buildId `74ed76e88a51` / commit（构建时）`bc48a943af943cf8f7ae9abbbe1e3376669fb5ca` / SHA-256 `0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd` / `96,733,184` B / 92.3 MB / asInvoker |
 | 打包验证 | `verify-help-exe` **14/14**；`verify-exe` **10/10** |
 | 版本/Schema | 0.13.2 / DB 16 / 结果 1.3.0 / 提示词 v13.2（均未改） |
 
@@ -44,6 +44,15 @@
 3. **不要声称真实浏览器/截图已验收**：本机 Chromium mojo `platform_channel` 被沙箱拒绝（Chrome 154、Edge 157 均 0x5），只完成 DOM 渲染测试与打包资源检查。
 4. 不要改 DB schema、结果 Schema、提示词版本、备份格式、金额/身份/去重规则；本轮没有这些改动。
 5. 不要把文档提交 Hash 与二进制 buildId 混为一谈：buildId 是源码内容哈希，构建时 HEAD 记录在 `build-info.commit`。
+
+### 0.5 提交与构建记录
+
+- 代码与文档提交：`bc48a943af943cf8f7ae9abbbe1e3376669fb5ca`（`feat: add tri-language in-app usage guide`）。
+- 正式 EXE 在该提交之后重建：`build-info.commit` = `bc48a94`，buildId `74ed76e88a51`，
+  SHA-256 `0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd`，`96,733,184` B。
+- 构建记录补充提交：本文件所在的后续提交（HEAD）。
+- 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
+- **环境备注**：本机 DSH 沙箱下 `.git` 为中等完整性，受限进程写入会 `Permission denied`；本轮在一次性 full access 下执行 `git add`/`git commit`。该环境的 Git 还会把已暂存改动判为“空提交”，需加 `--allow-empty` 才能生成提交（提交 tree 与文件内容不受影响）。真实用户环境不需要这些处理。
 
 ## 0-A 上一轮（RC0-FINAL-ACCEPTANCE）
 

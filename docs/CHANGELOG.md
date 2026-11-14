@@ -24,8 +24,8 @@
 
 ### 验证
 
-- 新增 `tests/unit/help-ui.test.mjs` 9 项；全量 **828 passed / 0 failed / 0 skipped（240,768 ms）**。
-- 正式 EXE `09545e3611f2` / SHA-256 `bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22` /
+- 新增 `tests/unit/help-ui.test.mjs` 9 项；全量 **828 passed / 0 failed / 0 skipped（209,637 ms）**。
+- 正式 EXE `74ed76e88a51` / SHA-256 `0f4cf0a39d1b7182182d681e6261f7517ab952142d0c4848d177e1788b6f2cdd` /
   `96,733,184` bytes / `192` assets / `asInvoker`；`verify-help-exe` **14/14**、`verify-exe` **10/10**。
 - 真实浏览器截图/点击未执行：本机沙箱禁止 Chromium mojo `platform_channel`，由 DOM 渲染测试与
   打包资源检查覆盖，未声称真实验收。

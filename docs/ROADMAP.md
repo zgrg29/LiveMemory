@@ -2,7 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-14，RC0-USAGE-GUIDE）：内置三语使用说明与 RC0 封版。侧栏新增「使用说明 / 使い方 / User guide」（`#/help`），覆盖首次启动、Bilibili/YouTube 连接、记录与历史、Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移、FAQ（8 条）；112 个 `help.*` 键三语一致；只读、无 API 调用、无新增使用限制、无强制审核。新增 9 项 UI 测试；全量 **828 passed / 0 failed**；正式 EXE `09545e3611f2`（asInvoker，`96,733,184` B）`verify-help-exe` 14/14、`verify-exe` 10/10。真实浏览器截图因本机沙箱禁止 Chromium mojo 未执行，由 DOM 渲染与打包资源检查覆盖。**未 Push/Tag/Release，等待用户决定。** 完整说明见 `docs/STATUS.md` §0.30。
+> v0.13.2（2026-11-14，RC0-USAGE-GUIDE）：内置三语使用说明与 RC0 封版。侧栏新增「使用说明 / 使い方 / User guide」（`#/help`），覆盖首次启动、Bilibili/YouTube 连接、记录与历史、Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移、FAQ（8 条）；112 个 `help.*` 键三语一致；只读、无 API 调用、无新增使用限制、无强制审核。新增 9 项 UI 测试；全量 **828 passed / 0 failed**；正式 EXE `74ed76e88a51`（asInvoker，`96,733,184` B）`verify-help-exe` 14/14、`verify-exe` 10/10。真实浏览器截图因本机沙箱禁止 Chromium mojo 未执行，由 DOM 渲染与打包资源检查覆盖。**未 Push/Tag/Release，等待用户决定。** 完整说明见 `docs/STATUS.md` §0.30。
 > v0.13.2（2026-11-14，RC0-AI-EFFICIENCY）：Token 归因、重复输入、动态分批与成本口径。缓存/推理 Token 归因、逐尝试 token 账本、无 usage 请求不再消失；删除三处可证明的重复输入（structured-output Provider 的 schema、画像重复示例、契约逐观众数组）；画像观众上限从写死 10 改为"偏好 10、按预算最多 20"；三语界面显示重试开销占比与每百观众/每百事实 Token，无价格时明确「费用未知」。14 场景基线：请求 -30.6%、总 Token（按实测字节模拟）-10.1%、覆盖与事实完全不变；781 自动化测试。完整说明见 `docs/AI_TOKEN_EFFICIENCY.md`、`docs/STATUS.md` §0.26、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-token-efficiency.md`。
 > v0.13.2（2026-11-14，RC0-FINAL-ACCEPTANCE）：最终综合验收。修复无证据 `confirm+stated` 提升（P0-A）与旧导入路径跨观众证据（P0-B）；819 自动化测试；正式 EXE `7016d4295d0e`（commit `996f992`，asInvoker）10/10 + 12/12 + 13/13 + 16/16 + YouTube 生命周期；真实 Bilibili 5050 与 YouTube Sky News 采集、真实 Chrome + EXE 认证。长期画像语义质量仍未达标（严格召回 15%–30%，错误 stated 25%–31%），同 topic 静默 confirm 为 P1。建议 RC0 小范围闭源内测，不建议公开发布。完整报告 `docs/RC0_FINAL_ACCEPTANCE.md`。
 > v0.13.2（2026-11-14，RC0 P0-2）：完整备份、恢复与跨电脑迁移。新增 `.livememory` v1（STORE ZIP + manifest + SHA-256/CRC + schema/format 兼容检查）、SQLite `VACUUM INTO` 一致快照、事务化恢复 + `runtime/restore-journal.json` 崩溃回滚、ZIP Slip/压缩炸弹/超大/损坏/未来版本拒绝、三语设置页备份/预览/验证/恢复/进度/取消；备份明确排除 API Key 与平台登录。24 个专项测试、全量通过；正式 EXE 完成“备份 → 全新目录恢复 → 重启 → 再次备份”闭环。完整说明见 `docs/BACKUP_FORMAT.md`、`docs/BACKUP_RESTORE.md`、`docs/STATUS.md` §0.25、`docs/HANDOFF.md` §0 与 `log/2026-11-14-backup-restore-p02.md`。
@@ -25,7 +25,7 @@
 - ✅ 只读：不调用 `/api/*`、不写设置、不弹确认；**没有新增任何使用限制，也不强制审核 AI 画像**
 - ✅ 内容覆盖 Bilibili/YouTube 连接、记录与历史、Provider/API Key、单场+画像、长期记忆与证据、进度与恢复、备份/迁移、常见问题
 - ✅ 新增 `tests/unit/help-ui.test.mjs` 9 项；全量 **828 passed / 0 failed / 0 skipped（240,768 ms）**
-- ✅ 正式 EXE `09545e3611f2`：`verify-help-exe` **14/14**、`verify-exe` **10/10**、`asInvoker`
+- ✅ 正式 EXE `74ed76e88a51`：`verify-help-exe` **14/14**、`verify-exe` **10/10**、`asInvoker`
 - 🟡 真实浏览器截图/点击未执行（本机沙箱禁止 Chromium mojo）；由 DOM 渲染测试与打包资源检查覆盖
 - ✅ 版本 0.13.2、DB schema 16、结果 Schema 1.3.0、提示词 v13.2、默认 10 人/批、备份格式、金额/身份/去重均未改
 - ⬜ Push / Tag / 发布：等待用户决定
