@@ -259,7 +259,7 @@
 
 ## ADR-023 发布 EXE 使用 requireAdministrator Manifest
 
-**状态**：已采纳（v0.5.0，产品决定）
+**状态**：已被 ADR-036 取代（v0.5.0 决定，RC0 P0-5 撤销）
 
 **背景**：用户决定 EXE 默认以管理员权限运行，双击时由 Windows 自动 UAC，而不是要求右键“以管理员身份运行”。
 
@@ -505,3 +505,32 @@
 **后果**：用户获得零配置的一键入口，同时保留全部手动流程；代价是当前只有一个 provider，
 受 2 请求/分钟限制，且免费服务可能限流/下线。自动失败时任务状态与已导入批次仍保留，
 可恢复或改用手动流程；不能把“历史测通”描述为“永久可用”。
+
+## ADR-036 本地 API 会话认证与 asInvoker 发布 EXE
+
+**状态**：已采纳（RC0 P0-5，2026-11-14）
+
+**背景**：发布 EXE 原先以 `requireAdministrator` 运行，同时 `127.0.0.1` 上的全部 `/api/*`
+没有认证。任何本机进程都能读观众/聊天数据、改设置、停止场次或迁移数据目录，而且这些操作
+继承管理员令牌。CORS/SameSite 不能阻止本机进程直接发 HTTP；浏览器跨站则是另一类威胁。
+
+**决定**：
+
+- 打包 EXE 改为 `asInvoker`。正常采集、SQLite、导出、目录选择、Provider 请求和更新都不需要
+  管理员权限；构建脚本显式 patch 并断言最终 EXE 的 RT_MANIFEST 为 `asInvoker`。
+- 每次服务启动生成随机、进程内的 bootstrap token 与 session token，不持久化。
+- 启动器把 bootstrap token 放在浏览器 URL 的 **fragment**（`#lm_bootstrap=...`）中；页面用
+  同源 `POST /api/auth/session` 换取 `HttpOnly; SameSite=Strict; Path=/` 会话 Cookie，随后
+  从地址栏移除 token。token 一次使用、5 分钟过期，不进入查询串、日志、runtime.json 或历史记录。
+- 除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）都要求
+  session Cookie。认证失败统一 401 `AUTH_REQUIRED`，不泄露缺失/过期/错误的区别。
+- 所有带 `Origin` 的请求必须同源；`Origin: null` 拒绝；API 请求额外拒绝 `Sec-Fetch-Site:
+  cross-site/same-site`；Host 仍只接受 `127.0.0.1|localhost|[::1]:port`。不添加 CORS 允许头。
+- 不存在返回 token 的端点；`/api/auth/session` 只接受调用方已持有的短期 token。
+- 测试可通过 `startServer({auth:false})` 关闭认证；HTTP/环境变量不能关闭生产认证。EXE 回归通过
+  测试专用 `LIVE_MEMORY_TEST_BOOTSTRAP_FILE` 读取一次性 URL，走与浏览器相同的交换流程。
+
+**后果**：本机任意进程不再能直接读写 API；浏览器刷新、多个标签页和 SSE 共享同一个 Cookie。
+服务重启后旧 Cookie/token 全部失效，必须由启动器重新打开控制台。无法防御同一 Windows 用户下
+的恶意软件（可读浏览器配置/注入浏览器/抢占启动参数）；这是本地单用户应用的明确边界。
+真实浏览器点击、真实 Ctrl+C/关闭窗口与 UAC 不再适用（asInvoker）仍需人工验收。

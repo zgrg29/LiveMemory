@@ -1,5 +1,23 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r13 — 2026-11-14（RC0 P0-5：本地 API 鉴权与 asInvoker EXE）
+
+### 安全修复
+
+- **本地 API 无认证**：`/api/bootstrap`、`/api/viewers`、设置、场次停止、迁移入口、SSE 均可被任意本机进程直接调用。现除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）要求会话 Cookie；未认证统一 401 `AUTH_REQUIRED`。
+- **首次会话建立**：启动器每次运行生成随机 256-bit bootstrap token，放在 URL fragment（`#lm_bootstrap=...`），页面通过同源 `POST /api/auth/session` 换取 `HttpOnly; SameSite=Strict; Path=/` Cookie 后清除 fragment。token 一次性、5 分钟；session 最多 7 天且随进程重启失效；不存在返回 token 的端点，不进入查询串/日志/runtime.json。
+- **浏览器跨站**：所有带 Origin 的请求必须同源；`Origin:null` 拒绝；`/api/*` 拒绝跨站 `Sec-Fetch-Site`；Host 继续严格校验；不返回 CORS 放行头。
+- **管理员权限放大**：发布 EXE Manifest 从 `requireAdministrator` 改为 `asInvoker`；构建 patch 前后断言；删除管理员检查、`admin.mjs`、三语 `adminRequired` 与 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 生产绕过。
+- **前端**：新增 `js/auth.js`；先建立会话再加载 `/api/bootstrap`；401 渲染三语“请从 LiveMemory 重新打开”页面；EventSource/下载自动携带 Cookie。
+- **测试钩子**：`startServer({auth:false})` 仅用于进程内隔离夹具；HTTP/环境变量不能关闭生产认证。EXE 回归使用 `LIVE_MEMORY_TEST_BOOTSTRAP_FILE` 走与浏览器相同的交换流程。
+
+### 验证
+
+- 新增 `tests/integration/api-auth.test.mjs` 14 项、`graceful-close.test.mjs` 1 项、`tests/unit/server-auth.test.mjs` 6 项、`tests/unit/auth-boot.test.mjs` 6 项。
+- 全量 **745 passed / 0 failed / 0 skipped（270,168 ms，2026-11-14）**；Bilibili 专项 **53 passed / 0 failed**。
+- 正式 EXE：buildId `75588ba16aec` / commit `3d4232704dd9a710ee8c55a1688ec4ff9812821c` / SHA-256 `d3d1ddc1d1b207cd72bb6c6e03a3a07216885a3e2a53ca3bf9f1a5cb48a558ae` / `96,436,224` bytes / `177` assets / `asInvoker`；`verify-p0-5-exe` **12/12**、`verify-exe` **10/10**、YouTube EXE 回放 **通过（180,934 ms 断连 → 同一 session 恢复 → 去重 5/5 → platform_ended）**。
+- 未验证：真实浏览器点击/自动打开、真实 Ctrl+C/关闭窗口、同用户恶意软件、共享目录 ACL、真实平台/真实付费 Provider。
+
 ## 0.13.2-r12 — 2026-11-14（RC0 P0-4：YouTube 暂时性故障误判结束）
 
 ### 修复

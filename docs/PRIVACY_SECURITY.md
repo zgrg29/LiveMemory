@@ -9,7 +9,10 @@
 ## 2. HTTP 防护
 
 - **Host 校验**：只接受 `127.0.0.1:<port>`、`localhost:<port>`、`[::1]:<port>`，防止 DNS rebinding。
-- **Origin 校验**：非 GET/HEAD 请求若带 Origin，必须与本地源一致。
+- **会话认证**：除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）必须携带启动器建立的 `HttpOnly; SameSite=Strict; Path=/` 会话 Cookie；未认证统一 401 `AUTH_REQUIRED`。
+- **Origin 校验**：所有带 Origin 的请求（不只写请求）必须与本地源一致；`Origin: null` 一律拒绝。
+- **跨站请求标记**：`/api/*` 收到 `Sec-Fetch-Site: cross-site` 或 `same-site` 时返回 403；同源 fetch/EventSource 为 `same-origin`，地址栏直接访问为 `none`。
+- **无 CORS 放行**：不返回 `Access-Control-Allow-Origin`；跨源预检无法通过。
 - **CSP**：`default-src 'self'`，禁止内联脚本/样式、禁止 framing、禁止 object。
 - **nosniff / Referrer-Policy / CORP / COOP / Permissions-Policy**。
 - **静态文件**：解码后规范化路径，必须位于 `src/web` 内，防止 `..` 穿越；拒绝 NUL。
@@ -19,6 +22,7 @@
 ## 3. 凭据
 
 - Bilibili Cookie、YouTube OAuth Token、API Key 等**不写入日志**、默认**不进入备份**、不进入 AI 分析包。
+- **本地 API 会话凭据**：bootstrap token 与 session token 只存在于进程内存和浏览器 Cookie；不写入配置、数据库、runtime.json、日志或分析包。bootstrap token 只出现在启动器交给浏览器的 URL fragment 中，一次使用且 5 分钟过期；页面交换成功后立即从地址栏移除。
 - 日志脱敏：键名匹配 `cookie|sessdata|bili_jct|token|secret|password|authorization|api[-_]?key|credential`，值模式匹配 `SESSDATA=`、`Bearer ...` 等。
 - 聊天正文不写日志。
 - 未来持久化凭据时使用 DPAPI 或 AES-256-GCM + 用户密码派生，不放在普通 JSON。
@@ -26,8 +30,8 @@
 ## 4. 日志
 
 - 位置：`%LOCALAPPDATA%\LiveMemory\logs\livememory-YYYY-MM-DD.log`（JSONL）。
-- 内容：启动、迁移、服务就绪、场次开始/结束、设置变更、错误码。
-- 不记录：Cookie/Token、聊天正文、观众隐私数据、完整文件路径以外的敏感信息。
+- 内容：启动、迁移、服务就绪、场次开始/结束、设置变更、错误码、认证成功/拒绝的**原因**（不记录 token 值）。
+- 不记录：Cookie/Token、bootstrap URL、聊天正文、观众隐私数据、完整文件路径以外的敏感信息。
 - 单文件 5 MB 轮转为 `.1`。
 - `runtime/last-error.json` 只记录错误码、时间、端口与 `messageKey`，不含凭据。
 
@@ -72,9 +76,10 @@
 
 ## 10. 权限
 
-- 正常运行不需要管理员权限。
-- 数据目录不可写时给出本地化错误与替代方案，不默认提权。
-- EXE 不写注册表；卸载时用户可自行删除数据目录。
+- 打包 EXE 的 RT_MANIFEST 为 `asInvoker`（RC0 P0-5），正常运行与开发模式都不需要管理员权限；不请求 UAC。
+- 数据目录不可写时给出本地化错误与替代方案，不默认提权，也不要求管理员。
+- EXE 不写注册表、不写 `Program Files`；卸载时用户可自行删除数据目录。
+- 同一 Windows 用户的进程仍可读取 `%LOCALAPPDATA%` 下的数据目录、`secrets/` 与浏览器资料；这是本地单用户应用的边界，不是可以通过 HTTP 认证消除的威胁（见 §31）。
 
 ## 11. 敏感数据提示
 
@@ -144,7 +149,7 @@
 - 迁移前停止适配器、checkpoint、关闭 SQLite；复制到目标卷 staging，校验 SQLite `integrity_check`、表计数、schema 版本与配置/凭据/导出文件 SHA-256；成功后移入目标并切换运行时。
 - **原目录永远不由应用自动删除**；失败回滚到原目录。旧目录可能仍含敏感聊天与凭据，用户确认新目录可用后需自行安全删除。
 - 目录选择器：本地服务用 `spawn(..., {stdio:'ignore'})` 启动固定 PowerShell 脚本，调用 WinForms FolderBrowserDialog；选择结果经临时文件返回，不经过 stdout 管道，不执行用户输入的命令，不使用 `cmd /c`。打开文件夹只接受 `data/exports/backups/logs` 四个受管键，不拼接任意路径。
-- 管理员权限：发布 EXE 的 Manifest 为 `requireAdministrator`，但数据目录校验、迁移 staging/回滚、删除范围不因提权放宽。同账号 UAC 通常不改变 `%LOCALAPPDATA%`；跨管理员账号时应用扫描本地用户配置，恰好一个库则使用，多个则拒绝猜测。
+- 权限：发布 EXE 的 Manifest 为 `asInvoker`（RC0 P0-5），数据目录校验、迁移 staging/回滚、删除范围不因权限变化放宽。旧版跨管理员账号可能留下其他 profile 的数据目录；应用仍会扫描本地用户配置，恰好一个库则使用，多个则拒绝猜测。
 - 迁移期间 API 进入维护模式，除 relocation/clear/health/status 外返回 503，避免并发写库。
 
 ## 17. 清空数据与恢复出厂（v0.4.0）
@@ -381,3 +386,39 @@ AI 结果是**外部输入**，按不可信数据处理：
 - **生命周期**：翻译随场次级联删除；删除观众记忆时同时删除其摘要/事实翻译；清空数据/恢复出厂包含翻译表；备份/迁移随整库复制。
 - **残余风险**：翻译缓存可能保留已不再使用的旧段落（按 hash 不应用但未主动清理），直到场次/记忆删除或清空数据；它仍是本地 AI 派生文本，用户应把数据目录视为敏感数据。
 - **真实 Provider 未验证**：本机没有可用 Key；无法证明第三方对翻译内容的处理或费用精度，界面与文档不得声称已验证。
+
+## 31. 本地 HTTP API 会话认证与 asInvoker（RC0 P0-5）
+
+### 31.1 威胁模型
+
+| 威胁 | 修复前 | 修复后 | 仍不能防御 |
+| --- | --- | --- | --- |
+| 本机任意进程直接调用 `/api/*` | 无认证，可读观众/聊天、改设置、停止/删除场次、迁移目录 | 除 health/auth 外要求随机会话 Cookie；无 Cookie/错误 Cookie 401 | 同一 Windows 用户下能读取浏览器 Cookie 库或注入浏览器的恶意软件 |
+| 恶意网页跨站读取 | 本机 API 无认证；CORS 只阻止读取响应，不阻止请求副作用 | `SameSite=Strict` Cookie + 全方法 Origin + `Sec-Fetch-Site` + 无 CORS 放行 | 浏览器/插件漏洞；用户主动把一次性 URL 复制给他人 |
+| DNS rebinding | Host 已校验 | 保持严格 Host 校验；API 仍需 Cookie | 本机 hosts/DNS 被篡改且 Host 仍伪装成允许值（端口/路径仍受限） |
+| 管理员权限放大 | EXE 以 `requireAdministrator` 运行，API 调用继承管理员令牌 | Manifest 改为 `asInvoker`，日常无提权 | 用户手动以管理员身份启动（不推荐） |
+| 重启后旧凭据长期有效 | 不适用（无凭据） | token 只在进程内存；重启后旧 Cookie/旧 URL 都 401 | 进程运行期间的 7 天 Cookie（服务重启即失效） |
+| SSE 绕过认证 | `/api/events/stream` 无认证 | SSE 走同一 Cookie 校验；未认证 401，不返回 `text/event-stream` | 已认证页面被本地恶意扩展读取 |
+
+### 31.2 为什么不是 CORS/SameSite 单独解决
+
+CORS 与 SameSite 只约束**浏览器**如何发送/读取跨站请求；本机进程可以直接构造 HTTP 请求，不需要浏览器，也不受 CORS 限制。因此必须对 `/api/*` 做服务端会话认证，而 Origin/Sec-Fetch-Site/SameSite 是浏览器侧的额外纵深。
+
+### 31.3 首次可信浏览器会话
+
+1. 启动器在服务进程内生成随机 bootstrap token（256-bit，一次使用，5 分钟）。
+2. 启动器打开 `http://127.0.0.1:<port>/#lm_bootstrap=<token>`；fragment 不发送给服务器。
+3. 页面 `js/auth.js` 读取 fragment，向同源 `POST /api/auth/session` 提交 token；服务端消费 token 后返回 `HttpOnly; SameSite=Strict` 会话 Cookie。
+4. 页面用 `history.replaceState` 移除 fragment，之后所有 fetch、下载与 EventSource 自动携带 Cookie。
+5. 服务重启后 token 与 session 都在内存中重建，旧 Cookie/旧 URL 失效；启动器重新打开新 URL。
+
+**不采用**：`/api/token` 或 `/api/bootstrap` 无条件返回 token；把固定 token 写入配置/数据库；在查询参数中放长期 token；用 `Authorization` Header 作为唯一方式（原生 EventSource 不能加 Header）。`/api/auth/session` 只接受调用方已持有的短期 token，不返回任何 token。
+
+### 31.4 残余风险与边界
+
+- **同一 Windows 用户的恶意软件**：可以读取浏览器 Cookie、注入浏览器、读取进程内存或抢占启动 URL。HTTP 认证不能防御这一层；文档与界面不得声称“本机绝对安全”。
+- **本地浏览器扩展/调试端口**：已认证页面的内容可被扩展读取；不应在共享/不受信任的浏览器配置中使用。
+- **多用户**：`%LOCALAPPDATA%` 默认按用户隔离，但用户显式选择共享/同步目录时，其他可访问该目录的账户可能读取数据；应用不强制 ACL 收紧。
+- **Cookie 非 Secure**：服务使用回环 HTTP，无法使用 `Secure` 属性；Cookie 只在 `127.0.0.1` 上有效，不跨网络发送。
+- **进程运行期**：会话最多 7 天；期间同一浏览器可继续使用。需要立即失效时退出并重启 LiveMemory。
+- **真实浏览器自动打开/点击**：未在真实桌面交互中验收；自动化只验证了与浏览器相同的 HTTP 握手。

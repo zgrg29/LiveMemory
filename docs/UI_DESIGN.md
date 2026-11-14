@@ -711,3 +711,18 @@ AI 分析未完成
 - 新增三语键：`ai.center.progressAggregateNodes`、`ai.center.progressAggregateFallback`；全部使用 `textContent` 与 tokens。
 - 窄屏下与既有进度 parts 一样纵向排列，不横向溢出。
 
+### 7.21 RC0 P0-5 未授权/会话失效页面（2026-11-14）
+
+```text
+LiveMemory 已锁定
+此页面未获得访问授权。为保护你的数据，请从 LiveMemory.exe 重新打开控制台。
+[重新加载]
+```
+
+- 触发：页面启动时没有有效会话，或任何 API 返回 401。
+- 文案使用三语 `auth.title/body/invalid/reload` 与 `errors.authRequired`；语言按浏览器 `navigator.language` 选择，不读取服务器数据。
+- 不展示任何观众/聊天/设置数据，不显示 token 或服务器英文错误。
+- 「重新加载」只刷新页面；真正的恢复方式是重新运行 LiveMemory，由启动器打开新的 fragment URL。
+- 未授权页面不建立 SSE；已打开页面收到 401 时替换为锁定页，不继续轮询。
+- 正常页面加载顺序：`js/auth.js` 建立会话 → `/api/bootstrap` → 页面渲染；fragment 在交换成功后从地址栏移除。
+

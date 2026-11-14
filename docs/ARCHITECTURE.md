@@ -7,8 +7,9 @@ LiveMemory.exe (Node SEA)
 └─ scripts/sea-bootstrap.cjs            解压内嵌资源 → 调用启动器
    └─ src/launcher/launcher.mjs         环境/数据目录/单实例/端口/浏览器/退出
       └─ src/server/index.mjs           startServer(): 设置 → DB → 迁移 → 恢复 → HTTP
-         ├─ src/server/http.mjs         安全头、Host/Origin 校验、静态服务、JSON
-         ├─ src/server/routes.mjs       API 路由
+         ├─ src/server/http.mjs         安全头、Host/Origin/Sec-Fetch-Site 校验、静态服务、JSON
+         ├─ src/server/auth.mjs         进程内 bootstrap/session token、Cookie 校验、公开路径
+         ├─ src/server/routes.mjs       API 路由（含 /api/auth/status、/api/auth/session）
          ├─ src/server/sse.mjs          EventStream（实时推送）
          ├─ src/server/settings-store.mjs  config/settings.json
          ├─ src/server/relocation.mjs    数据目录迁移/回滚
@@ -497,7 +498,8 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 
 ## 8. 前端结构
 
-- `js/app.js`：bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
+- `js/app.js`：会话建立、bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
+- `js/auth.js`：读取 URL fragment 中的一次性 token、交换 HttpOnly Cookie、清除 fragment；未授权时渲染三语“请从 LiveMemory 重新打开”页面。
 - Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
 - `js/pages/live.js`：多场标签页；每个 session 独立缓存 summary/feed/leaderboard；`viewToken` 防止串场；`/api/live/recordings` 恢复运行任务。
@@ -723,4 +725,39 @@ AnalysisRunner
 - `viewer_id`、`topic`、事实 ID/状态/certainty/版本/证据/时间/金额/计数/枚举/原始聊天不翻译。
 - 翻译服务有独立状态与 usage；失败/中断不影响已保存分析，也不影响原文阅读。
 - 翻译表随场次删除；删除记忆时删除其展示翻译；清空数据包含翻译表。
+
+## 1.9 RC0 P0-5 本地 HTTP 安全边界（2026-11-14）
+
+```text
+launcher
+  └─ startServer()
+       ├─ createAuthService(): 随机 256-bit bootstrap token + session token（仅内存）
+       ├─ browserUrl = url + "#lm_bootstrap=<one-time>"
+       └─ runtime/runtime.json = plain url（无 token）
+
+browser (127.0.0.1)
+  ├─ GET / (静态文件，公开)
+  ├─ js/auth.js: fragment token → POST /api/auth/session
+  │    └─ Set-Cookie: lm_session=<random>; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800
+  ├─ GET /api/bootstrap、/api/viewers、/api/storage/...（Cookie 必需）
+  ├─ GET /api/events/stream（Cookie 必需；EventSource 自动携带）
+  └─ 下载 link（Cookie 自动携带）
+
+request gate (src/server/app.mjs)
+  Host ∈ {127.0.0.1, localhost, [::1]}:port
+    → Origin 缺失或同源；Origin:null/跨源 403
+    → /api/*：Sec-Fetch-Site ∈ {same-origin,none}
+    → 公开路径 {health, auth/status, auth/session} 或有效 Cookie
+    → router
+```
+
+关键性质：
+
+- `auth: false` 只用于进程内测试夹具；HTTP 路由/环境变量不能关闭生产认证。
+- 认证失败统一 401，不泄露 token 是否存在；日志只记录原因，不记录 token。
+- 服务重启重建两个 token；旧 Cookie/旧 fragment URL 都失效。
+- SSE 与普通 fetch 共用同一 Cookie；不引入 `/api/token` 这类 token 分发端点。
+- 发布 EXE 的 Manifest 为 `asInvoker`；认证不依赖管理员权限。
+
+详细威胁模型与边界见 `docs/PRIVACY_SECURITY.md` §31，Windows 验证见 `docs/WINDOWS_RUNTIME.md` §12。
 

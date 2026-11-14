@@ -4,9 +4,9 @@
 
 - 单一可执行文件 `LiveMemory.exe`（当前构建约 90.3 MB）。
 - 用户无需安装 Python、Node.js、npm、数据库或任何开发依赖。
-- 双击运行，Windows 通过内嵌 **`requireAdministrator`** Manifest 弹出 UAC；同意后显示命令行窗口并打开默认浏览器控制台。
+- 双击运行，PE RT_MANIFEST 为 **`asInvoker`**：不触发 UAC，以当前用户权限显示命令行窗口并打开默认浏览器控制台（RC0 P0-5 起；v0.5.0 的 `requireAdministrator` 已撤销）。
 - 安装目录可以只读；用户数据仍写入 `%LOCALAPPDATA%\LiveMemory\`（或显式指定的可写目录）。
-- 开发模式 `node src/launcher/launcher.mjs` 不要求管理员；只有打包 EXE 请求提升。
+- 开发模式与打包 EXE 使用相同的普通用户权限；没有防御性管理员检查，也没有 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 生产绕过。
 
 ## 2. 启动流程（实现位置：`src/launcher/launcher.mjs`）
 
@@ -16,10 +16,10 @@
 4. 检查 Node ≥ 22.5 与 `node:sqlite` 可用性。
 5. 解析可写数据目录（真实写探测，见 §5）：显式 `--data-dir` / `LIVE_MEMORY_DATA_DIR` → 位置记录 → 默认目录。位置记录目标必须已存在且含 `database/livememory.db`；否则报错，不创建空库。打包启动且当前默认目录无数据库时，扫描本地用户配置；恰好一个现有 LiveMemory 数据库则使用，多个则报 `DATA_DIR_AMBIGUOUS`，不猜测。创建 `config/ database/ logs/ cache/ exports/ backups/ runtime/ secrets/`。
 6. 控制台语言：默认 **English**；只有 `--lang zh-CN|ja|en` 覆盖。`config/settings.json` 的网页语言偏好不再影响控制台；配置损坏或不可读不阻塞启动。
-7. 打包 EXE 防御性管理员检查（`net session`，`stdio: 'ignore'`）；失败时用当前控制台语言提示“需要管理员权限”并退出 1。随后获取单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。
-8. 启动服务：绑定 `127.0.0.1`，端口 47800 → +1…+9 → 系统分配。
-9. 服务就绪后写 `runtime/runtime.json`（pid/port/url/version），打印状态，打开默认浏览器。
-10. 等待信号；收到 SIGINT/SIGTERM 后：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。
+7. 获取单实例锁：`runtime/instance.lock`（PID + `runtime.json` + `/api/health` 校验；陈旧锁自动接管）。不存在管理员检查步骤。
+8. 启动服务：绑定 `127.0.0.1`，端口 47800 → +1…+9 → 系统分配。`startServer` 为本进程生成随机的 bootstrap token 与 session token（只在内存中）。
+9. 服务就绪后写 `runtime/runtime.json`（pid/port/url/version，**不含 token**），打印状态，打开 `服务 URL + #lm_bootstrap=<一次性 token>`。浏览器用该 fragment 换取 `HttpOnly; SameSite=Strict` 会话 Cookie；普通 URL 本身不带凭据。
+10. 等待信号；收到 SIGINT/SIGTERM 后：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。Windows 关闭命令行窗口会直接终止进程，下次启动按崩溃恢复处理。
 
 **每一步都记录到启动日志**（步骤名、ok/失败、错误码、路径）。任何一步失败：
 
@@ -95,8 +95,9 @@
 
 ## 5. 权限
 
-- 打包 EXE 通过 Manifest 请求管理员权限；开发模式仍可用普通权限运行。
-- **同一管理员账号**的 UAC 同意通常保持 `%LOCALAPPDATA%` 不变。若 UAC 使用另一个管理员账号，Windows 会切换用户配置文件；应用会扫描本地用户配置中的现有数据库，恰好一个时使用，多个时拒绝猜测。跨账号提升的完整数据目录等价性仍属未验证边界。
+- 打包 EXE 的 Manifest 为 `asInvoker`，与开发模式一样以当前用户权限运行；不请求 UAC，不需要管理员批准。
+- 日常采集、`node:sqlite`、导出、数据目录选择、AI Provider 请求与软件更新均不需要管理员权限。RC0 P0-5 已用正式 EXE 在 Low Mandatory Level 会话启动验证（见 §12）。
+- 历史上 UAC 可能把旧版 `requireAdministrator` 进程切换到另一个管理员账号；应用仍保留“扫描本地用户配置、恰好一个现有数据库才使用，多个则拒绝猜测”的保守逻辑，避免旧数据被误判为新库。
 - 不写注册表、不写 `Program Files`、不写 EXE 所在目录。
 - **可写性探测是真实写探测**：`src/shared/write-probe.mjs` 依次执行「创建目录 → 创建文件 → 写入 → 读回 → 删除」，失败时返回具体步骤和 Windows 错误码（`EPERM`/`EACCES`/`ENOSPC`…）。Windows 上 `fs.accessSync(dir, W_OK)` 只检查存在，不能作为权限判断，已移除。
 - 目录解析顺序：
@@ -171,7 +172,7 @@ Node SEA（Single Executable Application）+ postject 注入。
 
 1. 校验 Windows x64。
 2. 下载 postject 固定版本 tarball，校验 SHA-256 后解压（构建期依赖，不进入产品）。
-3. 读取官方 node.exe 的 PE `RT_MANIFEST`，把 `requestedExecutionLevel` 从 `asInvoker` 改为 `requireAdministrator`，更新资源 data-entry size；新 Manifest 必须能放入 `.rsrc` 的现有 padding（当前 773 字节；容量不足时构建直接失败，不写坏二进制）。构建后再次读取并断言。
+3. 读取官方 node.exe 的 PE `RT_MANIFEST`，显式把 `requestedExecutionLevel` 归一为 `asInvoker`（防止旧构建残留 `requireAdministrator`），更新资源 data-entry size；新 Manifest 必须能放入 `.rsrc` 的现有 padding（容量不足时构建直接失败，不写坏二进制）。postject 注入后再次读取最终 EXE 并断言 `asInvoker`。
 4. 遍历 `src/`，生成 `manifest.json`（文件列表 + 内容哈希 + 版本）。
 5. 生成 `sea-config.json`（assets + bootstrap），运行 `node --experimental-sea-config` 生成 blob。
 6. 复制当前 `node.exe`，将 PE Subsystem 改为 `IMAGE_SUBSYSTEM_WINDOWS_CUI`（3，可见控制台）。
@@ -190,7 +191,9 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 资源哈希变化会生成新目录；旧目录可在升级时清理（M8）。
 
 
-## 9. 已验证 / 未验证（v0.8.1）
+## 9. 已验证 / 未验证（v0.8.1 历史记录）
+
+> 本节保留 v0.8.1 的历史证据。它描述的 `requireAdministrator`、UAC 与 asInvoker 副本流程已被 RC0 P0-5 取代；当前发布形态与验收见 §12。
 
 已验证（本机，2026-11-10）：
 
@@ -234,8 +237,8 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 版本号写入 `package.json` 与 `src/shared/app-info.mjs`，二者必须一致（可加测试）。
 - 发布包：EXE + README + LICENSE + SHA256SUMS。
 - 升级：替换 EXE；数据目录不变；schema 迁移自动执行；旧 `app\<hash>` 目录可清理。
-- 发布 EXE 必须在新构建中重新验证 `requireAdministrator` Manifest 与非提升启动被拒绝；不能只沿用旧 EXE 的结论。
-- 管理员权限不改变“数据目录优先、位置记录、迁移 staging/回滚、清空范围”规则；同账号 UAC 不改变 `%LOCALAPPDATA%`。
+- 发布 EXE 必须在新构建中重新验证 `asInvoker` Manifest、普通权限启动与本地 API 会话认证；不能只沿用旧 EXE 的结论。
+- 权限变化不改变“数据目录优先、位置记录、迁移 staging/回滚、清空范围”规则。
 - 回滚：保留上一版本 EXE 与升级前数据库备份（M5 备份机制）。
 
 ## 11. 构建标识与解压缓存（v0.13.2）
@@ -248,3 +251,40 @@ Node SEA（Single Executable Application）+ postject 注入。
 - 启动日志 `startup.begin`/`launcher.start`、控制台 `--version`、设置页关于、`/api/health`、`/api/bootstrap`、`/api/status` 都返回 buildId/commit；`build.identity` 记录 `filesVerified`。
 - 对照方法：设置页关于的 Build ID 必须等于构建输出；旧 EXE 会显示旧 buildId（或 `dev-<commit>`），不能只看版本号。
 - 仍未验证：真实 UAC 双击与提升后的出站请求；本机以同一二进制的 asInvoker 临时副本启动验证了 buildId、HTTP 与缓存复用。
+
+## 12. RC0 P0-5：asInvoker 与本地 API 会话认证（2026-11-14）
+
+### 12.1 为什么撤销管理员权限
+
+- 逐项审计确认日常功能没有管理员依赖：数据目录在 `%LOCALAPPDATA%`（或用户显式指定的可写目录），SQLite 为 Node 内置模块，文件夹选择器使用普通 PowerShell + WinForms，HTTP 只绑定 `127.0.0.1`，出站请求是普通用户网络访问，SEA 资源解压与单实例锁都在用户目录。
+- 管理员权限反而放大了 P0-5 的本地 API 风险：任意本机进程调用 `/api/*` 时继承提升后的令牌。因此本轮先建立 API 认证，再把发布 EXE 改为 `asInvoker`，而不是用认证为管理员权限“补一层形式”。
+- 构建脚本在注入前后都断言 RT_MANIFEST 为 `asInvoker`；最终 EXE 由 `scripts/verify-p0-5-exe.mjs` 与 `scripts/verify-exe.mjs` 读取确认。
+- 旧版留下的数据目录与凭据不需要迁移；同一 Windows 用户 SID 仍拥有原文件。历史跨管理员账号产生的数据目录由现有 profile 扫描逻辑保守处理。
+
+### 12.2 会话认证流程
+
+```text
+launcher start
+  └─ startServer() 生成 256-bit bootstrap token + session token（仅内存）
+       ├─ runtime/runtime.json 只写 plain URL
+       └─ 打开 http://127.0.0.1:<port>/#lm_bootstrap=<one-time>
+browser
+  └─ js/auth.js 读取 fragment
+       └─ POST /api/auth/session {token}
+            └─ Set-Cookie: lm_session=...; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800
+                 └─ history.replaceState 移除 fragment
+所有 /api/*（除 health/auth）要求该 Cookie；SSE 同样要求。
+server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
+```
+
+- bootstrap token 一次性、5 分钟过期；不存在返回 token 的端点。
+- 会话 token 随进程生成，最多 7 天；服务重启立即失效。浏览器恢复依赖启动器重新打开新 fragment URL。
+- 认证失败统一 `401 AUTH_REQUIRED`，不区分缺失、过期、错误或已使用。
+- 详细威胁模型、防御边界与残余风险见 `docs/PRIVACY_SECURITY.md` §31 和 `docs/ARCHITECTURE.md` §1.9。
+
+### 12.3 本轮 EXE 证据
+
+- 构建：`dist/LiveMemory.exe`，buildId `75588ba16aec`，SHA-256 `d3d1ddc1d1b207cd72bb6c6e03a3a07216885a3e2a53ca3bf9f1a5cb48a558ae`，96,436,224 bytes，177 assets，RT_MANIFEST `asInvoker`（2026-11-14）。
+- `scripts/verify-p0-5-exe.mjs`：**12/12**。正式 EXE 在 Low Mandatory Level 会话直接启动（无 UAC）；未认证读/写/危险操作/SSE 全部 401；伪造 Origin、`Origin:null`、恶意 Host 403；fragment token 换取 Cookie；认证后 bootstrap/status/settings/simulate/SSE/stop 全部成功；token 不进入 runtime.json 与日志；重启后旧 Cookie/token 401、新 URL 可用且数据保留。
+- `scripts/verify-exe.mjs`：**10/10**（asInvoker manifest、全新数据目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录运行、解压复用、CLI 三语）。
+- **未验证**：真实浏览器点击/自动打开、真实 Ctrl+C 或关闭命令行窗口的优雅退出、真实桌面 UAC（asInvoker 已不需要 UAC）。这些列为本轮用户待验收项。

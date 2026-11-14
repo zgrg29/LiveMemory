@@ -60,7 +60,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `admin.test.mjs` | 管理员检查成功/失败/未知、非 Windows |
 | `native-dialog.test.mjs` | 原生选择器脚本 Base64、成功路径（中文/空格）、取消、脚本错误、spawn EPERM、结果文件清理 |
 | `profile-scan.test.mjs` | 单/多用户 LiveMemory 数据目录扫描、首次运行、不可读根目录 |
-| `pe-manifest.test.mjs` | node.exe RT_MANIFEST 读取、requireAdministrator 改写、容量检查 |
+| `pe-manifest.test.mjs` | node.exe RT_MANIFEST 读取、asInvoker 归一、容量检查、构建脚本断言 |
 | `youtube-simplified.test.mjs` | 官方 YouTube 模块/路由/UI 删除、三语只含简化文案 |
 | `youtube-retention.test.mjs` | 天数钳制（最大 30）、只清理过期 YouTube 原文、Bilibili 不动、金额/计数/身份保留、badges/amount_display 清理、过期昵称清理、`app_meta` 记录 |
 | `youtube-anonymous-parser.test.mjs` | 真实页面/续页结构、显式/裸 `$`/`¥` 币种、格式化金额、Unicode/自定义表情、badges、watch 状态、gift 无身份、会员不猜价格 |
@@ -1319,3 +1319,55 @@ duration ≈ 155s
 - 真实 YouTube 直播的拔网/切网 3 分钟、真实 429/验证码/consent、数小时长直播。
 - 真实 UAC 双击、真实浏览器点击；未访问真实平台高频请求。
 - 正式 EXE 的假服务地址只允许 loopback（`LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE`），不是生产用户配置项。
+
+## 39. RC0 P0-5：本地 API 鉴权与 asInvoker（v0.13.2，2026-11-14）
+
+### 39.1 修复前复现
+
+命令：`node tests/.tmp/p0-5-probe.mjs`（隔离数据目录；脚本随后删除）。修复前实测：
+
+| 请求 | 结果 | 期望 |
+| --- | --- | --- |
+| `GET /api/bootstrap` | 200 | 401 |
+| `GET /api/viewers` | 200 | 401 |
+| `PATCH /api/settings` | 200（主题改成功） | 401 |
+| `POST /api/simulate/start` | 201 | 401 |
+| `POST /api/sessions/:id/stop` | 200（停止成功） | 401 |
+| `POST /api/storage/location` | 400 `RELOCATION_INVALID`（已进入迁移处理） | 401 |
+| `GET /api/events/stream` | 200 `text/event-stream` | 401 |
+| `GET /api/viewers` + 伪造 Origin | 200 | 403 |
+| `GET /api/viewers` + `Origin:null` | 200 | 403 |
+| `GET /api/health` + 恶意 Host | 403 | 403（原本有效） |
+| 无效 Cookie + `PATCH /api/settings` | 200 | 401 |
+
+### 39.2 认证专项（新增）
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/integration/api-auth.test.mjs`（14） | 无凭据读/写/危险操作/SSE 401；伪造 Origin/`Origin:null`/跨站元数据/恶意 Host 403；无效 Cookie/token；fragment-only URL；核心操作；危险操作仍校验；多页面/多 SSE；失效；重启；Provider Key/token 不泄漏 |
+| `tests/integration/graceful-close.test.mjs`（1） | `server.close()` 删除 runtime 文件、停止 HTTP、重启数据库可用 |
+| `tests/unit/server-auth.test.mjs`（6） | 一次性 token、Cookie 属性、过期、无效、`auth:false`、公开路径、Cookie 解析 |
+| `tests/unit/auth-boot.test.mjs`（6） | fragment 读取/清除、交换、状态、boot 顺序、无 localStorage/console |
+| `tests/unit/pe-manifest.test.mjs` | asInvoker 归一、构建脚本断言 |
+
+### 39.3 结果
+
+- 单元：**457 passed / 0 failed**。
+- 集成：**288 passed / 0 failed**。
+- 全量：**745 passed / 0 failed / 0 skipped（270,168 ms，2026-11-14）**。
+- Bilibili 专项：**53 passed / 0 failed**。
+- 认证专项：14 integration + 1 graceful + 6 auth service + 6 auth boot = **27**。
+
+### 39.4 正式 EXE（本轮实测）
+
+- `dist/LiveMemory.exe`：buildId `75588ba16aec` / commit `3d4232704dd9a710ee8c55a1688ec4ff9812821c` / SHA-256 `d3d1ddc1d1b207cd72bb6c6e03a3a07216885a3e2a53ca3bf9f1a5cb48a558ae` / `96,436,224` bytes / `177` assets / `asInvoker`。
+- `scripts/verify-p0-5-exe.mjs`：**12/12**。Low Mandatory Level 直接启动（无 UAC）；未认证读/写/危险操作/SSE 401；伪造 Origin/null/恶意 Host 403；fragment→Cookie；核心操作+SSE 成功；一次性 token 重放 401；token 不在 runtime.json/日志；停止后监听关闭；重启旧 Cookie/token 401、新会话可用、数据保留。
+- `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
+- `scripts/verify-youtube-lifecycle-exe.mjs`：**通过（180,934 ms 断连 → 同一 session 恢复 → 去重 5/5 → platform_ended）**。
+
+### 39.5 未验证
+
+- 真实浏览器自动打开/点击；真实 Ctrl+C/关闭命令行窗口的优雅退出。
+- 真实桌面 UAC 不再适用（asInvoker）；本机 Low Mandatory Level 启动成功是普通权限证据。
+- 同 Windows 用户恶意软件、共享/同步目录 ACL、真实平台长时运行、真实付费 Provider。
+- 自动化 EXE 验证使用与浏览器相同的 HTTP 握手，不等于真实浏览器交互。

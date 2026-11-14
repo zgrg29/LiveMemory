@@ -1,10 +1,53 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0 P0-4 YouTube 暂时性故障误判结束修复 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0 P0-5 本地 HTTP API 鉴权与 Windows 最小权限 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮未修改生产数据库、未访问真实 YouTube 做长时断网测试、未调用真实付费 AI、未干扰正在采集的直播。自动化使用 `tests/.tmp` 隔离数据与本地假 YouTube 网页；正式 EXE 的本地假服务验证见 §0.4。
+> 本轮未修改生产数据库、未访问真实平台做长时测试、未调用真实付费 AI、未干扰正在采集的直播、未 Push/Tag/发布。自动化使用 `tests/.tmp` 隔离数据；正式 EXE 使用本机构建与临时数据目录。
 
-## 0. 本轮（P0-4 YouTube 暂时性故障误判结束）
+## 0. 本轮（P0-5 本地 API 认证 + asInvoker）
+
+完整证据：`log/2026-11-14-local-api-auth-p0.md`。
+
+### 0.1 原始漏洞与根因
+
+- `src/server/app.mjs` 只校验 Host；Origin 只对写请求生效；所有 `/api/*` 没有认证。
+- 隔离目录实测无凭据 `GET /api/bootstrap`、`GET /api/viewers`、`PATCH /api/settings`、`POST /api/simulate/start`、`POST /api/sessions/:id/stop`、`GET /api/events/stream` 全部成功；伪造 Origin/`Origin:null` 的 GET 也成功。
+- 发布 EXE 为 `requireAdministrator`，本机任意进程的 API 调用继承管理员令牌。CORS/SameSite 只约束浏览器，不能阻止本机进程直接发 HTTP。
+
+### 0.2 修复
+
+- 新增 `src/server/auth.mjs`：每次启动随机 256-bit bootstrap token + session token，仅内存；bootstrap 一次性、5 分钟；session 最多 7 天；常量时间比较。
+- 启动器打开 `http://127.0.0.1:<port>/#lm_bootstrap=<token>`；`src/web/js/auth.js` 读取 fragment → `POST /api/auth/session` → `HttpOnly; SameSite=Strict` Cookie → 清除 fragment。不存在返回 token 的端点；token 不进入查询串、runtime.json、日志。
+- `src/server/app.mjs`：所有带 Origin 请求必须同源；`Origin:null` 拒绝；`/api/*` 拒绝跨站 `Sec-Fetch-Site`；公开路径仅 health/auth；其余（含 SSE）要求 Cookie；401 `AUTH_REQUIRED`。
+- `src/web/js/app.js`/`api.js`：先建立会话再加载数据；401 渲染三语“请从 LiveMemory 重新打开”页面。
+- 发布 EXE 改为 `asInvoker`：构建脚本 patch 前后断言；删除管理员检查/`admin.mjs`/`adminRequired`/`LIVE_MEMORY_SKIP_ADMIN_CHECK`。
+- 测试专用 `startServer({auth:false})` 仅供进程内夹具；HTTP/环境变量无法关闭生产认证。EXE 回归使用 `LIVE_MEMORY_TEST_BOOTSTRAP_FILE` 走与浏览器相同的交换流程。
+
+### 0.3 测试与 EXE
+
+- 新增 `tests/integration/api-auth.test.mjs` 14 项、`graceful-close.test.mjs` 1 项、`tests/unit/server-auth.test.mjs` 6 项、`tests/unit/auth-boot.test.mjs` 6 项；全量 **745 passed / 0 failed / 0 skipped（270,168 ms，2026-11-14）**。
+- 正式 EXE：buildId `75588ba16aec` / commit `3d4232704dd9a710ee8c55a1688ec4ff9812821c` / SHA-256 `d3d1ddc1d1b207cd72bb6c6e03a3a07216885a3e2a53ca3bf9f1a5cb48a558ae` / `96,436,224` bytes / `177` assets / `asInvoker`。
+- `scripts/verify-p0-5-exe.mjs` **12/12**；`scripts/verify-exe.mjs` **10/10**；YouTube EXE 回放 **通过（180,934 ms 断连 → 同一 session 恢复 → 去重 5/5 → platform_ended）**。
+- 未验证：真实浏览器点击/自动打开、真实 Ctrl+C/关闭窗口、真实桌面 UAC（asInvoker 后不再需要）、同用户恶意软件、共享目录 ACL、真实平台/真实付费 Provider。
+
+### 0.4 用户安全升级步骤
+
+1. 完全退出旧版 LiveMemory；备份整个数据目录（不要在运行时复制写入中的 SQLite）。
+2. 替换为 asInvoker 新 EXE；双击不再弹出 UAC。设置页「关于」核对 buildId。
+3. 双击后浏览器会自动打开已授权控制台；若浏览器未打开，重新运行 LiveMemory（不要手动打开普通地址，它不会获得会话）。
+4. 旧浏览器标签页在服务重启后失效是预期行为；从新启动的浏览器标签继续。
+5. 若防火墙/杀毒软件拦截 127.0.0.1，不要把监听改为 0.0.0.0；按提示排查本机回环。
+6. 真实 Ctrl+C/关闭命令行窗口、真实浏览器交互仍需人工验收。
+
+### 0.5 不要做
+
+1. 不要新增 `/api/token`、无条件 `/api/bootstrap` 或其他返回凭据的端点。
+2. 不要把 token 放进查询串、localStorage、配置、日志、数据库或分析包。
+3. 不要为“兼容旧页面”关闭认证或允许 `Origin:null`。
+4. 不要恢复 `requireAdministrator` 来“解决权限问题”；需要提权的功能必须单独评审。
+5. 不要把 `startServer({auth:false})` 暴露为 CLI/环境变量/HTTP 开关。
+
+## 0-A 上一轮（P0-4 YouTube 暂时性故障误判结束）
 
 完整证据：`log/2026-11-14-youtube-lifecycle-p0.md`。
 

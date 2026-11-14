@@ -133,9 +133,10 @@ node scripts/build-windows.mjs
 
 - 只监听 `127.0.0.1`，禁止 `0.0.0.0`；动态端口，端口冲突自动顺延或使用系统分配端口。
 - 用户数据只能写入 `%LOCALAPPDATA%\LiveMemory\`（或用户显式指定的可写目录），**绝不写 `Program Files` / EXE 所在目录**。
-- **发布 EXE 的 RT_MANIFEST 必须为 `requireAdministrator`**（v0.5.0 产品决定）；双击由 Windows UAC 提升。开发模式 `node src/launcher/launcher.mjs` 不要求管理员。
-- 即使以管理员运行，也必须保留数据目录路径校验、迁移 staging/校验/回滚、删除范围限制与“不删除无关文件”的规则；不得因为拥有管理员权限而放宽文件操作。
-- 权限失败必须解释路径、错误码与替代方案；不得把所有启动失败统一归类为权限不足。UAC 在程序启动前被拒绝属于 Windows 限制，EXE 内无法捕获。
+- **发布 EXE 的 RT_MANIFEST 必须为 `asInvoker`**（RC0 P0-5 决定，取代 v0.5.0 的 requireAdministrator）；双击不触发 UAC，日常采集、SQLite、导出、目录选择和 Provider 请求都不需要管理员权限。构建脚本必须显式断言最终 EXE 为 `asInvoker`。
+- 即使未来某个功能确实需要提权，也必须单独设计最小权限/受控提权，不得把整个 EXE 提升为管理员；数据目录路径校验、迁移 staging/校验/回滚、删除范围限制与“不删除无关文件”的规则不得因权限变化而放宽。
+- 本地 HTTP API 必须有会话认证：除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）都要求启动器建立的随机会话 Cookie；不得添加返回 token 的端点，不得把 token 放进查询串或日志。
+- 权限失败必须解释路径、错误码与替代方案；不得把所有启动失败统一归类为权限不足。
 - 日志不得包含 Cookie、Token、API Key、聊天正文；使用 `src/server/logger.mjs` 的脱敏。
 - 仅一份实例可写同一数据目录（`runtime/instance.lock`）。
 - 优雅退出：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。
@@ -199,4 +200,5 @@ fix: prevent duplicate payment events
 - [ ] 金额、身份、去重规则未被破坏
 - [ ] STATUS / HANDOFF / ROADMAP / 开发日志已更新
 - [ ] 已创建本地 Commit 并报告 Hash
-- [ ] 发布 EXE 的 Manifest 已验证为 `requireAdministrator`（如本轮涉及打包）
+- [ ] 发布 EXE 的 Manifest 已验证为 `asInvoker`（如本轮涉及打包）
+- [ ] 未认证的读取、写入与 SSE 均被拒绝；启动器建立的浏览器会话可正常使用

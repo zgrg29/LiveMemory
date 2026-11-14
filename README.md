@@ -166,7 +166,8 @@ node scripts/build-windows.mjs
 ### 数据与隐私
 
 - 只监听 `127.0.0.1`，端口动态选择，不暴露公网
-- 不写入注册表、不写 `Program Files`；发布 EXE 通过 Manifest 请求管理员权限（UAC），开发模式 `node` 启动不需要管理员
+- 不写入注册表、不写 `Program Files`；发布 EXE 的 Manifest 为 `asInvoker`（RC0 P0-5），不请求管理员权限
+- 本地 `/api/*` 要求启动器建立的随机会话 Cookie（health/auth 除外）；token 不进入 URL 查询串、日志或 runtime.json
 - 日志不记录 Cookie、Token、聊天正文；备份默认不包含任何登录凭据
 - 关闭控制台窗口应使用 Ctrl+C，程序会刷新数据并关闭数据库
 

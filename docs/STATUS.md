@@ -1,8 +1,75 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-4：YouTube 暂时性故障不再误判结束；721 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-14（RC0 P0-5：本地 API 会话认证 + asInvoker EXE；745 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.24 RC0 P0-5：本地 HTTP API 鉴权与 Windows 最小权限（2026-11-14）
+
+完整证据、复现与 P0-2 交接见 `log/2026-11-14-local-api-auth-p0.md`。**未修改生产数据库、未干扰正在采集的直播、未调用真实付费 AI、未 Push/Tag/发布。** 测试使用 `tests/.tmp` 隔离数据；EXE 验证使用正式构建 + 临时数据目录。
+
+### 0.24.1 原始漏洞与实际攻击面
+
+- `src/server/app.mjs` 只校验 Host；Origin 只对非 GET/HEAD/OPTIONS 生效；所有 `/api/*` 没有认证。
+- 隔离数据目录实测（修复前）：无凭据 `GET /api/bootstrap`、`GET /api/viewers`、`PATCH /api/settings` 200；`POST /api/simulate/start` 201；`POST /api/sessions/:id/stop` 200；`POST /api/storage/location` 进入迁移处理；`GET /api/events/stream` 返回 `text/event-stream`。
+- 伪造 Origin 与 `Origin:null` 的 GET 请求也成功；Host 伪造原本已被 403。
+- 发布 EXE 为 `requireAdministrator`，上述请求会以提升后的令牌执行。
+- 类型区分：本机任意进程可直接发 HTTP（CORS/SameSite 不能阻止）；恶意网页是浏览器跨站问题；DNS rebinding 由 Host 校验处理；管理员权限放大是第三层问题。
+
+### 0.24.2 认证与授权设计
+
+- 每次启动生成随机 256-bit bootstrap token + session token，仅存进程内存；服务重启全部失效。
+- 启动器打开 `http://127.0.0.1:<port>/#lm_bootstrap=<token>`；页面 `js/auth.js` 读取 fragment，`POST /api/auth/session` 交换 `HttpOnly; SameSite=Strict; Path=/` 会话 Cookie；成功后 `history.replaceState` 清除 fragment。
+- bootstrap token 一次性、5 分钟过期；session 最多 7 天且随进程失效。**不存在返回 token 的端点**；token 不进入查询串、runtime.json、日志或分析包。
+- `/api/health`、`/api/auth/status`、`/api/auth/session` 公开；其他 `/api/*`（含 SSE）必须有效 Cookie。认证失败统一 401 `AUTH_REQUIRED`。
+- 所有带 Origin 的请求必须同源；`Origin:null` 拒绝；`/api/*` 拒绝 `Sec-Fetch-Site: cross-site/same-site`；Host 严格限定 `127.0.0.1|localhost|[::1]:<port>`；不返回 CORS 放行头。
+- EventSource 与下载 anchor 自动携带同源 Cookie，因此不需要把 token 放进 URL 查询串，也不需要使用自定义 Header。
+
+### 0.24.3 Windows 最小权限
+
+- 逐项审计未发现日常功能需要管理员：`%LOCALAPPDATA%` 写入、`node:sqlite`、导出、PowerShell 文件夹选择、`127.0.0.1` HTTP、Provider 请求、SEA 解压、单实例锁均以普通用户完成。
+- 发布 EXE 的 RT_MANIFEST 从 `requireAdministrator` 改为 **`asInvoker`**；构建脚本 patch 前后均断言；删除启动器管理员检查、`admin.mjs`、`adminRequired` 文案与 `LIVE_MEMORY_SKIP_ADMIN_CHECK` 生产绕过。
+- 旧版跨管理员账号数据目录的 profile 扫描保留为历史兼容，不作为提权理由。
+- 正式 EXE 在 Low Mandatory Level 会话直接启动成功，无需 UAC。
+
+### 0.24.4 测试
+
+- 新增 `tests/integration/api-auth.test.mjs` 14 项、`tests/integration/graceful-close.test.mjs` 1 项、`tests/unit/server-auth.test.mjs` 6 项、`tests/unit/auth-boot.test.mjs` 6 项；`pe-manifest` 增加 asInvoker/构建断言。
+- 全量：**745 passed / 0 failed / 0 skipped（270,168 ms，2026-11-14）**。
+- 认证专项：14 + 1 + 6 + 6 = 27 项通过。
+- Bilibili 专项：**53 passed / 0 failed**。
+- 既有集成测试显式 `auth:false` 仅用于进程内数据夹具；HTTP 启用路径由认证专项与 EXE 覆盖。`auth:false` 不能通过 HTTP 或环境变量在生产启用。
+
+### 0.24.5 正式 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,436,224` bytes |
+| SHA-256 | `d3d1ddc1d1b207cd72bb6c6e03a3a07216885a3e2a53ca3bf9f1a5cb48a558ae` |
+| buildId | `75588ba16aec` |
+| commit | `3d4232704dd9a710ee8c55a1688ec4ff9812821c` |
+| builtAt | `2026-11-14T04:33:33.510Z` |
+| 资源 | `177` files；RT_MANIFEST `asInvoker` |
+
+- `scripts/verify-p0-5-exe.mjs`：**12/12**。正式 EXE 无 UAC 启动；未认证读/写/危险操作/SSE 401；伪造 Origin/null/恶意 Host 403；fragment→Cookie；认证后核心操作与 SSE 成功；一次性 token 重放 401；token 不在 runtime.json/日志；进程停止后监听关闭；重启旧 Cookie/token 401、新会话可用、数据保留。
+- `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
+- `scripts/verify-youtube-lifecycle-exe.mjs`：**通过（180,934 ms 断连 → 同一 session 恢复 → 去重 5/5 → platform_ended）**。
+- **性质**：正式 EXE + 真实 HTTP + 隔离数据目录；不是真实浏览器点击，也不是真实桌面 Ctrl+C。
+
+### 0.24.6 边界与待验收
+
+- **真实浏览器自动打开/点击**未验收；自动化使用与浏览器相同的 HTTP 握手。
+- **真实 Ctrl+C/关闭命令行窗口**未验收；Windows 关闭窗口直接终止，源码 `server.close()` 由 graceful-close 测试覆盖。
+- **真实 UAC** 不再适用（asInvoker）；本机低完整性会话启动成功是普通权限证据。
+- **同 Windows 用户恶意软件**仍可读浏览器 Cookie/资料、注入浏览器或抓取启动 URL；HTTP 认证无法防御，见 PRIVACY_SECURITY §31。
+- **Cookie 非 Secure**：回环 HTTP 限制；仅对当前 `127.0.0.1:<port>` 生效。
+- **数据目录 ACL** 未强制收紧；共享/同步目录仍可能被其他可访问账户读取。
+- **Bilibili/YouTube/AI 真实平台/真实付费 Provider** 未新增长时或付费验收；使用既有 Mock/假服务与本地测试数据。
+
+### 0.24.7 关闭结论
+
+**P0-5 代码级与正式 EXE 级可关闭**：原始漏洞已实际复现；认证/Origin/Host/SSE/危险操作/重启失效/多页面/Key 不泄漏均有自动化与 EXE 证据；EXE 已 asInvoker 并通过 10 项功能矩阵。真实桌面交互、真实平台与同用户恶意软件边界保留为已知限制与用户待验收，不阻塞代码关闭。
 
 ## 0.23 RC0 P0-4：YouTube 暂时性故障误判结束（2026-11-14）
 
@@ -268,7 +335,7 @@
 3. 打开 AI 分析中心，选择该场次；应看到「AI 分析未完成」、单场批次 18/18、最终汇总失败、原因与「继续最终汇总」。
 4. 选择与失败任务相同的 Provider/区域/模型，点击「继续最终汇总」；不会重发已保存的 18 个批次。
 5. 成功后 final 保存、任务变 complete、恢复面板消失；失败则查看技术详情，不要新建整场分析、不要清空数据。
-6. 当前正式 EXE：buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c0560d79c0536d14dae7741609777a76ce575c52af284a73052c02b5475d` / 91.8 MB / 174 assets / `requireAdministrator`。
+6. 当时正式 EXE：buildId `61da4c6991e1` / commit `205db74` / SHA-256 `7231c0560d79c0536d14dae7741609777a76ce575c52af284a73052c02b5475d` / 91.8 MB / 174 assets / `requireAdministrator`（历史；当前见 §0.24.5）。
 
 ## 0.18 v0.13.2 AI 分析多语言输出与报告翻译（2026-11-13）
 
@@ -598,7 +665,7 @@ POST /api/ai/sessions/:id/translation                 按需翻译未完成段�
 - 数据库 schema：**16**（v14→v15 `ai_aggregate_nodes`；v15→v16 `ai_job_memory_viewers.split_path/split_reason` 与索引）
 - 分析结果 Schema：**1.3.0**；旧 1.0.0–1.2.0 仍可读取；提示词版本 **v13.2**（旧任务保留原版本号）
 - 分支：`main`，本地提交，未 Push
-- 发布形态：`LiveMemory.exe`，RT_MANIFEST **requireAdministrator**
+- 发布形态：`LiveMemory.exe`，RT_MANIFEST **`asInvoker`**（RC0 P0-5，无 UAC）；本地 API 使用启动器会话认证
 
 ## 0. v0.13.1 本轮完成（2026-11-11）
 

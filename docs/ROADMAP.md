@@ -2,7 +2,8 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-14，RC0 P0-4）：YouTube 暂时性故障不再误判直播结束；429/5xx/断网/异常 200 进入可恢复重连，连续失败只进入可恢复 `failed` 并继续退避；缺 `continuationContents` 改为 invalid；stale continuation 先重取再 poll；观看页两次 ended 或聊天明确关闭才结束；UI 显示重连/最近故障/数据保留。10 个 unit + 2 个 integration 专项、721 自动化测试；Bilibili 53 项生命周期回归通过；正式 EXE `59b7928cb78a`（commit `31886b2`）asInvoker 副本 + 本地假 YouTube 实跑 3 分钟断连 → 同 session 恢复 → 去重 → `platform_ended`。完整说明见 `docs/STATUS.md` §0.23、`docs/HANDOFF.md` §0 与 `log/2026-11-14-youtube-lifecycle-p0.md`。
+> v0.13.2（2026-11-14，RC0 P0-5）：本地 HTTP API 会话认证 + 发布 EXE 改为 `asInvoker`。除 health/auth 外所有 `/api/*`（含 SSE）要求启动器建立的一次性 fragment token → `HttpOnly; SameSite=Strict` Cookie；`Origin:null`/伪造 Origin/恶意 Host/跨站元数据拒绝；重启旧凭据失效；删除管理员检查。正式 EXE `75588ba16aec` 在 Low Mandatory Level 直接启动，12/12 安全矩阵 + 10/10 功能矩阵通过。完整说明见 `docs/STATUS.md` §0.24、`docs/HANDOFF.md` §0 与 `log/2026-11-14-local-api-auth-p0.md`。
+> v0.13.2（2026-11-14，RC0 P0-4）：YouTube 暂时性故障不再误判直播结束；429/5xx/断网/异常 200 进入可恢复重连，连续失败只进入可恢复 `failed` 并继续退避；缺 `continuationContents` 改为 invalid；stale continuation 先重取再 poll；观看页两次 ended 或聊天明确关闭才结束；UI 显示重连/最近故障/数据保留。10 个 unit + 2 个 integration 专项、721 自动化测试；Bilibili 53 项生命周期回归通过；正式 EXE `59b7928cb78a`（commit `31886b2`）asInvoker 副本 + 本地假 YouTube 实跑 3 分钟断连 → 同 session 恢复 → 去重 → `platform_ended`。完整说明见 `docs/STATUS.md` §0.23、`docs/HANDOFF.md` §0-A 与 `log/2026-11-14-youtube-lifecycle-p0.md`。
 > v0.13.2（2026-11-14，RC0 P0-1）：AI 定向补答回归修复；补答按缺失子集校验并与首答合并，失败时保留首答合法观众、只把缺失观众标 `failed`；补答附带缺失观众摘录；10 个新回归、708 自动化测试；正式 EXE `e441070b57b5` + 生产数据只读副本 Mock 回放 88/89 → 重启 Resume → 89/89。完整说明见 `docs/STATUS.md` §0.22、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-memory-supplement-p0.md`。
 > v0.13.2（2026-11-13）：长期画像输出预算与动态分批、`finish_reason=length` 与空响应分类、有界拆分/预算提升、观众级 `split_path` 断点恢复（schema 16）、UI/统计；真实 975 人任务只读副本回放 975/975；正式 EXE buildId `4b697b2cb227` 实跑同一任务 100/100、975/975；698 自动化测试。完整说明见 `docs/STATUS.md` §0.21 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-13）：可扩展分层汇总；schema 15 `ai_aggregate_nodes`；32 批真实任务只读副本恢复为 2 个局部节点 + final；正式 EXE buildId `58362fa30b5f` 实跑验证；683 自动化测试。完整说明见 `docs/STATUS.md` §0.20 与 `docs/HANDOFF.md` §0.6。
@@ -11,7 +12,22 @@
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
-> 仍未完成：RC0 P0-2 完整备份/恢复、P0-3 真实付费 API 验收、P0-5 本地 HTTP API 鉴权与管理员进程；真实 YouTube 断网/429 验收；真实 UAC 双击；登录后是否 100% 解除 Bilibili 打码未实测。
+> 仍未完成：RC0 P0-2 完整备份/恢复、P0-3 真实付费 API 验收；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-5 代码级与正式 EXE 级已关闭（真实桌面交互列为用户待验收）。
+
+## P18 RC0 P0-5 本地 API 鉴权与 Windows 最小权限（v0.13.2，2026-11-14）✅
+
+- ✅ 修复前实测：隔离目录无凭据可读 `/api/bootstrap`、`/api/viewers`，可改设置、启动/停止场次、进入迁移、订阅 SSE；伪造 Origin/`Origin:null` 的 GET 也成功
+- ✅ 每次启动随机 bootstrap token + session token，仅内存；服务重启全部失效
+- ✅ 启动器 URL fragment 一次性 token → `HttpOnly; SameSite=Strict` Cookie；无 token 分发端点；token 不进入查询串/runtime.json/日志
+- ✅ 除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外所有 `/api/*`（含 SSE）要求 Cookie；401 `AUTH_REQUIRED`
+- ✅ 全方法 Origin 校验、`Origin:null` 拒绝、`Sec-Fetch-Site` 跨站拒绝、Host 严格校验、无 CORS 放行
+- ✅ 前端 `js/auth.js` 引导 + 401 三语重开页面；EventSource/下载自动携带 Cookie
+- ✅ 发布 EXE 改为 `asInvoker`；构建 patch 前后断言；删除管理员检查/文案/绕过
+- ✅ 14 项认证集成 + 1 项优雅关闭 + 6 项 auth service + 6 项 auth boot 单测；全量 **745 passed / 0 failed / 0 skipped（270,168 ms，2026-11-14）**
+- ✅ 正式 EXE `75588ba16aec`：Low Mandatory Level 无 UAC 启动；`verify-p0-5-exe` 12/12、`verify-exe` 10/10；旧 Cookie/token 重启后 401、数据保留
+- ⬜ 真实浏览器自动打开/点击、真实 Ctrl+C/关闭窗口（用户待验收）
+- ⬜ 同 Windows 用户恶意软件、共享目录 ACL、真实平台/真实付费 Provider 边界（按文档如实说明）
+- 完整证据：`log/2026-11-14-local-api-auth-p0.md`
 
 ## M0 项目初始化与架构验证 ✅
 
@@ -111,7 +127,7 @@
 - ✅ 删除官方 YouTube Data API/OAuth/API Key/模式切换与对应测试
 - ✅ 唯一公开网页路径：链接 → 检查 → 开始；保留聊天/SC/会员/gift/badge/稳定身份/30 天保留
 - ✅ 三语清理，设置页只读说明，不在正常连接 UI 堆叠实验警告
-- ✅ EXE RT_MANIFEST `requireAdministrator`；非提升启动被 Windows 拒绝；三语管理员提示
+- ✅（历史，已被 P18 取代）EXE RT_MANIFEST `requireAdministrator`；非提升启动被 Windows 拒绝；三语管理员提示
 - ⬜ 真实 UAC 点击、真实文件夹选择；v0.6.0 已完成真实并发采样（见 P5）
 
 **交付**：用户双击 EXE 由 Windows 请求管理员权限，YouTube 像 Bilibili 一样只需粘贴链接。
@@ -362,7 +378,7 @@
 - ✅ 请求统计：请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/token/费用/ETA
 - ✅ 本地性能修复：按批观众客观记忆、DNS 缓存、精确包查询
 - ✅ 519 自动化测试；Mock 1,000 观众/10,000 消息 6.5 秒
-- ✅ v0.13.1 EXE 已构建（requireAdministrator）
+- ✅（历史）v0.13.1 EXE 已构建（requireAdministrator；P18 已改为 asInvoker）
 - ⬜ 真实付费 API（本机无 Key，阻塞）
 - ⬜ 真实浏览器 UI / EXE 运行验收
 - ⬜ 真实 Provider 429/1,000 观众/费用验证
