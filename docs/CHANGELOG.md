@@ -1,5 +1,21 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r11 — 2026-11-14（RC0 P0-1：AI 定向补答回归修复）
+
+### 修复
+
+- **P0-1 定向补答作用域错误**：首答漏观众时，补答只覆盖缺失 ref，却按全量 refs 组装/校验，必然报“已覆盖观众缺失”，整批 `AI_IMPORT_INVALID`；每次 Continue 重发首答 + 补答且不收敛。
+- 补答现按缺失子集 `assembleMemoryCompact` + `validateAnalysisImport`；补答完整时用 `mergeMemorySupplement()` 合并首答与补答，再做一次完整校验。
+- 补答仍缺失/错误观众/非法 JSON/空响应/截断/Provider 错误/提示词超输入上限时，保留首答中每个单独合法的观众，只把仍缺失观众标记 `failed` 并可 Resume；不再丢弃已付费合法结果。
+- 补答请求附带缺失观众的 `viewer_excerpts.jsonl`（按 stable viewer_id 过滤、注解 ref），不再只给 evidence_seq；其他观众正文不重发。
+- 补答空/截断计入 `outputStats`；新增 `supplement.merged/partial/failed/too_large` 日志；无 schema/结果 Schema/提示词版本变化。
+
+### 验证
+
+- 新增 `tests/integration/ai-memory-supplement-regression.test.mjs` **10 项**：补答完整、仍缺、错误观众、部分覆盖、跨观众证据、重复事实、非法 JSON、空+length、重启 Resume、3 批并发。
+- 全量 **708 passed / 0 failed**（2026-11-14，186,397 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- EXE 与真实数据只读副本回放见 STATUS §0.22.4；真实付费 API / 真实生产 Resume / 真实 UAC / 真实浏览器点击仍未验收。
+
 ## 0.13.2-r10 — 2026-11-13（长期画像输出预算、截断恢复与观众级断点）
 
 ### 新增

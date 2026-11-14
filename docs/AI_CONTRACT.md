@@ -909,8 +909,9 @@ Provider 返回 → extractJsonObject → assembleMemoryCompact
 ```
 
 - ref 覆盖完整只说明“每个观众都有条目”，**不**代表字段合法；缺少证据、非法枚举、跨观众证据、未知字段仍必须被拒绝。
-- 修复请求最多一次：缺失 ref 时只发缺失观众（定向补充）；其他错误重发原批提示词 + 精确字段错误 + 上一次回答（有字符上限）。修复后的回答必须再次通过完整校验。
-- 修复仍失败 → 该批次不导入，任务保留已完成批次并可 `resume`；不会写入不合格结果。
+- 修复请求最多一次：缺失 ref 时只发缺失观众（定向补充，包含这些观众的摘录）；其他错误重发原批提示词 + 精确字段错误 + 上一次回答（有字符上限）。
+- 定向补答只按**缺失 ref 子集**组装/校验；补答完整时先用 `mergeMemorySupplement()` 合并首答与补答，再对合并结果做一次完整校验。补答仍缺失、返回错误观众、非法 JSON、空响应、截断、Provider 错误或超过输入上限时，首答中每个单独合法的观众仍会被导入；只有仍缺失的观众保持 `failed/pending`，Resume 只请求这些观众。不得因补答失败丢弃已付费且合法的首答。
+- 修复仍失败且没有任何可安全保存的观众 → 该批次不导入，任务保留已完成批次并可 `resume`；不会写入不合格结果。
 - 自动修复请求与正常重试一样计入真实 usage。
 
 ### 20.2 本地身份与字段白名单
@@ -1203,6 +1204,7 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 2. 截断或多观众仍空：将观众组对半拆分，最多 2 层（10 → 5 → 2/3）；每次拆分都先写数据库映射。
 3. 单观众仍截断：仅一次把回答预算提高到上限 8,192；仍失败则以 `AUTO_OUTPUT_TRUNCATED` 保留该观众为 pending。
 4. 连续 3 个输出失败批次后停止调度新批次，避免 Provider 故障时无限付费；已成功批次保留。
+5. 定向补答失败（仍缺/非法/空/截断/Provider 错误）不等同于整批失败：首答中已合法观众先导入，仍缺失观众标记 `failed`；见 §26。补答不会重复拆分批次的已保存观众。
 
 ### 25.4 观众级断点恢复
 
@@ -1218,3 +1220,31 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - `outputStats`：`truncations`、`emptyResponses`、`autoRetries`、`splits`；`lastFinishReason` 只来自当前 Job。
 - `memoryJob.splitBatches` / `pendingSplitBatches` / `splits[]`；`currentSplitPath` 在运行中显示。
 - 恢复面板区分“输出截断”“Provider 空响应”“校验失败”；截断时显示系统正在拆分/提高预算，不再一直停留在失败状态。
+
+## 26. v0.13.2 P0-1 定向补答合并与部分保存（2026-11-14）
+
+### 26.1 问题
+
+首答只返回部分观众时，定向补答只包含缺失 ref，但旧实现用**全量 refs** 对补答做组装与覆盖校验。补答必然被判“首答已覆盖的观众缺失”，整批失败；首答中已合法的观众也被丢弃。`mergeMemorySupplement()` 存在但未被调用。另一定向提示词缺陷是只发送 `evidence_seqs`，没有发送缺失观众的聊天摘录。
+
+### 26.2 现行规则
+
+```text
+首答 → extractJsonObject → assembleMemoryCompact(全量 refs)
+     → 完整校验
+     → 仅缺 ref：定向补答（只含缺失 ref 的上下文/摘录/契约/Schema）
+     → 补答按缺失子集校验
+     → mergeMemorySupplement(首答, 补答) → 全量 assemble + 完整校验
+     → 仍失败：分别收集首答/补答中逐观众合法的结果
+     → 合并后按实际覆盖的 viewerIds 校验并导入
+     → 仍缺失观众进入 viewerFailures(status=failed)，Resume 只请求它们
+```
+
+- **作用域**：定向补答的 `refs`、`viewerIds`、`memory_context`、`viewer_excerpts`、`answerSchema` 都只覆盖缺失观众；其他观众正文不重发。
+- **合并**：`mergeMemorySupplement({answer, supplement, refs, missingRefs})` 只接受补充中的缺失 ref，拒绝未知/重复 ref；合并后仍必须通过完整 Schema/身份/证据/覆盖/枚举校验。
+- **首答保留**：补答失败不得清空首答。只要首答中某观众的条目单独通过完整校验，该观众就会保存；失败观众只限仍缺失/非法的那些人。
+- **身份与证据**：`viewer_id` 永远由本地 ref 映射注入；补答中的跨观众 evidence 仍以 `MEMORY_EVIDENCE_OTHER_VIEWER` 拒绝，不会被写入错误观众。
+- **幂等**：同一观众只导入一次；重复 Continue 在 complete 时为 0 请求；部分任务只处理 `pending/failed`。
+- **有界**：补答仍只有一次请求；定向提示词超过同一输入上限时不发送，首答合法结果保留，缺失观众可恢复；不新增无上限 token/重试。
+- **统计**：补答空/截断计入 `outputStats`；部分保存/合并/失败/超限分别记录 `supplement.partial/merged/failed/too_large` 日志。
+- **不改**：结果 Schema 1.3.0、数据库 schema 16、提示词版本 v13.2、金额/身份/去重规则、Provider/调度/翻译/汇总流程。

@@ -262,9 +262,19 @@ export function buildTargetedMemoryPrompt({prompt, missingRefs}) {
     refs: prompt.refs,
     onlyRefs: missingRefs
   });
+  // The supplement must see the same evidence as the original batch. Sending
+  // only evidence_seq numbers would force the model to infer facts from ids
+  // instead of the missing viewer's actual chat text.
+  const excerptText = prompt.files
+    ? filterMemoryExcerpts(prompt.files['viewer_excerpts.jsonl'], refs.map((entry) => entry.viewerId))
+    : '';
+  const annotatedExcerpts = annotateMemoryExcerpts(excerptText, refs);
   const user = [
     'Return the missing viewers only. Do not repeat refs that are already present.',
     block('memory_context.json (subset)', JSON.stringify(context)),
+    ...(annotatedExcerpts
+      ? [block('viewer_excerpts.jsonl (missing viewers only, seq + ref)', annotatedExcerpts)]
+      : []),
     memoryContract(prompt.manifest, prompt.refs, missingRefs),
     block('compact answer schema', JSON.stringify(schema))
   ].join('\n\n');

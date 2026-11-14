@@ -104,7 +104,8 @@ import {
 import {
   assembleMemoryCompact,
   assembleSessionAnswer,
-  assembleSessionAggregateAnswer
+  assembleSessionAggregateAnswer,
+  mergeMemorySupplement
 } from './compact.mjs';
 
 /**
@@ -3341,6 +3342,57 @@ export class AnalysisRunner {
       };
     };
 
+    // A target prompt only covers a subset of the original batch. Evaluating it
+    // against the full ref list would always report the other viewers missing,
+    // which is the P0 regression this path exists to prevent.
+    const subsetPrompt = (refs) => ({
+      ...prompt,
+      refs,
+      viewerIds: refs.map((entry) => entry.viewerId)
+    });
+    const updatesOf = (evaluation) => evaluation?.validation?.sanitized?.viewer_memory_updates ?? [];
+
+    /**
+     * Assemble+validate an answer against only the refs it is allowed to cover.
+     *
+     * If the whole subset is valid it is kept as-is. If only some viewers are
+     * invalid, the same strict viewer-scoped salvage used by the ordinary
+     * repair path keeps the valid ones and reports the rest. A global issue
+     * (duplicate/unknown ref, protocol error) never yields a partial import.
+     */
+    const collectValidSubset = (content, refs) => {
+      if (!Array.isArray(refs) || refs.length === 0) {
+        return {updates: [], failures: [], errors: [], result: null};
+      }
+      const evaluation = evaluate(content, subsetPrompt(refs));
+      if (evaluation.validation.ok) {
+        return {
+          updates: updatesOf(evaluation),
+          failures: [],
+          errors: [],
+          result: evaluation.validation.sanitized
+        };
+      }
+      if (evaluation.assembled?.ok) {
+        const salvaged = this.#salvageMemoryViewers(evaluation.assembled, evaluation.validation);
+        if (salvaged) {
+          let result = null;
+          try {
+            result = JSON.parse(salvaged.text);
+          } catch {
+            result = null;
+          }
+          return {
+            updates: salvaged.validUpdates,
+            failures: salvaged.viewerFailures,
+            errors: [],
+            result
+          };
+        }
+      }
+      return {updates: [], failures: [], errors: evaluation.validation.errors ?? [], result: null};
+    };
+
     const generated = await this.requestOnce({
       context,
       prompt,
@@ -3428,6 +3480,204 @@ export class AnalysisRunner {
       targeted: onlyMissingRefs,
       errorCodes: errorsForRepair.slice(0, 8).map((item) => item.code)
     });
+
+    if (onlyMissingRefs) {
+      const missingRefs = [...new Set((evaluated.assembled.missing ?? []).map(Number))]
+        .filter((ref) => Number.isInteger(ref))
+        .sort((left, right) => left - right);
+      const missingEntries = prompt.refs.filter((entry) => missingRefs.includes(entry.ref));
+      const supplementErrors = [];
+      let supplementResponse = null;
+      let supplementFailure = null;
+      let outputUsable = false;
+      if (repairPrompt.estimatedTokens > repairLimit) {
+        // The missing subset now includes its excerpts. Never send a request
+        // larger than the same bounded input limit used for the original batch;
+        // keep the first answer and leave the missing viewers resumable.
+        supplementFailure = Object.assign(new Error('SUPPLEMENT_TOO_LARGE'), {
+          code: 'ANALYSIS_REPAIR_TOO_LARGE',
+          detail: `estimated ${repairPrompt.estimatedTokens} input tokens, limit ${repairLimit}`,
+          stage: 'validation',
+          jobId,
+          batchId,
+          batchIndex
+        });
+        this.logger?.warn?.({
+          event: 'ai.analysis.memory.supplement.too_large',
+          sessionId: context.sessionId,
+          jobId,
+          batchIndex,
+          estimatedTokens: repairPrompt.estimatedTokens,
+          limit: repairLimit
+        });
+      }
+      try {
+        if (!supplementFailure) {
+          supplementResponse = await this.requestOnce({
+            context,
+            prompt: repairPrompt,
+            kind: 'memory-repair',
+            batchIndex,
+            stage,
+            outputTokens: Math.min(3000, budgetFor(repairPrompt))
+          });
+          outputUsable = true;
+          this.#assertUsableOutput(supplementResponse, {context, kind: 'memory-repair', batchIndex, stage});
+        }
+      } catch (error) {
+        if (context.signal?.aborted || isCanceledError(error)) throw error;
+        supplementFailure = error;
+        // `#assertUsableOutput` records its own rejection; a response that
+        // never reached it (empty/truncated at the adapter) is recorded here so
+        // the console still shows an output failure rather than a silent one.
+        if (!outputUsable && isMemoryOutputFailure(error)) {
+          this.#recordOutputRejected(context, {
+            code: error?.code ?? 'AI_IMPORT_INVALID',
+            kind: 'memory-repair',
+            batchIndex,
+            stage,
+            finishReason: error?.finishReason ?? null
+          });
+        }
+        this.logger?.warn?.({
+          event: 'ai.analysis.memory.supplement.failed',
+          sessionId: context.sessionId,
+          jobId,
+          batchIndex,
+          code: error?.code ?? 'UNKNOWN'
+        });
+      }
+
+      let supplementEvaluation = null;
+      if (supplementResponse) {
+        // The supplement schema only permits the missing refs. Validate it
+        // against that same subset; the first answer is merged afterwards.
+        supplementEvaluation = evaluate(supplementResponse.content, subsetPrompt(missingEntries));
+        if (!supplementEvaluation.validation.ok) {
+          supplementErrors.push(...(supplementEvaluation.validation.errors ?? []));
+          this.#recordOutputRejected(context, {
+            code: supplementErrors[0]?.code ?? 'AI_IMPORT_INVALID',
+            kind: 'memory-repair',
+            batchIndex,
+            stage,
+            finishReason: supplementResponse.finishReason ?? null
+          });
+        }
+      }
+
+      // Fast path, and the exact case the audit reproduced: first answer is
+      // valid except for missing refs, supplement covers every missing ref.
+      // Merge the two raw compact answers before the ordinary full validation,
+      // never evaluate the supplement as a standalone full-batch answer.
+      if (supplementResponse && supplementEvaluation?.validation.ok) {
+        const firstAnswer = extractJsonObject(generated.content);
+        const supplementAnswer = extractJsonObject(supplementResponse.content);
+        if (firstAnswer && supplementAnswer) {
+          const merged = mergeMemorySupplement({
+            answer: firstAnswer,
+            supplement: supplementAnswer,
+            refs: prompt.refs,
+            missingRefs
+          });
+          if (merged.ok) {
+            const mergedEvaluation = evaluate(JSON.stringify(merged.answer), prompt);
+            if (mergedEvaluation.validation.ok) {
+              this.logger?.info?.({
+                event: 'ai.analysis.memory.supplement.merged',
+                sessionId: context.sessionId,
+                jobId,
+                batchIndex,
+                viewers: promptViewerIds.length
+              });
+              return {
+                ...supplementResponse,
+                text: JSON.stringify(mergedEvaluation.validation.sanitized),
+                viewerIds: promptViewerIds,
+                viewerFailures: []
+              };
+            }
+            supplementErrors.push(...(mergedEvaluation.validation.errors ?? []));
+          } else {
+            supplementErrors.push(...(merged.issues ?? []));
+          }
+        }
+      }
+
+      // Bounded fallback: keep every viewer that is individually valid in
+      // either answer. A failed/partial/foreign supplement must never discard
+      // the valid part of the first answer that was already paid for.
+      const firstRefs = prompt.refs.filter((entry) => !missingRefs.includes(entry.ref));
+      const firstPart = collectValidSubset(generated.content, firstRefs);
+      const supplementAnswer = supplementResponse ? extractJsonObject(supplementResponse.content) : null;
+      const reportedRefs = new Set((supplementAnswer?.viewers ?? []).map((entry) => Number(entry?.ref)));
+      const supplementRefs = missingEntries.filter((entry) => reportedRefs.has(entry.ref));
+      const supplementPart = collectValidSubset(supplementResponse?.content, supplementRefs);
+      const mergedUpdates = new Map();
+      for (const update of firstPart.updates) {
+        if (update?.viewer_id) mergedUpdates.set(String(update.viewer_id), update);
+      }
+      for (const update of supplementPart.updates) {
+        if (update?.viewer_id && !mergedUpdates.has(String(update.viewer_id))) {
+          mergedUpdates.set(String(update.viewer_id), update);
+        }
+      }
+      const coveredIds = promptViewerIds.filter((viewerId) => mergedUpdates.has(String(viewerId)));
+      const baseResult = firstPart.result ?? supplementPart.result;
+      if (baseResult && coveredIds.length > 0) {
+        const combined = {
+          ...baseResult,
+          viewer_memory_updates: coveredIds.map((viewerId) => mergedUpdates.get(String(viewerId)))
+        };
+        const combinedValidation = this.validate(JSON.stringify(combined), {viewerIds: coveredIds});
+        if (combinedValidation.ok) {
+          const knownFailures = [...firstPart.failures, ...supplementPart.failures];
+          const supplementCode = supplementFailure?.code ?? supplementErrors[0]?.code ?? null;
+          const viewerFailures = prompt.refs
+            .filter((entry) => !mergedUpdates.has(String(entry.viewerId)))
+            .map((entry) => {
+              const known = knownFailures.find((item) => String(item.viewerId) === String(entry.viewerId));
+              const errors = Array.isArray(known?.errors) && known.errors.length > 0
+                ? [...known.errors]
+                : [];
+              if (!errors.some((item) => item.code === 'MEMORY_VIEWER_UPDATE_MISSING')) {
+                errors.push({path: 'viewers', code: 'MEMORY_VIEWER_UPDATE_MISSING', params: {ref: entry.ref}});
+              }
+              if (supplementCode && !errors.some((item) => item.code === supplementCode)) {
+                errors.push({path: 'supplement', code: supplementCode, params: null});
+              }
+              return {viewerId: entry.viewerId, errors};
+            });
+          this.logger?.warn?.({
+            event: 'ai.analysis.memory.supplement.partial',
+            sessionId: context.sessionId,
+            jobId,
+            batchIndex,
+            validViewers: coveredIds.length,
+            failedViewers: viewerFailures.length,
+            supplementCode: supplementFailure?.code ?? null,
+            errorCodes: supplementErrors.slice(0, 8).map((item) => item.code)
+          });
+          return {
+            ...(supplementResponse ?? generated),
+            text: JSON.stringify(combinedValidation.sanitized),
+            viewerIds: coveredIds,
+            viewerFailures
+          };
+        }
+        supplementErrors.push(...(combinedValidation.errors ?? []));
+      }
+
+      // Nothing from either answer can be imported safely. A provider failure
+      // is rethrown unchanged so its real recovery action is preserved; an
+      // invalid/partial supplement keeps the ordinary memory failure semantics
+      // (and may still be split by the caller).
+      if (supplementFailure) throw supplementFailure;
+      throw invalidAnswer(
+        supplementErrors.length > 0 ? supplementErrors : (evaluated.validation.errors ?? []),
+        'memory supplement did not produce a complete compact answer'
+      );
+    }
+
     const repaired = await this.requestOnce({
       context,
       prompt: repairPrompt,

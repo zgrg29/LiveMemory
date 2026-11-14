@@ -1,10 +1,69 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-13 · v0.13.2 长期画像输出预算、截断恢复与观众级断点 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0 P0-1 AI 定向补答回归修复 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮使用生产 DB/runtime/config/exports 的**只读副本**与本地 Mock Provider；未修改生产数据、未 Resume 生产任务、未调用真实付费 API、未干扰直播采集。正式 EXE 已重建（见 §0.3）。
+> 本轮未修改生产数据库、未 Resume 真实生产任务、未调用真实付费 API、未干扰直播采集。自动化使用 `tests/.tmp` 隔离数据 + Mock Provider；真实数据只读副本 + Mock EXE 回放见 §0.4。
 
-## 0. 本轮（长期画像输出截断与观众级恢复）
+## 0. 本轮（P0-1 定向补答回归修复）
+
+完整证据：`log/2026-11-14-ai-memory-supplement-p0.md`。
+
+### 0.1 原始故障与根因
+
+- 上一轮 RC0 审计 P0-1 已复现：首答漏 1 位观众时，`generateMemoryAnswer()` 发出的补答只含缺失 ref，但补答回来后用 `evaluate(repaired.content)` **按全量 refs** 组装/校验。
+- `assembleMemoryCompact()` 只有在所有 refs 都出现时才 `ok`；补答只含缺失 ref，必然被判“首答已覆盖的观众缺失”，整批 `AI_IMPORT_INVALID`。
+- `mergeMemorySupplement()` 已存在但无调用者；补答失败时首答中已合法观众被整批丢弃，也不走 viewer salvage。
+- 结果：模型漏写 1 人 → 批次永久失败；每次 Continue 重发首答 + 补答 2 个付费请求且不收敛。
+- 同路径独立缺陷：定向补答只发送 `evidence_seqs`，没有发送缺失观众的聊天摘录，模型无法根据真实文本补答。
+
+### 0.2 修复
+
+- `src/ai/api/runner.mjs`：
+  - 补答按 `missingEntries` 子集组装/校验，不再按全量 refs；
+  - 补答完整时用 `mergeMemorySupplement()` 合并首答 + 补答，再做一次完整校验；
+  - 补答仍缺失/错误观众/非法 JSON/空响应/截断/Provider 错误/提示词超限时，保留首答中每个单独合法观众；只把仍缺失观众标记 `failed`，Resume 只请求这些观众；
+  - 补答空/截断计入 `outputStats`；新增 `supplement.merged/partial/failed/too_large` 日志。
+- `src/ai/api/prompts.mjs`：定向补答附带缺失观众的 `viewer_excerpts.jsonl`（按 stable `viewer_id` 过滤、注解 ref），不重发其他观众正文。
+- 未改 schema 16、结果 Schema 1.3.0、提示词 v13.2、Provider/调度/翻译/汇总/金额/身份/去重规则。
+
+### 0.3 验证
+
+- 新增 `tests/integration/ai-memory-supplement-regression.test.mjs` **10 项**：
+  - 首答漏 1 人 + 补答完整 → 2/2、双事实、2 请求、重复 Continue 0 请求；
+  - 补答仍缺/错误观众 → 首答保存、缺失观众 failed，Resume 只请求它；
+  - 首答完整 → 1 请求、无补答；
+  - 补答部分覆盖 → 两份答案的合法观众都保存；
+  - 跨观众证据 → 拒绝、首答保留、重试完成；
+  - 重复事实 → 引擎去重；
+  - 非法 JSON / 空 + length → 首答保留、可恢复；
+  - 重启 Resume → 旧结果/事实不变，只请求失败观众；
+  - 3 批并发 + 1 批补答非法 → 兄弟批次完成，Resume 只补 1 人，30/30 不重复。
+- 全量 **708 passed / 0 failed**（2026-11-14，186,397 ms）。
+
+### 0.4 正式 EXE 与真实数据只读副本
+
+（构建/回放后填写 buildId、SHA-256、旧任务路径与结果。）
+
+### 0.5 P0-1 结论与下一轮 P0-4 交接
+
+- **P0-1 代码级可关闭**：根因确认、修复前失败可复现、修复后 10/10 回归 + 708/708 全量通过；无 schema/历史数据改动。
+- **待用户验收**：真实付费 Provider 的补答质量、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。不得把 Mock/只读副本写成真实验收。
+- 下一轮 **P0-4 YouTube 误判结束** 原始证据：
+  - `src/platforms/youtube/anonymous/adapter.mjs:324-333`：429/网络错误也累计到 `maxConsecutiveFailures=8`，随后 `#finish('connection_failed')`。
+  - `src/platforms/youtube/anonymous/adapter.mjs:284-288`：`page.ended` 立即 `#finish('chat_ended')`。
+  - `src/platforms/youtube/anonymous/parser.mjs:249-258`：HTTP 200 缺 `continuationContents` 返回 `{ended:true,invalid:true}`，adapter 未使用 `invalid`。
+  - `docs/PLATFORM_INTEGRATIONS.md:267` 与代码相反。
+- 建议：先 Mock 复现；`invalid:true` 按 transient；429/网络/5xx 达阈值进入 FAILED/RECONNECTING 保留 session，不调用 `onEnd`；明确 `chat_ended` 才结束；至少两次独立证据；补 429/断网/异常 200 测试并修正文档。
+
+### 0.6 不要做
+
+1. 不要为了“让任务成功”重发已保存观众/批次。
+2. 不要把补答失败降级为“整批成功”；缺失观众必须保持 `failed/pending` 可恢复。
+3. 不要绕过 `validateAnalysisImport()` 的完整校验（Schema/身份/证据/覆盖）。
+4. 不要给补答增加无上限 token 或无限重试；补答仍只有一次。
+5. 不要修改生产数据库或自动 Resume 生产任务；需要用户明确授权与备份。
+
+## 0.7 上一轮（长期画像输出预算、截断恢复与观众级断点）
 
 完整证据：`log/2026-11-13-ai-memory-output-recovery.md`。
 
@@ -54,7 +113,7 @@
 4. 新增输出错误码时同步更新 `runner.mjs`、`recovery.mjs`、`ai.js`、三语 i18n 与测试。
 5. 正式 EXE 已更新；后续改代码必须重建。
 
-## 0.6 上一轮（分层汇总与 32 批恢复）
+## 0.8 上一轮（分层汇总与 32 批恢复）
 
 完整证据：`log/2026-11-13-ai-hierarchical-aggregate.md`。
 

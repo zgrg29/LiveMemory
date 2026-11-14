@@ -1194,3 +1194,43 @@ duration ≈ 155s
   - 旧任务 `partial`、`17/100`、`153/975`、`resume-memory`、`canResume=true`、`lastFinishReason=null`；
   - `POST /api/ai/analyze/resume` 后 `complete`、`100/100`、`975/975`、85 次 Provider 请求、b12 自动拆 `12.1/12.2`、旧 17 条结果保留、facts 252。
 - 未做：真实付费 DeepSeek、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
+
+## 37. RC0 P0-1：AI 定向补答回归（v0.13.2，2026-11-14）
+
+### 37.1 复现与根因
+
+- 修复前新增用例实际结果：首答返回观众 1、漏观众 2；补答只返回观众 2；旧代码用全量 refs 评估补答，`AI_IMPORT_INVALID / MEMORY_VIEWER_UPDATE_MISSING ref=1`，`covered=0`、`savedResults=0`、`usage.requests=2`。
+- 根因：`evaluate(repaired.content)` 未传补答 prompt/onlyRefs；`mergeMemorySupplement()` 无调用者；补答失败直接丢首答；补答提示词缺 `viewer_excerpts.jsonl`。
+
+### 37.2 回归矩阵（`tests/integration/ai-memory-supplement-regression.test.mjs`）
+
+| # | 场景 | 关键断言 |
+| --- | --- | --- |
+| 1 | 正常完整回答 | 1 次请求、无补答、2/2、2 事实 |
+| 2 | 首答漏 1 位观众 + 补答完整 | 2 请求（首答 + 补答）；补答 ref 只含缺失观众；2/2；2 条事实归属正确；重复 Continue 0 请求 |
+| 3 | 补答仍缺（返回错误观众） | 首答合法观众保存；only missing `failed`；Resume 只请求它；旧结果保留；事实不重复 |
+| 4 | 补答只覆盖部分缺失观众 | 首答 + 补答合法观众都保存；仍缺者 failed；Resume 后 3/3，事实不重复 |
+| 5 | 补答含跨观众证据 | 该观众被拒；首答保留；`outputStats.rejected>=1`；重试后完成 |
+| 6 | 补答返回重复事实 | 引擎去重；事实只 1 条；结果/版本不重复 |
+| 7 | 补答非法 JSON | 首答保留；缺失观众 failed；Resume 完成 |
+| 8 | 补答空响应 + `finish_reason=length` | 首答保留；不重发首答；只 2 次尝试（首答 + 1 次失败补答）；Resume 完成 |
+| 9 | 中途退出/重启恢复 | 关闭重开只请求失败观众；旧 `ai_results` id/`result_json` 不变；旧事实不变；新观众追加版本 |
+| 10 | 并发批次乱序完成 | 3 批并发、1 批补答非法；兄弟批次保存；Resume 只补 1 人；30/30；无重复事实 |
+| 11 | 补答请求只含缺失内容 | 定向提示词只含缺失 ref 的契约/上下文/摘录/Schema；不重发其他观众正文 |
+| 12 | 多次重复 Resume | 完成后再次 Resume 0 Provider 请求、结果/事实不变 |
+| 13 | 动态拆分不受影响 | 既有 `ai-memory-output-recovery` split/budget bump/空响应用例全绿 |
+
+### 37.3 全量结果（本轮实测）
+
+- 命令：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- 结果：**708 passed / 0 failed / 0 skipped**（2026-11-14，186,397 ms）。
+- 基线 698；新增 10 个集成用例，全部通过。
+
+### 37.4 EXE 与真实数据只读副本（本轮实测）
+
+（构建/回放后填写 buildId、SHA-256、任务与结果。）
+
+### 37.5 未验证
+
+- 真实付费 Provider 下补答质量、真实生产任务 Resume、真实 UAC 双击、真实浏览器点击。
+- 未修改生产数据库；未做 schema/历史数据回填。
