@@ -175,6 +175,7 @@ tests 769 / pass 769 / fail 0 / skipped 0 / duration 501,044 ms
 | builtAt | `2026-11-14T05:34:55.662Z` |
 | 资源 | `189` files；20 个必需模块；`asInvoker` |
 
+- 本轮代码提交 `9a23d45`；EXE 在提交前构建，`build-info.commit` 因此为上一提交 `489ce07`。buildId 由源码内容哈希决定，可由 `9a23d45` 重建复现。
 - `scripts/verify-p0-2-exe.mjs` **13/13**：
   1. asInvoker + buildId/备份模块标记；
   2. 种子数据含场次/AI 报告/长期事实；

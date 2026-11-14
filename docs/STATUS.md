@@ -73,6 +73,8 @@
 | builtAt | `2026-11-14T05:34:55.662Z` |
 | 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
 
+- 本轮代码提交：`9a23d45`。EXE 在提交前构建，因此 `build-info.commit` 记录构建时 HEAD `489ce07`；`buildId` 由源码内容哈希决定，可用提交 `9a23d45` 重建复现同一 buildId。文档提交在当前代码提交之后。
+
 - `scripts/verify-p0-2-exe.mjs`：**13/13**。正式 EXE 无 UAC 启动；认证后创建备份（约 0.59 MB）；检查摘要（1 场 / 6 事件 / 6 观众 / 1 AI 报告 / 6 长期事实）；恢复到全新绝对目录并服务；`secrets/` 为空；重启后行数与事实逐字节一致；再次备份并通过独立完整校验。
 - `scripts/verify-p0-5-exe.mjs`：**12/12**（认证/Origin/Host/SSE/token 不泄漏/重启失效）。
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
