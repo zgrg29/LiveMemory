@@ -1,7 +1,7 @@
 # 数据模型（DATA_MODEL）
 
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
-Schema 版本：**15**
+Schema 版本：**16**
 迁移入口：`src/storage/database/migrations/index.mjs`
 
 ## 1. 设计原则
@@ -429,7 +429,9 @@ M6 的 AI 往返是“外部不可信输入 + 可审计版本”的模型。原�
 
 ## 8. 备份、清空与数据位置
 
-- 删除/恢复出厂前可创建数据库应急快照：`VACUUM INTO %LOCALAPPDATA%\LiveMemory-Backups\livememory-database-<timestamp>.db`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖）。它只含数据库，不含分析包/凭据/设置，**不是** M5 的 `.livememory` 可移植备份。
+- 删除/恢复出厂前可创建数据库应急快照：`VACUUM INTO %LOCALAPPDATA%\LiveMemory-Backups\livememory-database-<timestamp>.db`（`LIVE_MEMORY_BACKUP_DIR` 可覆盖）。它只含数据库，不含分析包/凭据/设置，**不是** `.livememory` 可移植备份。
+- **可移植备份（RC0 P0-2）**：`.livememory` 包含 `database/livememory.db`（`VACUUM INTO` 一致快照）与净化后的 `config/settings.json`，外加 v1 manifest。它包含全部业务表（场次/事件/观众/支付/画像/事实/证据/版本/AI 任务与结果/翻译缓存/监控目标）与 schema 版本；**不包含** `secrets/`、`config/ai-providers.json`、日志、缓存、runtime、exports、backups、数据目录指针。格式与安全检查见 `docs/BACKUP_FORMAT.md`；恢复协议见 `docs/BACKUP_RESTORE.md`。
+- 备份与恢复不改变 schema：仍是 **16**。旧 schema 备份在暂存区通过现有迁移链升级后才切换。
 - 清空 `data`：删除业务表与全部 AI 表（`ai_result_evidence`、`ai_results`、`ai_job_messages`、
   `ai_job_viewers`、`ai_job_batches`、`ai_jobs`、`ai_packages`）、`exports/`、`cache/`；保留设置、凭据、
   位置记录、`backups/`、日志、根目录无关文件。

@@ -1848,6 +1848,40 @@
   flex-wrap: wrap;
 }
 
+/* --------------------------------------------------------- backup/restore */
+
+.backup-progress {
+  height: 8px;
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.backup-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+.backup-advanced {
+  margin-top: 14px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.backup-advanced summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.backup-advanced .button {
+  margin-top: 8px;
+}
+
 .path-row .input {
   flex: 1;
   min-width: 200px;

@@ -60,6 +60,68 @@ export function buildPickerScript({resultFile, initialDir = ''}) {
   ].join('\n');
 }
 
+/**
+ * Windows-native Save/Open file dialog for portable backups.
+ *
+ * The fixed dialog type is chosen in Node; every user-controlled value is
+ * base64-encoded. The script never interpolates a path into a command line.
+ */
+export function buildFilePickerScript({
+  resultFile,
+  initialDir = '',
+  defaultName = '',
+  mode = 'open',
+  filter = 'LiveMemory backup (*.livememory)|*.livememory|All files (*.*)|*.*'
+}) {
+  const out = encode(resultFile);
+  const initial = encode(initialDir);
+  const name = encode(defaultName);
+  const filterText = encode(filter);
+  const dialogType = mode === 'save' ? 'SaveFileDialog' : 'OpenFileDialog';
+  const lines = [
+    "$ErrorActionPreference='Stop'",
+    'Add-Type -AssemblyName System.Windows.Forms',
+    `$out=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${out}'))`,
+    `$initial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${initial}'))`,
+    `$defaultName=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${name}'))`,
+    `$filter=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${filterText}'))`,
+    'try {',
+    '  [System.Windows.Forms.Application]::EnableVisualStyles()',
+    `  $dialog=New-Object System.Windows.Forms.${dialogType}`,
+    '  $dialog.Title="LiveMemory"',
+    '  $dialog.Filter=$filter',
+    '  $dialog.RestoreDirectory=$true',
+    mode === 'save'
+      ? '  $dialog.DefaultExt="livememory"'
+      : '  $dialog.CheckFileExists=$true',
+    mode === 'save'
+      ? '  $dialog.AddExtension=$true'
+      : '  $dialog.Multiselect=$false',
+    '  if ($defaultName) { $dialog.FileName=$defaultName }',
+    '  if ($initial -and (Test-Path -LiteralPath $initial)) { $dialog.InitialDirectory=$initial }',
+    '  $owner=New-Object System.Windows.Forms.Form',
+    '  $owner.Text="LiveMemory"',
+    '  $owner.ShowInTaskbar=$false',
+    '  $owner.TopMost=$true',
+    '  $owner.Opacity=0',
+    '  $owner.FormBorderStyle=[System.Windows.Forms.FormBorderStyle]::None',
+    '  $owner.Size=New-Object System.Drawing.Size(1,1)',
+    '  $owner.StartPosition=[System.Windows.Forms.FormStartPosition]::CenterScreen',
+    '  $owner.Show()',
+    '  $result=$dialog.ShowDialog($owner)',
+    '  $owner.Close()',
+    '  if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.FileName) {',
+    '    [IO.File]::WriteAllText($out, $dialog.FileName, (New-Object Text.UTF8Encoding($false)))',
+    '  }',
+    '} catch {',
+    '  try { [IO.File]::WriteAllText($out, ("ERROR:" + $_.Exception.Message), (New-Object Text.UTF8Encoding($false))) } catch {}',
+    '  exit 1',
+    '}',
+    'exit 0'
+  ];
+  return lines.join('\n');
+}
+
 function powershellCandidates({env = process.env, platform = process.platform} = {}) {
   if (platform !== 'win32') return [];
   const list = [];
@@ -181,6 +243,110 @@ export async function pickFolder({
     }
     logger?.warn({
       event: 'storage.picker.failed',
+      code: String(error?.code ?? 'unknown'),
+      message: String(error?.message ?? '').slice(0, 300)
+    });
+    throw new AppError('PICKER_FAILED', {
+      messageKey: 'errors.pickerFailed',
+      details: {
+        code: String(error?.code ?? 'unknown'),
+        message: String(error?.message ?? '').slice(0, 300)
+      },
+      cause: error,
+      httpStatus: 500
+    });
+  } finally {
+    if (resultFile) {
+      try {
+        rmSync(resultFile, {force: true});
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+}
+
+/**
+ * Show a native Save/Open file dialog. Returns an absolute path, or null when
+ * the user cancelled. Callers must treat a null result as "do nothing".
+ */
+export async function pickFile({
+  mode = 'open',
+  platform = process.platform,
+  timeoutMs = 180000,
+  spawnImpl = spawn,
+  workDir = null,
+  initialDir = '',
+  defaultName = '',
+  filter = null,
+  logger = null,
+  env = process.env
+} = {}) {
+  if (platform !== 'win32') {
+    throw new AppError('PICKER_UNSUPPORTED', {messageKey: 'errors.pickerUnsupported', httpStatus: 501});
+  }
+  if (!['open', 'save'].includes(mode)) {
+    throw new AppError('PICKER_FAILED', {messageKey: 'errors.pickerFailed', httpStatus: 400});
+  }
+  let resultFile;
+  let work = workDir;
+  try {
+    if (!work) work = join(tmpdir(), 'livememory-picker');
+    mkdirSync(work, {recursive: true});
+    resultFile = join(work, `picker-${process.pid}-${Date.now()}-${randomUUID()}.txt`);
+  } catch (error) {
+    throw new AppError('PICKER_FAILED', {
+      messageKey: 'errors.pickerFailed',
+      details: {code: error?.code ?? 'work-dir'},
+      cause: error,
+      httpStatus: 500
+    });
+  }
+
+  const script = buildFilePickerScript({
+    resultFile,
+    initialDir,
+    defaultName,
+    mode,
+    ...(filter ? {filter} : {})
+  });
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const candidates = powershellCandidates({env, platform});
+  let lastError = null;
+
+  try {
+    for (const executable of candidates) {
+      try {
+        const outcome = await runProcess(executable, ['-NoProfile', '-STA', '-EncodedCommand', encoded], {
+          spawnImpl,
+          timeoutMs
+        });
+        if (outcome.code !== 0 && !existsSync(resultFile)) {
+          throw Object.assign(new Error(`picker exited with ${outcome.code}`), {code: 'PICKER_EXIT'});
+        }
+        if (!existsSync(resultFile)) return null;
+        const text = readFileSync(resultFile, 'utf8').replace(/\r/g, '').trim();
+        if (!text) return null;
+        if (text.startsWith('ERROR:')) {
+          throw Object.assign(new Error(text.slice('ERROR:'.length).slice(0, 500)), {code: 'PICKER_SCRIPT'});
+        }
+        if (!isAbsolute(text) || text.includes('\u0000')) {
+          throw Object.assign(new Error('picker returned a non-absolute path'), {code: 'PICKER_PATH'});
+        }
+        return resolve(text);
+      } catch (error) {
+        lastError = error;
+        if (error?.code === 'ENOENT') continue;
+        throw error;
+      }
+    }
+    throw lastError ?? Object.assign(new Error('no PowerShell found'), {code: 'ENOENT'});
+  } catch (error) {
+    if (error?.code === 'PICKER_TIMEOUT') {
+      throw new AppError('PICKER_TIMEOUT', {messageKey: 'errors.pickerTimeout', httpStatus: 408});
+    }
+    logger?.warn({
+      event: 'backup.picker.failed',
       code: String(error?.code ?? 'unknown'),
       message: String(error?.message ?? '').slice(0, 300)
     });

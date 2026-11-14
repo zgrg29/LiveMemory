@@ -3,6 +3,7 @@ import {createModal} from '../dialog.js';
 import {localeDisplayName} from '../i18n.js';
 import {el, formatBytes, formatInteger, pageHead} from '../ui.js';
 import {renderProviderSettingsCard} from './ai-settings.js';
+import {renderBackupCard} from './settings-backup.js';
 
 /**
  * Settings: language, appearance, storage mode, data facts and about.
@@ -16,9 +17,10 @@ export const settingsPage = {
     const t = ctx.t;
     container.append(pageHead({title: t('settings.pageTitle'), subtitle: t('settings.pageSubtitle')}));
 
-    const [storageInfo, location] = await Promise.all([
+    const [storageInfo, location, backupStatus] = await Promise.all([
       api.get('/api/storage'),
-      api.get('/api/storage/location')
+      api.get('/api/storage/location'),
+      api.get('/api/backup/status')
     ]);
     const grid = el('div', {className: 'settings-grid'});
     container.append(grid);
@@ -280,7 +282,8 @@ export const settingsPage = {
     } catch {
       // Settings must still render if the optional provider service is down.
     }
-    grid.append(...[languageCard, themeCard, storageCard, providerCard, youtubeCard, dataLocationCard, dangerCard, aboutCard].filter(Boolean));
+    const backupCard = renderBackupCard(ctx, {status: backupStatus});
+    grid.append(...[languageCard, themeCard, storageCard, providerCard, youtubeCard, dataLocationCard, backupCard, dangerCard, aboutCard].filter(Boolean));
     return undefined;
   }
 };

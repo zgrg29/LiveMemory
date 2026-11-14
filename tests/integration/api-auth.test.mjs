@@ -118,6 +118,7 @@ test('local API requires a browser session and rejects cross-site requests', asy
       'api/viewers',
       'api/sessions',
       'api/storage/location',
+      'api/backup/status',
       'api/ai/providers',
       'api/monitoring'
     ]) {
@@ -135,6 +136,11 @@ test('local API requires a browser session and rejects cross-site requests', asy
       ['POST', 'api/sessions/ses_missing/stop', {}],
       ['POST', 'api/storage/location', {targetDir: 'relative/path'}],
       ['POST', 'api/storage/clear', {mode: 'data', confirmText: 'DELETE'}],
+      ['POST', 'api/backup/create', {path: 'relative.livememory'}],
+      ['POST', 'api/backup/inspect', {path: 'C:\\backup.livememory'}],
+      ['POST', 'api/backup/restore', {path: 'C:\\backup.livememory', confirmText: 'RESTORE'}],
+      ['POST', 'api/backup/jobs/job_missing/cancel', {}],
+      ['POST', 'api/backup/open', {}],
       ['POST', 'api/memory/viewers/viewer_missing/delete', {confirm: true}]
     ];
     for (const [method, path, body] of cases) {

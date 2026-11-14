@@ -21,7 +21,7 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 5. 本轮相关文档：
    - UI → `docs/UI_DESIGN.md`
    - Windows 启动 / EXE → `docs/WINDOWS_RUNTIME.md`
-   - 数据库 / 备份 → `docs/DATA_MODEL.md`、`docs/BACKUP_RESTORE.md`、`docs/PRIVACY_SECURITY.md`
+   - 数据库 / 备份 → `docs/DATA_MODEL.md`、`docs/BACKUP_RESTORE.md`、`docs/BACKUP_FORMAT.md`、`docs/PRIVACY_SECURITY.md`
    - AI 文件协议 → `docs/AI_CONTRACT.md`
    - 平台接入 → `docs/PLATFORM_INTEGRATIONS.md`
 6. 检查实际代码与 `git status`，核对文档与代码是否一致。

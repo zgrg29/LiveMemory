@@ -65,8 +65,8 @@
 ├── logs\
 ├── cache\
 ├── exports\            分析包
-├── backups\            备份（清空/出厂保留）
-├── runtime\            instance.lock / runtime.json / last-error.json
+├── backups\            恢复前安全快照 / 清空/出厂保留
+├── runtime\            instance.lock / runtime.json / last-error.json / restore-journal.json
 └── data-location.json  数据目录位置记录（自定义目录时仍保存在这里）
 
 %LOCALAPPDATA%\LiveMemory-Backups\   删除前的数据库应急快照（数据目录之外）
@@ -133,6 +133,15 @@
 ```
 
 可用 `LIVE_MEMORY_BACKUP_DIR` 覆盖；它位于数据目录之外，避免“先删目录再删备份”。
+
+## 5.2 备份与恢复（RC0 P0-2）
+
+- `.livememory` 默认保存到 `%LOCALAPPDATA%\LiveMemory-Backups\`；Windows 原生“另存为/打开”对话框由固定 PowerShell + WinForms 脚本调用，路径只以 base64 传入，不经 shell、不拼接命令。对话框不可用时可在设置页高级入口手动输入路径。
+- 创建备份：`VACUUM INTO` → 校验 → 临时文件 → 再次校验 → 原子改名；写入中的 `.db`/`-wal` 从不直接复制。覆盖已有文件需要界面二次确认。
+- 恢复：先完整验证，再冻结写入、停止采集与 AI、关闭数据库、保存 `backups/pre-restore-*.db`，然后在 `runtime/restore-*` 暂存、迁移、校验，最后在同一卷内两次原子改名。成功后 `buildRuntime()` 重新打开新库；失败自动回滚。
+- `runtime/restore-journal.json` 是崩溃恢复协议：下一次启动在打开数据库之前根据阶段与文件 SHA-256 回滚或提交。Windows 关闭命令窗口/强制结束进程后不会留下“半套数据”。
+- 恢复期间所有其他写 API 返回 503；未认证请求仍为 401；job 进度端点可读。恢复成功不要求重启 EXE，但界面会强制重新加载控制台。
+- 不需要管理员权限：备份目录、临时文件、`VACUUM INTO`、原生文件对话框、恢复改名都在当前用户可写目录内完成。恢复后 `secrets/` 为空，需要用户重新登录 Bilibili/填写 API Key。
 
 ## 6. 单实例与重复启动
 

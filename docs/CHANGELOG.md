@@ -1,5 +1,28 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r14 — 2026-11-14（RC0 P0-2：完整备份、恢复与跨电脑迁移）
+
+### 新增
+
+- **`.livememory` v1 格式**：STORE ZIP + `manifest.json`（格式版本、创建时间、应用版本/buildId/commit、schema、包含与排除、计数、数据范围、每个文件的 SHA-256）+ `database/livememory.db` + `config/settings.json`。规范见 `docs/BACKUP_FORMAT.md`。
+- **创建**：`VACUUM INTO` 一致快照（含未 checkpoint 的 WAL 数据）→ `PRAGMA integrity_check` → 流式写入临时文件（写入时重算 CRC）→ 重新完整验证 → `fsync` + 原子改名。目标已存在时必须显式覆盖；取消、写入失败、磁盘不足都不留半成品。
+- **校验**：`inspectBackup()` 在暂存目录完整检查 ZIP 结构、条目名、CRC/SHA-256、清单格式/schema/计数、SQLite 完整性；未来格式/schema 给出独立错误码。
+- **恢复**：先验证 → 冻结写入 → 停止采集/AI/SSE → 关闭数据库 → `backups/pre-restore-*.db` 安全快照 → 暂存目录迁移+校验 → `runtime/restore-journal.json` → 两次原子改名 → 新库完整性/计数校验 → 应用设置 → 重建运行时。
+- **崩溃恢复**：启动时在打开数据库前按 journal 阶段与文件 SHA-256 决定回滚或提交；覆盖“第一次改名后”“第二次改名后”“已校验/已应用设置”等中断点。
+- **安全**：拒绝 ZIP Slip、绝对路径、盘符、UNC、反斜杠、`..`、控制字符、目录条目、重复名、符号链接、加密条目、data descriptor、ZIP64、非 STORE、压缩炸弹、超大归档/条目/总量、CRC/SHA 不匹配、损坏 SQLite、伪造格式/schema、含凭据清单。资源上限 2 GiB / 16 条目。
+- **凭据策略**：`secrets/`、`config/ai-providers.json`、日志、缓存、runtime、exports、backups、数据目录指针一律不进入备份；恢复后提示重新登录 Bilibili、重新填写 API Key，YouTube 公开聊天无需登录。
+- **跨电脑**：备份不含绝对路径；恢复到全新数据目录/新 Windows 用户名；恢复后数据库、AI 报告、长期事实、设置保持一致；重启后仍有效。
+- **API**：`/api/backup/status`、`/create`、`/inspect`、`/restore`、`/jobs/:id`、`/jobs/:id/cancel`、`/pick/save`、`/pick/open`、`/open`；全部在 P0-5 会话认证之后。恢复期间未认证仍 401，已认证非 job 请求 503，job 进度可读。
+- **UI**：设置页“备份与恢复”卡片；Windows 原生保存/打开对话框（固定 PowerShell 脚本、base64 传值）；摘要、覆盖二次确认、`RESTORE` 文字确认、阶段进度、取消、三语错误；高级手动路径默认折叠。
+- **Jobs**：内存任务注册表，单任务互斥，进度/取消/结果；不持久化（崩溃恢复由 journal 负责）。
+
+### 验证
+
+- 新增 `tests/unit/backup-format.test.mjs` 9 项、`tests/unit/backup-ui.test.mjs` 5 项、`tests/integration/backup-restore.test.mjs` 10 项；`api-auth.test.mjs` 增加备份端点未认证 401。
+- 覆盖任务要求 24 项：正常备份、WAL 在线一致、取消、写入失败、磁盘不足、校验和、内容缺失、格式不兼容、ZIP Slip、压缩炸弹、超大归档、损坏 SQLite、正常恢复、恢复中途回滚、强制终止进程、恢复后重启、跨电脑、历史观众/事实、AI 结果、旧凭据不导入、恢复期间未授权 API、重复恢复幂等、备份与直播/AI 并发。
+- 全量与正式 EXE 结果见 `docs/STATUS.md` §0.25。
+- 未验证：真实 Windows 文件对话框点击、真实浏览器点击（用户待验收）；备份未加密；不支持两台电脑合并。
+
 ## 0.13.2-r13 — 2026-11-14（RC0 P0-5：本地 API 鉴权与 asInvoker EXE）
 
 ### 安全修复

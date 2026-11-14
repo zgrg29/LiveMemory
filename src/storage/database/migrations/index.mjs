@@ -1023,6 +1023,9 @@ export const MIGRATIONS = Object.freeze([
   }
 ]);
 
+/** Schema version this build understands. Used by backup compatibility checks. */
+export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
 export function currentSchemaVersion(db) {
   const row = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get();
   return Number(row?.version ?? 0);

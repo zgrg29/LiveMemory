@@ -1,10 +1,63 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0 P0-5 本地 HTTP API 鉴权与 Windows 最小权限 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0 P0-2 完整备份、恢复与跨电脑迁移 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮未修改生产数据库、未访问真实平台做长时测试、未调用真实付费 AI、未干扰正在采集的直播、未 Push/Tag/发布。自动化使用 `tests/.tmp` 隔离数据；正式 EXE 使用本机构建与临时数据目录。
+> 本轮未修改生产数据库、未对真实用户数据执行恢复/覆盖/清空、未调用真实付费 AI、未干扰正在采集的直播、未 Push/Tag/发布。自动化使用 `tests/.tmp` 隔离数据；正式 EXE 使用本机构建与临时数据目录。
 
-## 0. 本轮（P0-5 本地 API 认证 + asInvoker）
+## 0. 本轮（P0-2 完整备份与恢复）
+
+完整证据：`log/2026-11-14-backup-restore-p02.md`；格式：`docs/BACKUP_FORMAT.md`；流程：`docs/BACKUP_RESTORE.md`。
+
+### 0.1 原有能力审计
+
+- 已有 `VACUUM INTO` 数据库应急快照：只含数据库，不含设置/凭据，不是跨电脑格式。
+- 数据目录迁移会把 `secrets/` 一起复制，只适合本机换目录。
+- 清空/出厂只有“写前快照”，没有恢复入口；旧 `.livememory` 只有设计文档。
+
+### 0.2 实现
+
+- `src/server/backup/`：`archive.mjs`（流式 ZIP 读取/CRC/SHA/安全条目）、`write-archive.mjs`（流式 STORE 写入）、`manifest.mjs`、`counts.mjs`、`settings.mjs`、`create.mjs`、`inspect.mjs`、`journal.mjs`、`restore.mjs`。
+- 创建：`VACUUM INTO` → `integrity_check` → 临时文件 → 重新完整校验 → `fsync` + 原子改名；目标存在需显式 `overwrite`。取消/写入失败/磁盘不足不留半成品。
+- 恢复：验证 → 冻结 → 停采集/AI/SSE → 关闭 DB → `backups/pre-restore-*.db` → 暂存迁移+校验 → journal → 两次原子改名 → 新库校验 → 设置 → `buildRuntime()`。
+- journal：`runtime/restore-journal.json` 阶段 + SHA-256；启动时在打开数据库前回滚/提交。
+- `src/server/backup-jobs.mjs`：进度、取消、单任务互斥；`src/server/routes.mjs` 新增 `/api/backup/*`；`src/server/app.mjs` 认证先于维护检查，恢复期间 job 进度可读。
+- `src/server/native-dialog.mjs`：原生 Save/Open 文件对话框（固定 PowerShell 脚本、base64、无 shell）。
+- UI：`src/web/js/pages/settings-backup.js` + 设置页卡片 + 三语 i18n；摘要/覆盖确认/`RESTORE` 确认/阶段进度/取消/错误。
+- 构建：`scripts/build-windows.mjs` 增加 backup 必需模块与嵌入标记；新增 `scripts/verify-p0-2-exe.mjs`。
+
+### 0.3 内容与安全
+
+- 包含：场次、事件、观众/映射/昵称、支付、长期画像/事实/证据/版本、AI 结果/证据/汇总/翻译、任务状态、监控目标、设置、schema。
+- 排除：`secrets/`、`config/ai-providers.json`、日志、缓存、runtime、exports、backups、app、数据目录指针、`preferredPort`。
+- 拒绝：ZIP Slip、绝对/盘符/UNC/反斜杠、`.`/`..`、控制字符、目录、重复名、符号链接、加密/data descriptor/ZIP64、非 STORE、压缩炸弹、条目数/大小/总量超限、CRC/SHA、损坏 SQLite、伪造 format/schema、含凭据。
+- 未加密；界面明确提示。所有 API 在 P0-5 认证之后；未认证始终 401。
+
+### 0.4 测试与 EXE
+
+- 新增 `backup-format` 9、`backup-ui` 5、`backup-restore` 10；`api-auth` 增补备份端点 401。
+- 全量 **769 passed / 0 failed / 0 skipped（501,044 ms，2026-11-14）**；schema 16 不变。
+- 正式 EXE：buildId `678e8d47b6c6` / commit `489ce070abca24ced6a8287cb4312cc575b24692` / SHA-256 `fa1e8367bed99ce221b1f20d4f0c7efc3eaf492d499d2f39c9014233f2dbf9e6` / `96,594,432` bytes / `189` assets / `asInvoker`。
+- `verify-p0-2-exe` **13/13**：创建 → 验证 → 全新目录恢复 → 重启 → 再次备份 → 独立校验；`verify-p0-5-exe` **12/12**；`verify-exe` **10/10**。
+- 未验证：真实 Windows 文件对话框点击、真实浏览器点击；真实付费 Provider/真实账号跨电脑；同用户恶意软件/共享目录 ACL。
+
+### 0.5 用户安全升级步骤
+
+1. 更新到 buildId `678e8d47b6c6`；设置页「关于」核对。
+2. 先创建一次完整备份；默认保存到 `%LOCALAPPDATA%\LiveMemory-Backups\`，可用 Windows 对话框另存。
+3. 换电脑：在新电脑启动 LiveMemory，设置 → 备份与恢复 → 选择备份文件 → 验证 → 恢复；不需要管理员权限、旧用户名或旧路径。
+4. 恢复后重新登录 Bilibili、重新填写 AI API Key；YouTube 公开聊天不需要登录。
+5. 若恢复失败，程序会自动回滚；若 Windows 强制结束进程，下次启动按 journal 回滚或提交。不要删除数据目录。
+
+### 0.6 不要做
+
+1. 不要在备份中悄悄加入 `secrets/` 或 API Key。
+2. 不要直接复制运行中的 `.db`/`-wal` 并称为完整备份。
+3. 不要用 `try/catch` 代替 journal 崩溃协议。
+4. 不要接纳未来 format/schema、压缩条目、符号链接或 ZIP Slip；不要放宽 2 GiB/16 条目上限。
+5. 不要在恢复期间允许新的采集/AI 写入，或让旧 DB 连接继续服务。
+6. 不要恢复 `preferredPort`、数据目录指针或旧凭据。
+
+## 0-A 上一轮（P0-5 本地 API 认证 + asInvoker）
 
 完整证据：`log/2026-11-14-local-api-auth-p0.md`。
 
@@ -47,7 +100,7 @@
 4. 不要恢复 `requireAdministrator` 来“解决权限问题”；需要提权的功能必须单独评审。
 5. 不要把 `startServer({auth:false})` 暴露为 CLI/环境变量/HTTP 开关。
 
-## 0-A 上一轮（P0-4 YouTube 暂时性故障误判结束）
+## 0-B 上一轮（P0-4 YouTube 暂时性故障误判结束）
 
 完整证据：`log/2026-11-14-youtube-lifecycle-p0.md`。
 

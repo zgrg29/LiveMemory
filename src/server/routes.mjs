@@ -1,5 +1,5 @@
-import {createReadStream, existsSync, statSync, statfsSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {createReadStream, existsSync, mkdirSync, statSync, statfsSync} from 'node:fs';
+import {dirname, join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
 import {normalizeLocale, resolveLocale, SUPPORTED_LOCALES} from '../shared/locale.mjs';import {
@@ -95,12 +95,22 @@ import {buildSessionAnalysisReport} from '../analytics/ai/report.mjs';
 import {
   RESULT_SCHEMA_VERSION
 } from '../ai/constants.mjs';
-import {currentSchemaVersion} from '../storage/database/migrations/index.mjs';
+import {currentSchemaVersion, LATEST_SCHEMA_VERSION} from '../storage/database/migrations/index.mjs';
 import {databaseSizeBytes} from '../storage/database/connection.mjs';
 import {readDataLocation} from '../shared/data-location.mjs';
 import {relocateDataDir, validateTarget, __internal as relocationInternal} from './relocation.mjs';
-import {openFolder, pickFolder} from './native-dialog.mjs';
+import {openFolder, pickFile, pickFolder} from './native-dialog.mjs';
 import {backupDirectory, clearData, clearPreview, createDatabaseBackup} from './maintenance.mjs';
+import {
+  BACKUP_EXCLUDED,
+  BACKUP_EXTENSION,
+  BACKUP_INCLUDED,
+  BACKUP_LIMITS,
+  RESTORE_CONFIRM_WORD
+} from './backup/constants.mjs';
+import {createBackup, normalizeBackupDestination} from './backup/create.mjs';
+import {inspectBackup} from './backup/inspect.mjs';
+import {restoreBackup} from './backup/restore.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
 import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
 import {sessionIdRequiredError} from '../shared/recording.mjs';
@@ -313,6 +323,79 @@ function storageLocation(deps) {
     recording: Boolean(live),
     activeSessionId: live?.id ?? null
   };
+}
+
+function defaultBackupFileName(now = Date.now()) {
+  const date = new Date(now);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `LiveMemory-Backup-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}${BACKUP_EXTENSION}`;
+}
+
+function backupStatusPayload(deps) {
+  const sessions = deps.db.prepare('SELECT COUNT(*) AS count FROM sessions').get();
+  const viewers = deps.db.prepare('SELECT COUNT(*) AS count FROM viewers').get();
+  const events = deps.db.prepare('SELECT COUNT(*) AS count FROM events').get();
+  const live = deps.db.prepare("SELECT id FROM sessions WHERE status = 'live' LIMIT 1").get();
+  const running = deps.backupJobs?.running() ?? null;
+  return {
+    dataDir: deps.paths.root,
+    backupDir: backupDirectory({env: deps.env}),
+    extension: BACKUP_EXTENSION,
+    defaultFileName: defaultBackupFileName(),
+    counts: {
+      sessions: Number(sessions?.count ?? 0),
+      viewers: Number(viewers?.count ?? 0),
+      events: Number(events?.count ?? 0)
+    },
+    recording: Boolean(live),
+    activeSessionId: live?.id ?? null,
+    encryption: false,
+    credentialsIncluded: false,
+    included: BACKUP_INCLUDED,
+    excluded: BACKUP_EXCLUDED,
+    limits: {maxArchiveBytes: BACKUP_LIMITS.maxArchiveBytes},
+    busy: running
+  };
+}
+
+function assertNoBackupJob(deps) {
+  if (deps.backupJobs?.running()) {
+    throw new AppError('BACKUP_BUSY', {
+      messageKey: 'errors.backupBusy',
+      details: {operation: 'maintenance'},
+      httpStatus: 409
+    });
+  }
+}
+
+function requireBackupFilePath(value, {mustExist = false} = {}) {
+  const raw = String(value ?? '').trim();
+  if (!raw || raw.length > 4096 || raw.includes('\u0000')) {
+    throw new AppError('BACKUP_PATH_INVALID', {messageKey: 'errors.backupPathInvalid', httpStatus: 400});
+  }
+  if (!/^[a-zA-Z]:[\\/]|^\//.test(raw) || /^\\\\/.test(raw)) {
+    throw new AppError('BACKUP_PATH_INVALID', {
+      messageKey: 'errors.backupPathInvalid',
+      details: {reason: 'not-local-absolute'},
+      httpStatus: 400
+    });
+  }
+  const target = resolve(raw);
+  if (!target.toLowerCase().endsWith(BACKUP_EXTENSION)) {
+    throw new AppError('BACKUP_PATH_INVALID', {
+      messageKey: 'errors.backupPathInvalid',
+      details: {reason: 'extension', expected: BACKUP_EXTENSION},
+      httpStatus: 400
+    });
+  }
+  if (mustExist && !existsSync(target)) {
+    throw new AppError('BACKUP_FILE_NOT_FOUND', {
+      messageKey: 'errors.backupFileNotFound',
+      details: {path: target},
+      httpStatus: 404
+    });
+  }
+  return target;
 }
 
 /**
@@ -958,6 +1041,7 @@ export function buildRoutes() {
         if (deps.maintenance) {
           throw new AppError('MAINTENANCE', {messageKey: 'errors.maintenance', httpStatus: 503});
         }
+        assertNoBackupJob(deps);
         deps.maintenance = true;
         try {
           const result = await relocateDataDir({
@@ -1014,6 +1098,189 @@ export function buildRoutes() {
       }
     },
     {
+      method: 'GET',
+      path: '/api/backup/status',
+      handler: ({res, deps}) => sendJson(res, 200, backupStatusPayload(deps))
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/pick/save',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const initialDir = typeof body.initialDir === 'string' && body.initialDir
+          ? body.initialDir
+          : backupDirectory({env: deps.env});
+        const selected = await pickFile({
+          mode: 'save',
+          workDir: deps.paths.cache,
+          initialDir,
+          defaultName: typeof body.defaultName === 'string' && body.defaultName
+            ? body.defaultName
+            : defaultBackupFileName(),
+          logger: deps.logger
+        });
+        sendJson(res, 200, {path: selected});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/pick/open',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        const initialDir = typeof body.initialDir === 'string' && body.initialDir
+          ? body.initialDir
+          : backupDirectory({env: deps.env});
+        const selected = await pickFile({
+          mode: 'open',
+          workDir: deps.paths.cache,
+          initialDir,
+          logger: deps.logger
+        });
+        sendJson(res, 200, {path: selected});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/create',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        let target;
+        if (typeof body.path === 'string' && body.path.trim()) {
+          target = normalizeBackupDestination(body.path);
+        } else {
+          const directory = backupDirectory({env: deps.env});
+          mkdirSync(directory, {recursive: true});
+          target = normalizeBackupDestination(join(directory, defaultBackupFileName()));
+        }
+        const job = deps.backupJobs.start({
+          kind: 'create',
+          run: ({signal, progress}) => createBackup({
+            db: deps.db,
+            paths: deps.paths,
+            settings: deps.settingsStore.get(),
+            file: target,
+            signal,
+            onProgress: progress,
+            overwrite: body.overwrite === true,
+            appVersion: deps.buildInfo?.version ?? APP_VERSION,
+            buildInfo: deps.buildInfo ?? null
+          })
+        });
+        deps.logger?.info({event: 'backup.create.started', jobId: job.id, file: target});
+        sendJson(res, 202, {job});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/inspect',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const target = requireBackupFilePath(body.path, {mustExist: true});
+        const summary = await inspectBackup({
+          file: target,
+          now: Date.now(),
+          currentSchemaVersion: LATEST_SCHEMA_VERSION
+        });
+        deps.logger?.info({
+          event: 'backup.inspect.ok',
+          file: target,
+          schemaVersion: summary.schemaVersion,
+          counts: summary.counts
+        });
+        sendJson(res, 200, {backup: summary});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/restore',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req);
+        const target = requireBackupFilePath(body.path, {mustExist: true});
+        if (body.confirmText !== RESTORE_CONFIRM_WORD) {
+          throw new AppError('RESTORE_CONFIRM_REQUIRED', {
+            messageKey: 'errors.restoreConfirmRequired',
+            details: {expected: RESTORE_CONFIRM_WORD},
+            httpStatus: 400
+          });
+        }
+        if (deps.maintenance) {
+          throw new AppError('MAINTENANCE', {messageKey: 'errors.maintenance', httpStatus: 503});
+        }
+        if (deps.backupJobs.running()) {
+          throw new AppError('BACKUP_BUSY', {messageKey: 'errors.backupBusy', httpStatus: 409});
+        }
+        // Block every other write from the moment the request is accepted, not
+        // only once the background task starts touching the database.
+        deps.maintenance = true;
+        try {
+          const job = deps.backupJobs.start({
+            kind: 'restore',
+            run: async ({signal, progress}) => {
+              try {
+                return await restoreBackup({
+                  deps,
+                  file: target,
+                  confirmText: body.confirmText,
+                  signal,
+                  logger: deps.logger,
+                  onProgress: progress
+                });
+              } finally {
+                deps.maintenance = false;
+              }
+            }
+          });
+          sendJson(res, 202, {job});
+        } catch (error) {
+          deps.maintenance = false;
+          throw error;
+        }
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/backup/jobs/:id',
+      handler: ({res, deps, params}) => {
+        const job = deps.backupJobs.get(params.id);
+        if (!job) {
+          throw new AppError('BACKUP_JOB_NOT_FOUND', {
+            messageKey: 'errors.backupJobNotFound',
+            httpStatus: 404
+          });
+        }
+        sendJson(res, 200, {job});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/jobs/:id/cancel',
+      handler: ({res, deps, params}) => {
+        const job = deps.backupJobs.cancel(params.id);
+        if (!job) {
+          throw new AppError('BACKUP_JOB_NOT_FOUND', {
+            messageKey: 'errors.backupJobNotFound',
+            httpStatus: 404
+          });
+        }
+        sendJson(res, 200, {job});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/backup/open',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        let directory = backupDirectory({env: deps.env});
+        if (typeof body.jobId === 'string') {
+          const file = deps.backupJobs.fileFor(body.jobId);
+          if (file) directory = dirname(file);
+        }
+        mkdirSync(directory, {recursive: true});
+        const result = await openFolder(directory);
+        sendJson(res, 200, {opened: result.opened, path: directory});
+      }
+    },
+    {
       method: 'POST',
       path: '/api/storage/clear',
       handler: async ({req, res, deps}) => {
@@ -1033,6 +1300,7 @@ export function buildRoutes() {
         if (deps.maintenance) {
           throw new AppError('MAINTENANCE', {messageKey: 'errors.maintenance', httpStatus: 503});
         }
+        assertNoBackupJob(deps);
         deps.maintenance = true;
         try {
           const result = await clearData({

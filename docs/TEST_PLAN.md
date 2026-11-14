@@ -10,7 +10,7 @@
 | UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
 | 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；AI 单入口与报告只读 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
 | 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
-| 跨电脑迁移 | 备份导出/导入一致性 | 未开始（M5） |
+| 可移植备份 | 在线快照、格式/校验、ZIP 安全、事务化恢复、崩溃回滚、跨目录迁移 | `tests/unit/backup-format.test.mjs`、`tests/unit/backup-ui.test.mjs`、`tests/integration/backup-restore.test.mjs`、`scripts/verify-p0-2-exe.mjs` |
 
 ## 2. 运行方式
 
@@ -73,6 +73,8 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `identity-labels.test.mjs` | 三语标签为「可识别观众」、未识别消息警告、直播/历史/AI 字段使用、CSS 类；禁止把可识别观众写成总观众 |
 | `ai-prompts.test.mjs` | 三语提示词的批次/汇总/来源字段语义一致、提示词版本记录、Schema 1.0/1.1 兼容、未知字段拒绝、真实包元数据构造结果通过语义校验 |
 | `ai-ui.test.mjs` | AI 页面无 innerHTML/eval、完整端点、历史详情报告入口、三语 M6 键、AI 与本地统计分离、切片提示不声称视频分析 |
+| `backup-format.test.mjs` | STORE 读取、ZIP Slip/绝对/盘符/反斜杠/目录/重复名、符号链接/压缩/data descriptor、压缩炸弹/条目数/大小/总量上限、CRC 篡改/截断、manifest 伪造格式/未来版本/未来 schema/凭据/加密、设置白名单、目标路径、文件选择器脚本 |
+| `backup-ui.test.mjs` | 设置页真实卡片与端点、预览字段（时间/规模/场次/观众/记忆/报告/凭据/覆盖/重连）、三语键与占位符、全部错误码翻译、无 innerHTML/alert |
 
 ### 3.2 集成
 
@@ -95,6 +97,20 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `history-search.test.mjs` | 主播名称/稳定 ID、中日英混合标题、观众稳定 ID/昵称/历史昵称、同名不同身份不合并、跨平台/跨主播、筛选组合、隐藏归档计数、分页、通配符字面、匿名不可检索、1200 场性能 |
 | `history-api.test.mjs` | HTTP 搜索/筛选、归档/取消、列表与详情两个停止端点、删除确认与 400/409、观众单场发言、删除后 404 与无关场次保留 |
 | `identity-stats.test.mjs` | 同一用户多弹幕、多用户、同名不同 UID、UID 缺失/空串/数字 0、数字与字符串 UID 一致、礼物/SC/大航海、跨场次全识别/部分识别、summary/history-search/serializer 三处一致、结束后计数不变 |
+| `backup-restore.test.mjs` | 完整备份内容/清单/无凭据；录制中 + WAL 未 checkpoint 备份一致；中途取消；写入失败/磁盘不足/覆盖冲突；损坏/缺失/未来版本/损坏 SQLite/ZIP Slip/压缩炸弹拒绝；全新绝对路径恢复并核对场次/观众/AI 报告/长期事实/设置/无凭据/无旧绝对路径；重新启动；重复恢复幂等；恢复中途失败回滚；启动 journal 回滚与提交；维护期间 401/503/job 可读；AI 写入调度期间备份一致性 |
+| `api-auth.test.mjs` | 备份 status/create/inspect/restore/jobs/open/pick 全部要求会话 Cookie |
+
+## 4.0 本轮结果（2026-11-14，RC0 P0-2 完整备份/恢复）
+
+```text
+新增专项：3 个文件 / 24 个用例
+  tests/unit/backup-format.test.mjs        9
+  tests/unit/backup-ui.test.mjs            5
+  tests/integration/backup-restore.test.mjs 10
+全量：见 docs/STATUS.md §0.25（node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"）
+```
+
+覆盖任务要求的 24 项：正常备份、WAL 在线一致、取消、写入失败、磁盘不足、校验和错误、内容缺失、格式不兼容、ZIP Slip、压缩炸弹、超大归档、损坏 SQLite、正常恢复、恢复中途失败回滚、恢复时强制终止进程（journal 回滚/提交）、恢复后重启、跨电脑新目录、历史观众与事实、AI 结果、旧凭据不导入、恢复期间未授权 API、重复恢复幂等、备份与直播采集并发、备份与 AI 写入并发。
 
 ## 4. 本轮结果（2026-11-12，观众身份专项）
 

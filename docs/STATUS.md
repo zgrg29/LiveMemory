@@ -1,8 +1,96 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-5：本地 API 会话认证 + asInvoker EXE；745 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-14（RC0 P0-2：完整备份/恢复/跨电脑迁移；769 tests；schema 16；结果 Schema 1.3.0；提示词 v13.2）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.25 RC0 P0-2：完整备份、恢复与跨电脑迁移（2026-11-14）
+
+完整证据与复现见 `log/2026-11-14-backup-restore-p02.md`；格式规范见 `docs/BACKUP_FORMAT.md`，用户流程见 `docs/BACKUP_RESTORE.md`。**未修改生产数据库；未对真实用户数据执行恢复/覆盖/清空；未 Push/Tag/发布。** 自动化使用 `tests/.tmp` 隔离目录；正式 EXE 使用正式构建 + 临时数据目录。
+
+### 0.25.1 原有能力审计
+
+- 已有 `VACUUM INTO` 数据库应急快照（`maintenance.mjs`），仅数据库、不含设置/长期记忆以外的文件，且不是跨电脑格式；设置页只有危险区快照按钮。
+- 已有数据目录迁移（`relocation.mjs`）会连同 `secrets/` 一起复制，属于本机换目录，不是可移植备份。
+- 清空/恢复出厂只有“写前快照”，没有恢复入口。
+- 旧 `docs/BACKUP_RESTORE.md` 仅设计，`.livememory` 未实现；本轮在其基础上落地，并保留应急快照作为独立能力。
+
+### 0.25.2 备份内容与格式
+
+- `.livememory` v1 = STORE ZIP：`manifest.json` + `database/livememory.db` + `config/settings.json`，只允许这 3 个条目。
+- 包含：场次、事件/弹幕、观众身份/映射/昵称、支付与币种合计、长期画像/事实/证据/版本、AI 报告/证据/汇总节点/翻译缓存、AI/记忆任务状态、监控目标、设置、schema。
+- 排除：`secrets/`、`config/ai-providers.json`、日志、缓存、runtime、exports、backups、app、数据目录指针；`preferredPort` 也不写入设置。
+- manifest 记录格式版本、创建时间、应用版本/buildId/commit、schema、包含/排除原因、行数、数据范围、每个文件的字节数与 SHA-256；`contains_credentials` 必须为 `false`。
+- 未来 format/schema 返回独立错误码；加密归档明确拒绝（v1 不支持）。
+- 备份未加密；界面明确提示包含观众数据，需妥善保管。
+
+### 0.25.3 SQLite 一致性
+
+- 创建时 `VACUUM INTO` 生成一致快照（包含已提交的 WAL 内容），再 `PRAGMA integrity_check`；不复制正在写入的 `.db`。
+- 写入临时文件时再次计算 CRC，防止源文件在两次读取之间变化；之后重新打开临时归档做完整校验（ZIP 结构、CRC/SHA、清单、schema、计数、数据库完整性）。
+- 实测：直播采集进行中 + `wal_autocheckpoint=0` + WAL 非空时创建备份，快照事件数位于备份开始与结束时的实时计数之间，快照自身 `integrity_check` 通过，原库保持完整。
+- 取消、写入失败、磁盘不足、目标冲突：删除临时文件/暂存目录，原库与已有目标文件不变。
+- 目标已存在需 `overwrite:true`，界面二次确认；不会静默覆盖。
+
+### 0.25.4 恢复与崩溃回滚
+
+- 顺序：完整验证 → 冻结写入（`maintenance`）→ 停止采集/AI/翻译/SSE → 关闭数据库 → `backups/pre-restore-*.db` 安全快照 → 暂存目录迁移+完整性检查 → journal → 两次原子改名 → 新库完整性/计数校验 → 应用设置 → `buildRuntime()` 重建运行时。
+- `runtime/restore-journal.json` 阶段：`prepared → committing → placed → verified → settings`；启动时在打开数据库前按阶段与文件 SHA-256 决定回滚/提交。
+- 实测三个崩溃点：仅暂存（清理并保留原库）、第一次改名后目标缺失（回滚）、两次改名后（提交）；均在 `startServer()` 启动恢复中完成。
+- 进程内失败（数据库已切换后注入异常）回滚成功，行数与场次标题恢复原值，HTTP 继续服务。
+- 恢复后删除 `runtime/ai-v13.json`；旧数据库连接、SSE、AI 任务与采集状态不再引用被替换的数据；遗留 `live` 场次由启动恢复标记 `interrupted`。
+- 设置恢复经白名单校验；不恢复端口、路径指针与任何凭据。
+- 恢复成功不需要重启 EXE；界面强制重新加载，并提示重新登录 Bilibili / 重新填写 API Key。
+
+### 0.25.5 文件安全
+
+- 读取端拒绝：ZIP Slip、绝对路径、盘符、UNC、反斜杠、`.`/`..`、控制字符、目录条目、重复名、符号链接、加密条目、data descriptor、ZIP64、非 STORE、压缩炸弹、条目数/单条/总量/归档大小超限、CRC/SHA 不匹配、损坏 SQLite、伪造 format/schema、含凭据清单。
+- 资源上限：归档 2 GiB、解压总量 2 GiB、单条目 2 GiB、条目 16、中央目录 4 MiB、manifest 1 MiB、settings 256 KiB。
+- 解压目标由程序固定生成于 `runtime/restore-*`，不采用归档条目名作为落盘路径。
+- 备份/恢复全部 API 在 P0-5 会话认证之后；无新增无认证端点。
+- 维护期间认证先于维护检查：未认证仍 401；已认证的非 job 请求 503；当前 job 进度可读。
+- 仅允许本机绝对 `.livememory` 目标/源；拒绝 UNC 网络路径。
+
+### 0.25.6 测试
+
+- 新增 3 个文件 / 24 个用例：
+  - `tests/unit/backup-format.test.mjs` 9：STORE 读取、ZIP Slip/绝对/盘符/反斜杠/目录/重复名、符号链接/压缩/data descriptor、压缩炸弹/条目数/大小/总量、CRC 篡改/截断、manifest 未来版本/schema/凭据/加密、设置白名单、目标路径、文件选择器脚本。
+  - `tests/unit/backup-ui.test.mjs` 5：设置页真实端点、预览字段、三语键/占位符、全部错误码翻译、无 innerHTML/alert。
+  - `tests/integration/backup-restore.test.mjs` 10：完整备份内容、WAL 在线一致、取消、写入失败/磁盘不足/覆盖冲突、损坏/缺失/未来版本/损坏 SQLite/ZIP Slip/炸弹、全新目录恢复（场次/观众/AI 结果/长期事实/设置/无凭据/无旧绝对路径）、重启、重复恢复幂等、恢复中途回滚、journal 回滚/提交、维护期间认证、AI 写入调度并发。
+  - `tests/integration/api-auth.test.mjs` 增补：备份 status/create/inspect/restore/jobs/open/pick 未认证 401。
+- 全量：**769 passed / 0 failed / 0 skipped（501,044 ms，2026-11-14，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**。
+- schema 仍为 16；无数据库迁移；未改金额/身份/去重/AI 语义。
+
+### 0.25.7 正式 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,594,432` bytes（92.1 MB） |
+| SHA-256 | `fa1e8367bed99ce221b1f20d4f0c7efc3eaf492d499d2f39c9014233f2dbf9e6` |
+| buildId | `678e8d47b6c6` |
+| commit | `489ce070abca24ced6a8287cb4312cc575b24692` |
+| builtAt | `2026-11-14T05:34:55.662Z` |
+| 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+
+- `scripts/verify-p0-2-exe.mjs`：**13/13**。正式 EXE 无 UAC 启动；认证后创建备份（约 0.59 MB）；检查摘要（1 场 / 6 事件 / 6 观众 / 1 AI 报告 / 6 长期事实）；恢复到全新绝对目录并服务；`secrets/` 为空；重启后行数与事实逐字节一致；再次备份并通过独立完整校验。
+- `scripts/verify-p0-5-exe.mjs`：**12/12**（认证/Origin/Host/SSE/token 不泄漏/重启失效）。
+- `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
+- **性质**：正式 EXE + 真实 HTTP + 隔离数据目录 + 本机 Python/Node 生成的种子数据；**不是**真实浏览器点击，**不是**真实 Windows 文件对话框点击。
+
+### 0.25.8 边界与待验收
+
+- **真实 Windows 文件选择器点击未验收**：自动化直接向 API 传路径；`pick/save`、`pick/open` 脚本由单测覆盖（base64、无命令注入、取消/错误），但未在真实桌面手动点击。
+- **真实浏览器点击/自动打开未验收**：使用与浏览器相同的 HTTP 握手。
+- **备份未加密**：包含观众昵称/聊天/AI 报告；用户需自行保管。未实现加密，也不声称加密。
+- **不支持两台电脑合并**：重复恢复是整体替换，不是追加；幂等性指“同一备份重复恢复后行数不变”。
+- **不支持降级**：未来 format/schema 明确拒绝。
+- **同 Windows 用户恶意软件**仍可读取数据目录与备份文件；HTTP 认证与文件校验不能消除该用户级威胁。
+- 未使用真实付费 Provider、真实 Bilibili/YouTube 账号进行跨电脑验收；数据来自本地模拟/导入。
+
+### 0.25.9 关闭结论
+
+**P0-2 代码级与正式 EXE 级可关闭**：备份为真正单文件、可验证、可恢复、可跨目录迁移；SQLite WAL 在线一致性、取消/失败/磁盘不足、ZIP Slip/炸弹/超大/损坏/未来版本、恢复回滚与强制终止后的 journal 恢复、凭据排除、旧绝对路径排除、重启与再次备份闭环均有自动化与正式 EXE 证据。真实桌面文件对话框与真实浏览器点击保留为用户待验收，不阻塞代码关闭。
 
 ## 0.24 RC0 P0-5：本地 HTTP API 鉴权与 Windows 最小权限（2026-11-14）
 

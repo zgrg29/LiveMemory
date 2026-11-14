@@ -14,8 +14,10 @@ LiveMemory.exe (Node SEA)
          ├─ src/server/settings-store.mjs  config/settings.json
          ├─ src/server/relocation.mjs    数据目录迁移/回滚
          ├─ src/server/maintenance.mjs   清空数据/出厂快照
+         ├─ src/server/backup/           便携备份创建/校验、恢复、崩溃 journal
+         ├─ src/server/backup-jobs.mjs   备份/恢复进度、取消、单任务互斥
          ├─ src/server/session-admin.mjs 单场停止/归档/永久删除（列表与详情共用）
-         ├─ src/server/native-dialog.mjs 原生目录选择/打开文件夹
+         ├─ src/server/native-dialog.mjs 原生目录/文件选择、打开文件夹
          ├─ src/server/logger.mjs        脱敏 JSONL 日志
          ├─ src/storage/                node:sqlite + 迁移 + 仓储（含 broadcasters）
          ├─ src/shared/data-location.mjs 启动位置记录（LOCALAPPDATA + APPDATA 镜像）
@@ -444,6 +446,15 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 | POST | `/api/storage/open` | 在 Explorer 打开受管目录 |
 | GET | `/api/storage/clear/preview` | 删除范围与记录中状态 |
 | POST | `/api/storage/backup` | 数据库应急快照（`VACUUM INTO`） |
+| GET | `/api/backup/status` | 备份目录、当前计数、是否记录中、是否已有任务 |
+| POST | `/api/backup/pick/save` | Windows 原生“另存为”对话框（不出命令注入点） |
+| POST | `/api/backup/pick/open` | Windows 原生“打开”对话框 |
+| POST | `/api/backup/create` | 启动创建任务（202 + job；可覆盖需显式 `overwrite`） |
+| POST | `/api/backup/inspect` | 完整验证并返回摘要，不修改数据 |
+| POST | `/api/backup/restore` | 启动恢复任务（`confirmText:"RESTORE"`；维护模式） |
+| GET | `/api/backup/jobs/:id` | 备份/恢复进度（维护期间仍可读） |
+| POST | `/api/backup/jobs/:id/cancel` | 取消创建任务（恢复不可中途取消） |
+| POST | `/api/backup/open` | 打开备份文件所在文件夹 |
 | POST | `/api/storage/clear` | `data` / `factory` 清空（确认文字） |
 | GET | `/api/broadcasters` | 主播列表、当前主播、未确认历史 |
 | GET | `/api/broadcasters/:id` | 主播汇总、新/回访、支持 |
@@ -477,7 +488,32 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 5. 调用 launcher 的 `beginLockMove` 转移单实例锁，写 `data-location.json`；
 6. `deps` 的 runtime getter 切换到新运行时；失败则回滚目录、位置记录与原运行时。
 
-维护期间 `deps.maintenance` 使除 relocation/clear/health/status 外的 API 返回 503。
+维护期间 `deps.maintenance` 使除 relocation/clear/health/status 外的 API 返回 503；认证始终先于维护检查执行。
+
+## 5.2 便携备份与恢复（RC0 P0-2）
+
+```text
+src/server/backup/
+  constants.mjs     格式版本、条目白名单、排除清单、资源上限
+  archive.mjs       文件流式 ZIP 读取、条目名校验、CRC/SHA、安全提取
+  write-archive.mjs 流式 STORE 写入（不把数据库读入内存）
+  manifest.mjs      清单构建与严格校验（未来版本/凭据/加密）
+  counts.mjs        manifest/校验共用的行数与时间范围
+  settings.mjs      设置净化与白名单
+  create.mjs        VACUUM INTO → 校验 → 临时归档 → 再校验 → 原子改名
+  inspect.mjs       归档/清单/文件/SQLite/schema/计数全量校验 + 暂存
+  journal.mjs       runtime/restore-journal.json 状态机与启动恢复
+  restore.mjs       安全快照 → 冻结 → 关闭 → 切换 → 校验 → 重建运行时
+```
+
+关键不变量：
+
+1. 备份只在 `VACUUM INTO` 快照上工作，从不复制正在写入的 `.db`/`-wal`。
+2. 写入临时文件、重新读取验证后才改名；失败不留半成品。
+3. 恢复只做同一数据目录内的文件改名，暂存库在切换前完成迁移与 `integrity_check`。
+4. journal 在第一次改名之前落盘；启动时按文件 SHA-256 与阶段决定回滚或提交。
+5. `deps.relocation.stopAdapters/closeDatabase/build/swap` 复用数据目录迁移的运行时切换通道；恢复后旧连接、SSE、AI 状态全部失效。
+6. 备份/恢复 API 全部在 P0-5 会话认证之后；恢复期间未认证请求仍为 401，已认证的非 job 请求为 503。
 
 ## 6. 并发与一致性
 

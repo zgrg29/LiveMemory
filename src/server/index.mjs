@@ -16,6 +16,8 @@ import {ReportTranslationService} from '../ai/translation/service.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
+import {recoverRestoreJournal} from './backup/journal.mjs';
+import {BackupJobRegistry} from './backup-jobs.mjs';
 import {serializeEvent} from './serializers.mjs';
 import {detectSystemLocale} from '../shared/locale.mjs';
 import {AppError} from '../shared/errors.mjs';
@@ -99,9 +101,17 @@ export async function startServer({
   });
   let runtime = null;
 
-  function buildRuntime(dir) {
+  function buildRuntime(dir, {skipRestoreRecovery = false} = {}) {
     const paths = ensureDirectories(createPaths(dir));
     assertWritable(paths);
+    // A backup restore can be interrupted between two atomic renames. Resolve
+    // the journal before opening the database so the app never starts on a
+    // half-swapped folder. The restore's own in-process rebuild passes
+    // `skipRestoreRecovery`: it still owns the journal and must be able to roll
+    // back if opening the migrated database fails.
+    const restoreRecovery = skipRestoreRecovery
+      ? {action: 'in-progress'}
+      : recoverRestoreJournal({paths, logger});
     const settingsStore = new SettingsStore({file: paths.settingsFile, logger});
     settingsStore.load();
     const db = openDatabase({file: paths.databaseFile});
@@ -189,7 +199,8 @@ export async function startServer({
       analysisRunner,
       translationService,
       recovered,
-      migration
+      migration,
+      restoreRecovery
     };
   }
 
@@ -231,7 +242,9 @@ export async function startServer({
   runtime = buildRuntime(dataDir);
   const startedAt = now();
   const state = {port: 0, maintenance: false};
+  const backupJobs = new BackupJobRegistry({now});
   const deps = {
+    backupJobs,
     get paths() { return runtime.paths; },
     get db() { return runtime.db; },
     get settingsStore() { return runtime.settingsStore; },
@@ -256,7 +269,9 @@ export async function startServer({
     relocation: {
       get current() { return runtime; },
       stop: () => stopRuntime(runtime),
-      build: (dir) => buildRuntime(dir),
+      stopAdapters: () => stopAdapters(runtime),
+      closeDatabase: () => closeDatabase(runtime.db),
+      build: (dir, options) => buildRuntime(dir, options),
       close: (instance) => stopRuntime(instance),
       swap: (next) => { runtime = next; },
       beginLockMove
@@ -319,6 +334,7 @@ export async function startServer({
     dataDir: deps.paths.root,
     schemaVersion: runtime.migration.to,
     recoveredSessions: runtime.recovered.length,
+    restoreRecovery: runtime.restoreRecovery?.action ?? 'none',
     version: buildInfo?.version ?? APP_VERSION,
     buildId: buildInfo?.buildId ?? null,
     commit: buildInfo?.commit ?? null,
@@ -399,6 +415,7 @@ export async function startServer({
     get translationService() { return runtime.translationService; },
     get runtime() { return runtime; },
     get deps() { return deps; },
+    backupJobs,
     hub,
     get recovered() { return runtime.recovered; },
     get migration() { return runtime.migration; },

@@ -32,6 +32,25 @@ export function crc32(buffer) {
   return (crc ^ -1) >>> 0;
 }
 
+/**
+ * Incremental CRC-32 for streaming files. The backup writer must hash a
+ * multi-hundred-megabyte database without loading it into memory.
+ */
+export function createCrc32() {
+  let crc = -1;
+  return {
+    update(buffer) {
+      for (let index = 0; index < buffer.length; index += 1) {
+        crc = CRC_TABLE[(crc ^ buffer[index]) & 0xff] ^ (crc >>> 8);
+      }
+      return this;
+    },
+    digest() {
+      return (crc ^ -1) >>> 0;
+    }
+  };
+}
+
 /** MS-DOS date/time pair for the fixed 1980-01-01 00:00 timestamp. */
 const FIXED_DOS_TIME = 0;
 const FIXED_DOS_DATE = (0 << 9) | (1 << 5) | 1;

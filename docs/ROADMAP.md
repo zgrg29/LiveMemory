@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.2（2026-11-14，RC0 P0-2）：完整备份、恢复与跨电脑迁移。新增 `.livememory` v1（STORE ZIP + manifest + SHA-256/CRC + schema/format 兼容检查）、SQLite `VACUUM INTO` 一致快照、事务化恢复 + `runtime/restore-journal.json` 崩溃回滚、ZIP Slip/压缩炸弹/超大/损坏/未来版本拒绝、三语设置页备份/预览/验证/恢复/进度/取消；备份明确排除 API Key 与平台登录。24 个专项测试、全量通过；正式 EXE 完成“备份 → 全新目录恢复 → 重启 → 再次备份”闭环。完整说明见 `docs/BACKUP_FORMAT.md`、`docs/BACKUP_RESTORE.md`、`docs/STATUS.md` §0.25、`docs/HANDOFF.md` §0 与 `log/2026-11-14-backup-restore-p02.md`。
 > v0.13.2（2026-11-14，RC0 P0-5）：本地 HTTP API 会话认证 + 发布 EXE 改为 `asInvoker`。除 health/auth 外所有 `/api/*`（含 SSE）要求启动器建立的一次性 fragment token → `HttpOnly; SameSite=Strict` Cookie；`Origin:null`/伪造 Origin/恶意 Host/跨站元数据拒绝；重启旧凭据失效；删除管理员检查。正式 EXE `75588ba16aec` 在 Low Mandatory Level 直接启动，12/12 安全矩阵 + 10/10 功能矩阵通过。完整说明见 `docs/STATUS.md` §0.24、`docs/HANDOFF.md` §0 与 `log/2026-11-14-local-api-auth-p0.md`。
 > v0.13.2（2026-11-14，RC0 P0-4）：YouTube 暂时性故障不再误判直播结束；429/5xx/断网/异常 200 进入可恢复重连，连续失败只进入可恢复 `failed` 并继续退避；缺 `continuationContents` 改为 invalid；stale continuation 先重取再 poll；观看页两次 ended 或聊天明确关闭才结束；UI 显示重连/最近故障/数据保留。10 个 unit + 2 个 integration 专项、721 自动化测试；Bilibili 53 项生命周期回归通过；正式 EXE `59b7928cb78a`（commit `31886b2`）asInvoker 副本 + 本地假 YouTube 实跑 3 分钟断连 → 同 session 恢复 → 去重 → `platform_ended`。完整说明见 `docs/STATUS.md` §0.23、`docs/HANDOFF.md` §0-A 与 `log/2026-11-14-youtube-lifecycle-p0.md`。
 > v0.13.2（2026-11-14，RC0 P0-1）：AI 定向补答回归修复；补答按缺失子集校验并与首答合并，失败时保留首答合法观众、只把缺失观众标 `failed`；补答附带缺失观众摘录；10 个新回归、708 自动化测试；正式 EXE `e441070b57b5` + 生产数据只读副本 Mock 回放 88/89 → 重启 Resume → 89/89。完整说明见 `docs/STATUS.md` §0.22、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-memory-supplement-p0.md`。
@@ -12,7 +13,24 @@
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
-> 仍未完成：RC0 P0-2 完整备份/恢复、P0-3 真实付费 API 验收；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-5 代码级与正式 EXE 级已关闭（真实桌面交互列为用户待验收）。
+> 仍未完成：P0-3 真实付费 API 验收；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-2 与 P0-5 代码级与正式 EXE 级已关闭（真实桌面文件对话框交互列为用户待验收）。
+
+## P19 RC0 P0-2 完整备份、恢复与跨电脑迁移（v0.13.2，2026-11-14）✅
+
+- ✅ `.livememory` v1：manifest（格式/时间/版本/schema/包含与排除/计数/文件 SHA-256）+ STORE ZIP；只允许固定 3 个条目
+- ✅ 创建：`VACUUM INTO` 一致快照 → `integrity_check` → 临时文件 → 重新完整校验 → 原子改名；已存在目标需显式覆盖
+- ✅ 在线一致性：录制中、WAL 未 checkpoint、AI 写入调度期间均可备份并通过完整性/计数检查
+- ✅ 取消/写入失败/磁盘不足/目标冲突：不留下半成品，不修改原库
+- ✅ 恢复：先验证再冻结写入 → 停止采集/AI/SSE → 关闭数据库 → 恢复前安全快照 → 暂存目录迁移+校验 → journal → 两次原子改名 → 新库校验 → 应用设置 → 重建运行时
+- ✅ 崩溃恢复：启动时按 journal 与文件 SHA-256 判定回滚或提交，不依赖 try/catch
+- ✅ 安全：ZIP Slip、绝对路径、盘符、反斜杠、符号链接、加密条目、data descriptor、ZIP64、压缩条目、重复名、条目数/大小/总量上限、CRC/SHA、损坏 SQLite、伪造格式/schema、含凭据清单全部拒绝
+- ✅ 凭据：`secrets/`、`config/ai-providers.json`、日志、缓存、runtime、exports、backups、数据目录指针不进入备份；恢复后提示重新登录 Bilibili、重新填写 API Key，YouTube 公开聊天无需登录
+- ✅ 跨电脑：全新绝对路径/新 Windows 数据目录恢复；数据库内无旧电脑绝对路径；重启后数据、AI 报告、长期事实保持一致
+- ✅ UI：设置页备份与恢复卡片；原生保存/打开对话框（失败可手动路径）；摘要、覆盖提示、`RESTORE` 确认、阶段进度、取消、三语错误
+- ✅ 24 个专项测试；全量测试结果见 `docs/STATUS.md` §0.25；正式 EXE 完成备份 → 新目录恢复 → 重启 → 再次备份闭环
+- ⬜ 真实 Windows 文件对话框点击、真实浏览器点击（用户待验收）
+- ⬜ 备份未加密；不提供两台电脑数据合并（如实记录）
+- 完整证据：`docs/BACKUP_FORMAT.md`、`docs/BACKUP_RESTORE.md`、`log/2026-11-14-backup-restore-p02.md`
 
 ## P18 RC0 P0-5 本地 API 鉴权与 Windows 最小权限（v0.13.2，2026-11-14）✅
 

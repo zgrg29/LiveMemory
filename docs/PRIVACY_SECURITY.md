@@ -89,6 +89,19 @@
 - 上传给 AI 服务即离开本机，由用户自行判断；
 - 不要公开分享含观众信息的备份。
 
+### 11.1 备份与恢复（RC0 P0-2）
+
+- **默认不含凭据**：`.livememory` 只包含数据库与净化设置；`secrets/`（Bilibili Cookie、AI Key 及其安装密钥）与 `config/ai-providers.json` 一律排除。`manifest.contains_credentials` 必须为 `false`；声称包含凭据的备份会被拒绝，不会静默导入。恢复后界面明确提示重新登录 Bilibili、重新填写 API Key；YouTube 公开聊天不需要登录。
+- **备份本身是敏感文件**：包含观众昵称、弹幕原文（若为 full 模式）、支付、长期画像与 AI 报告；未加密。界面在创建、预览、恢复处均提示妥善保管，不上传公开位置。未实现加密时不声称“安全加密”；未来加密必须使用 AES-256-GCM + scrypt/Argon2id 并提升格式版本。
+- **备份是不可信输入**：读取端拒绝 ZIP Slip、绝对路径、盘符、UNC、反斜杠、`..`/`.`、控制字符、目录条目、重复名、符号链接、加密条目、data descriptor、ZIP64、非 STORE 方法、压缩炸弹、超大条目/总量/条目数；逐条校验 CRC-32 与 SHA-256，并用 SQLite `PRAGMA integrity_check` 验证数据库。清单中的格式/schema/计数必须与实际一致。
+- **资源上限**：归档 2 GiB、解压总量 2 GiB、单条目 2 GiB、条目数 16、manifest 1 MiB、settings 256 KiB；测试用更小 limits 验证边界。
+- **认证**：所有备份/恢复 API（含选择文件、检查、创建、恢复、进度、取消、打开文件夹）都在 P0-5 会话认证之后；没有新增无认证导入/恢复端点。恢复期间认证失败的请求仍返回 401，不会泄露维护状态；已认证的非 job 请求返回 503。
+- **路径**：归档解压目标由程序固定生成于 `runtime/restore-*/`，不采用归档条目名作为落盘路径；备份目标必须是本机绝对 `.livememory` 文件（拒绝 UNC）。
+- **不执行归档内容**：不渲染 HTML、不执行脚本、不把条目名当命令或路径使用。
+- **恢复前安全快照**：当前数据库以 `VACUUM INTO` 保存到 `backups/pre-restore-*.db`，并自身做完整性检查；失败则不做任何替换。
+- **崩溃一致性**：`runtime/restore-journal.json` 记录阶段与文件 SHA-256；下一次启动在打开数据库前决定回滚或提交。日志只记录事件、ID、计数，不记录观众正文或凭据。
+- **威胁边界**：同一 Windows 用户的其他进程仍可读取备份文件与数据目录；HTTP 认证和文件校验不能防御该用户级威胁。共享目录 ACL 未收紧，用户在 OneDrive/共享目录保存备份时需自行评估。
+
 ## 12. Bilibili 凭据（2026-11-08 起）
 
 - 扫码登录得到的 Cookie 只保存在 `<数据目录>\secrets\bilibili-login.json`（AES-256-GCM 加密）；密钥在同目录 `.bilibili-key`，尽力用 `icacls` 限制为当前 Windows 用户。同账户的进程仍可读取，因此这是「用户目录 + 加密」级别的保护，不是 DPAPI。

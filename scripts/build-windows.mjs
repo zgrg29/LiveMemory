@@ -77,6 +77,12 @@ const REQUIRED_MODULES = [
   'src/ai/translation/service.mjs',
   'src/ai/translation/fields.mjs',
   'src/server/auth.mjs',
+  'src/server/backup/archive.mjs',
+  'src/server/backup/create.mjs',
+  'src/server/backup/inspect.mjs',
+  'src/server/backup/journal.mjs',
+  'src/server/backup/restore.mjs',
+  'src/server/backup-jobs.mjs',
   'src/web/js/auth.js',
   'src/storage/repositories/ai-translations.mjs',
   'src/storage/repositories/ai-aggregate-nodes.mjs',
@@ -214,7 +220,13 @@ const sha256 = createHash('sha256').update(exeBytes).digest('hex');
  * script ran. The manifest and the required module names are plain strings in
  * the SEA asset table; both must be present in the final EXE.
  */
-for (const needle of [buildId, 'src/ai/batching/tokens.mjs', 'src/ai/runtime/stream.mjs']) {
+for (const needle of [
+  buildId,
+  'src/ai/batching/tokens.mjs',
+  'src/ai/runtime/stream.mjs',
+  'src/server/backup/restore.mjs',
+  'restore-journal.json'
+]) {
   if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {
     throw new Error(`built EXE does not contain expected build marker: ${needle}`);
   }

@@ -32,6 +32,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **旧结果仍可读**：历史分析报告、长期画像、旧 1.0–1.2.0 结果继续可读；手动/匿名入口删除不会删除已有数据。
 - **v0.12.1 可靠性成果保留**：稳定 ID / 证据 seq / 分批 / 定向补充 / 缺失观众检测 / 重复导入保护 / 事务导入 / 历史记忆版本全部保留。
 - **本地优先**：聊天、统计、画像保存在 `%LOCALAPPDATA%\LiveMemory\`；不经过开发者服务器，不发送遥测。
+- **完整备份与跨电脑迁移（v0.13.2 RC0 P0-2）**：设置页一键创建单个 `.livememory` 文件，包含场次、弹幕、观众、支付、长期画像、AI 报告与设置；使用 SQLite 一致快照与完整校验，不直接复制写入中的数据库。可在本机或另一台 Windows 电脑恢复；恢复前自动保存当前数据，失败可回滚，强制结束进程后下次启动按 journal 恢复。**API Key、Bilibili Cookie 等凭据不会进入备份**，恢复后需重新连接；文件未加密，包含观众数据，请妥善保管。
 
 ### v0.13.1 实际使用修复
 
@@ -114,7 +115,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ### 尚未完成
 
-真实付费 API 端到端样本（本机没有 Key，阻塞）、真实浏览器 UI 截图、可迁移备份（`.livememory`）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。统一长期记忆已用 300 位低活跃观众与 1,000 观众 Mock 规模验证覆盖，但真实千人大场与真实 Provider 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
+真实付费 API 端到端样本（本机没有 Key，阻塞）、真实浏览器 UI 截图、真实 Windows 文件对话框点击（备份/恢复代码级与正式 EXE 级已完成，见 `docs/STATUS.md` §0.25）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。统一长期记忆已用 300 位低活跃观众与 1,000 观众 Mock 规模验证覆盖，但真实千人大场与真实 Provider 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
 
 ### YouTube 接入说明
 
@@ -256,7 +257,8 @@ Node.js 22.5+ is required for development runs. There are no runtime dependencie
 | [docs/PLATFORM_INTEGRATIONS.md](docs/PLATFORM_INTEGRATIONS.md) | 平台接入现状与限制 |
 | [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) | 开源方案、许可证、真实采样与条款风险 |
 | [docs/YOUTUBE_AUTO_DISCOVERY.md](docs/YOUTUBE_AUTO_DISCOVERY.md) | 无 API Key 的 YouTube 自动开播发现：调研、比较、实测与限制 |
-| [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) | 备份格式与恢复流程 |
+| [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) | 备份/恢复用户流程、事务与崩溃回滚 |
+| [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md) | `.livememory` v1 格式、完整性、安全与错误码 |
 | [docs/WINDOWS_RUNTIME.md](docs/WINDOWS_RUNTIME.md) | EXE、启动器、权限、单实例 |
 | [docs/UI_DESIGN.md](docs/UI_DESIGN.md) | 视觉规范、主题、响应式、多语言 |
 | [docs/PRIVACY_SECURITY.md](docs/PRIVACY_SECURITY.md) | 本地监听、凭据、导入安全 |

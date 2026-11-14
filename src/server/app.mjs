@@ -44,13 +44,9 @@ export function createApp(deps) {
         sendText(res, 403, 'Forbidden: cross-site request');
         return;
       }
-      // While a data-folder relocation is copying files the database is closed
-      // and the services are being rebuilt. Only the relocation endpoint and
-      // read-only health/auth probes may run.
-      if (deps.maintenance && !isPublicApiPath(url.pathname)) {
-        sendJson(res, 503, {error: {code: 'MAINTENANCE', messageKey: 'errors.maintenance'}});
-        return;
-      }
+      // Authentication runs before the maintenance gate: an unauthenticated
+      // client must never learn that a restore is in progress (and must still
+      // receive 401, not 503).
       if (!isPublicApiPath(url.pathname)) {
         const auth = deps.auth?.authenticate(req) ?? {ok: false, reason: 'no-auth-service'};
         if (!auth.ok) {
@@ -59,6 +55,15 @@ export function createApp(deps) {
           sendJson(res, 401, {error: {code: 'AUTH_REQUIRED', messageKey: 'errors.authRequired'}});
           return;
         }
+      }
+      // While a restore or a data-folder relocation is in progress the database
+      // may be closed or replaced. Only read-only health/auth probes and the
+      // progress endpoint of the running backup job may answer. The job status
+      // is authenticated above and reads memory only.
+      const maintenanceExempt = req.method === 'GET' && /^\/api\/backup\/jobs\/[^/]+$/.test(url.pathname);
+      if (deps.maintenance && !isPublicApiPath(url.pathname) && !maintenanceExempt) {
+        sendJson(res, 503, {error: {code: 'MAINTENANCE', messageKey: 'errors.maintenance'}});
+        return;
       }
       const handled = await router(req, res, url);
       if (!handled) {
