@@ -417,3 +417,38 @@ node scripts\verify-ai-token-exe.mjs
 
 同轮回归：`verify-p0-2-exe` 13/13、`verify-p0-5-exe` 12/12、`verify-exe` 10/10。
 
+## 15. P0-3 阶段 A：结构化输出开关与用量字段修正（2026-11-14）
+
+完整矩阵：`docs/AI_PROVIDER_COMPATIBILITY.md`。**未调用真实付费 API。**
+
+### 15.1 本轮修正
+
+1. **“Schema 只发一次”此前在生产中未生效。** 能力测试路由把
+   `capabilities.structuredOutputs` 当作自己的入参，而该字段只由测试写入，形成循环：
+   首次测试必然只用 `json_object`，因此永远写不回 `true`。OpenAI/OpenRouter 的真实用户
+   仍然每个请求多付一份文本 Schema（实测画像约 1.5 KiB、单场约 3.9 KiB）。修复后由 Provider
+   目录声明触发 `json_schema` 探测，且只有 session 复杂 Schema 通过本地组装/校验才记
+   `true`；被拒绝时一次降级，不会冒充成功。
+2. **OpenAI 缓存写入字段**：`prompt_tokens_details.cache_write_tokens` 之前未解析，
+   `cacheWriteInputTokens` 恒为 0。已修复并加单测。
+3. **OpenRouter 自报费用**：`usage.cost` 之前读取后丢弃。现在归一为
+   `providerReportedCost`，与本地估算 `cost` 分开保存；`providerCostRequests` 区分
+   “完整自报”与“部分自报”，不把部分数据当账单。
+4. **推理模型预留**：OpenAI o-series/GPT-5+ 的 `max_completion_tokens` 含隐藏推理；6,000 的
+   回答预算可能在产生可见文本前被思考耗尽。新增 16K 上限预留（不花未使用 Token），
+   并收窄格式拒绝的识别，避免无关 400 触发额外付费请求。
+
+### 15.2 10 vs 20 的离线结构对照（不改变结论性质）
+
+| 数据 | 上限 | 请求 | 输入 Token（模拟） | 输出 Token（模拟） | 请求字节 | 覆盖/事实 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 观众 / 200 消息 | 10 | 3 | 25,881 | 2,304 | 82,818 | 25/25 |
+| 25 观众 / 200 消息 | 自适应 20 | 2 | 22,898 | 2,308 | 73,271 | 25/25 |
+| 100 观众 / 1,000 消息 | 10 | 10 | 113,038 | 9,210 | 361,706 | 100/100 |
+| 100 观众 / 1,000 消息 | 自适应 20 | 6 | 101,310 | 9,252 | 324,183 | 100/100 |
+
+**这不证明真实语义质量。** Mock 的事实是确定性生成；真实模型在 20 人批次是否漏写、串证据、
+编造，必须由阶段 B 的盲评回答。若质量下降，回退点是 `viewersPerBatchHard=10`
+（`scripts/ai-efficiency-baseline.mjs --viewer-cap 10` 可复现）。
+
+

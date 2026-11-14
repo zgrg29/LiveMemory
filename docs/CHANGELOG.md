@@ -1,5 +1,28 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r16 — 2026-11-14（RC0 P0-3 阶段 A：Provider 兼容性与真实用量准备）
+
+### 修复
+
+- **结构化输出开关此前是循环的**：能力测试路由把 `capabilities.structuredOutputs` 当作自己的入参，而该字段只由测试写入，导致 OpenAI/OpenRouter 永远只发 `json_object`、提示词仍带完整 Schema。现在由 Provider 目录声明触发 `json_schema` 探测，且只有 session 复杂 Schema 通过本地组装/校验后才记为 `true`。
+- **模型拒绝 `response_format` 时不可恢复**：能力测试现在做一次有界降级（`json_schema → json_object`），真实任务在 `requestOnce()` 中最多降级两次（`json_schema → json_object → none`），降级时把完整 Schema 追加回最后一个 user 消息，并持久化 `capabilities.structuredOutputs=false`，Resume 不重复失败。只有 400/422 且错误明确指向 `response_format` / `json_schema` / `json_object` / `structured outputs` 才降级，泛化 “schema” 错误不会触发额外付费请求。
+- **OpenAI 推理模型参数**：`providerId=openai` 使用 `max_completion_tokens`；o-series / GPT-5+ 不发送 `temperature`、`system` 映射为 `developer`；推理模型输出上限增加 16K 思考预留（只是上限，未使用的 Token 不计费）。能力测试同样应用该预留。
+- **OpenAI 缓存写入 Token**：解析 `prompt_tokens_details.cache_write_tokens`（此前 `cacheWriteInputTokens` 恒为 0）。
+- **OpenRouter 自报费用**：`usage.cost` 归一为 `providerReportedCost` 并累计到 `usage_json`/`efficiency`，与本地“Token × 用户单价”的估算费用分开；`providerCostRequests` 标记完整/部分自报。
+- **UI**：设置页在能力检测旁明确提示“会发送 4–5 次真实请求、费用由 Provider 按实际 Token 收取”，三语同步。
+
+### 测试与评估
+
+- 新增 `tests/unit/ai-provider-compat.test.mjs` **12** 项、`tests/integration/ai-provider-compat.test.mjs` **3** 项。
+- 新增 `scripts/ai-efficiency-baseline.mjs --viewer-cap`（harness 构造参数，不是 HTTP/配置/UI 开关），可复现 10 人上限与自适应 20 人上限的同数据对照。
+- 离线结构对照：25 观众/200 消息 3 请求 → 2 请求（输入 25,881 → 22,898）；100 观众/1,000 消息 10 → 6 请求（输入 113,038 → 101,310）；覆盖与事实数不变。仅证明结构，不证明真实语义质量。
+- 全量 **796 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27）。
+- 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
+
+### 未验证
+
+- 真实付费 Provider、真实计费、真实大 Schema 接受度、真实长期画像语义（10 vs 20）、三语言真实输出、真实 EXE 用户填 Key 流程。**P0-3 尚未完成**；付费方案与费用上限见 `docs/AI_PROVIDER_COMPATIBILITY.md` §7。
+
 ## 0.13.2-r15 — 2026-11-14（RC0-AI-EFFICIENCY：Token 利用率与 API 成本）
 
 ### Token 归因（无 schema 变更）

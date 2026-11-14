@@ -59,6 +59,13 @@ function arg(name, fallback = null) {
 const label = arg('label', new Date().toISOString().replace(/[:.]/g, '-'));
 const only = (arg('only', '') ?? '').split(',').map((value) => value.trim()).filter(Boolean);
 const jsonPath = arg('json', join('tests', '.tmp', 'ai-efficiency', `${label}.json`));
+/**
+ * Controlled A/B for the adaptive viewer ceiling (P0-3).
+ * `--viewer-cap 10` reproduces the previous 10-viewers-per-request policy;
+ * omitted keeps the shipped adaptive policy (preferred 10, hard ceiling 20).
+ * This is a harness-only constructor option, not an HTTP/config setting.
+ */
+const viewerCap = Number(arg('viewer-cap', '0')) || null;
 
 /** Deterministic simulated-token rule. Documented, not a tokenizer. */
 const BYTES_PER_TOKEN = 3.2;
@@ -574,7 +581,8 @@ async function runScenario(name, spec) {
       // Deterministic: no exponential jitter, no transport retries unless the
       // scenario explicitly asks for them.
       maxRetries: spec.maxRetries ?? 2,
-      random: () => 0.5
+      random: () => 0.5,
+      ...(viewerCap ? {memoryViewerCapHard: viewerCap} : {})
     }
   });
   const startedAt = Date.now();
@@ -1001,6 +1009,7 @@ const payload = {
     requestBytes: 'measured',
     requests: 'measured',
     facts: 'measured from sqlite',
+    viewerCapHard: viewerCap ?? 'adaptive(20)',
     note: 'No real provider, no tokenizer. Token values are deterministic simulations of the measured bytes.'
   },
   results

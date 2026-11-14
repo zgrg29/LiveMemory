@@ -23,6 +23,8 @@
  * calibration can be checked against real data.
  */
 
+import {isReasoningModelId} from '../providers/catalog.mjs';
+
 export const MIN_BATCH_INPUT_TOKENS = 2000;
 export const MAX_BATCH_INPUT_TOKENS = 32000;
 
@@ -95,20 +97,33 @@ export const MAX_COMPLETION_TOKENS = 96000;
 
 /**
  * Total output cap (answer + thinking) for providers whose `max_tokens` only
- * limits the answer. qwen3.8-max defaults to a 131k thinking budget, so an
- * explicit total cap is required to keep one attempt bounded. The cap never
- * disables thinking; a provider that still needs more reports
+ * limits the answer.
+ *
+ * DashScope: qwen3.8-max defaults to a 131k thinking budget, so an explicit
+ * total cap is required to keep one attempt bounded.
+ *
+ * OpenAI reasoning models (o-series / GPT-5+): `max_tokens` is rejected and
+ * `max_completion_tokens` bounds answer *and* hidden reasoning tokens, which are
+ * billed as output. A 6,000-token answer budget that does not reserve room for
+ * reasoning can be consumed entirely by thinking and return `length` with no
+ * visible text. The reserve is a ceiling, not a spend: unused reasoning tokens
+ * cost nothing.
+ *
+ * The cap never disables thinking; a provider that still needs more reports
  * `finish_reason=length` instead of generating indefinitely.
  */
 export function resolveMaxCompletionTokens({
   providerId = null,
+  modelId = null,
   answerTokens = 8000,
   estimatedInputTokens = 0,
   contextLength = null,
   thinkingReserve = THINKING_RESERVE_TOKENS,
   maxCompletionTokens = MAX_COMPLETION_TOKENS
 } = {}) {
-  if (providerId !== 'dashscope') return null;
+  const dashscope = providerId === 'dashscope';
+  const openaiReasoning = providerId === 'openai' && isReasoningModelId(modelId);
+  if (!dashscope && !openaiReasoning) return null;
   const answer = Math.max(64, Number(answerTokens) || 8000);
   const desired = answer + Math.max(0, Number(thinkingReserve) || 0);
   const context = Number(contextLength);

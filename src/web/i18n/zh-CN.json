@@ -1277,6 +1277,7 @@
         "testFailureDetail": "检测失败原因：{detail}",
         "testUsage": "上次检测用量：{requests} 次请求 · 输入 {input} / 输出 {output} tokens",
         "testUsageUnknown": "上次检测未返回 Token 用量（Provider 未提供 usage）",
+        "testCostHint": "能力检测会发送 4–5 次真实请求，费用由你的 Provider 按实际 Token 收取。",
         "keyStored": "密钥已保存",
         "noKey": "无密钥",
         "delete": "删除",

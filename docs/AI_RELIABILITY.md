@@ -362,3 +362,38 @@ AI 分析中心新增/明确显示：
   兜底仍是「定向补答 + 观众级 Resume」，回退方式是停止传 `viewersPerBatchHard`。
 - **风险**：真实 tokenizer 与 `bytes/3` 估算的偏差未在本轮重新校准（历史约 1.366×）。
 
+## 13. P0-3 阶段 A：Provider 兼容性与失败恢复补强（2026-11-14）
+
+完整矩阵与付费计划：`docs/AI_PROVIDER_COMPATIBILITY.md`。**未调用真实付费 API。**
+
+### 13.1 新发现的失败路径
+
+1. **能力测试的 `structuredOutputs` 永远为 false**：路由把 `capabilities.structuredOutputs`
+   作为测试入参，而该字段只由测试本身写入。生产环境因此从不发送 `json_schema`，
+   所有 Provider 都退化为“文本 Schema + json_object”。修复后由 Provider 目录声明触发探测，
+   且只在 session 复杂 Schema 实测通过后记录 `true`。
+2. **模型拒绝 `response_format` 时不可恢复**：能力测试 fatal；真实任务按 `client` 错误永久失败。
+   现在两条路径都有一次有界降级，并把完整 Schema 追加回提示词。
+3. **OpenAI 推理模型 400**：`max_tokens` 不兼容 o-series；`temperature: 0` 只接受默认值；
+   `system` 应改为 `developer`。已按模型族分别构造请求，并给推理模型 16K 思考预留上限。
+4. **格式拒绝被过度识别**：最初用 `/schema/` 匹配 400，会把 “synthetic schema failure” 这类
+   无关错误当成格式拒绝并多发一次请求。已收窄为 `response_format` / `json_schema` /
+   `json_object` / `structured outputs`；全量回归捕获并验证。
+
+### 13.2 恢复语义
+
+- 格式降级不改变任务/批次/观众语义，只改变传输契约；降级请求照常计入 attempt、usage、
+  `unknownUsageAttempts` 与重试开销。
+- 降级持久化到配置（`capabilities.structuredOutputs=false`），后续任务和 Resume 不会重复失败；
+  `session`/`memory` 能力保留。
+- 失败仍按原分类：429 尊重 `Retry-After`；5xx 指数退避；超时不自动重发；取消不重试；
+  空响应一次；截断先拆分/提预算。格式降级是独立的一次性动作，不与这些重试叠加成无限循环。
+
+### 13.3 验证
+
+- 新增 `tests/unit/ai-provider-compat.test.mjs` 12 项、`tests/integration/ai-provider-compat.test.mjs`
+  3 项；全量结果见 `docs/STATUS.md` §0.27。
+- 仍未验证：真实 Provider 是否接受大 Schema、真实 429/5xx/空响应/截断、真实费用。
+  这些必须由用户授权的阶段 B 覆盖。
+
+

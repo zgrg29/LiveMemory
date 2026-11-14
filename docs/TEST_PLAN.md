@@ -1441,3 +1441,43 @@ node scripts/ai-efficiency-report.mjs --compare <before.json> <after.json>
 - 真实付费 Provider 的 tokenizer 校准、缓存命中率、自适应分批的语义质量。
 - 真实浏览器点击 UI 统计面板。
 
+## 41. RC0 P0-3：Provider 兼容性、真实用量与付费计划（阶段 A，2026-11-14）
+
+完整矩阵与付费方案：`docs/AI_PROVIDER_COMPATIBILITY.md`。**未调用真实付费 API。**
+
+### 41.1 本轮新增自动化
+
+| 文件 | 用例 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/ai-provider-compat.test.mjs` | 12 | OpenAI 缓存写入字段、自报费用分离、推理模型识别、OpenAI 参数形状（含 `max_completion_tokens`、无 temperature、`developer`）、其他家族 `max_tokens`、思考预留、能力测试 `json_schema`、推理探测预留、一次降级、泛化 “schema” 400 不降级、无关 400 仍失败 |
+| `tests/integration/ai-provider-compat.test.mjs` | 3 | 真实 HTTP 路由首次能力测试即发 `json_schema` 并持久化；真实任务拒绝 Schema 后一次降级 + Schema 回填 + usage 归因 + 持久化降级；同一数据 10 与 20 上限的批次规划与 12/12 覆盖 |
+
+### 41.2 全量
+
+见 `docs/STATUS.md` §0.27：**796 passed / 0 failed / 0 skipped**（2026-11-14）。
+
+### 41.3 离线 10 vs 20 结构对照
+
+| 数据 | 上限 | 请求 | 输入 Token（模拟） | 请求字节 | 覆盖/事实 |
+| --- | --- | --- | --- | --- | --- |
+| 25 观众 / 200 消息 | 10 | 3 | 25,881 | 82,818 | 25/25 |
+| 25 观众 / 200 消息 | 自适应 20 | 2 | 22,898 | 73,271 | 25/25 |
+| 100 观众 / 1,000 消息 | 10 | 10 | 113,038 | 361,706 | 100/100 |
+| 100 观众 / 1,000 消息 | 自适应 20 | 6 | 101,310 | 324,183 | 100/100 |
+
+只证明结构/覆盖/请求数，不证明语义质量。
+
+### 41.4 正式 EXE
+
+见 `docs/STATUS.md` §0.27：buildId / commit / SHA-256 与 `verify-ai-token-exe`、
+`verify-exe`、`verify-p0-5-exe`、`verify-p0-2-exe` 的实际结果。
+
+### 41.5 未验证（阶段 B 必须覆盖）
+
+- 真实 Provider 的 `json_schema` 大 Schema、429/5xx/空响应/截断/`length`、真实缓存命中。
+- 真实长期画像语义质量（10 vs 20 盲评）、证据归属、跨观众污染。
+- 真实费用与 Provider 账单核对；OpenRouter 自报费用的交叉核对。
+- 三语言真实输出（zh-CN / ja / en）与 Resume 后语言一致性。
+- 真实浏览器点击与真实 EXE 中由用户输入 Key 的完整流程。
+
+

@@ -88,6 +88,7 @@ export async function renderProviderSettingsCard(ctx) {
           output: formatInteger(config.lastTestStatus.usage.outputTokens ?? 0)
         })})
         : null,
+      el('div', {className: 'small tertiary', text: t('ai.v13.providers.testCostHint')}),
       el('div', {className: 'inline', style: {marginTop: '8px'}},
         !config.isDefault ? el('button', {
           className: 'button button--secondary button--small',

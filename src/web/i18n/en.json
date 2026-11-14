@@ -1277,6 +1277,7 @@
         "testFailureDetail": "Test failure: {detail}",
         "testUsage": "Last test usage: {requests} requests · input {input} / output {output} tokens",
         "testUsageUnknown": "The last test returned no token usage (provider did not report usage)",
+        "testCostHint": "The capability test sends 4–5 real requests; your provider charges for the actual tokens.",
         "keyStored": "Key stored",
         "noKey": "No key",
         "delete": "Delete",

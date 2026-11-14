@@ -1,5 +1,5 @@
 import {joinUrl, assertSafeResolvedUrl} from './url-safety.mjs';
-import {getProvider} from './catalog.mjs';
+import {getProvider, isReasoningModelId} from './catalog.mjs';
 import {perMillionFromTokenPrice, pricingFromOpenRouterModel} from './pricing.mjs';
 import {parseRetryAfter} from '../runtime/json.mjs';
 import {consumeEventStream, createStreamAccumulator, StreamIdleTimeoutError} from '../runtime/stream.mjs';
@@ -150,7 +150,15 @@ export function normalizeUsage(payload) {
       ?? 0);
   const cacheWriteRaw = anthropicCache
     ? Number(usage.cache_creation_input_tokens ?? 0)
-    : Number(usage.prompt_cache_write_tokens ?? promptDetails.cache_creation_tokens ?? 0);
+    // OpenAI reports cache writes on `prompt_tokens_details.cache_write_tokens`;
+    // `prompt_cache_write_tokens` / `cache_creation_tokens` are kept for
+    // compatible servers that copied one of the older field names.
+    : Number(
+      promptDetails.cache_write_tokens
+      ?? usage.prompt_cache_write_tokens
+      ?? promptDetails.cache_creation_tokens
+      ?? 0
+    );
   const cachedInput = Number.isFinite(cacheReadRaw) ? Math.max(0, cacheReadRaw) : 0;
   const cacheWriteInput = Number.isFinite(cacheWriteRaw) ? Math.max(0, cacheWriteRaw) : 0;
   // Anthropic excludes cache tokens from `input_tokens`; every other family
@@ -173,6 +181,11 @@ export function normalizeUsage(payload) {
     || usage.prompt_cache_hit_tokens !== undefined
     || promptDetails.cached_tokens !== undefined
     || usage.cached_tokens !== undefined;
+  // OpenRouter reports the actual charge (in credits, pegged to USD) on
+  // `usage.cost`. It is kept separately from the locally estimated cost so the
+  // two can be cross-checked; it never replaces the estimate or the bill.
+  const rawCost = Number(usage.cost);
+  const providerReportedCost = Number.isFinite(rawCost) && rawCost >= 0 ? rawCost : null;
   return {
     inputTokens,
     outputTokens: baseOutput,
@@ -180,6 +193,7 @@ export function normalizeUsage(payload) {
     cachedInputTokens: cachedClamped,
     cacheWriteInputTokens: cacheWriteInput === 0 ? 0 : Math.min(cacheWriteInput, inputTokens),
     cacheReported,
+    providerReportedCost,
     totalTokens: Number(usage.total_tokens ?? (inputTokens + baseOutput)) || 0,
     raw: {
       input_tokens: inputTokens,
@@ -472,18 +486,39 @@ export async function callOpenAICompatible({
     });
   }
   const auth = apiKey ? {authorization: `Bearer ${apiKey}`} : {};
+  const answerTokens = Math.max(64, Math.min(Number(maxTokens) || 4096, 32000));
+  const completionLimit = Number(maxCompletionTokens);
+  const reasoningModel = config.providerId === 'openai' && isReasoningModelId(config.modelId);
+  // OpenAI's o-series and GPT-5+ models replaced the `system` role with
+  // `developer`. Sending `system` can be rejected; the instruction content is
+  // identical, only the role name changes.
+  const outgoingMessages = reasoningModel
+    ? messages.map((message) => (message?.role === 'system' ? {...message, role: 'developer'} : message))
+    : messages;
   const body = {
     model: config.modelId,
-    messages,
-    max_tokens: Math.max(64, Math.min(Number(maxTokens) || 4096, 32000)),
-    temperature: 0
+    messages: outgoingMessages
   };
+  if (config.providerId === 'openai') {
+    // OpenAI deprecated `max_tokens` and rejects it for o-series reasoning
+    // models; `max_completion_tokens` bounds answer + hidden reasoning and is
+    // accepted by the current chat models. The runner adds the reasoning
+    // reserve, so the two values agree (see resolveMaxCompletionTokens).
+    body.max_completion_tokens = Number.isFinite(completionLimit) && completionLimit > 0
+      ? Math.max(answerTokens, Math.min(Math.floor(completionLimit), 96000))
+      : answerTokens;
+  } else {
+    body.max_tokens = answerTokens;
+  }
+  // Reasoning models accept only the default temperature and return HTTP 400
+  // for `temperature: 0`; every other supported family accepts 0, which keeps
+  // the extraction task deterministic.
+  if (!reasoningModel) body.temperature = 0;
   // DashScope models that support thinking treat `max_tokens` as the answer
   // limit only; Chain-of-Thought is billed separately and its default can be
   // very large. `max_completion_tokens` bounds the whole output. It is sent only
   // where the provider documents support, so other OpenAI-compatible endpoints
   // never receive an unknown parameter.
-  const completionLimit = Number(maxCompletionTokens);
   if (Number.isFinite(completionLimit) && completionLimit > 0 && config.providerId === 'dashscope') {
     body.max_completion_tokens = Math.max(
       body.max_tokens,

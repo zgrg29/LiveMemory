@@ -14,7 +14,21 @@
 > v0.13.2（2026-11-13）：长期画像统一校验链、身份白名单、分批次错误、三语/语言 Prompt、统计口径与 usage 归属修复；新增 17 个回归测试。完整说明见 `docs/STATUS.md` §0.16 与 `docs/HANDOFF.md` §0。
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
-> 仍未完成：P0-3 真实付费 API 验收（含 Token 估算校准与自适应分批语义复核）；真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭（真实桌面交互与真实付费 Provider 列为用户待验收）。
+> 仍未完成：P0-3 真实付费 API 验收。阶段 A（Provider 兼容性审计、离线复现与修复、Mock/全量测试、正式 EXE）已完成；阶段 B（真实付费请求、真实计费、真实长期画像语义、三语言）**必须先由用户选择 Provider/模型并批准费用上限**，见 `docs/AI_PROVIDER_COMPATIBILITY.md` §7。真实 YouTube 断网/429 验收；真实浏览器点击/关闭窗口；登录后是否 100% 解除 Bilibili 打码未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭（真实桌面交互与真实付费 Provider 列为用户待验收）。
+
+## P21 RC0 P0-3 阶段 A：Provider 兼容性与真实用量准备（v0.13.2，2026-11-14）🟡
+
+- ✅ 审计 7 个 Provider 的请求格式、鉴权、端点、结构化输出、输出上限、流式、usage 语义，建立兼容性矩阵（`docs/AI_PROVIDER_COMPATIBILITY.md`）
+- ✅ 定位并修复 **结构化输出能力检测循环**：生产环境此前从不发 `json_schema`，每请求多付一份文本 Schema
+- ✅ 修复 **`response_format` 被拒绝即永久失败**：能力测试一次降级、真实任务两次有界降级、Schema 回填提示词、持久化降级
+- ✅ 修复 **OpenAI 推理模型参数**：`max_completion_tokens`、无 `temperature`、`system→developer`、16K 思考预留
+- ✅ 修复 **OpenAI 缓存写入 Token** 未解析、**OpenRouter 自报费用** 被丢弃
+- ✅ 10 人 vs 自适应 20 人的离线结构对照（25 观众 3→2 请求；100 观众 10→6 请求；覆盖/事实不变）
+- ✅ 新增 15 项自动化；全量 **796 passed / 0 failed**
+- 🟡 正式 EXE 构建与 EXE 矩阵（认证、AI、备份、asInvoker）复跑（结果见 `docs/STATUS.md` §0.27）
+- ⬜ **阶段 B：真实付费请求、真实 usage/计费、真实长期画像语义、三语言、真实 EXE 用户 Key 流程**（待用户选择 Provider/模型、批准费用上限）
+- ⬜ 真实 `json_schema` 大 Schema 接受度、真实缓存命中率、真实 429/5xx/截断
+- 完整证据：`docs/AI_PROVIDER_COMPATIBILITY.md`、`log/2026-11-14-p03-provider-compat.md`
 
 ## P20 RC0-AI-EFFICIENCY Token 利用率与 API 成本（v0.13.2，2026-11-14）✅
 

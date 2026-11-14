@@ -208,6 +208,26 @@ export function getProvider(providerId) {
   return PROVIDER_CATALOG.find((provider) => provider.id === providerId) ?? null;
 }
 
+/**
+ * True for OpenAI model families that require `max_completion_tokens` and reject
+ * a non-default `temperature`.
+ *
+ * `max_tokens` is documented by OpenAI as deprecated and explicitly "not
+ * compatible with o-series models"; reasoning models also reject
+ * `temperature: 0`. The model id is the only reliable local signal (the model
+ * catalogue is optional), so a conservative prefix match is used. A model that
+ * is not recognised here keeps the previous request shape, which is what every
+ * non-reasoning OpenAI model expects.
+ */
+export function isReasoningModelId(modelId) {
+  const id = String(modelId ?? '').trim().toLowerCase();
+  if (!id) return false;
+  // Strip a provider prefix such as `openai/` used by aggregators.
+  const bare = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+  if (/^o[1-9](?:$|[-.])/.test(bare)) return true;
+  return /^gpt-[5-9](?:$|[-.])/.test(bare);
+}
+
 export function getRegion(providerId, regionId) {
   const provider = getProvider(providerId);
   if (!provider) return null;

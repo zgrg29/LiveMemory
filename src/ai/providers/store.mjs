@@ -476,6 +476,26 @@ export class ProviderConfigStore {
     return this.getPublic(id);
   }
 
+  /**
+   * Turn off structured output for a configuration after the provider rejected
+   * `response_format` on a real analysis request.
+   *
+   * The capability test proves the format on a small schema; a provider route
+   * can still reject the large LiveMemory schema later. Downgrading persists so
+   * the next request (and every later task) carries the full schema in the
+   * prompt instead of repeating a paid request that cannot succeed. Only the
+   * structured flag is touched: `session`/`memory` capability stay verified.
+   */
+  downgradeStructuredOutputs(id) {
+    const config = this.get(id);
+    if (!config) return null;
+    if (config.capabilities?.structuredOutputs !== true) return this.getPublic(id);
+    config.capabilities = {...config.capabilities, structuredOutputs: false};
+    config.updatedAt = this.now();
+    this.save();
+    return this.getPublic(id);
+  }
+
   #validateKey(apiKey) {
     const value = String(apiKey);
     if (value.length === 0) throw Object.assign(new Error('API_KEY_REQUIRED'), {code: 'API_KEY_REQUIRED'});

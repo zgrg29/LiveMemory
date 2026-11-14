@@ -1277,6 +1277,7 @@
         "testFailureDetail": "テスト失敗の理由：{detail}",
         "testUsage": "前回のテスト使用量：{requests} 件のリクエスト · 入力 {input} / 出力 {output} トークン",
         "testUsageUnknown": "前回のテストではトークン使用量が返されませんでした（Provider が usage を返していません）",
+        "testCostHint": "能力テストは実際のリクエストを 4〜5 回送信します。料金は Provider が実際のトークン数に応じて請求します。",
         "keyStored": "キー保存済み",
         "noKey": "キーなし",
         "delete": "削除",

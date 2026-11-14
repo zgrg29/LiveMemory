@@ -3,6 +3,7 @@ import {callProvider, listProviderModels, ProviderHttpError, PROVIDER_ERROR} fro
 import {PRICING_STATUS} from './catalog.mjs';
 import {addUsage, estimateTokensFromText} from './pricing.mjs';
 import {assertSafeResolvedUrl} from './url-safety.mjs';
+import {resolveMaxCompletionTokens} from '../batching/tokens.mjs';
 import {assembleSessionAnswer, assembleMemoryCompact, buildMemoryRefs} from '../api/compact.mjs';
 import {validateAgainstSchema} from '../import/schema-validator.mjs';
 
@@ -173,6 +174,21 @@ function wasStructured(result) {
 }
 
 /**
+ * A provider rejected the requested output format rather than the task.
+ * Falling back to prompt-guided JSON keeps the model usable; every other 400/422
+ * stays a hard failure so a real configuration error is not masked. The match is
+ * deliberately narrow: a generic 400 that merely contains the word "schema" is
+ * not assumed to be about `response_format`.
+ */
+function isResponseFormatRejection(error) {
+  if (!(error instanceof ProviderHttpError)) return false;
+  const status = Number(error.status);
+  if (status !== 400 && status !== 422) return false;
+  return /response_?format|json_schema|json_object|structured_?outputs?/i
+    .test(String(error.detail ?? ''));
+}
+
+/**
  * Run all capability stages. The caller must have already obtained explicit
  * spend confirmation for paid/unknown models.
  */
@@ -264,39 +280,90 @@ export async function verifyProviderConfig({
     }
   }
 
-  const call = async (stage, messages, maxTokens, schema = null) => {
+  // A provider that declares structured-output support is probed once with
+  // `response_format: json_schema`. Models (or aggregator routes) that reject
+  // the format must not fail the whole capability test: one bounded downgrade to
+  // `json_object` keeps the prompt-side schema contract and still proves the
+  // model can answer JSON. `capabilities.structuredOutputs` is only reported
+  // true after a non-trivial schema (the session shape) was accepted.
+  let structuredAllowed = config.supportsStructuredOutputs === true;
+  let formatFallbacks = 0;
+
+  const call = async (stage, messages, maxTokens, schema = null, options = {}) => {
     if (fatal) return null;
     const started = now();
+    const format = schema
+      ? (options.format ?? (structuredAllowed ? 'json_schema' : 'json_object'))
+      : 'none';
+    // Reasoning models need headroom for hidden reasoning inside the total
+    // output cap; without it the 64-token JSON probe can be consumed by thinking
+    // and look like an empty answer.
+    const maxCompletionTokens = resolveMaxCompletionTokens({
+      providerId: config.providerId,
+      modelId: config.modelId,
+      answerTokens: maxTokens
+    });
     try {
       const result = await callProvider(config, {
         apiKey,
         messages,
         maxTokens,
+        ...(maxCompletionTokens ? {maxCompletionTokens} : {}),
         responseSchema: schema,
-        responseFormat: schema ? (config.supportsStructuredOutputs ? 'json_schema' : 'json_object') : 'none',
+        responseFormat: format,
         fetchImpl,
         signal,
         timeoutMs
       });
       capabilities.network = true;
       capabilities.auth = true;
+      const stageUsage = result.usage ? {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens,
+        cachedInputTokens: result.usage.cachedInputTokens,
+        cacheWriteInputTokens: result.usage.cacheWriteInputTokens,
+        providerReportedCost: result.usage.providerReportedCost
+      } : null;
       setStage(stage, 'passed', {
         durationMs: now() - started,
         finishReason: result.finishReason,
         format: result.responseFormat,
-        usage: result.usage ? {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens
-        } : null
+        usage: stageUsage
       });
       return result;
     } catch (error) {
       const info = stageError(error);
       setStage(stage, 'failed', {durationMs: now() - started, ...info});
       if (info.code === PROVIDER_ERROR.AUTH) capabilities.auth = false;
+      call.lastError = error;
       fatal = info;
       return null;
     }
+  };
+  call.lastError = null;
+
+  /**
+   * Fall back from a rejected response format. Returns the retried result, or
+   * null when no retry was applicable. Only a 400/422 whose message points at
+   * the output format or the schema is treated this way; every other client
+   * error stays fatal.
+   */
+  const fallBackFromFormat = async (stage, messages, maxTokens, schema) => {
+    const error = call.lastError;
+    if (!structuredAllowed || formatFallbacks >= 1 || !isResponseFormatRejection(error)) return null;
+    formatFallbacks += 1;
+    structuredAllowed = false;
+    fatal = null;
+    const result = await call(stage, messages, maxTokens, schema, {format: 'json_object'});
+    if (result && stages[stage]?.status === 'passed') {
+      stages[stage] = {
+        ...stages[stage],
+        formatFallbackFrom: 'json_schema',
+        formatFallbackReason: String(error?.detail ?? 'response-format-rejected').slice(0, 160)
+      };
+    }
+    return result ?? null;
   };
 
   // 2. Text.
@@ -310,26 +377,31 @@ export async function verifyProviderConfig({
 
   // 3. JSON.
   if (want('json') && !fatal) {
-    const result = await call('json', [
+    const messages = [
       {role: 'system', content: SYSTEM},
       {role: 'user', content: 'Return only {"ok":true}.'}
-    ], 64, JSON_SCHEMA);
+    ];
+    let result = await call('json', messages, 64, JSON_SCHEMA);
+    if (!result) result = await fallBackFromFormat('json', messages, 64, JSON_SCHEMA);
     if (result) {
       const object = extractJson(result.text);
       capabilities.json = object?.ok === true;
-      capabilities.structuredOutputs = wasStructured(result);
     }
   }
 
-  // 4. Session analysis shape.
+  // 4. Session analysis shape. A *non-trivial* schema is accepted here, which is
+  // what proves structured output for real analysis (the tiny {"ok":true} probe
+  // alone would not).
   if (want('session') && !fatal) {
-    const result = await call('session', [
+    const messages = [
       {role: 'system', content: SYSTEM},
       {
         role: 'user',
         content: 'Synthetic livestream chat: A says "hello"; B says "the guitar part was great". Return only {"session_topics":{"summary":"short summary","topics":[{"title":"music","started_at":"2026-01-01T00:00:00Z","ended_at":"2026-01-01T00:01:00Z","summary":"chat discussed the guitar","key_points":["guitar"],"confidence":0.7,"evidence":"observed"}],"sentiment":[],"disputes":[],"highlights":[]}}.'
       }
-    ], 300, SESSION_SCHEMA);
+    ];
+    let result = await call('session', messages, 300, SESSION_SCHEMA);
+    if (!result) result = await fallBackFromFormat('session', messages, 300, SESSION_SCHEMA);
     if (result) {
       const object = extractJson(result.text);
       const assembled = assembleSessionAnswer({
@@ -353,6 +425,9 @@ export async function verifyProviderConfig({
         && Array.isArray(object.session_topics.topics)
         && object.session_topics.topics.length >= 1
       );
+      // Only a schema that passed the real session assembly counts as verified
+      // structured-output support. A fallback leaves this false.
+      capabilities.structuredOutputs = capabilities.session && wasStructured(result);
       if (!capabilities.session) {
         stages.session = {
           ...(stages.session ?? {}),
@@ -368,7 +443,9 @@ export async function verifyProviderConfig({
 
   // 5. Memory shape: coverage, identity refs, evidence ownership, zero excerpt.
   if (want('memory') && !fatal) {
-    const result = await call('memory', memoryProbeMessages(), 900, MEMORY_SCHEMA);
+    const messages = memoryProbeMessages();
+    let result = await call('memory', messages, 900, MEMORY_SCHEMA);
+    if (!result) result = await fallBackFromFormat('memory', messages, 900, MEMORY_SCHEMA);
     if (result) {
       const object = extractJson(result.text);
       const checked = validateMemoryProbe(object);

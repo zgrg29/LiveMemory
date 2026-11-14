@@ -153,6 +153,14 @@ export function addUsage(total, usage, pricing) {
     cachedInputTokens: Number(total?.cachedInputTokens ?? 0) + Number(usage?.cachedInputTokens ?? 0),
     cacheWriteInputTokens: Number(total?.cacheWriteInputTokens ?? 0)
       + Number(usage?.cacheWriteInputTokens ?? 0),
+    // A provider may report its own charge (OpenRouter `usage.cost`). It is
+    // accumulated separately from the local estimate so the two can be compared
+    // without conflating them; requests without a reported charge are counted so
+    // a partial sum is never presented as a full bill.
+    providerReportedCost: Number(total?.providerReportedCost ?? 0)
+      + Number(usage?.providerReportedCost ?? 0),
+    providerCostRequests: Number(total?.providerCostRequests ?? 0)
+      + (usage?.providerReportedCost === null || usage?.providerReportedCost === undefined ? 0 : 1),
     // `requests` keeps its historical meaning: responses that carried a usage
     // block. `attempts` counts every request actually sent, so a provider that
     // omits usage can no longer make a task look smaller than it was.
@@ -189,6 +197,8 @@ export function countRequestWithoutUsage(total) {
     reasoningTokens: Number(previous.reasoningTokens ?? 0),
     cachedInputTokens: Number(previous.cachedInputTokens ?? 0),
     cacheWriteInputTokens: Number(previous.cacheWriteInputTokens ?? 0),
+    providerReportedCost: previous.providerReportedCost ?? null,
+    providerCostRequests: Number(previous.providerCostRequests ?? 0),
     requests,
     attempts: attempts + 1,
     unknownUsageAttempts: Number(previous.unknownUsageAttempts ?? 0) + 1,

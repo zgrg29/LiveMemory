@@ -309,6 +309,8 @@ function sumUsageValues(values) {
     reasoningTokens: 0,
     cachedInputTokens: 0,
     cacheWriteInputTokens: 0,
+    providerReportedCost: 0,
+    providerCostRequests: 0,
     requests: 0,
     attempts: 0,
     unknownUsageAttempts: 0,
@@ -324,6 +326,8 @@ function sumUsageValues(values) {
     total.reasoningTokens += Number(usage.reasoningTokens ?? 0);
     total.cachedInputTokens += Number(usage.cachedInputTokens ?? 0);
     total.cacheWriteInputTokens += Number(usage.cacheWriteInputTokens ?? 0);
+    total.providerReportedCost += Number(usage.providerReportedCost ?? 0);
+    total.providerCostRequests += Number(usage.providerCostRequests ?? 0);
     total.requests += Number(usage.requests ?? 0);
     total.attempts += Math.max(Number(usage.requests ?? 0), Number(usage.attempts ?? 0));
     total.unknownUsageAttempts += Number(usage.unknownUsageAttempts ?? 0);
@@ -352,6 +356,7 @@ function sumUsageValues(values) {
       basis: 'sum_of_jobs'
     }
     : null;
+  if (total.providerCostRequests === 0) total.providerReportedCost = null;
   return total;
 }
 
@@ -381,6 +386,30 @@ function describeValidationErrors(errors, {limit = 3} = {}) {
   return (errors ?? []).slice(0, limit)
     .map((item) => `${item.path || '(root)'}:${item.code}`)
     .join(', ');
+}
+
+/**
+ * Move the JSON Schema back into the prompt after a provider rejects the
+ * requested `response_format`.
+ *
+ * Structured-output providers normally receive the schema only through
+ * `response_format` (the prompt carries a one-line pointer), so a rejected
+ * format would leave the model without any schema. Appending it to the last user
+ * turn restores the full contract without changing any other instruction.
+ */
+function withSchemaFallbackMessages(messages, answerSchema) {
+  const contract = '\n\n## OUTPUT FORMAT FALLBACK\n'
+    + 'The provider rejected the structured output parameter. Return exactly one JSON object that matches '
+    + 'this JSON Schema. Do not add prose, Markdown or a code fence.\n'
+    + JSON.stringify(answerSchema);
+  const list = Array.isArray(messages) ? [...messages] : [];
+  const last = list[list.length - 1];
+  if (last?.role === 'user') {
+    list[list.length - 1] = {...last, content: `${last.content}${contract}`};
+  } else {
+    list.push({role: 'user', content: contract.trimStart()});
+  }
+  return list;
 }
 
 export function providerFromConfig(config, {responseMode = null} = {}) {
@@ -471,7 +500,12 @@ export class AnalysisRunner {
     fetchImpl = globalThis.fetch,
     maxRetries = 2,
     random = Math.random,
-    idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
+    idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    // Controlled-evaluation only: lets an offline harness run the same data with
+    // the previous 10-viewer ceiling and with the adaptive 20-viewer ceiling.
+    // It is a constructor/script option, never an HTTP or config setting, and it
+    // can only tighten the production ceiling.
+    memoryViewerCapHard = MEMORY_MAX_VIEWERS_PER_BATCH
   }) {
     this.db = db;
     this.paths = paths;
@@ -482,6 +516,10 @@ export class AnalysisRunner {
     this.maxRetries = Math.max(0, Math.min(5, Number(maxRetries) || 0));
     this.random = random;
     this.idleTimeoutMs = Math.max(10000, Number(idleTimeoutMs) || DEFAULT_IDLE_TIMEOUT_MS);
+    this.memoryViewerCapHard = Math.max(1, Math.min(
+      MEMORY_MAX_VIEWERS_PER_BATCH,
+      Math.floor(Number(memoryViewerCapHard) || MEMORY_MAX_VIEWERS_PER_BATCH)
+    ));
     this.active = new Map();
     this.schedulers = new Map();
     this.memoryGates = new Map();
@@ -1087,6 +1125,13 @@ export class AnalysisRunner {
       tokensPer100Facts: totalTokens === null ? null : per100(totalTokens, factsSaved),
       cost,
       costKnown: Boolean(cost),
+      // The provider's own charge, when it reports one (OpenRouter). Kept apart
+      // from `cost` (tokens x user price) so an estimate is never presented as a
+      // bill and a bill is never hidden behind an estimate.
+      providerReportedCost: Number(usage?.providerCostRequests ?? 0) > 0
+        ? Number(usage.providerReportedCost ?? 0)
+        : null,
+      providerCostRequests: Number(usage?.providerCostRequests ?? 0),
       costPer100Viewers: cost && viewersCovered > 0
         ? Number(((cost.amount / viewersCovered) * 100).toFixed(6))
         : null,
@@ -3043,7 +3088,7 @@ export class AnalysisRunner {
         // unused at the preferred batch size; let the planner grow the batch
         // while the real limits (output budget, excerpt cap, content budget)
         // still hold.
-        viewersPerBatchHard: MEMORY_MAX_VIEWERS_PER_BATCH,
+        viewersPerBatchHard: this.memoryViewerCapHard,
         excerptCap: 600,
         providerConfigId: provider.configId ?? null,
         providerId: provider.providerId,
@@ -4265,6 +4310,21 @@ export class AnalysisRunner {
     return /stream|sse|chunk|stream_options/i.test(String(error.detail ?? ''));
   }
 
+  /**
+   * A provider rejected the requested JSON output format (or the schema itself)
+   * on a real analysis request. This is a compatibility condition, not a task
+   * failure: the same answer contract can be delivered through the prompt. Only
+   * 400/422 responses whose provider message points at `response_format` /
+   * `json_schema` / `structured outputs` qualify, so an unrelated parameter
+   * error (or a generic "schema" message) is not silently retried.
+   */
+  #isResponseFormatUnsupported(error) {
+    if (!error || error.kind !== ERROR_KIND.CLIENT) return false;
+    if (![400, 422].includes(Number(error.status))) return false;
+    return /response_?format|json_schema|json_object|structured_?outputs?/i
+      .test(String(error.detail ?? ''));
+  }
+
   #retryingStage(kind, fallback) {
     if (kind === 'session-aggregate' || String(kind).startsWith('session-aggregate-l')) {
       return 'session_aggregating';
@@ -4289,6 +4349,7 @@ export class AnalysisRunner {
     const estimatedInputTokens = Math.max(0, Number(prompt?.estimatedTokens) || 0);
     const maxCompletionTokens = resolveMaxCompletionTokens({
       providerId: provider.providerId,
+      modelId: provider.modelId,
       answerTokens,
       estimatedInputTokens,
       contextLength: provider.contextLength
@@ -4298,6 +4359,14 @@ export class AnalysisRunner {
     let attempt = 0;
     let lastError = null;
     let fallbackUsed = false;
+    // Response-format negotiation. `json_schema` is only used after the
+    // capability test verified it, but a provider route can still reject the
+    // large LiveMemory schema. A bounded downgrade keeps the job alive: the
+    // schema moves back into the prompt and the request is retried once.
+    let responseFormat = prompt.answerSchema
+      ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object')
+      : 'none';
+    let requestMessages = prompt.messages;
     while (attempt < maxAttempts) {
       if (signal.aborted) throw abortError();
       // The task deadline never shortens an attempt that has already started.
@@ -4349,13 +4418,11 @@ export class AnalysisRunner {
         };
         const result = await scheduler.run(() => callProvider(provider, {
           apiKey: provider.configId ? this.configStore.secret(provider.configId) : null,
-          messages: prompt.messages,
+          messages: requestMessages,
           maxTokens: answerTokens,
           maxCompletionTokens,
           responseSchema: prompt.answerSchema ?? null,
-          responseFormat: prompt.answerSchema
-            ? (provider.supportsStructuredOutputs ? 'json_schema' : 'json_object')
-            : 'none',
+          responseFormat,
           fetchImpl: this.fetchImpl,
           signal,
           timeoutMs: effectiveTimeout,
@@ -4478,6 +4545,38 @@ export class AnalysisRunner {
         if (canceled) {
           recordFailure();
           throw abortError();
+        }
+        // One bounded format downgrade: json_schema -> json_object -> prompt-only.
+        // This is not a blind retry of the same request: the schema is appended
+        // to the prompt so the model still receives the full output contract.
+        if (responseFormat !== 'none'
+          && prompt.answerSchema
+          && this.#isResponseFormatUnsupported(error)) {
+          const previousFormat = responseFormat;
+          responseFormat = previousFormat === 'json_schema' ? 'json_object' : 'none';
+          if (previousFormat === 'json_schema') {
+            provider.supportsStructuredOutputs = false;
+            if (provider.configId) {
+              try {
+                this.configStore.downgradeStructuredOutputs?.(provider.configId);
+              } catch {
+                // Persisting the downgrade is an optimization; the in-memory
+                // flag already protects the rest of this task.
+              }
+            }
+          }
+          requestMessages = withSchemaFallbackMessages(prompt.messages, prompt.answerSchema);
+          recordFailure({retry: true});
+          this.logger?.warn?.({
+            event: 'ai.response_format.fallback',
+            sessionId: context.sessionId,
+            kind,
+            from: previousFormat,
+            to: responseFormat,
+            httpStatus: error?.status ?? null,
+            reason: String(error?.detail ?? '').slice(0, 160)
+          });
+          continue;
         }
         const retry = shouldRetryAttempt(error, {
           attempt,

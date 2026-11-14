@@ -1305,6 +1305,54 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - 未填价格：`cost=null`，界面「费用未知」，**不阻断任务**。
 - 已填价格：`basis=estimated_tokens_x_published_price`，界面标「估算费用」。
 - 缓存命中：有缓存单价则按该价，否则按输入单价并标 `cachePriced=false`；缓存写入按输入单价，
-  不猜测倍率。厂商返回的 `usage.cost`（OpenRouter）不作为本地账单。
+  不猜测倍率。厂商返回的 `usage.cost`（OpenRouter）不作为本地账单，但会作为
+  `providerReportedCost` 单独保存，供阶段 B 与官方账单交叉核对。
 - 能力测试与翻译的用量独立记录，不混入 `ai_jobs.usage_json`。
+
+## 28. P0-3 阶段 A：Provider 输出格式协商与 API 参数兼容（2026-11-14）
+
+完整矩阵、证据等级与付费计划见 `docs/AI_PROVIDER_COMPATIBILITY.md`。本节只记录对协议/提示词的
+约束；**未调用真实付费 API**。
+
+### 28.1 输出格式的三种模式
+
+| 模式 | 条件 | 提示词里的 Schema |
+| --- | --- | --- |
+| `json_schema` | Provider 目录声明支持，且能力测试用 **session 复杂 Schema** 实测通过并本地组装/校验成功 | 只留一行指针（Schema 在 `response_format`） |
+| `json_object` | 未通过 `json_schema` 验证，或 Provider 只支持 JSON 模式 | 完整文本 Schema |
+| `none` | Provider 明确拒绝 `response_format`（400/422 且错误指向 format） | 完整文本 Schema |
+
+- 代码位置：`src/server/routes.mjs`（能力测试入参）、`src/ai/providers/verify.mjs`
+  （探测/一次降级）、`src/ai/api/runner.mjs#requestOnce()`（任务级有界降级）。
+- **不得把“声明支持”当作“已验证”**：`capabilities.structuredOutputs` 只在 session 阶段
+  用非平凡 Schema 通过后才写 `true`。
+- **不得假定所有模型都支持 `json_schema` 或 `json_object`**：能力测试与真实任务都必须有
+  一次有界降级；降级时把完整 Schema 追加回最后一个 user 消息，输出契约不能丢。
+- 降级后持久化 `capabilities.structuredOutputs=false`，后续任务/Resume 直接使用完整文本
+  Schema，不重复失败。`session`/`memory` 能力保持不变。
+- 每次请求最多 2 次格式降级（`json_schema → json_object → none`），降级尝试计入真实
+  attempt、usage 与重试统计；不做无限重试。
+
+### 28.2 参数兼容（不得假定相同）
+
+| 家族 | 输出上限 | temperature | system 角色 | 备注 |
+| --- | --- | --- | --- | --- |
+| OpenAI 非推理 | `max_completion_tokens` | 0 | `system` | `max_tokens` 已废弃 |
+| OpenAI o-series / GPT-5+ | `max_completion_tokens`（回答 + 16K 思考预留） | 不发送 | `developer` | 只接受默认 temperature |
+| DeepSeek | `max_tokens` | 0 | `system` | `response_format` 只有 `json_object` |
+| DashScope | `max_tokens` + `max_completion_tokens` | 0 | `system` | 思考 Token 单独计费 |
+| OpenRouter / MiniMax / 自定义 | `max_tokens` | 0 | `system` | 透传；按模型能力降级 |
+| Anthropic | `max_tokens` | 0 | 顶层 `system` 字段 | 无 `response_format` |
+
+- 推理预留只是**上限**，未使用的 Token 不计费；不得理解为“每次会花 16K”。
+- 不得为了“避免截断”无上限提高 `max_tokens`；先拆分批次/观众。
+
+### 28.3 usage 字段
+
+- OpenAI 缓存写入：`prompt_tokens_details.cache_write_tokens`（本轮修复）。
+- 缓存/推理 Token 不重复相加：`inputTokens` 已含缓存读取；`reasoningTokens` 已含在
+  `outputTokens` 内，仅单独展示。
+- `providerReportedCost`（OpenRouter `usage.cost`）与本地估算 `cost` 分开保存；
+  部分请求有自报费用时用 `providerCostRequests` 标记，不冒充完整账单。
+
 

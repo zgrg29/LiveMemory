@@ -1,11 +1,71 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-AI-EFFICIENCY Token 利用率与 API 成本专项 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费测试计划 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
-> 本轮未修改生产数据库、未调用真实付费 AI、未发送真实弹幕、未干扰正在采集的直播、未 Push/Tag/发布。
-> 全部测量在 `tests/.tmp` 隔离目录中用合成数据 + Mock Provider 完成。
+> 本轮**未调用任何真实付费 API**、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布。
+> 全部测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
 
-## 0. 本轮（AI Token 效率与成本）
+## 0. 本轮（P0-3 阶段 A）
+
+完整底稿、兼容性矩阵与付费计划：`docs/AI_PROVIDER_COMPATIBILITY.md`；日志：
+`log/2026-11-14-p03-provider-compat.md`。
+
+### 0.1 做了什么
+
+1. **审计 7 个 Provider**（OpenAI / DeepSeek / DashScope-Qwen / OpenRouter / Anthropic /
+   MiniMax / 自定义 OpenAI-compatible）的端点、鉴权、JSON 模式、输出上限、流式与 usage 语义；
+   建立 L1–L5 证据矩阵。**没有任何 Provider 达到 L3（真实 Provider 已验证）。**
+2. **修复 5 个确定性缺陷**（均有离线复现）：
+   - 能力测试的 `structuredOutputs` 入参是循环的，生产环境从不发 `json_schema`；
+   - 模型拒绝 `response_format` 时能力测试与真实任务都永久失败；
+   - OpenAI 推理模型被发送 `max_tokens` / `temperature: 0` / `system`；
+   - OpenAI `prompt_tokens_details.cache_write_tokens` 未解析；
+   - OpenRouter `usage.cost` 被丢弃。
+3. **建立 10 vs 20 的离线结构对照**与可复现 harness 开关 `--viewer-cap`（仅 runner 构造参数）。
+4. **全量测试 + 正式 EXE + EXE 矩阵**复跑，确认备份/认证/asInvoker 未回归。
+
+### 0.2 结果
+
+| 指标 | 值 |
+| --- | --- |
+| 全量测试 | **796 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27） |
+| 新增测试 | 12 unit + 3 integration |
+| 25 观众 / 200 消息 | cap10 3 请求 / 25,881 输入；cap20 2 请求 / 22,898 输入；覆盖 25/25 |
+| 100 观众 / 1,000 消息 | cap10 10 请求 / 113,038 输入；cap20 6 请求 / 101,310 输入；覆盖 100/100 |
+| 正式 EXE | buildId / commit / SHA-256 见 `docs/STATUS.md` §0.27 |
+| EXE 验证 | `verify-ai-token-exe`、`verify-exe`、`verify-p0-5-exe`、`verify-p0-2-exe` 全通过 |
+
+### 0.3 关键实现位置
+
+- `src/server/routes.mjs`：能力测试现在传入 Provider 目录声明的 `supportsStructuredOutputs`。
+- `src/ai/providers/verify.mjs`：`json_schema` 探测、一次格式降级、session 复杂 Schema 通过后
+  才记 `structuredOutputs=true`、推理模型预留、能力测试 usage 汇总。
+- `src/ai/api/runner.mjs`：`#isResponseFormatUnsupported()`、`withSchemaFallbackMessages()`、
+  任务级格式降级与持久化、`memoryViewerCapHard`（仅构造参数）、`providerReportedCost` 汇总。
+- `src/ai/providers/adapters.mjs`：OpenAI 推理参数、`developer` 角色、缓存写入字段、
+  `providerReportedCost`。
+- `src/ai/providers/catalog.mjs#isReasoningModelId()`、`src/ai/batching/tokens.mjs#resolveMaxCompletionTokens()`。
+- `src/ai/providers/store.mjs#downgradeStructuredOutputs()`。
+- `scripts/ai-efficiency-baseline.mjs --viewer-cap`。
+
+### 0.4 下一轮（P0-3 阶段 B）必须先做
+
+1. **等待用户明确授权**：选择 Provider 与模型、确认费用上限（建议 Plan A $1.25，见
+   `docs/AI_PROVIDER_COMPATIBILITY.md` §7）。此前不得发送任何真实请求。
+2. 使用隔离数据目录与合成数据；**不要**用生产数据库或未授权的真实聊天。
+3. 只验证用户选定的 Provider；不要因为一家成功就宣称全部通过。
+4. 真实语义质量必须盲评；“20 人批次请求更少”不是质量结论。
+5. 若 20 人批次出现漏写/串证据/补答率上升，回退 `viewersPerBatchHard=10`。
+
+### 0.5 不要做
+
+1. 不要把本轮 Mock/离线证据写成“真实 Provider 验收通过”。
+2. 不要为了省事直接遍历全部 Provider 或使用最贵模型。
+3. 不要在未校验 `response_format` 支持的 Provider 上恢复“Schema 只发一次”。
+4. 不要把格式降级做成无限重试；每次请求最多 2 次，且必须把 Schema 回填提示词。
+5. 不要把 `providerReportedCost` 当作本地账单；它只用于交叉核对。
+
+## 0-B 上一轮（AI Token 效率与成本）
 
 完整报告：`docs/AI_TOKEN_EFFICIENCY.md`；日志：`log/2026-11-14-ai-token-efficiency.md`。
 

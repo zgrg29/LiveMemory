@@ -1500,7 +1500,13 @@ export function buildRoutes() {
           config: {
             ...config,
             supportsModelList: getProvider(config.providerId)?.supportsModelList === true,
-            supportsStructuredOutputs: config.capabilities?.structuredOutputs === true
+            // Probe `json_schema` whenever the provider declares the capability,
+            // not only after a previous test already recorded it. The old
+            // condition was circular: `capabilities.structuredOutputs` is written
+            // by this very test, so it could never become true, and the
+            // schema-only-once optimization never activated for real users.
+            supportsStructuredOutputs: config.supportsStructuredOutputs === true
+              || config.capabilities?.structuredOutputs === true
           },
           apiKey,
           fetchImpl: deps.analysisRunner.fetchImpl,
