@@ -14,7 +14,8 @@
 
 - 新增 `tests/integration/ai-memory-supplement-regression.test.mjs` **10 项**：补答完整、仍缺、错误观众、部分覆盖、跨观众证据、重复事实、非法 JSON、空+length、重启 Resume、3 批并发。
 - 全量 **708 passed / 0 failed**（2026-11-14，186,397 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
-- EXE 与真实数据只读副本回放见 STATUS §0.22.4；真实付费 API / 真实生产 Resume / 真实 UAC / 真实浏览器点击仍未验收。
+- 正式 EXE：buildId `e441070b57b5` / commit `81be9cd` / SHA-256 `27c0bfbe…` / 91.9 MB / 176 assets / `requireAdministrator`；asInvoker 测试副本 + 生产数据只读副本 + Mock：批次 2 首答漏 1 人、补答非法 JSON → partial 88/89；重启后 Resume 只补 1 人 → complete 89/89；旧 503 条结果保留，事实无重复，重复 Resume 0 请求。
+- 真实付费 API / 真实生产 Resume / 真实 UAC / 真实浏览器点击仍未验收。
 
 ## 0.13.2-r10 — 2026-11-13（长期画像输出预算、截断恢复与观众级断点）
 

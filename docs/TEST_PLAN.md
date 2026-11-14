@@ -1228,7 +1228,13 @@ duration ≈ 155s
 
 ### 37.4 EXE 与真实数据只读副本（本轮实测）
 
-（构建/回放后填写 buildId、SHA-256、任务与结果。）
+- 正式 EXE：buildId `e441070b57b5` / commit `81be9cd` / SHA-256 `27c0bfbe9227ed15693370c999df0fda7d3d39ffafbffc0b7b9c2ab2a9eb6e58` / 91.9 MB / 176 assets / `requireAdministrator`。
+- asInvoker 测试副本 + 生产数据只读副本 + 本地 OpenAI-compatible Mock Provider；会话 `ses_01M7ACPCM8YB56VCV82S` 新建 memory job `aij_01M7BZPKAJ8WMYGZA8BS`（89 人 / 9 批）：
+  - 首轮批次 2 首答漏 1 人、补答非法 JSON：`partial`、88/89、8/9 批、10 请求、1 failed；首答其余 9 人已保存。
+  - 关闭重开：health 同 build；`partial`、`canResume=true`、88/89。
+  - Resume：1 次请求、仅失败观众；`complete`、89/89、9/9、requests 10→11；批次 1/3–9 未重发。
+  - 回放前 503 条 `ai_results` 全保留；事实 1,007→1,095→1,096；新 job 10 条结果（9 v1 + b2 v2）；89 条新事实；无重复事实；再次 Resume 0 请求。
+- 这是正式 EXE + 真实数据只读副本 + Mock 的确定性回放，不是真实付费 Provider 验收，也不是生产任务 Resume。
 
 ### 37.5 未验证
 

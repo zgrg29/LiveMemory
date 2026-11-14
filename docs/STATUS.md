@@ -42,7 +42,15 @@
 
 ### 0.22.4 EXE 与真实数据只读副本回放
 
-（本节在正式 EXE 构建/回放后填写。）
+- **正式 EXE**：`dist/LiveMemory.exe` buildId `e441070b57b5` / commit `81be9cd` / SHA-256 `27c0bfbe9227ed15693370c999df0fda7d3d39ffafbffc0b7b9c2ab2a9eb6e58` / 96,401,408 bytes（91.9 MB）/ 176 assets / `requireAdministrator`。
+- **隔离回放**（asInvoker 测试副本，仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`；生产数据只读副本；本地 OpenAI-compatible Mock Provider）：
+  - 会话 `ses_01M7ACPCM8YB56VCV82S`，新建 memory job `aij_01M7BZPKAJ8WMYGZA8BS`，89 位观众 / 9 批。
+  - 第一次运行：Mock 在批次 2 首答故意漏 1 位观众，补答返回非法 JSON。结果 `partial`、88/89、8/9 批、10 次请求；批次 2 的 `bilibili:335118245` 为 `failed`；错误同时记录 `MEMORY_VIEWER_UPDATE_MISSING` 与 `AUTO_INVALID_JSON`；首答其余 9 位观众已保存。
+  - 关闭 EXE 后重启同一数据目录：`/api/health` 返回同一 buildId/commit；状态仍为 `partial`、`canResume=true`、88/89。
+  - `POST /api/ai/analyze/resume`：只请求 1 次、仅 1 位失败观众；完成 `complete`、89/89、9/9、requests 10→11；没有重发批次 1/3–9。
+  - 旧数据：回放前 503 条 `ai_results` 全部保留；事实 1,007→1,095→1,096；新 job 10 条结果（9 个 v1 + 批次 2 的 v2）；89 条新事实；`memory_facts` 按 `(viewer_id, dedupe_key)` 无重复；89 位观众全部 `semantic`。
+  - 再次 Resume：`complete`、`canResume=false`、Provider 请求数仍 11（0 请求）。
+- **性质**：这是“正式 EXE + 生产数据只读副本 + Mock Provider”的确定性回放，不是真实付费 Provider 验收，也不是生产任务 Resume。未修改生产数据库/未自动 Resume 生产任务。
 
 ### 0.22.5 影响、边界与关闭结论
 

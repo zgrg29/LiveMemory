@@ -91,7 +91,14 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 ## 8. EXE 与真实数据只读副本
 
-（构建/回放结果见 STATUS §0.22 与本节后续更新；正式 EXE 构建后填写 buildId/SHA-256。）
+- 正式构建：`dist/LiveMemory.exe`，buildId `e441070b57b5`，commit `81be9cdc38dbd5679f936687c368f77ba5596b9b`，SHA-256 `27c0bfbe9227ed15693370c999df0fda7d3d39ffafbffc0b7b9c2ab2a9eb6e58`，96,401,408 bytes（91.9 MB），176 assets，`requireAdministrator`，builtAt `2026-11-14T02:54:03.831Z`。
+- 回放使用：asInvoker 测试副本（仅 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1`）+ 生产数据只读副本 `tests/.tmp/rc0-exe-data` + 本地 OpenAI-compatible Mock Provider（127.0.0.1:48991）。生产数据未被修改。
+- 会话 `ses_01M7ACPCM8YB56VCV82S`，新建 memory job `aij_01M7BZPKAJ8WMYGZA8BS`，89 人 / 9 批。
+- 首轮：批次 2 首答故意漏 1 人（missing ref 10），补答返回非法 JSON；结果 `partial`、88/89、8/9 批、10 请求、1 failed（`bilibili:335118245`）；首答其余 9 人已保存；错误记录 `MEMORY_VIEWER_UPDATE_MISSING` + `AUTO_INVALID_JSON`。
+- 关闭 EXE 后重启同一数据目录：`/api/health` 同 buildId/commit；状态仍 `partial`、`canResume=true`、88/89。
+- `POST /api/ai/analyze/resume`：只发 1 次请求，仅 1 位失败观众；`complete`、89/89、9/9、requests 10→11；批次 1/3–9 未重发。
+- 数据：回放前 503 条 `ai_results` 全部保留；事实 1,007→1,095→1,096；新 job 10 条结果（9 v1 + b2 v2）；89 条新事实；`(viewer_id, dedupe_key)` 无重复；再次 Resume 0 请求。
+- 性质：正式 EXE + 真实数据只读副本 + Mock Provider 的确定性回放；不是真实付费 Provider 验收，也不是生产任务 Resume。
 
 ## 9. 对现有数据与其他 AI 流程的影响
 
