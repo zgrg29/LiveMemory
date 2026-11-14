@@ -128,6 +128,14 @@ function redactMemoryContext(memoryContext, refs) {
         nickname: viewer.nickname ?? null,
         evidence_seqs: viewer.evidence_seqs ?? [],
         zero_excerpt: viewer.zero_excerpt === true,
+        ...(viewer.excerpt_omitted_messages !== undefined
+          ? {
+            excerpt_total_messages: Number(viewer.excerpt_total_messages ?? 0),
+            excerpt_included_messages: Number(viewer.excerpt_included_messages ?? 0),
+            excerpt_omitted_messages: Number(viewer.excerpt_omitted_messages ?? 0),
+            excerpt_window: viewer.excerpt_window ?? 'most_recent'
+          }
+          : {}),
         memory: viewer.memory ?? {status: 'none', version: 0, facts: []}
       };
     }),
@@ -192,6 +200,7 @@ function memoryContract(manifest, refs, onlyRefs = null) {
     '- Never output viewer_id, protocol, schema_version, analysis_scope, job_id, task_id or session_id. The local program maps refs back to stable ids and injects all protocol fields.',
     '- The top-level key is `viewers`. Do not return `viewer_memory_updates`, `session_topics` or `viewer_profiles`.',
     '- For a ref with zero_excerpt=true, return no_new_information:true and operations:[].',
+    '- If a viewer has excerpt_omitted_messages > 0, only that viewer\'s most recent messages are included. Do not infer what the omitted earlier messages said, and do not treat the omission as evidence that the viewer has no other interests.',
     '- Evidence arrays may only contain the seq numbers listed for that same ref.',
     '- stated operations must include at least one evidence seq and must be something the viewer personally said. Retelling, jokes, quotes and advice to the streamer are not viewer facts.',
     '- Mark inferences as certainty "inferred" (or "uncertain" when evidence is thin); never present an inference as a confirmed fact.',

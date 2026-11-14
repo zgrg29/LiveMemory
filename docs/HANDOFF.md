@@ -1,11 +1,47 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费测试计划 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
 > 本轮**未调用任何真实付费 API**、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布。
-> 全部测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
+> 归档真实结果只读重评；全部新测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock。
 
-## 0. 本轮（P0-3 阶段 A + DeepSeek 真实付费验收）
+## 0. 本轮（RC0-MEMORY-QUALITY）
+
+完整报告：`docs/MEMORY_QUALITY.md`；日志：`log/2026-11-14-memory-quality.md`。
+
+### 0.1 做了什么
+
+1. **建立标准答案集**：`tests/fixtures/memory-quality/gold-corpus.mjs`（16 观众 / 3 场次 /
+   70 消息 / 30 当前事实 + 6 被替代 / 11 重要 / 1 歧义 / 26 不应保存），覆盖 15 类场景；
+   另建 P0-3 16 句模板的事后标注，用于离线重评归档真实结果。
+2. **建立指标与 CLI**：严格召回、准确率、重要召回、跨观众、重复、误收、歧义、Token/费用；
+   `scripts/memory-quality-eval.mjs`、`scripts/memory-batch-structure.mjs`。
+3. **重评归档真实 10 vs 20**：旧“20 更差”不成立。第 1 次 cap10 67 行中 37 行是
+   `needs_confirmation`；cap10 两次多发 4/3 次补答，cap20 为 0。严格 stated 口径两次方向相反；
+   20 每请求/每 Token 更省。默认 10 不变，但撤销“20 已证明更差”。
+4. **确定性修复**：摘录窗口 omitted 元数据 + 提示词禁止推断；`efficiency.factQuality`
+   区分 stated/inferred/uncertain。未改 Schema/提示词版本/DB schema/默认批次。
+5. **新增 17 项测试**：10 unit + 7 integration；oracle 在 5/10/20 下 100% 严格召回；
+   退化/跨观众/截断/同名场景均有断言。
+6. **全量 814 passed / 0 failed**；正式 EXE 与 EXE 矩阵见 `docs/STATUS.md` §0.28.5。
+
+### 0.2 下一轮必须先做
+
+1. **不要恢复 20 人默认**，也不要继续引用“20 人事实保留率 73%/51%”作为质量结论；
+   那是行数与不等请求预算的比较。
+2. 下一次真实付费 A/B 必须先获授权；建议等请求预算、重复 ≥3 次，用本报告 CLI 评分。
+3. 优先修“引用原文不支持结论”的语义污染（25%–31% stated 事实），而不是加批次或加提示词。
+4. 5 人批次没有真实语义数据；其他 Provider、真实账单、thinking、真实浏览器仍未验证。
+5. 摘录窗口仍为最近 120 条/人；若要改，先做授权的 120 vs 240 对照。
+
+### 0.3 不要做
+
+1. 不要把 `memory_facts` 行数当质量，或把 uncertain 与 stated 混算。
+2. 不要在未复测前重新启用 20 人默认。
+3. 不要为了召回率放宽证据校验或鼓励编造。
+4. 不要声称本轮完成了真实付费语义验收。
+
+## 0-A 上一轮（P0-3 阶段 A + DeepSeek 真实付费验收）
 
 完整底稿、兼容性矩阵与真实结果：`docs/AI_PROVIDER_COMPATIBILITY.md`；日志：
 `log/2026-11-14-p03-provider-compat.md`。

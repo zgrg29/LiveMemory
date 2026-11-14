@@ -23,6 +23,7 @@ import {validateAnalysisImport} from '../import/validate.mjs';
 import {importAnalysisResult} from '../import/importer.mjs';
 import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-jobs.mjs';
 import {ANALYSIS_MODE, TASK_KIND} from '../constants.mjs';
+import {countFactQuality} from '../quality/facts.mjs';
 import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
 import {addUsage, countRequestWithoutUsage} from '../providers/pricing.mjs';
@@ -1102,7 +1103,8 @@ export class AnalysisRunner {
       : null;
     const viewersCovered = Number(memoryCoverage?.covered ?? 0);
     const viewersTotal = Number(memoryCoverage?.total ?? 0);
-    const factsSaved = this.#countJobFacts(entry.memoryJobId);
+    const factQuality = this.#countJobFactQuality(entry.memoryJobId);
+    const factsSaved = factQuality.total;
     const cost = usage?.cost && Number.isFinite(Number(usage.cost.amount)) ? usage.cost : null;
     const per100 = (value, base) => (base > 0 ? Math.round((value / base) * 100) : null);
     return {
@@ -1127,6 +1129,9 @@ export class AnalysisRunner {
       viewersCovered,
       viewersTotal,
       factsSaved,
+      // Distinguish evidence-backed facts from cautious review rows. Raw row
+      // count alone is not a quality metric (see docs/MEMORY_QUALITY.md).
+      factQuality,
       tokensPer100Viewers: totalTokens === null ? null : per100(totalTokens, viewersCovered),
       tokensPer100Facts: totalTokens === null ? null : per100(totalTokens, factsSaved),
       cost,
@@ -1146,15 +1151,8 @@ export class AnalysisRunner {
     };
   }
 
-  #countJobFacts(memoryJobId) {
-    if (!memoryJobId) return 0;
-    try {
-      const row = this.db.prepare('SELECT COUNT(*) AS n FROM memory_facts WHERE source_job_id = ?')
-        .get(memoryJobId);
-      return Number(row?.n ?? 0);
-    } catch {
-      return 0;
-    }
+  #countJobFactQuality(memoryJobId) {
+    return countFactQuality(this.db, memoryJobId);
   }
 
   #setRunning(sessionId, patch) {

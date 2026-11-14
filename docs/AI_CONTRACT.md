@@ -446,8 +446,8 @@ M6/M7 扩展（1.1.0 字段可选；1.2.0 批次必须包含 `viewer_memory_upda
 
 | 文件 | 内容 |
 | --- | --- |
-| `memory_context.json` | 本批次负责的观众：`viewer_id`、昵称、`evidence_seqs`（该观众允许引用的本包记忆证据 seq）、`zero_excerpt`、现有 `memory`（version/summary/facts）、`session_excerpt_message_count`。v0.12.1 起不再重复 `viewer_context` 中的累计统计。 |
-| `viewer_excerpts.jsonl` | 本批次负责的每位观众在本场的全部可用发言（最多最近 120 条/人），`seq` 为本包内记忆证据序号 |
+| `memory_context.json` | 本批次负责的观众：`viewer_id`、昵称、`evidence_seqs`（该观众允许引用的本包记忆证据 seq）、`zero_excerpt`、现有 `memory`（version/summary/facts）、`session_excerpt_message_count`。v0.12.1 起不再重复 `viewer_context` 中的累计统计。RC0-MEMORY-QUALITY 起增加 `excerpt_total_messages` / `excerpt_included_messages` / `excerpt_omitted_messages` / `excerpt_window`；它们只描述“最近 120 条”窗口的截断，不改变证据规则。 |
+| `viewer_excerpts.jsonl` | 本批次负责的每位观众在本场的可用发言（最多最近 120 条/人），`seq` 为本包内记忆证据序号；被省略的早期消息数记录在 `excerpt_omitted_messages`，模型不得推断其内容 |
 
 `viewer_context.json` 同时包含本场消息中的观众与本批次负责记忆的观众（`in_memory_batch` 区分），
 并为每位观众附带 `memory` 摘要/事实/版本。
@@ -895,6 +895,9 @@ result.schema.json
 - 默认 `input_budget_tokens=24000`；`content_budget_tokens` 是留给消息/摘录的预算，固定 overhead 单独列出。
 - DashScope 请求额外发送 `max_completion_tokens`（回答预算 + 16k），限制回答+思考总量；其他 Provider 不发送。该字段的实际接受度仍需真实 Provider 验证。
 - 结果 Schema、导入协议、证据 `{batch, seq}` 规则不变。
+- RC0-MEMORY-QUALITY 追加可选 `batch_plan.excerpt_per_viewer_cap`、`excerpt_window`、
+  `excerpt_omitted_messages`、`excerpt_truncated_viewers`。它们只用于披露“最近 120 条/人”
+  的摘录截断；不改变批次划分、证据校验或结果 Schema。旧包没有这些字段时按“未披露”处理。
 
 ## 20. v0.13.2 长期画像协议修复
 

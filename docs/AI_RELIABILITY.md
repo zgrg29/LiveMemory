@@ -439,6 +439,30 @@ DeepSeek 真实请求，40 位合成观众）：
 - 真实账单核对；2 次取消请求的计费；thinking 开启时的质量/费用。
 - 真实浏览器截图；cap10 仍会漏部分事实。
 
+## 15. RC0-MEMORY-QUALITY：语义质量与度量修正（2026-11-14）
 
+完整报告：`docs/MEMORY_QUALITY.md`。本轮只做离线重评与确定性修复，未新增真实请求。
 
+### 15.1 度量修正
+
+- 旧“有效事实”= `memory_facts` 行数，把 `needs_confirmation` 也算成事实。归档数据显示
+  第 1 次 cap10 的 67 行中 37 行是 uncertain，cap20 的 49 行全是 active/stated。
+- 因此“20 人事实更少 = 20 人更差”不成立。严格口径（stated + 语义匹配 + 引用支持）
+  两次运行方向相反：cap10 15.1% / 29.5%，cap20 24.5% / 18.0%。
+- cap10 两次分别多发 4 / 3 个补答请求，cap20 为 0；原始事实总数不是等预算比较。
+
+### 15.2 可靠性结论
+
+- 本地 Schema、ref 映射、证据归属、去重仍可靠；本轮没有发现新的解析/DB 丢失。
+- 但“证据属于该观众”不等于“该证据支持该结论”。归档中约 25%–31% 的 stated 事实
+  引用原文并不支持结论，这是下一步要解决的真实语义问题。
+- `efficiency.factQuality` 现在区分 stated / inferred / uncertain / active /
+  needs_confirmation；`factsSaved` 保留兼容，但不再单独代表质量。
+
+### 15.3 确定性修复
+
+- 摘录窗口：包内新增 `excerpt_total/included/omitted/window` 与 manifest
+  `batch_plan.excerpt_omitted_messages`；提示词明确禁止推断被省略的早期消息。
+  默认仍为最近 120 条/人，未在无真实高频样本时擅自扩大。
+- 未改结果 Schema 1.3.0、提示词版本 v13.2、数据库 schema 16、默认 10 人/批。
 

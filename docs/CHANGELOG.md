@@ -1,5 +1,30 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r18 — 2026-11-14（RC0-MEMORY-QUALITY：语义质量度量与口径修正）
+
+### 标准答案集与指标
+
+- 新增 15 类场景标准答案集：16 观众 / 3 场次 / 70 消息 / 30 当前事实 + 6 被替代 /
+  11 重要 / 1 歧义 / 26 不应保存；P0-3 16 句模板事后标注。
+- 新增严格召回、准确率、重要召回、跨观众、重复、误收、歧义、Token/费用指标；
+  `scripts/memory-quality-eval.mjs`、`scripts/memory-batch-structure.mjs`。
+
+### 关键修正
+
+- **撤销“20 人更差”结论**：旧统计把 37 条 `needs_confirmation` 当作有效事实；cap10
+  两次多发 4/3 次补答，cap20 为 0。严格 stated 口径两次方向相反，20 每请求/Token 更省；
+  默认 10 保留，20 需等预算、重复 ≥3 次复测。
+- **摘录截断披露**：`memory_context` / manifest 新增 `excerpt_total/included/omitted/window`
+  与 `batch_plan.excerpt_omitted_messages`；提示词禁止推断被省略内容。默认 120 不变。
+- **事实质量可见**：`efficiency.factQuality` 区分 stated/inferred/uncertain。
+
+### 验证
+
+- 新增 10 unit + 7 integration；oracle 在 5/10/20 下 100% 严格召回/准确率；
+  退化/跨观众/同名/截断场景均有断言。
+- 全量 **814 passed / 0 failed / 0 skipped**；结果 Schema 1.3.0、提示词 v13.2、
+  DB schema 16、默认 10 人/批均未改。
+
 ## 0.13.2-r17 — 2026-11-14（RC0 P0-3：DeepSeek 真实付费验收与 20→10 回退）
 
 ### 真实 Provider 验收（用户授权）

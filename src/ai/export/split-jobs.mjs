@@ -630,7 +630,8 @@ export async function createViewerMemoryJob({
   const contextByViewer = new Map(viewerContext.map((entry) => [entry.viewer_id, entry]));
   const viewerCosts = new Map();
   for (const viewer of allViewers) {
-    const slice = (messagesByViewer.get(viewer.viewer_id) ?? []).slice(-MAX_MESSAGES_PER_VIEWER_EXCERPT);
+    const allViewerMessages = messagesByViewer.get(viewer.viewer_id) ?? [];
+    const slice = allViewerMessages.slice(-MAX_MESSAGES_PER_VIEWER_EXCERPT);
     const excerptTokens = slice.reduce((total, message) => total + estimateTokens(message.content) + 28, 0);
     // The memory contract repeats this viewer's allowed evidence seqs; a flat
     // per-message estimate keeps that list inside the same budget.
@@ -649,7 +650,13 @@ export async function createViewerMemoryJob({
         existingFacts
       }),
       existingFacts,
-      excerptCount: slice.length
+      excerptCount: slice.length,
+      // The memory excerpt window is intentionally bounded. Record what was
+      // omitted instead of silently dropping earlier messages: the prompt and
+      // the manifest must be able to state "only the most recent N were sent".
+      excerptTotalCount: allViewerMessages.length,
+      excerptIncludedCount: slice.length,
+      excerptOmittedCount: Math.max(0, allViewerMessages.length - slice.length)
     });
   }
 
@@ -729,6 +736,8 @@ export async function createViewerMemoryJob({
   const createdAt = new Date(now);
   const written = [];
   const entries = [];
+  let totalExcerptOmitted = 0;
+  let totalExcerptTruncatedViewers = 0;
   const baseContext = buildSessionContextBlock(summary);
   try {
     await mkdir(exportsDir, {recursive: true});
@@ -765,19 +774,36 @@ export async function createViewerMemoryJob({
       );
       const memoryViewers = viewers.map((viewer) => {
         const entry = contextByViewer.get(viewer.viewer_id) ?? {};
+        const excerptSeqs = seqByViewer.get(viewer.viewer_id) ?? [];
+        const totalMessages = (messagesByViewer.get(viewer.viewer_id) ?? []).length;
         return {
           viewer_id: entry.viewer_id ?? viewer.viewer_id,
           platform: entry.platform ?? viewer.platform,
           nickname: entry.nickname ?? viewer.nickname,
-          evidence_seqs: seqByViewer.get(viewer.viewer_id) ?? [],
-          session_excerpt_message_count: (seqByViewer.get(viewer.viewer_id) ?? []).length,
-          zero_excerpt: (seqByViewer.get(viewer.viewer_id) ?? []).length === 0,
+          evidence_seqs: excerptSeqs,
+          session_excerpt_message_count: excerptSeqs.length,
+          // The excerpt window keeps the most recent messages only. These
+          // fields make the truncation explicit to the model, the manifest and
+          // any later quality audit; they are never inferred from a count.
+          excerpt_total_messages: totalMessages,
+          excerpt_included_messages: excerptSeqs.length,
+          excerpt_omitted_messages: Math.max(0, totalMessages - excerptSeqs.length),
+          excerpt_window: totalMessages > excerptSeqs.length ? 'most_recent' : 'all',
+          zero_excerpt: excerptSeqs.length === 0,
           memory: entry.memory ?? buildMemoryPayload(db, {
             broadcasterId: session.broadcasterId,
             viewerId: viewer.viewer_id
           })
         };
       });
+      const excerptOmittedMessages = memoryViewers.reduce(
+        (total, viewer) => total + Number(viewer.excerpt_omitted_messages ?? 0), 0
+      );
+      const excerptTruncatedViewers = memoryViewers.filter(
+        (viewer) => Number(viewer.excerpt_omitted_messages ?? 0) > 0
+      ).length;
+      totalExcerptOmitted += excerptOmittedMessages;
+      totalExcerptTruncatedViewers += excerptTruncatedViewers;
       const memoryContext = {
         protocol: ANALYSIS_PROTOCOL,
         kind: 'viewer_memory_only',
@@ -793,7 +819,9 @@ export async function createViewerMemoryJob({
           task_id: taskId,
           viewers: memoryViewers.length,
           messages: excerptMessages.length,
-          viewers_total: allViewers.length
+          viewers_total: allViewers.length,
+          excerpt_omitted_messages: excerptOmittedMessages,
+          excerpt_truncated_viewers: excerptTruncatedViewers
         },
         viewers: memoryViewers,
         notes: {
@@ -815,7 +843,9 @@ export async function createViewerMemoryJob({
           total: batches.length,
           batch_id: batchId,
           task_id: taskId,
-          message_count: excerptMessages.length
+          message_count: excerptMessages.length,
+          excerpt_omitted_messages: excerptOmittedMessages,
+          excerpt_truncated_viewers: excerptTruncatedViewers
         },
         counts: {
           viewers_in_batch: memoryViewers.length,
@@ -881,6 +911,10 @@ export async function createViewerMemoryJob({
           output_budget_tokens: batchOutputTokens,
           estimated_output_tokens: batch.estimatedOutputTokens,
           max_facts_per_viewer: MEMORY_MAX_FACTS_PER_VIEWER,
+          excerpt_per_viewer_cap: MAX_MESSAGES_PER_VIEWER_EXCERPT,
+          excerpt_window: 'most_recent',
+          excerpt_omitted_messages: excerptOmittedMessages,
+          excerpt_truncated_viewers: excerptTruncatedViewers,
           context_length: batchBudget.contextLength,
           overhead_adjusted: batchBudget.overheadAdjusted,
           context_capped: batchBudget.contextCapped,
@@ -1018,6 +1052,9 @@ export async function createViewerMemoryJob({
         outputBudgetTokens: MEMORY_BASE_OUTPUT_TOKENS,
         outputOversizedViewerCount: plan.outputOversizedViewerCount ?? 0,
         oversizedViewerCount: plan.oversizedViewerCount ?? 0,
+        excerptOmittedMessages: totalExcerptOmitted,
+        excerptTruncatedViewers: totalExcerptTruncatedViewers,
+        excerptPerViewerCap: MAX_MESSAGES_PER_VIEWER_EXCERPT,
         createdAt: now
       },
       packages: entries.map((entry) => ({

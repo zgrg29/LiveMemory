@@ -26,6 +26,20 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
+## 2.1 本轮结果（2026-11-14，RC0-MEMORY-QUALITY）
+
+- 全量：**814 passed / 0 failed / 0 skipped（219,730 ms）**。
+- 新增 **10 unit**：`tests/unit/memory-quality-metrics.test.mjs`（别名/归一化、严格召回、
+  漏提、无证据支持、歧义单列、跨观众、误收、重复、同名不同人、成本）。
+- 新增 **7 integration**：`tests/integration/memory-quality-gold.test.mjs`
+  （15 类标准答案集一致性；5/10/20 人批次每位观众一次且 oracle 100% 严格召回/准确率；
+  标准答案不泄漏；退化答案被度量；跨观众证据导入前拒绝；150 条高频观众披露 120/30 截断；
+  昵称变化同一 ID、同名不同 ID 不合并）。
+- 归档真实重评（只读，无新请求）：`scripts/memory-quality-eval.mjs p03`；
+  结构对照：`scripts/memory-batch-structure.mjs`。
+- 既有 AI/画像/补答/Token/备份/认证/平台/UI 测试全部通过；未放宽任何断言。
+- EXE 矩阵结果见 `docs/MEMORY_QUALITY.md` §10 与 `docs/STATUS.md` §0.28.5。
+
 ## 3. 覆盖清单
 
 ### 3.1 单元

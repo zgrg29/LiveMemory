@@ -1,8 +1,83 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0 P0-3：DeepSeek 真实付费验收、20→10 回退与正式 EXE 真实请求；797 全量；EXE `69ec022cee31`）
+最后更新：2026-11-14（RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正；814 全量；EXE `ab6098700897`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.28 RC0-MEMORY-QUALITY：长期画像事实完整性与语义质量专项（2026-11-14）
+
+完整报告：`docs/MEMORY_QUALITY.md`；开发日志：`log/2026-11-14-memory-quality.md`。
+**未调用真实付费 Provider、未改生产数据库、未发送真实聊天、未 Push/Tag/发布。**
+归档真实结果来自上一轮用户授权的 DeepSeek `deepseek-flash` 测试（`tests/.tmp/paid-p03`），
+本轮只读重评。
+
+### 0.28.1 标准答案集与指标
+
+- 新增 `tests/fixtures/memory-quality/gold-corpus.mjs`：**16 位观众 / 3 场次 / 70 条消息 /
+  30 条当前事实 + 6 条被替代 / 11 条重要 / 1 条歧义 / 26 条不应保存**，覆盖任务要求的 15 类场景。
+- 新增 `tests/fixtures/memory-quality/p03-retro-gold.mjs`：上一轮 16 句合成模板的事后标注，
+  用于离线重评归档真实结果（zh-CN 25/200，ja 60/600）。
+- 新增 `src/ai/quality/metrics.mjs`：严格召回、准确率、重要召回、跨观众、重复、误收、
+  歧义、Token/费用；`src/ai/quality/facts.mjs`：单任务 stated/inferred/uncertain 计数。
+- 评分 CLI：`scripts/memory-quality-eval.mjs`；结构对照：`scripts/memory-batch-structure.mjs`。
+- 标准答案不在模型输入中；集成测试读取实际 ZIP 并断言不泄漏。
+
+### 0.28.2 关键结论：旧“20 人更差”不成立
+
+归档 4 次真实运行的严格重评：
+
+| 运行 | 行数 | stated | uncertain | 正确 | 召回 | 重要召回 | 准确率 | 请求/补答 | Token/正确 | $/正确 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 第 1 次 cap10 | 67 | 28 | 37 | 21 | 15.1% | 7.7% | 75.0% | 7 / 4 | 3,393 | $0.001413 |
+| 第 1 次 cap20 | 49 | 47 | 0 | 34 | 24.5% | 23.1% | 72.3% | 2 / 0 | 817 | $0.000332 |
+| 第 2 次 cap10 | 74 | 61 | 11 | 42 | 29.5% | 19.2% | 68.9% | 6 / 3 | 1,386 | $0.000589 |
+| 第 2 次 cap20 | 38 | 35 | 0 | 26 | 18.0% | 19.2% | 74.3% | 2 / 0 | 1,045 | $0.000406 |
+
+- 旧结论把 37 条 `needs_confirmation` 当成“有效事实”，且 cap10 多发 3–4 次补答请求；
+  **行数不是质量，也不是等预算比较**。
+- 两次严格召回方向相反；20 人每请求/每 Token 更省，但运行方差大，不能宣布优劣。
+- **默认 10 人/批保持不变**；撤销“20 已证明更差”，改为“需等预算、重复 ≥3 次的受控复测”。
+- 5 人批次只有结构数据（5 批 / 31,303 估算 Token / 249,283 B），**无语义证据**。
+
+### 0.28.3 确定性修复
+
+1. **摘录窗口不再静默**：`memory_context.json` 每位观众新增
+   `excerpt_total/included/omitted/window`；manifest `batch_plan` 新增
+   `excerpt_per_viewer_cap=120`、`excerpt_omitted_messages`、`excerpt_truncated_viewers`；
+   提示词明确“不得推断被省略的早期消息”。默认 120 条/人未改动（没有真实高频样本）。
+2. **事实质量可见**：`GET /api/ai/analyze/status` 的 `efficiency.factQuality` 区分
+   stated/inferred/uncertain 与 active/needs_confirmation；`factsSaved` 保留兼容。
+3. **未改**：结果 Schema 1.3.0、提示词 v13.2、数据库 schema 16、默认 10 人/批、
+   金额/身份/去重/Resume/补答协议。
+4. **已确认但未改**：同 `kind+topic` 不同 statement 会被 confirm 合并（既有不变量）；
+   补答只检查观众覆盖、不检查事实完整性；本地校验不证明语义蕴含。均列入残余问题。
+
+### 0.28.4 测试与 EXE
+
+- 新增 10 unit + 7 integration；oracle 在 5/10/20 人批次下 100% 严格召回/准确率；
+  退化答案被度量成漏提/误收；跨观众证据导入前被拒绝；150 条高频观众披露 120/30 截断。
+- 全量：**814 passed / 0 failed / 0 skipped（219,730 ms，2026-11-14）**；上一轮 797，本轮 +17。
+- 正式 EXE：见 §0.28.5（buildId / SHA-256 / commit / asInvoker / EXE 矩阵）。
+
+### 0.28.5 正式 EXE（本轮）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,665,088` bytes（92.2 MB） |
+| SHA-256 | `3dfa563b88167f1e3a1985706e73f730c7b58e4c2c84c48817e48f35058fc233` |
+| buildId | `ab6098700897` |
+| source hash | `ab6098700897c170aa260c2a11174444854fa29e0e1fa5f30ccbf26e9056935a` |
+| commit | `1b5f5809b2f622bff63fd336ac0e8bfc3541200d`（构建时 HEAD） |
+| builtAt | `2026-11-14T12:07:16.155Z` |
+| 资源 | `191` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+
+- `scripts/verify-exe.mjs`：**10/10**；`scripts/verify-p0-2-exe.mjs`：**13/13**；
+  `scripts/verify-p0-5-exe.mjs`：**12/12**；`scripts/verify-ai-token-exe.mjs`：**16/16**。
+- 长期画像正常、Resume 正常、数据保存正常、备份恢复正常、API 认证正常、asInvoker 正常。
+- **性质**：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
+  **不是**真实浏览器点击。构建在代码提交之前，`build-info.commit` 记录构建时 HEAD；
+  本轮最终提交见 §0.28.6。
 
 ## 0.27 RC0 P0-3：Provider 兼容性、DeepSeek 真实付费验收与 20→10 回退（2026-11-14）
 
@@ -104,6 +179,11 @@ usage）、估算 $0.3444**；未读取生产 `secrets/`、未修改生产数据
   只保留为技术上限与实验参数。20 人只有在提示词/质量修复并再次真实对照后才能重新启用。
 - 复现：`scripts/ai-efficiency-baseline.mjs --viewer-cap 10|20`（离线结构）；
   `scripts/ai-paid-acceptance.mjs`（真实 A/B，需用户授权与 Key）。
+- **RC0-MEMORY-QUALITY 修正（2026-11-14）**：上表的“有效事实”是行数，包含 37 条 uncertain；
+  cap10 两次分别多发 4 / 3 次补答，cap20 为 0。按 stated + 语义匹配 + 引用支持重评后，
+  两次方向相反（cap10 15.1%/29.5%，cap20 24.5%/18.0%），旧“20 更差”结论撤销，
+  改为“证据不足、需等预算重复复测”。默认 10 人/批仍保留。详见 §0.28 与
+  `docs/MEMORY_QUALITY.md`。
 
 ### 0.27.5 测试
 

@@ -16,6 +16,19 @@
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
 
+## P22 RC0-MEMORY-QUALITY：长期画像事实完整性与语义质量（v0.13.2，2026-11-14）🟡
+
+- ✅ 标准答案集：16 观众 / 3 场次 / 70 消息 / 30 当前事实 + 6 被替代 / 11 重要 / 1 歧义 /
+  26 不应保存，覆盖 15 类场景；P0-3 16 句模板事后标注。
+- ✅ 指标与 CLI：严格召回、准确率、重要召回、跨观众、重复、误收、歧义、Token/费用；
+  `scripts/memory-quality-eval.mjs`、`scripts/memory-batch-structure.mjs`。
+- ✅ 归档真实 4 次运行重评：旧“20 人更差”不成立；行数含 37 条 uncertain、cap10 多发 3–4 次补答；
+  严格口径两次方向相反。默认 10 保留，20 需等预算重复复测。
+- ✅ 确定性修复：摘录 omitted 元数据 + 提示词禁止推断；`efficiency.factQuality`。
+- ✅ 新增 17 测试；全量 **814 passed / 0 failed**；EXE 见 `docs/STATUS.md` §0.28.5。
+- 🟡 未完成：严格召回仅 15%–30%；25%–31% stated 事实引用不支持；5 人无语义数据；
+  未获付费授权；其他 Provider/真实账单/thinking 未验证。
+
 ## P21 RC0 P0-3：Provider 兼容性、DeepSeek 真实付费验收与 20→10 回退（v0.13.2，2026-11-14）🟡
 
 - ✅ 审计 7 个 Provider 的请求格式、鉴权、端点、结构化输出、输出上限、流式、usage 语义，建立兼容性矩阵（`docs/AI_PROVIDER_COMPATIBILITY.md`）
