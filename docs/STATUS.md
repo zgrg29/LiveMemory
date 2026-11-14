@@ -81,6 +81,7 @@
 ### 0.28.6 提交
 
 - 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
+- 补答披露补充：`2b317212c283f6fb9beabf76c35ba2e1c0459f99`
 - 文档收尾提交：本文件所在的后续提交（HEAD）
 - 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；未 Push/Tag/发布。
