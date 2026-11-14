@@ -25,7 +25,7 @@
 - ✅ 修复 **OpenAI 缓存写入 Token** 未解析、**OpenRouter 自报费用** 被丢弃
 - ✅ 10 人 vs 自适应 20 人的离线结构对照（25 观众 3→2 请求；100 观众 10→6 请求；覆盖/事实不变）
 - ✅ 新增 15 项自动化；全量 **796 passed / 0 failed**
-- 🟡 正式 EXE 构建与 EXE 矩阵（认证、AI、备份、asInvoker）复跑（结果见 `docs/STATUS.md` §0.27）
+- ✅ 正式 EXE `b0df3d53ff22`（commit `aac812f`）：`verify-ai-token-exe` 16/16、`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13
 - ⬜ **阶段 B：真实付费请求、真实 usage/计费、真实长期画像语义、三语言、真实 EXE 用户 Key 流程**（待用户选择 Provider/模型、批准费用上限）
 - ⬜ 真实 `json_schema` 大 Schema 接受度、真实缓存命中率、真实 429/5xx/截断
 - 完整证据：`docs/AI_PROVIDER_COMPATIBILITY.md`、`log/2026-11-14-p03-provider-compat.md`

@@ -1,8 +1,125 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-AI-EFFICIENCY：Token 归因、重复输入、动态分批与成本口径；24 项新测试；schema 16；结果 Schema 1.3.0；提示词 v13.2）
+最后更新：2026-11-14（RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费计划；15 项新测试；796 全量；正式 EXE `b0df3d53ff22`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.27 RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费测试计划（2026-11-14）
+
+完整底稿、兼容性矩阵与付费方案：`docs/AI_PROVIDER_COMPATIBILITY.md`；开发日志：
+`log/2026-11-14-p03-provider-compat.md`。
+**未调用任何真实付费 API、未发送真实聊天/观众身份/长期画像、未修改生产数据库、未 Push/Tag/发布。**
+全部测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
+
+### 0.27.1 阶段边界
+
+- **阶段 A（本轮完成）**：阅读/审计、离线复现、确定性修复、Mock/集成/全量测试、正式 EXE 与
+  EXE 矩阵。
+- **阶段 B（未开始）**：真实付费请求。必须先由用户选择 Provider 与模型、确认费用上限并明确
+  授权。此前填过 Key 不构成授权；不遍历全部 Provider、不使用最贵模型。
+- **P0-3 未完成，不得宣称通过。**
+
+### 0.27.2 发现并修复的确定性缺陷
+
+1. **结构化输出能力检测是循环的（严重）**：`routes.mjs` 把
+   `config.capabilities?.structuredOutputs === true` 作为能力测试入参，而该字段只由测试写入。
+   首次测试必然只用 `json_object`，因此永远写不回 `true`；OpenAI/OpenRouter 的真实用户
+   从不发送 `response_format: json_schema`，RC0-AI-EFFICIENCY 的「Schema 只发一次」在生产中
+   **未生效**（画像约 1.5 KiB、单场约 3.9 KiB/请求的文本 Schema 仍在发送）。
+   离线复现：路由同形入参得到 `none, json_object, json_object, json_object`；
+   传 Provider 声明后为 `none, json_schema, json_schema, json_schema`。
+   现在由 Provider 目录声明触发探测，且只有 session 复杂 Schema 通过本地组装/校验才记 `true`。
+2. **模型拒绝 `response_format` 时永久失败**：能力测试 fatal、真实任务 `client` 错误不重试。
+   现在能力测试一次降级、真实任务在 `requestOnce()` 最多两次降级
+   （`json_schema → json_object → none`）；降级时把完整 Schema 追加回最后一个 user 消息；
+   持久化 `capabilities.structuredOutputs=false`，后续任务/Resume 不重复失败。
+   识别范围收窄为 400/422 且错误信息含 `response_format`/`json_schema`/`json_object`/
+   `structured outputs`，泛化 “schema” 错误不会触发额外付费请求。
+3. **OpenAI 推理模型参数不兼容**：`max_tokens` 不能用于 o-series；推理模型只接受默认
+   temperature；`system` 应改为 `developer`。现在 `providerId=openai` 发
+   `max_completion_tokens`，o-series/GPT-5+ 不发 temperature、映射 `developer`，并加 16K
+   思考预留上限（只按实际用量计费）。能力测试同样应用。
+4. **OpenAI 缓存写入 Token 未解析**：正确字段
+   `prompt_tokens_details.cache_write_tokens` 未被读取，`cacheWriteInputTokens` 恒为 0。
+5. **OpenRouter `usage.cost` 被丢弃**：现在归一为 `providerReportedCost`，与本地
+   「Token × 用户单价」的估算费用分开保存；`providerCostRequests` 区分完整/部分自报。
+
+### 0.27.3 Provider 兼容性矩阵（摘要）
+
+| Provider | 协议/鉴权 | 结构化输出 | 输出上限 | 流式 | 证据等级 |
+| --- | --- | --- | --- | --- | --- |
+| OpenAI | Chat Completions / Bearer | `json_schema`（验证后）+ 一次降级 | `max_completion_tokens`；推理模型无 temperature/developer | SSE | **L2** |
+| DeepSeek | OpenAI-compatible / Bearer | 仅 `json_object` | `max_tokens` | SSE | **L2** |
+| DashScope/Qwen | compatible-mode / Bearer | `json_object` | `max_tokens` + `max_completion_tokens` | SSE | **L2** |
+| OpenRouter | `/api/v1` / Bearer | 按模型；验证后 `json_schema` | `max_tokens` | SSE | **L2** |
+| Anthropic | Messages / `x-api-key` | 无 `response_format`（提示词 + 本地校验） | `max_tokens` | SSE | **L2** |
+| MiniMax | OpenAI-compatible / Bearer | `json_object` | `max_tokens` | SSE；usage 可能未知 | **L2** |
+| 自定义 OpenAI-compatible | 用户 Base URL / Bearer（可选） | 验证后 `json_schema` + 降级 | `max_tokens` | SSE + 一次非流式回退 | **L2** |
+
+所有 Provider 均未达到 **L3（真实 Provider 已验证）**；真实语义、真实计费与多语言仍待阶段 B。
+完整字段级差异、已知不兼容与单位/费用口径见 `docs/AI_PROVIDER_COMPATIBILITY.md` §2–§4。
+
+### 0.27.4 10 人与自适应 20 人（离线结构对照）
+
+| 数据 | 上限 | 请求 | 输入 Token（模拟） | 请求字节 | 覆盖/事实 |
+| --- | --- | --- | --- | --- | --- |
+| 25 观众 / 200 消息 | 10 | 3 | 25,881 | 82,818 | 25/25 |
+| 25 观众 / 200 消息 | 自适应 20 | 2 | 22,898 | 73,271 | 25/25 |
+| 100 观众 / 1,000 消息 | 10 | 10 | 113,038 | 361,706 | 100/100 |
+| 100 观众 / 1,000 消息 | 自适应 20 | 6 | 101,310 | 324,183 | 100/100 |
+
+只证明结构、覆盖与请求数；**不证明真实语义质量**。真实漏写率、跨观众证据污染、补答率与
+事实准确性必须由阶段 B 盲评；若 20 人批次明显变差，回退 `viewersPerBatchHard=10`。
+复现：`node scripts/ai-efficiency-baseline.mjs --only <scenario> --viewer-cap 10|20`。
+
+### 0.27.5 测试
+
+- 新增 `tests/unit/ai-provider-compat.test.mjs` **12** 项、`tests/integration/ai-provider-compat.test.mjs` **3** 项。
+- 全量：**796 passed / 0 failed / 0 skipped（468,209 ms，2026-11-14，
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**；
+  上一轮 781，本轮 +15。
+- 回归捕获的真实缺陷：最初用 `/schema/` 识别格式拒绝，导致 `v13-scheduler` 的
+  “synthetic schema failure” 被当成格式拒绝并多发一次请求（预期 2、实际 3）。收窄匹配后
+  复跑 18/18，全量 796/0。
+- 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
+
+### 0.27.6 正式 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `96,637,952` bytes（92.2 MB） |
+| SHA-256 | `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` |
+| buildId | `b0df3d53ff22` |
+| source hash | `b0df3d53ff22216ada0cf22cbc3ef31018f7ef573d6f005428a471fdf2900588` |
+| commit | `aac812f994c78aa616b5d9c0c8b220389130062d` |
+| builtAt | `2026-11-14T10:38:00.559Z` |
+| 资源 | `189` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+
+- `scripts/verify-ai-token-exe.mjs`：**16/16**。正式 EXE + 本地 OpenAI-compatible Mock Provider
+  + 隔离目录：40/40 观众、3 批、3 请求；输入 20,893 / 输出 3,563 / 缓存 8,356；
+  `tokenSource=provider-reported`；估算费用 0.019663 USD；注入 500 后 failed=3、
+  attempts 5 vs requests 2；Resume 只重发 b02 后 40/40；完成后重复 Continue 0 请求；
+  重启后 token 一致；便携备份 768,515 B。
+- `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、
+  不可写目录、异目录、解压复用、CLI 三语）。`--version` 返回 buildId `b0df3d53ff22`。
+- `scripts/verify-p0-5-exe.mjs`：**12/12**；`scripts/verify-p0-2-exe.mjs`：**13/13**。
+- **性质**：正式 EXE + 本地 Mock + 合成数据；**不是**真实付费 Provider 验收，
+  **不是**真实浏览器点击，**不是**用户在 UI 中输入真实 Key。
+
+### 0.27.7 结论与待验收
+
+**P0-3 未完成。** 阶段 A 的代码级与 Mock/EXE 级证据已完成；以下必须等用户授权阶段 B：
+
+1. 用户选定的真实 Provider/模型完成能力测试、单场报告与长期画像。
+2. 真实 usage（input/output/reasoning/cached/cache write）、失败请求计费、Resume 不重复计费。
+3. 真实估算费用与实际账单核对（含 OpenRouter `providerReportedCost`）。
+4. 10 vs 20 的真实语义质量盲评；若回归则恢复 10。
+5. 三语言真实输出与证据不被翻译。
+6. 正式 EXE 中用户通过 UI 填 Key、真实浏览器操作的完整流程。
+
+费用方案与硬上限见 `docs/AI_PROVIDER_COMPATIBILITY.md` §7（Plan A $1.25，Plan B $2.50）。
+**在用户明确批准前不得发送任何真实付费请求。**
 
 ## 0.26 RC0-AI-EFFICIENCY：Token 利用率与 API 成本量化审计（2026-11-14）
 

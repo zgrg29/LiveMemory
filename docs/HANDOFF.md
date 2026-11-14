@@ -32,8 +32,8 @@
 | 新增测试 | 12 unit + 3 integration |
 | 25 观众 / 200 消息 | cap10 3 请求 / 25,881 输入；cap20 2 请求 / 22,898 输入；覆盖 25/25 |
 | 100 观众 / 1,000 消息 | cap10 10 请求 / 113,038 输入；cap20 6 请求 / 101,310 输入；覆盖 100/100 |
-| 正式 EXE | buildId / commit / SHA-256 见 `docs/STATUS.md` §0.27 |
-| EXE 验证 | `verify-ai-token-exe`、`verify-exe`、`verify-p0-5-exe`、`verify-p0-2-exe` 全通过 |
+| 正式 EXE | buildId `b0df3d53ff22` / commit `aac812f` / SHA-256 `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` / `96,637,952` bytes / `189` assets / `asInvoker` |
+| EXE 验证 | `verify-ai-token-exe` 16/16、`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13 |
 
 ### 0.3 关键实现位置
 

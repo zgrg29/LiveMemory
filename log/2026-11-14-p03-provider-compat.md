@@ -101,9 +101,18 @@
 
 ## 7. 正式 EXE
 
-- 构建：`node scripts/build-windows.mjs`（代码提交后构建，使 build-info.commit 与提交一致）。
-- 验证脚本：`verify-ai-token-exe`、`verify-exe`、`verify-p0-5-exe`、`verify-p0-2-exe`。
-- 具体 buildId / commit / SHA-256 / 大小 / 构建时间与逐项结果见 `docs/STATUS.md` §0.27。
+- 构建：`node scripts/build-windows.mjs`（代码提交 `aac812f` 后构建，build-info.commit 与提交一致）。
+- 构建标识：`dist/LiveMemory.exe` / `96,637,952` bytes（92.2 MB）/
+  SHA-256 `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` /
+  buildId `b0df3d53ff22` / source hash `b0df3d53ff22216ada0cf22cbc3ef31018f7ef573d6f005428a471fdf2900588` /
+  builtAt `2026-11-14T10:38:00.559Z` / `189` assets / 20 个必需模块 / RT_MANIFEST `asInvoker`。
+- 验证：
+  - `verify-ai-token-exe` **16/16**：40/40 观众、3 批、3 请求；输入 20,893 / 输出 3,563 /
+    缓存 8,356；估算费用 0.019663 USD；注入 500 后 failed=3、attempts 5 vs requests 2；
+    Resume 只重发 b02；完成后 Continue 0 请求；重启 token 一致；备份 768,515 B。
+  - `verify-exe` **10/10**；`verify-p0-5-exe` **12/12**；`verify-p0-2-exe` **13/13**。
+- 性质：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
+  **不是**真实浏览器点击，**不是**用户在 UI 中输入真实 Key。
 
 ## 8. 未验证（阶段 B 或后续）
 

@@ -16,7 +16,12 @@
 - 新增 `tests/unit/ai-provider-compat.test.mjs` **12** 项、`tests/integration/ai-provider-compat.test.mjs` **3** 项。
 - 新增 `scripts/ai-efficiency-baseline.mjs --viewer-cap`（harness 构造参数，不是 HTTP/配置/UI 开关），可复现 10 人上限与自适应 20 人上限的同数据对照。
 - 离线结构对照：25 观众/200 消息 3 请求 → 2 请求（输入 25,881 → 22,898）；100 观众/1,000 消息 10 → 6 请求（输入 113,038 → 101,310）；覆盖与事实数不变。仅证明结构，不证明真实语义质量。
-- 全量 **796 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27）。
+- 全量 **796 passed / 0 failed / 0 skipped**（2026-11-14，468,209 ms，见 `docs/STATUS.md` §0.27）。
+- 正式 EXE：`dist/LiveMemory.exe` buildId `b0df3d53ff22` / commit `aac812f` /
+  SHA-256 `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` /
+  `96,637,952` bytes / `189` assets / `asInvoker`。
+  `verify-ai-token-exe` **16/16**、`verify-exe` **10/10**、`verify-p0-5-exe` **12/12**、
+  `verify-p0-2-exe` **13/13**。
 - 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
 
 ### 未验证
