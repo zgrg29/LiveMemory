@@ -1,11 +1,51 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-FINAL-ACCEPTANCE：最终综合验收、2 个 P0 修复、819 全量 · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-14 · RC0-USAGE-GUIDE：三语使用说明与 RC0 封版 · 828 全量 · 正式 EXE `09545e3611f2` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
 
 > 本轮**未调用任何真实付费 API**、未发送真实聊天到第三方、未修改生产数据库、未 Push/Tag/发布。
-> 归档真实结果只读重评；全部新测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock。
+> 本轮只用只读说明页与本地自动化；测试使用 `tests/.tmp` 隔离目录。
 
-## 0. 本轮（RC0-FINAL-ACCEPTANCE）
+## 0. 本轮（RC0-USAGE-GUIDE 封版）
+
+完整报告：`docs/STATUS.md` §0.30；日志：`log/2026-11-14-rc0-usage-guide.md`；界面规范：`docs/UI_DESIGN.md` §7.23。
+
+### 0.1 做了什么
+
+1. **唯一新增功能**：控制台侧栏「使用说明 / 使い方 / User guide」与 `#/help` 页面。只读，不调用 `/api/*`，不写数据，不弹确认，不新增限制。
+2. **9 个主题**：首次启动、Bilibili/YouTube 连接、记录/观众/历史、Provider 与 API Key、单场分析 + 长期画像、长期记忆与事实/证据、进度与失败继续、备份/恢复/迁移、FAQ（8 条）。
+3. **三语一致**：112 个 `help.*` 键 + `nav.help`；复用 `pageHead`/`card`/`callout`/`details`，只新增 `.help-*` 样式与一个书页图标。
+4. **布局**：桌面 sticky 目录 + 两栏；≤1000px 单列胶囊目录；≤700px 术语表单列；≤520px 缩小字号；长文本不横向溢出。
+5. **文案边界**：客观解释 AI 画像可能不准确、证据只保证引用合法；明确写出没有观众数/消息数/时长/分析次数/Token/费用/运行时间/批次限制，也不强制审核。
+6. **测试**：新增 `help-ui` 9 项；全量 **828 passed / 0 failed / 0 skipped（240,768 ms）**；`verify-help-exe` **14/14**；`verify-exe` **10/10**。
+7. **打包**：`src/web/js/pages/help.js` 加入构建必需模块；正式 EXE `09545e3611f2` / SHA-256 `bf9fcc49…` / `96,733,184` B / `192` assets / asInvoker。
+8. **文档**：README、STATUS、HANDOFF、ROADMAP、CHANGELOG、TEST_PLAN、UI_DESIGN 与本日志已更新。
+
+### 0.2 结果
+
+| 指标 | 值 |
+| --- | --- |
+| 全量测试 | **828 passed / 0 failed / 0 skipped**（240,768 ms，2026-11-14） |
+| 新增测试 | `tests/unit/help-ui.test.mjs` 9 项（i18n 键集由既有 `i18n.test.mjs` 覆盖） |
+| 正式 EXE | buildId `09545e3611f2` / commit（构建时）`fbd90be541378ecf9f1e9dbb46651529e2f189c6` / SHA-256 `bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22` / `96,733,184` B / 92.3 MB / asInvoker |
+| 打包验证 | `verify-help-exe` **14/14**；`verify-exe` **10/10** |
+| 版本/Schema | 0.13.2 / DB 16 / 结果 1.3.0 / 提示词 v13.2（均未改） |
+
+### 0.3 下一轮必须先做
+
+1. **等用户决定**是否 Push、打 Tag、发布；不要自行推送或发布。
+2. 用户可在本机打开控制台 `#/help`，目视检查三语、明暗主题与窄屏（本轮沙箱无法启动真实浏览器，见 §0.4）。
+3. 若用户要求继续开发，先读 `docs/STATUS.md` §0.29 的 P1 列表（语义质量），不要以“说明页已完成”当作质量已解决。
+4. 任何新改动都必须重建 EXE 并重新跑 `verify-help-exe` / `verify-exe`。
+
+### 0.4 边界与不要做
+
+1. **不要新增使用限制**：观众数、消息数、时长、分析次数、Token、费用、运行时间、批次数量都不得加限；不得强制审核画像或增加阻断弹窗。
+2. **不要改说明页为可写**：不要加设置、Provider 或数据修改入口；不要在该页调用 API 或加“开始分析”按钮。
+3. **不要声称真实浏览器/截图已验收**：本机 Chromium mojo `platform_channel` 被沙箱拒绝（Chrome 154、Edge 157 均 0x5），只完成 DOM 渲染测试与打包资源检查。
+4. 不要改 DB schema、结果 Schema、提示词版本、备份格式、金额/身份/去重规则；本轮没有这些改动。
+5. 不要把文档提交 Hash 与二进制 buildId 混为一谈：buildId 是源码内容哈希，构建时 HEAD 记录在 `build-info.commit`。
+
+## 0-A 上一轮（RC0-FINAL-ACCEPTANCE）
 
 完整报告：`docs/RC0_FINAL_ACCEPTANCE.md`；日志：`log/2026-11-14-rc0-final-acceptance.md`。
 

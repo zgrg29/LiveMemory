@@ -84,6 +84,7 @@ const REQUIRED_MODULES = [
   'src/server/backup/restore.mjs',
   'src/server/backup-jobs.mjs',
   'src/web/js/auth.js',
+  'src/web/js/pages/help.js',
   'src/storage/repositories/ai-translations.mjs',
   'src/storage/repositories/ai-aggregate-nodes.mjs',
   'src/shared/build-info.mjs'

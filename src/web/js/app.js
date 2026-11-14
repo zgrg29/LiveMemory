@@ -14,6 +14,7 @@ import {livePage} from './pages/live.js';
 import {historyPage} from './pages/history.js';
 import {viewersPage} from './pages/viewers.js';
 import {aiPage} from './pages/ai.js';
+import {helpPage} from './pages/help.js';
 import {settingsPage} from './pages/settings.js';
 
 /**
@@ -87,6 +88,7 @@ const ROUTES = [
   // updated by the normal AI analysis import; old bookmarks land on AI analysis.
   {pattern: /^\/memory$/, page: aiPage, nav: 'ai'},
   {pattern: /^\/ai$/, page: aiPage, nav: 'ai'},
+  {pattern: /^\/help$/, page: helpPage, nav: 'help'},
   {pattern: /^\/settings$/, page: settingsPage, nav: 'settings'}
 ];
 

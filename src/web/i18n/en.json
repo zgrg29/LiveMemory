@@ -23,7 +23,8 @@
     "viewers": "Viewers",
     "ai": "AI analysis",
     "settings": "Settings",
-    "memory": "Memory"
+    "memory": "Memory",
+    "help": "User guide"
   },
   "status": {
     "idle": "Idle",
@@ -2083,6 +2084,156 @@
       "stopHint": "Stopping the recording ends only this session. The target and its tab stay, and the next broadcast starts a new recording automatically.",
       "platformEndedNote": "The platform confirmed the end; this recording was finished and saved automatically.",
       "endedNote": "This recording has ended and is saved. The monitoring target stays and waits for the next broadcast."
+    }
+  },
+  "help": {
+    "pageTitle": "User guide",
+    "pageSubtitle": "How to go from first launch to AI analysis, backups and migration.",
+    "tocTitle": "On this page",
+    "introTitle": "About this guide",
+    "introBody": "This page walks through LiveMemory in the order you normally use it. It only explains things: it changes no settings and writes no data.",
+    "introLocal": "Everything stays on this computer. Data is stored in %LOCALAPPDATA%\\LiveMemory and never sent to a developer server.",
+    "action": {
+      "live": "Open Live",
+      "settings": "Open Settings",
+      "ai": "Open AI analysis",
+      "backup": "Open backup and restore"
+    },
+    "sections": {
+      "start": {
+        "title": "First launch and the basic flow",
+        "lead": "Double-click LiveMemory.exe. The service starts on this computer and opens the console in your default browser.",
+        "step1": "Double-click LiveMemory.exe. Administrator rights are not required. If Windows shows \"Windows protected your PC\", choose More info, then Run anyway.",
+        "step2": "The console opens automatically in your default browser. If it does not, run LiveMemory again instead of opening an old address by hand: a manually opened page cannot get this session.",
+        "step3": "On first use, open Settings to choose the interface language and theme. Both can be changed from the top bar at any time and are remembered.",
+        "step4": "Go to Live, click + New recording, paste the livestream link or room id and start recording. You can record several streams at the same time.",
+        "step5": "While a stream is running, Live shows messages, viewers, support and the live chart. Moving to another page never stops background recording.",
+        "step6": "After the stream, open History for the session results. To use AI, first add your own API configuration in Settings, then pick the session in AI analysis and start.",
+        "note": "Data is stored in %LOCALAPPDATA%\\LiveMemory by default and is never uploaded to a developer server. Press Ctrl+C in the console window to let the app finish cleanly."
+      },
+      "connect": {
+        "title": "Connect Bilibili and YouTube livestreams",
+        "lead": "Both platforms need only a live link. LiveMemory records livestreams only; it does not fetch regular videos, comments or replays.",
+        "step1": "Open Live and click + New recording.",
+        "step2": "Bilibili: paste https://live.bilibili.com/ followed by the room id, or type the room id. Public chat works without signing in. Signing in with the QR code gives more complete nicknames and UIDs.",
+        "step3": "YouTube: paste a live watch or live URL, for example https://www.youtube.com/watch?v=... . No Google login, API key, OAuth or cookie is needed.",
+        "step4": "After you start, the tab goes from Connecting to Recording and chat plus viewers appear in real time.",
+        "step5": "The same room cannot be started twice. To record in parallel, click + New recording to add another stream.",
+        "step6": "To wait for a stream automatically, add a monitoring target (a Bilibili room or a YouTube channel) on the Live page; while the app runs it starts and ends recordings for you.",
+        "noteBilibili": "Bilibili uses its public livestream API. QR sign-in is optional; signing in yields fuller nicknames and UIDs and reduces masking caused by risk control. Without sign-in some messages may only carry a masked nickname and UID 0; they are counted as unidentified.",
+        "noteYoutube": "YouTube is read through the public web chat rather than an official stable YouTube API, so it may stop working when the page changes. The app does not bypass login, CAPTCHA, age or region restrictions and does not claim to be authorized. Original chat is cleared after 30 days by default."
+      },
+      "records": {
+        "title": "Review recordings, viewer data and past sessions",
+        "lead": "Live recordings, past sessions and viewer profiles live on different pages but all read the same local data.",
+        "step1": "Live shows each recording's message count, identifiable viewers, support, message density and latest activity.",
+        "step2": "History lists ended sessions and can search by broadcaster, title or viewer, then filter by platform, status, date and archive state.",
+        "step3": "Open a session to see its activity chart, message timeline, top viewers and session statistics.",
+        "step4": "Each session can be stopped, archived or permanently deleted. Archived sessions are hidden by default but can be shown again; permanent deletion cannot be undone.",
+        "step5": "Viewers shows profiles within the selected broadcaster: first and last seen, sessions, messages, support and long-term memory.",
+        "step6": "When a page shows \"N identifiable viewers / M unidentified messages\", M counts messages where the platform gave no stable UID. They cannot be assigned to a person and the app never guesses or merges them.",
+        "note": "Money is always summed per currency and split into actual payment and display value; different currencies or value kinds are never added together. AI text cannot change these numbers."
+      },
+      "providers": {
+        "title": "Configure your own AI provider and API key",
+        "lead": "AI analysis uses only the API key you obtained from a provider and is called directly by the local program. No developer server is involved.",
+        "step1": "Open Settings, find the AI provider section and click Add configuration.",
+        "step2": "Choose a provider (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter or a custom OpenAI-compatible endpoint) and fill in the base URL and model id if needed.",
+        "step3": "Create an API key on the provider's site and paste it into the key field. The key is stored in the local encrypted credential store and never appears in configuration JSON, logs, backups or HTML.",
+        "step4": "Click Test capability and confirm the model returns valid JSON. If it fails, check the key, region, base URL, balance and model id, then try again.",
+        "step5": "Every price field is optional. Filling prices shows estimated cost; without them the app still analyses and only counts tokens.",
+        "step6": "Each configuration has its own concurrency (1–8). Requests from the same configuration share the scheduler, 429 cooldowns and retries.",
+        "note": "You pay the provider directly for API usage. Use only a key you are allowed to use and follow the provider's terms. Deleting a configuration does not delete saved analysis results."
+      },
+      "analysis": {
+        "title": "Start a single-session AI analysis and long-term viewer profiles",
+        "lead": "One entry point can produce both the session report and the long-term viewer profiles in a single task, saved separately.",
+        "step1": "Open AI analysis and choose a session in step 1.",
+        "step2": "In step 2 choose an API configuration that passed the capability test. If none exists, add one in Settings first.",
+        "step3": "In step 3 choose what to produce: this session only, long-term profiles only, or both.",
+        "step4": "In step 4 review the task size (viewers, planned batches, requests) and choose the analysis output language (简体中文, 日本語 or English).",
+        "step5": "Click Start AI analysis. The report and the long-term profiles show separate progress; a failed profile job never deletes a finished report.",
+        "step6": "You can leave the page while it runs; the task continues in the background and AI analysis shows the latest progress when you return.",
+        "note": "The app imposes no limits on viewer count, message count, stream length, analysis runs, tokens, cost or batch count. Only per-request timeouts and the provider's own quotas apply. The app never asks you to approve AI profiles and never blocks later actions because of profile content."
+      },
+      "memory": {
+        "title": "Understand long-term memory, fact certainty and original evidence",
+        "lead": "A long-term profile is made of individual facts, each with a certainty level, a status and original evidence. It is the AI's digest of chat, not platform truth or an official conclusion.",
+        "step1": "Open a viewer in Viewers and use the Long-term memory tab to see the profile summary and facts.",
+        "step2": "Expand the evidence on any fact to see which session and message it came from. Unavailable evidence is labelled and never invented.",
+        "step3": "Versions shows the diff of every update and lets you roll back; a rollback is itself recorded as a new version.",
+        "step4": "When a fact is wrong, confirm, ignore or delete it. Deleting a viewer's long-term memory leaves a marker so older analysis results cannot restore it.",
+        "note": "AI understanding can differ from reality. The app rejects stated facts without evidence, evidence from another viewer and invalid identities, but that only proves the citation is legal, not that the meaning is correct. Treat long-term memory as a hint rather than a verdict; money and session counts always come from local records and cannot be changed by AI.",
+        "term": {
+          "fact": {
+            "label": "Fact",
+            "desc": "One atomic statement about a viewer, such as \"is preparing for an exam\" or \"likes a certain game\". A new statement on the same topic becomes a new version instead of overwriting the old record."
+          },
+          "stated": {
+            "label": "Stated",
+            "desc": "The viewer said it, backed by their own message. A stated fact without evidence is rejected."
+          },
+          "inferred": {
+            "label": "Inferred",
+            "desc": "A guess from tone or context that the viewer did not say directly; treat it with care."
+          },
+          "uncertain": {
+            "label": "Uncertain",
+            "desc": "Not enough evidence or unclear meaning. It is kept but marked as needing confirmation."
+          },
+          "status": {
+            "label": "Status",
+            "desc": "Current, possibly outdated, contradicted, superseded or needs confirmation. Status changes keep history instead of silently overwriting it."
+          },
+          "evidence": {
+            "label": "Evidence",
+            "desc": "The original chat with session, message number and time. After retention clears the text, the evidence is shown as unavailable."
+          }
+        }
+      },
+      "progress": {
+        "title": "Check progress, handle failed jobs and continue",
+        "lead": "AI analysis runs in batches, and every successful batch is saved immediately. A failure never discards finished work.",
+        "step1": "AI analysis shows the current phase, batch progress, processed viewers, request count, tokens and estimated cost. The progress bar reaches 100% only after the server confirms completion.",
+        "step2": "Failures show a stable error code and technical details: phase, batch, whether it can be resumed and what to try. These details never include chat text or API keys.",
+        "step3": "Recoverable failures show a Continue panel. Continue processes only unfinished or failed batches and viewers; it does not resend saved work and does not write duplicate facts.",
+        "step4": "After closing the app or restarting the computer, AI analysis shows the same recovery entry. Clicking Continue again is safe.",
+        "step5": "Continuing a finished job makes no new provider requests.",
+        "step6": "If the app asks for a different model (for example because the context is too small), add or edit a configuration in Settings and start a new task with it.",
+        "note": "When output is truncated, empty or structurally invalid, the app performs a bounded number of retries or splits. If it still fails it keeps progress and waits for you; it never retries forever and never silently drops saved data."
+      },
+      "backup": {
+        "title": "Back up, restore and migrate data",
+        "lead": "A backup packs the current data into one .livememory file that can be restored on this PC or another Windows PC.",
+        "step1": "Open Settings, then Backup and restore, and click Create backup. The default folder is %LOCALAPPDATA%\\LiveMemory-Backups; you can save to another local folder.",
+        "step2": "A backup contains sessions, chat, viewers, payments, long-term profiles, AI reports and settings. It does not contain API keys, Bilibili credentials, logs, caches or runtime state.",
+        "step3": "Before restoring, select the backup file in Settings and review the summary, then type RESTORE to run the restore.",
+        "step4": "The current data is snapshotted automatically before a restore. If the restore fails or the process is killed, the next start rolls back or completes it from the journal.",
+        "step5": "After a restore, sign in to Bilibili again and re-enter your API keys. The YouTube public chat needs no login.",
+        "step6": "To move to a new PC, start LiveMemory there and restore from the same backup file. No old username, old path or administrator rights are required.",
+        "note": "Backup files are not encrypted and contain viewer nicknames, chat and AI reports, so keep them safe. A restore replaces everything; it does not merge two computers. Downgrading from a newer version is not supported."
+      },
+      "faq": {
+        "title": "Frequently asked questions",
+        "lead": "These are the questions that come up most often. For deeper technical detail see the documentation, or check the version under Settings, then About.",
+        "q1": "The page that opened automatically fails to load, or says to reopen it from LiveMemory. What now?",
+        "a1": "The local console session is valid only for this run. Restarting the service, closing the console window or opening a plain address invalidates it. Run LiveMemory again and let it open the browser.",
+        "q2": "Why do only a few Bilibili viewers show up?",
+        "a2": "Without sign-in, Bilibili may mask nicknames and set UID to 0, so those messages cannot be attached to a stable identity. QR sign-in improves identification; past masked messages are never back-filled by guessing.",
+        "q3": "YouTube shows reconnecting. Is the stream over?",
+        "a3": "No. Network errors, 429 and 5xx only put capture into a recoverable reconnect state and keep collected data. The session ends only when the platform confirms the end or you stop it manually.",
+        "q4": "How much does AI analysis cost?",
+        "a4": "The provider bills you directly. The app estimates cost from the unit prices you entered and the tokens the provider reports; without prices it only counts tokens. Estimates are not an official bill; check the provider dashboard.",
+        "q5": "What if a long-term profile is inaccurate?",
+        "a5": "A long-term profile is the AI's digest of chat and may over-generalise or misread a joke. Expand the evidence and confirm, ignore or delete individual facts if needed. The app never limits your use because of this.",
+        "q6": "Can I record several livestreams at once?",
+        "a6": "Yes. Every stream has its own tab, connection state and stop action, and switching pages or tabs never stops background recording. The same room cannot be started twice.",
+        "q7": "Where is data stored, and can I move it?",
+        "a7": "By default in %LOCALAPPDATA%\\LiveMemory. You can migrate to another local folder in Settings, then Data location. The migration validates first, rolls back on failure and never deletes the old folder automatically.",
+        "q8": "Anything to know when closing the app?",
+        "a8": "Prefer Ctrl+C in the console window so the app stops capture and closes the database cleanly. A forced kill normally does not corrupt data thanks to WAL and the recovery path, but a clean exit is always safer.",
+        "note": "This page is documentation only: it changes no settings and adds no usage limits. If something looks wrong, check the version and buildId under Settings, then About, keep the log files and report the issue."
+      }
     }
   }
 }

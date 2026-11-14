@@ -1530,3 +1530,59 @@ RC0 恢复默认 10 人/批**；20 只保留为技术上限与实验参数。
 
 
 
+## 42. RC0-USAGE-GUIDE：三语使用说明与封版（v0.13.2，2026-11-14）
+
+### 42.1 范围与约束
+
+本轮只新增控制台内「使用说明」入口、内容与样式，并完成 RC0 封版。测试重点不是 AI 语义，
+而是**说明页的内容完整性、三语一致性、入口接线、响应式规则、只读性与既有功能回归**。
+
+明确不新增、也不测试任何使用限制：观众数量、消息数量、直播时长、分析次数、Token、费用、
+运行时间、批次数量；不新增强制审核或阻断确认。AI 分析、长期画像、事实合并、批次调度、
+数据保存/恢复与 Provider 逻辑均未改动，数据库 schema 仍为 16。
+
+### 42.2 新增自动化
+
+`tests/unit/help-ui.test.mjs`（9 项，`node --test --test-isolation=none tests/unit/help-ui.test.mjs`）：
+
+1. 导航、路由与图标接线（`index.html` / `app.js` / `base.css`）；三语 `nav.help` 非空。
+2. 9 个章节按顺序渲染，带 `id`、`aria-labelledby`、`tabindex="-1"` 与对应 `h2`；目录 9 项。
+3. 三语真实字典渲染：无未解析 `help.*` 键、无未替换占位符，章节标题/引导/步骤均出现。
+4. 内容覆盖：Bilibili/YouTube 链接、直播历史、API Key、开始分析、明确说过、继续、RESTORE、FAQ。
+5. 文案边界：明确“不限制观众数量…批次数量”“不会要求审核 AI 画像”“不会新增使用限制”。
+6. 目录点击滚动并聚焦对应章节；三个操作按钮分别跳转 `/live`、`/settings`、`/ai`。
+7. FAQ 渲染 8 组 `details/summary`，问答与字典逐一对应。
+8. 只读：无 `innerHTML`/`alert`/`confirm`/`prompt`、无 `/api/*`、无 storage 访问；渲染结果无脚本。
+9. 响应式 CSS：桌面 236px + 1fr、≤1000px 单列、≤700px 术语单列、`overflow-wrap:anywhere`、
+   `scroll-margin-top` 避开粘性顶栏。
+
+既有 `tests/unit/i18n.test.mjs` 同时保证三份字典键集完全一致、值非空、占位符一致。
+
+### 42.3 全量回归
+
+```text
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+```
+
+结果：**828 passed / 0 failed / 0 skipped（240,768 ms，2026-11-14）**。上一轮 819，本轮 +9。
+未修改任何既有断言；金额、身份、去重、AI 批次/恢复、备份/恢复、认证测试保持原样并通过。
+
+### 42.4 正式 EXE 验证
+
+| 脚本 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `scripts/verify-help-exe.mjs` | **14/14** | asInvoker；启动与 buildId；未认证 `/api/bootstrap` 401；认证后 schema 16；导航/路由/help 模块；导航图标；响应式 CSS；三语键一致；9 主题内容；无限制文案；切换日语生效 |
+| `scripts/verify-exe.mjs` | **10/10** | asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语 |
+
+EXE：`dist/LiveMemory.exe`，buildId `09545e3611f2`，`96,733,184` bytes，SHA-256
+`bf9fcc492b5ba9a5309dcf8213e434a567b5d88ec38d8c66011a84a18a26df22`，`192` assets，
+RT_MANIFEST `asInvoker`，构建时 HEAD `fbd90be541378ecf9f1e9dbb46651529e2f189c6`。
+
+### 42.5 未验证 / 边界
+
+- **真实浏览器截图、点击与窄屏设备**：本机 DSH 沙箱禁止 Chromium 的 mojo `platform_channel`
+  （Chrome 154、Edge 157 均在启动时返回 0x5），无法在会话内启动浏览器。界面表现由真实字典的
+  DOM 渲染测试、打包后 HTML/JS/CSS 的实际下发检查与响应式 CSS 断言覆盖；**不声称做过真实浏览器验收**。
+  建议用户在本机打开 `#/help` 做一次明暗主题与窄屏目视确认。
+- 未在干净 Windows 账户或另一台电脑上双击；未做屏幕阅读器实测。
+- 未 Push / 未 Tag / 未发布；等待用户决定。
