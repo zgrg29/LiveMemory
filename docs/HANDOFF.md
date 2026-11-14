@@ -1,11 +1,51 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-14 · RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限 · 828 全量 · 正式 EXE `e438e74803cb` · schema 16 · 结果 Schema 1.3.0 · 提示词 v13.2
+本轮：2026-11-15 · RC0-GITHUB-RELEASE-PREP：发布材料与发布包、未发布 · 正式 EXE `e438e74803cb` · Tag 建议 `v0.13.2-rc.0`
 
-> 本轮只改 EXE Manifest、构建断言、测试启动方式与相关文档；**未调用真实付费 API、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布**。
-> 自动化使用 `tests/.tmp` 隔离目录；真实 UAC 交互未自动化，列用户人工验收。
+> 本轮只准备发布材料；**未改产品代码/版本、未 Push、未创建本地或远程 Tag、未创建 Release、未上传资产**。
+> 发布包位于 `dist/`（gitignored），面向用户的 Notes 位于 `docs/release-notes/`。
 
-## 0. 本轮（RC0-ADMIN-MANIFEST）
+## 0. 本轮（RC0-GITHUB-RELEASE-PREP）
+
+完整报告：`docs/STATUS.md` §0.32；Release Notes：`docs/release-notes/v0.13.2-rc.0.md`；发布流程：`docs/RELEASE.md` §10；日志：`log/2026-11-15-rc0-release-prep.md`。
+
+### 0.1 做了什么
+
+1. **检查现状**：仓库此前没有任何 tag（本地与已知远程）；产品版本 `0.13.2`；`docs/RELEASE.md` 允许语义化版本 + 预发布后缀。
+2. **命名**：建议 Tag `v0.13.2-rc.0`、Title `LiveMemory v0.13.2 RC0`、Pre-release，Target `cb28624`（EXE 的 `build-info.commit`）。
+3. **Release Notes**：新增 `docs/release-notes/v0.13.2-rc.0.md`，中文正文 + 英文摘要，覆盖用途、平台、AI Provider、长期记忆、进度/恢复、Token/费用、备份/迁移、三语说明、RC0 改进、已知限制与必要声明。
+4. **发布包**：`dist/release-v0.13.2-rc.0/`（EXE、README、LICENSE、RELEASE_NOTES、SHA256SUMS）与 `dist/LiveMemory-v0.13.2-rc.0-windows-x64.zip`。
+5. **校验**：解压后逐文件 SHA-256 校验通过；EXE Manifest `requireAdministrator`；包内无敏感文件；只含 5 个文件。
+6. **文档**：RELEASE §10、STATUS §0.32、HANDOFF、TEST_PLAN §44、本日志。
+
+### 0.2 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 建议 Tag / Title | `v0.13.2-rc.0` / `LiveMemory v0.13.2 RC0` |
+| Release 类型 | Pre-release（非 latest） |
+| Target | `cb286241fe5a4b3322455d661218bb0a14044983` |
+| EXE | buildId `e438e74803cb` / SHA-256 `0cf67243…` / `96,733,184` B / `requireAdministrator` |
+| ZIP | `8aa08f0e1e908e80880b578b8cf6d6eb24f560f968d338824ff5684bf5598a2f` / `35,724,481` B |
+| 全量测试 | 828 passed / 0 failed / 0 skipped（212,358 ms） |
+| EXE 回归 | 10/10、14/14、12/12、13/13、16/16 |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **先等用户确认**：真实 Windows 双击 + UAC 点击、是否 Push、是否创建 Tag/Release/上传资产。
+2. 未经明确授权，**不要** Push、创建本地/远程 tag、发布 Release 或上传发布包。
+3. 不要修改产品版本号来匹配 tag；Tag 是 Release 标识，产品版本仍为 0.13.2。
+4. 不要在 Release Notes 中声称所有 Provider 已真实验证或 AI 结果完全准确。
+5. 若发布前重新构建 EXE，必须重新生成包与 `SHA256SUMS.txt`，并重新核对 buildId/SHA-256。
+
+### 0.4 边界与提交
+
+- **真实 Windows UAC 双击仍未人工验收**；自动化只验证 Manifest 与功能副本，Release Notes 已如实标注。
+- Release 包在 `dist/`（gitignored），**不进入 Git**；可提交的是 `docs/release-notes/`、RELEASE/STATUS/HANDOFF/TEST_PLAN 与日志。
+- 发布准备文档提交后工作区应保持干净；**本轮不创建任何 tag**。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（RC0-ADMIN-MANIFEST）
 
 完整报告：`docs/STATUS.md` §0.31；日志：`log/2026-11-14-admin-manifest.md`；Windows 细节：`docs/WINDOWS_RUNTIME.md` §13。
 
@@ -54,7 +94,7 @@
 - 构建记录补充提交：本文件所在的后续提交（HEAD）。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
-## 0-A 上一轮（RC0-USAGE-GUIDE 封版）
+## 0-B 上一轮（RC0-USAGE-GUIDE 封版）
 
 完整报告：`docs/STATUS.md` §0.30；日志：`log/2026-11-14-rc0-usage-guide.md`；界面规范：`docs/UI_DESIGN.md` §7.23。
 
@@ -103,7 +143,7 @@
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
 - **环境备注**：本机 DSH 沙箱下 `.git` 为中等完整性，受限进程写入会 `Permission denied`；本轮在一次性 full access 下执行 `git add`/`git commit`。该环境的 Git 还会把已暂存改动判为“空提交”，需加 `--allow-empty` 才能生成提交（提交 tree 与文件内容不受影响）。真实用户环境不需要这些处理。
 
-## 0-B 上一轮（RC0-FINAL-ACCEPTANCE）
+## 0-C 上一轮（RC0-FINAL-ACCEPTANCE）
 
 完整报告：`docs/RC0_FINAL_ACCEPTANCE.md`；日志：`log/2026-11-14-rc0-final-acceptance.md`。
 

@@ -1,8 +1,55 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-ADMIN-MANIFEST：恢复 requireAdministrator、828 全量、正式 EXE `e438e74803cb`；RC0 重新封版）
+最后更新：2026-11-15（RC0-GITHUB-RELEASE-PREP：发布材料与发布包、未发布；正式 EXE `e438e74803cb`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.32 RC0-GITHUB-RELEASE-PREP：GitHub Release 发布准备（2026-11-15）✅（未发布）
+
+范围：只准备发布材料，**没有修改产品代码、版本号或功能**；**未 Push、未创建 Tag（本地或远程）、未创建 GitHub Release、未上传资产**。
+
+### 0.32.1 命名与目标
+
+- 产品版本保持 **0.13.2**；Release 标识使用预发布后缀。
+- 建议 Tag：**`v0.13.2-rc.0`**
+- Release Title：**`LiveMemory v0.13.2 RC0`**
+- 类型：**Pre-release**
+- Target：**`cb286241fe5a4b3322455d661218bb0a14044983`**（EXE 的 `build-info.commit`，全量与 EXE 回归使用的代码提交；之后均为文档提交）
+- 仓库此前无任何 tag，未发现命名冲突；`docs/RELEASE.md` §1 的语义化版本允许预发布后缀，因此不改产品版本，只把 `-rc.0` 用于 Release 标识。**不创建本地或远程 tag。**
+
+### 0.32.2 发布文件
+
+目录 `dist/release-v0.13.2-rc.0/`（gitignored）与压缩包 `dist/LiveMemory-v0.13.2-rc.0-windows-x64.zip`：
+
+| 文件 | 大小 | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | 96,733,184 | `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` |
+| `README.md` | 48,321 | `3948d4c96c9eaf10e2d56590f65b527695e27559bd9dd110c69ec4887bcd427a` |
+| `LICENSE` | 1,063 | `32f41a237cd7e80b1f83589c058ff8da73903dd25091b4eefb0114487182303b` |
+| `RELEASE_NOTES.md` | 10,875 | `0a771d7fcbe25214e05f0c6f9ffeb9b0e2ad7bcc23d1149b827ce4edcfea2d7c` |
+| `SHA256SUMS.txt` | 314 | `03eb1a791304251f18ebaa47d0c8120e7abc2bda3da1190a07049ba59da56c9f` |
+| `LiveMemory-v0.13.2-rc.0-windows-x64.zip` | 35,724,481 | `8aa08f0e1e908e80880b578b8cf6d6eb24f560f968d338824ff5684bf5598a2f` |
+
+- `SHA256SUMS.txt` 覆盖前四个文件；压缩包与校验文件本身的哈希另行给出。
+- 发布包仅含上述 5 个文件；不含 API Key、Token、Cookie、数据库、真实聊天、`secrets/`、缓存或日志。
+- 解压后的 `LiveMemory.exe` 哈希与 `dist/LiveMemory.exe` 一致，Manifest = `requireAdministrator`。
+
+### 0.32.3 检查结果
+
+- [x] 正式 EXE Manifest `requireAdministrator`；buildId `e438e74803cb`、SHA-256 与构建记录一致。
+- [x] 全量 **828 passed / 0 failed / 0 skipped（212,358 ms）**。
+- [x] EXE 回归：`verify-exe` **10/10**、`verify-help-exe` **14/14**、`verify-p0-5-exe` **12/12**、`verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16**。
+- [x] 压缩包解压后逐文件 SHA-256 复核通过；包内无敏感文件名/内容。
+- [x] Release Notes 与实际功能一致；明确写管理员权限、自备 Key、第三方费用、AI 可能不准确、DeepSeek 真实验证范围与 RC0 预发布性质。
+- [ ] **真实 Windows 双击与 UAC 点击：待用户人工确认**（自动化不能代替）。
+- [ ] **Push / 本地或远程 Tag / Release / 资产上传：等待用户明确授权。**
+
+### 0.32.4 文档与状态
+
+- 面向用户的 Release Notes：`docs/release-notes/v0.13.2-rc.0.md`（发布包内为 `RELEASE_NOTES.md`）。
+- 发布流程与选项：`docs/RELEASE.md` §10。
+- 开发日志：`log/2026-11-15-rc0-release-prep.md`。
+- **状态：发布材料已就绪；未发布，等待用户确认。**
 
 ## 0.31 RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（2026-11-14）✅
 

@@ -1640,3 +1640,47 @@ SHA-256 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8`，
   也未在干净 Windows 账户/另一台电脑上验证。需要用户按 `docs/WINDOWS_RUNTIME.md` §13.5 人工验收。
 - 未验证提权后 `profile-scan` 是否会命中另一个管理员账户的旧数据目录（逻辑未改，仍拒绝多库猜测）。
 - 未 Push / 未 Tag / 未发布。
+## 44. RC0 GitHub Release 发布前复核（v0.13.2，2026-11-15）
+
+### 44.1 范围
+
+本轮只准备发布材料，不改代码、不改版本号、不新增功能。没有新增自动化测试；复用上一轮的
+828 项全量与 5 个正式 EXE 矩阵结果，并对发布包做独立的哈希、Manifest 与内容复核。
+**未创建 tag、未 Push、未发布 Release、未上传资产。**
+
+### 44.2 发布包
+
+目录 `dist/release-v0.13.2-rc.0/`（gitignored）：
+
+| 文件 | 字节 | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | 96,733,184 | `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` |
+| `README.md` | 48,321 | `3948d4c96c9eaf10e2d56590f65b527695e27559bd9dd110c69ec4887bcd427a` |
+| `LICENSE` | 1,063 | `32f41a237cd7e80b1f83589c058ff8da73903dd25091b4eefb0114487182303b` |
+| `RELEASE_NOTES.md` | 10,875 | `0a771d7fcbe25214e05f0c6f9ffeb9b0e2ad7bcc23d1149b827ce4edcfea2d7c` |
+| `SHA256SUMS.txt` | 314 | `03eb1a791304251f18ebaa47d0c8120e7abc2bda3da1190a07049ba59da56c9f` |
+
+压缩包 `dist/LiveMemory-v0.13.2-rc.0-windows-x64.zip`：35,724,481 bytes，
+SHA-256 `8aa08f0e1e908e80880b578b8cf6d6eb24f560f968d338824ff5684bf5598a2f`。
+
+### 44.3 复核结果
+
+- [x] 压缩包只含 5 个文件，无嵌套目录；解压正常。
+- [x] 解压后逐项对照 `SHA256SUMS.txt`：4/4 通过。
+- [x] 解压后的 `LiveMemory.exe` 与 `dist/LiveMemory.exe` 哈希一致（96,733,184 bytes）。
+- [x] 解压后的 EXE Manifest = `requireAdministrator`。
+- [x] 包内无 API Key、Token、Cookie、数据库、聊天记录、`secrets/`、缓存、日志或调试文件。
+- [x] Release Notes 与 README/STATUS 的功能描述一致；未声称所有 Provider 已验证、未声称 AI 结果完全准确。
+- [x] 包内 EXE 的 buildId `e438e74803cb` 与 `build/build-info.json`、STATUS 记录一致。
+
+### 44.4 未完成 / 待用户确认
+
+- **真实 Windows 双击与 UAC 点击**：自动化不能代替，仍需用户在目标设备确认。
+- **Push、创建 tag、创建 Release、上传资产**：等待用户明确授权；本轮未做任何一项。
+- 未测试 SmartScreen/杀毒软件提示；EXE 未签名，Release Notes 已说明。
+- 未在第二台电脑或干净 Windows 账户上安装验收。
+
+### 44.5 结论
+
+发布材料完整、哈希可复核、无敏感内容；**可以进入用户确认后的 GitHub Release 步骤**，
+但不能把“材料就绪”描述为“已发布”。
