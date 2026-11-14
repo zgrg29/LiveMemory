@@ -83,10 +83,10 @@ node scripts/build-windows.mjs
 
 - buildId `e438e74803cb`
 - source hash `e438e74803cbd92ff07fc85db47acada2d3b8f9d2f794f83c0982c03d6817392`
-- SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb`
+- SHA-256 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8`
 - size `96,733,184` B（92.3 MB）
-- builtAt `2026-11-14T15:21:43.509Z`
-- commit（构建时 HEAD）`0dd9eab2ac5fe157e80ab48c3de6573a6f7e05e4`
+- builtAt `2026-11-14T15:28:38.727Z`
+- commit（构建时 HEAD）`cb286241fe5a4b3322455d661218bb0a14044983`
 - Manifest `requireAdministrator`
 - assets `192`；required modules `21`
 

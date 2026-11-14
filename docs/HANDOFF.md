@@ -27,7 +27,7 @@
 | Manifest | **`requireAdministrator`**（构建脚本与正式 EXE 双重断言） |
 | 全量测试 | **828 passed / 0 failed / 0 skipped**（212,358 ms，2026-11-14） |
 | EXE 矩阵 | `verify-exe` **10/10**、`verify-help-exe` **14/14**、`verify-p0-5-exe` **12/12**、`verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16** |
-| 正式 EXE | buildId `e438e74803cb` / SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` / `96,733,184` B / `192` assets / `192` files |
+| 正式 EXE | buildId `e438e74803cb` / SHA-256 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` / `96,733,184` B / `192` assets / `192` files |
 | 版本/Schema | 0.13.2 / DB 16 / 结果 1.3.0 / 提示词 v13.2（未改） |
 
 ### 0.3 用户验收步骤
@@ -50,7 +50,8 @@
 
 - **真实 UAC 交互未自动化**：本机沙箱无法启动交互式桌面，自动化只验证 Manifest 与功能副本；拒绝 UAC 的系统行为也未实测。
 - 自动化功能场景使用测试专用 asInvoker 副本；**正式 EXE 仍是 requireAdministrator**，测试副本不交付、不提交。
-- 代码与文档提交：本轮提交后为 `fix: restore administrator manifest for the Windows EXE`（Hash 见最终报告；若提交后重建，`build-info.commit` 记录该提交）。
+- 代码与文档提交：`cb286241fe5a4b3322455d661218bb0a14044983`（`fix: restore administrator manifest for the Windows EXE`）。EXE 在该提交后重建，`build-info.commit` = `cb28624`；buildId `e438e74803cb` 不变，最终 SHA-256 为 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8`。
+- 构建记录补充提交：本文件所在的后续提交（HEAD）。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
 ## 0-A 上一轮（RC0-USAGE-GUIDE 封版）

@@ -27,7 +27,7 @@
 - ✅ 自动化无法接受 UAC：正式 Manifest 单独断言，功能场景使用 `tests/.tmp/` 的 asInvoker 测试副本；正式 EXE 不被修改
 - ✅ `pe-manifest` 单测 2/2；全量 **828 passed / 0 failed / 0 skipped**
 - ✅ `verify-exe` 10/10、`verify-help-exe` 14/14、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16
-- ✅ 正式 EXE `e438e74803cb` / SHA-256 `a8c9f12d…` / `96,733,184` B / `192` assets / `requireAdministrator`
+- ✅ 正式 EXE `e438e74803cb` / SHA-256 `0cf67243…` / `96,733,184` B / `192` assets / `requireAdministrator`
 - ✅ 未改 Bootstrap 目录选择、数据目录解析与任何业务逻辑；API 认证、Origin/Host/SSE、凭据与备份恢复规则不变
 - 🟡 **真实 UAC 双击/拒绝未自动化验收**，等待用户人工双击确认
 - ⬜ Push / Tag / 发布：等待用户决定

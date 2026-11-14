@@ -2,7 +2,7 @@
 
 ## 1. 交付形态
 
-- 单一可执行文件 `LiveMemory.exe`（当前构建约 90.3 MB）。
+- 单一可执行文件 `LiveMemory.exe`（当前构建约 92.3 MB）。
 - 用户无需安装 Python、Node.js、npm、数据库或任何开发依赖。
 - 双击运行，PE RT_MANIFEST 为 **`requireAdministrator`**：由 Windows 显示标准 UAC 确认，用户同意后以管理员权限显示命令行窗口并打开默认浏览器控制台（RC0-ADMIN-MANIFEST，2026-11-14；用户明确决定取代 RC0 P0-5 的 `asInvoker`）。
 - 安装目录可以只读；用户数据仍写入 `%LOCALAPPDATA%\LiveMemory\`（或显式指定的可写目录）。
@@ -347,11 +347,11 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | `96,733,184` bytes（92.3 MB） |
-| SHA-256 | `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` |
+| SHA-256 | `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` |
 | buildId | `e438e74803cb` |
 | RT_MANIFEST | `requireAdministrator` |
-| commit（构建时） | `0dd9eab2ac5fe157e80ab48c3de6573a6f7e05e4` |
-| builtAt | `2026-11-14T15:21:43.509Z` |
+| commit（构建时） | `cb286241fe5a4b3322455d661218bb0a14044983` |
+| builtAt | `2026-11-14T15:28:38.727Z` |
 | 资源 | `192` files；21 个必需模块 |
 
 ### 13.5 用户验收步骤

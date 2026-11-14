@@ -48,11 +48,11 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 大小 | `96,733,184` bytes（92.3 MB） |
-| SHA-256 | `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` |
+| SHA-256 | `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` |
 | buildId | `e438e74803cb` |
 | source hash | `e438e74803cbd92ff07fc85db47acada2d3b8f9d2f794f83c0982c03d6817392` |
-| commit | `0dd9eab2ac5fe157e80ab48c3de6573a6f7e05e4`（构建时 HEAD；代码提交见 §0.31.7） |
-| builtAt | `2026-11-14T15:21:43.509Z` |
+| commit | `cb286241fe5a4b3322455d661218bb0a14044983`（构建时 HEAD，即本轮代码提交） |
+| builtAt | `2026-11-14T15:28:38.727Z` |
 | RT_MANIFEST | **`requireAdministrator`** |
 | 资源 | `192` files；21 个必需模块 |
 
@@ -67,8 +67,9 @@
 
 ### 0.31.7 提交与构建记录
 
-- 代码与文档提交：待本轮提交后填写（`fix: restore administrator manifest for the Windows EXE`）。
-- 构建时间与 SHA-256 见 §0.31.5；若在提交后重建，`build-info.commit` 会记录该提交，`buildId` 只由源码内容决定。
+- 代码与文档提交：`cb286241fe5a4b3322455d661218bb0a14044983`（`fix: restore administrator manifest for the Windows EXE`）。
+- 正式 EXE 在该提交**之后**重建：`build-info.commit` = `cb28624`，buildId `e438e74803cb` 只由源码内容决定，与提交前构建一致。
+- 最终构建记录补充提交：本文件所在的后续提交（HEAD）。
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；**未 Push / 未 Tag / 未发布**。
 
 ## 0.30 RC0-USAGE-GUIDE：三语使用说明与 RC0 封版（2026-11-14）✅

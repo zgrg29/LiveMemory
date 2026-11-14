@@ -24,8 +24,8 @@
 - 全量 **828 passed / 0 failed / 0 skipped**（212,358 ms）。
 - `verify-exe` **10/10**、`verify-help-exe` **14/14**、`verify-p0-5-exe` **12/12**、
   `verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16**（功能场景使用 asInvoker 测试副本）。
-- 正式 EXE：buildId `e438e74803cb` / SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb` /
-  `96,733,184` bytes / `192` assets / RT_MANIFEST `requireAdministrator`。
+- 正式 EXE：buildId `e438e74803cb` / SHA-256 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8` /
+  `96,733,184` bytes / `192` assets / RT_MANIFEST `requireAdministrator`；commit `cb286241fe5a4b3322455d661218bb0a14044983`。
 - **真实 UAC 双击未自动化验收**，列用户人工验收；未 Push / 未 Tag / 未发布。
 
 ## 0.13.2-r19 — 2026-11-14（RC0-USAGE-GUIDE：三语使用说明与 RC0 封版）

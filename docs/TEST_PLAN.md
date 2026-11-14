@@ -1631,8 +1631,8 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | `scripts/verify-ai-token-exe.mjs` | **16/16** | 正式 Manifest + AI 画像分析、Token/缓存归因、失败批次、Resume、备份 |
 
 EXE：`dist/LiveMemory.exe`，buildId `e438e74803cb`，`96,733,184` bytes，
-SHA-256 `a8c9f12d8c7150ef563daff5f84d57d096e916c5a01c18c851aa99072de7e9cb`，
-`192` assets，RT_MANIFEST **`requireAdministrator`**。
+SHA-256 `0cf672438a4723589f4164316e98965a6ff549a132deb30a243638a3f62531c8`，
+`192` assets，RT_MANIFEST **`requireAdministrator`**，构建时 HEAD `cb286241fe5a4b3322455d661218bb0a14044983`。
 
 ### 43.6 未验证 / 用户验收
 
