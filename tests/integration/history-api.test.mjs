@@ -72,7 +72,7 @@ function seedHistory(db) {
 
 test('history HTTP API: search, archive, stop (both endpoints), delete and viewer drill-down', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

@@ -10,7 +10,6 @@ import {SettingsStore} from '../server/settings-store.mjs';
 import {createLogger} from '../server/logger.mjs';
 import {resolveDataDir, probeWritable} from './data-dir.mjs';
 import {findExistingUserDataDirs} from './profile-scan.mjs';
-import {isAdministrator} from './admin.mjs';
 import {readDataLocation, clearDataLocation} from '../shared/data-location.mjs';
 import {acquireInstanceLock, readRuntimeInfo} from './lock.mjs';
 import {probeInstance} from './instance.mjs';
@@ -420,10 +419,10 @@ export async function runLauncher({
           }
         }
       }
-      // With a requireAdministrator manifest, UAC can run the process under a
-      // different administrator account. Before creating a new empty database,
-      // look for exactly one existing LiveMemory data folder in local profiles.
-      // Several candidates are ambiguous and must not be guessed.
+      // Older builds shipped a requireAdministrator manifest and could run
+      // under a different administrator profile. Keep the conservative scan for
+      // existing LiveMemory data before creating a new empty database. Several
+      // candidates are ambiguous and must not be guessed.
       const currentDefault = env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'LiveMemory') : null;
       const currentDefaultHasData = Boolean(currentDefault && existsSync(join(currentDefault, 'database', 'livememory.db')));
       if (!dataDirInfo && !options.dataDir && !env.LIVE_MEMORY_DATA_DIR && env.LIVE_MEMORY_APP_ROOT && !currentDefaultHasData) {
@@ -514,34 +513,9 @@ export async function runLauncher({
       system: systemLocale
     });
 
-    // The manifest normally guarantees elevation before this point. This check
-    // covers manifest bypass/filtered-token environments and gives a localized
-    // explanation instead of a permission stack trace.
-    // LIVE_MEMORY_SKIP_ADMIN_CHECK is only for the automated asInvoker EXE
-    // regression copy; the shipped EXE still carries requireAdministrator in its
-    // manifest, so Windows enforces elevation before this code runs.
-    if (process.platform === 'win32' && env.LIVE_MEMORY_APP_ROOT && env.LIVE_MEMORY_SKIP_ADMIN_CHECK !== '1') {
-      const admin = await isAdministrator();
-      startupLog.record('admin-check', {ok: admin !== false, admin});
-      if (admin === false) {
-        ui.blank();
-        ui.error(t(locale, 'adminRequired'));
-        if (!settingsLoaded) {
-          for (const fallbackLocale of ['zh-CN', 'ja', 'en']) {
-            if (fallbackLocale !== locale) ui.note(t(fallbackLocale, 'adminRequired'));
-          }
-        }
-        const logFile = startupLog.file();
-        if (logFile) ui.field(t(locale, 'logFile'), logFile);
-        ui.blank();
-        if (options.errorDialog && !isInteractive({stdin})) {
-          await showErrorDialog({title: APP_NAME, text: t(locale, 'adminRequired'), env});
-        }
-        await pauseForUser({stdin, stdout, enabled: options.waitOnError, prompt: t(locale, 'pressKey')});
-        return 1;
-      }
-    }
-
+    // The packaged EXE uses an asInvoker manifest: normal recording, SQLite,
+    // exports, the folder picker and software updates all work as the current
+    // user. There is intentionally no elevation requirement or admin check.
     ui.banner({name: APP_NAME, version: buildInfo.version ?? APP_VERSION, productLine: t(locale, 'productLine')});
     ui.info(`build: ${describeBuild(buildInfo)}`);
     ui.info(t(locale, 'checkingEnvironment'));
@@ -750,7 +724,9 @@ export async function runLauncher({
 
     if (options.open) {
       ui.info(t(locale, 'openingBrowser'));
-      const opened = openBrowser(server.url);
+      // The one-time sign-in token travels only in the fragment of this URL.
+      // It is never written to runtime.json, the log, or the console.
+      const opened = openBrowser(server.browserUrl ?? server.url);
       startupLog.record('browser', {ok: Boolean(opened?.opened)});
       logger.info({event: 'launcher.browser', opened: opened.opened});
       ui.info(opened.opened ? t(locale, 'browserOpened') : t(locale, 'browserFailed'));

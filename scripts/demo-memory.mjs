@@ -161,7 +161,7 @@ importMemoryUpdate({
 });
 closeDatabase(db);
 
-const server = await startServer({dataDir, port});
+const server = await startServer({auth: false, dataDir, port});
 console.log(`LiveMemory memory demo: ${server.url}#/memory`);
 console.log(`Broadcaster: ${BROADCASTER}`);
 console.log(`Viewer: ${server.url}#/viewers/${encodeURIComponent(VIEWER_A)}?broadcaster=${encodeURIComponent(BROADCASTER)}`);

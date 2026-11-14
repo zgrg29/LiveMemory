@@ -330,7 +330,7 @@ test('the HTTP scope endpoints return the same separated numbers', async (t) => 
   mkdirSync(`${temp.dir}\\database`, {recursive: true});
   const seeded = seed({file: `${temp.dir}\\database\\livememory.db`});
   closeDatabase(seeded.db);
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

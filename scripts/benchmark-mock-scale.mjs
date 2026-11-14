@@ -22,7 +22,7 @@ const temp = await mkdtemp(join(tmpdir(), 'livememory-scale-'));
 let active = 0;
 let peak = 0;
 let requests = 0;
-const server = await startServer({
+const server = await startServer({auth: false,
   dataDir: temp,
   port: 0,
   systemLocale: 'en',

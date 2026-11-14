@@ -19,7 +19,7 @@ function sessionAnswer() {
 test('paid provider retries a 429 after Retry-After and records the rate-limit wait', async (t) => {
   const temp = createTempDir();
   let calls = 0;
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -84,7 +84,7 @@ test('memory batches run with bounded concurrency and keep every viewer covered'
   let active = 0;
   let peak = 0;
   let memoryCalls = 0;
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -175,7 +175,7 @@ test('a failed memory batch can be resumed without repeating imported batches', 
   const temp = createTempDir();
   let failBatchTwo = true;
   const requestedBatches = [];
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -272,7 +272,7 @@ test('a failed memory batch can be resumed without repeating imported batches', 
 
 test('an older broadcast cannot overwrite newer long-term memory', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

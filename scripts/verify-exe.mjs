@@ -15,31 +15,28 @@ import {createServer} from 'node:net';
 import {join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {APP_VERSION} from '../src/shared/app-info.mjs';
-import {manifestLevel, setManifestLevel} from './pe-manifest.mjs';
+import {manifestLevel} from './pe-manifest.mjs';
 
 /**
  * Real executable verification matrix.
  *
  * Usage: node scripts/verify-exe.mjs [path\to\LiveMemory.exe]
  *
- * The packaged EXE requests administrator rights. When this script itself runs
- * without elevation, Windows refuses to launch it (error 740/EACCES); the
- * functional scenarios therefore use a temporary copy whose manifest is patched
- * back to asInvoker, and this fact is printed explicitly. The manifest check
- * always runs against the real dist EXE. When the script runs elevated, the
- * real EXE is used for every scenario.
+ * RC0 P0-5: the packaged EXE is asInvoker, so this matrix runs directly with the
+ * current user's rights. Every launched server writes its one-time browser URL
+ * to a temporary bootstrap file; the script exchanges it for a session cookie
+ * before calling protected APIs. This is the same path the default browser uses.
  */
 
 const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
-let exe = distExe;
+const exe = distExe;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = resolve('tests', '.tmp', `verify-${stamp}`);
 mkdirSync(root, {recursive: true});
 
 const results = [];
 let childCounter = 0;
-const elevated = process.platform === 'win32'
-  && spawnSync('net.exe', ['session'], {stdio: 'ignore'}).status === 0;
+let authCookie = null;
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -52,27 +49,18 @@ function record(name, passed, details = []) {
 }
 
 const distManifest = manifestLevel(readFileSync(distExe));
-record('EXE manifest requests administrator privileges', distManifest === 'requireAdministrator', [
-  `manifest level: ${distManifest}`,
-  `current process elevated: ${elevated}`
+record('EXE manifest runs as the current user (asInvoker, no UAC)', distManifest === 'asInvoker', [
+  `manifest level: ${distManifest}`
 ]);
-if (!elevated) {
-  const copy = join(root, 'LiveMemory.asInvoker.exe');
-  copyFileSync(distExe, copy);
-  const bytes = readFileSync(copy);
-  setManifestLevel(bytes, 'asInvoker');
-  writeFileSync(copy, bytes);
-  exe = copy;
-  log('NOTE  current session is not elevated; functional scenarios use a temporary');
-  log('      asInvoker copy of the same binary. Real UAC approval must be tested manually.');
-}
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 async function httpJson(url, {method = 'GET', body = null} = {}) {
+  const headers = body ? {'content-type': 'application/json'} : {};
+  if (authCookie) headers.cookie = authCookie;
   const response = await fetch(url, {
     method,
-    headers: body ? {'content-type': 'application/json'} : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(5000)
   });
@@ -105,13 +93,16 @@ function launch({args, env = {}, cwd = process.cwd(), exePath = exe}) {
   childCounter += 1;
   const stdoutFile = join(root, `stdout-${childCounter}.log`);
   const stderrFile = join(root, `stderr-${childCounter}.log`);
+  const bootstrapFile = join(root, `bootstrap-${childCounter}.url`);
   const outFd = openSync(stdoutFile, 'w');
   const errFd = openSync(stderrFile, 'w');
   const child = spawn(exePath, args, {
     cwd,
     env: {
       ...process.env,
-      ...(elevated ? {} : {LIVE_MEMORY_SKIP_ADMIN_CHECK: '1'}),
+      // Test-only handoff: the launcher/server writes the one-time browser URL
+      // here so this non-interactive matrix can use the real auth exchange.
+      LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile,
       ...env
     },
     stdio: ['ignore', outFd, errFd],
@@ -125,6 +116,7 @@ function launch({args, env = {}, cwd = process.cwd(), exePath = exe}) {
     child,
     stdoutFile,
     stderrFile,
+    bootstrapFile,
     readStdout: () => {
       try {
         return readFileSync(stdoutFile, 'utf8');
@@ -197,12 +189,38 @@ function runtimeInfo(dataDir) {
   }
 }
 
-async function waitForServer(dataDir) {
+/**
+ * Exchange the launcher's one-time fragment token for the same HttpOnly cookie a
+ * normal browser receives. The token is never printed.
+ */
+async function authenticate(baseUrl, bootstrapFile) {
+  const browserUrl = await waitFor(() => {
+    if (!bootstrapFile || !existsSync(bootstrapFile)) return null;
+    const text = readFileSync(bootstrapFile, 'utf8').trim();
+    return text || null;
+  }, {timeoutMs: 10000});
+  const token = new URL(browserUrl).hash.replace(/^#lm_bootstrap=/, '');
+  const response = await fetch(new URL('/api/auth/session', baseUrl), {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({token: decodeURIComponent(token)}),
+    signal: AbortSignal.timeout(5000)
+  });
+  if (response.status !== 200) throw new Error(`auth exchange failed: HTTP ${response.status}`);
+  const setCookie = response.headers.get('set-cookie') ?? '';
+  const cookie = setCookie.split(';')[0];
+  if (!cookie.startsWith('lm_session=')) throw new Error('auth exchange returned no session cookie');
+  authCookie = cookie;
+}
+
+async function waitForServer(dataDir, bootstrapFile) {
   return waitFor(async () => {
     const info = runtimeInfo(dataDir);
     if (!info?.url) return null;
     const health = await httpJson(new URL('/api/health', info.url).href);
-    return health.status === 200 && health.json?.name === 'LiveMemory' ? {info, health} : null;
+    if (health.status !== 200 || health.json?.name !== 'LiveMemory') return null;
+    await authenticate(info.url, bootstrapFile);
+    return {info, health};
   });
 }
 
@@ -255,7 +273,7 @@ async function scenarioFreshStart() {
   const dataDir = join(root, 'data-fresh');
   const app = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49100', '--lang', 'en']});
   try {
-    const {info} = await waitForServer(dataDir);
+    const {info} = await waitForServer(dataDir, app.bootstrapFile);
     const health = await httpJson(new URL('/api/health', info.url).href);
     const bootstrap = await httpJson(new URL('/api/bootstrap', info.url).href);
     await httpJson(new URL('/api/simulate/start', info.url).href, {method: 'POST', body: {title: 'Verification', speed: 'fast'}});
@@ -294,7 +312,7 @@ async function scenarioFreshStart() {
 async function scenarioRestartKeepsData({dataDir, before}) {
   const app = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49101', '--lang', 'en']});
   try {
-    const {info} = await waitForServer(dataDir);
+    const {info} = await waitForServer(dataDir, app.bootstrapFile);
     const sessions = await httpJson(new URL('/api/sessions', info.url).href);
     const viewers = await httpJson(new URL('/api/viewers?limit=100', info.url).href);
     const after = {sessions: sessions.json?.sessions?.length ?? 0, viewers: viewers.json?.viewers?.length ?? 0};
@@ -313,7 +331,7 @@ async function scenarioRestartKeepsData({dataDir, before}) {
 async function scenarioCrashRecovery() {
   const dataDir = join(root, 'data-crash');
   const first = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49102', '--lang', 'en']});
-  const {info} = await waitForServer(dataDir);
+  const {info} = await waitForServer(dataDir, first.bootstrapFile);
   await httpJson(new URL('/api/simulate/start', info.url).href, {method: 'POST', body: {title: 'Crash test', speed: 'fast'}});
   await sleep(3500);
   const live = await httpJson(new URL('/api/sessions/current', info.url).href);
@@ -323,7 +341,7 @@ async function scenarioCrashRecovery() {
 
   const second = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49103', '--lang', 'en']});
   try {
-    const restarted = await waitForServer(dataDir);
+    const restarted = await waitForServer(dataDir, second.bootstrapFile);
     const sessions = await httpJson(new URL('/api/sessions', restarted.info.url).href);
     const row = (sessions.json?.sessions ?? []).find((session) => session.id === sessionId)
       ?? (sessions.json?.sessions ?? [])[0];
@@ -351,7 +369,7 @@ async function scenarioPortConflict() {
   await new Promise((done) => blocker.listen(49110, '127.0.0.1', done));
   const app = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49110', '--lang', 'en']});
   try {
-    const {info} = await waitForServer(dataDir);
+    const {info} = await waitForServer(dataDir, app.bootstrapFile);
     const health = await httpJson(new URL('/api/health', info.url).href);
     const passed = info.port !== 49110 && health.status === 200;
     record('an occupied port moves the server to a free one instead of failing', passed, [
@@ -367,7 +385,7 @@ async function scenarioSecondInstance() {
   const dataDir = join(root, 'data-single');
   const first = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49120', '--lang', 'en']});
   try {
-    const {info} = await waitForServer(dataDir);
+    const {info} = await waitForServer(dataDir, first.bootstrapFile);
     const second = launch({args: ['--no-open', '--data-dir', dataDir, '--lang', 'en']});
     const exited = await second.exitCode(20000);
     const output = second.readStdout() + second.readStderr();
@@ -440,7 +458,7 @@ async function scenarioOtherDirectory() {
     args: ['--no-open', '--data-dir', dataDir, '--port', '49130', '--lang', 'en']
   });
   try {
-    const {info} = await waitForServer(dataDir);
+    const {info} = await waitForServer(dataDir, app.bootstrapFile);
     const health = await httpJson(new URL('/api/health', info.url).href);
     const appRoot = findExtractedAppRoot();
     const logs = readStartupLogs(dataDir).join('\n');
@@ -465,7 +483,7 @@ async function scenarioReuseExtraction({dataDir, appRoot, before}) {
   }
   const app = launch({args: ['--no-open', '--data-dir', dataDir, '--port', '49131', '--lang', 'en']});
   try {
-    await waitForServer(dataDir);
+    await waitForServer(dataDir, app.bootstrapFile);
     const bootstrapText = bootstrapLogText();
     const sameMtime = statSync(appRoot).mtimeMs === before;
     record('a second start reuses the extracted application files instead of rewriting them', sameMtime && bootstrapText.includes('app-root.reuse'), [

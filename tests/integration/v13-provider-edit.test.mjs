@@ -39,7 +39,7 @@ async function waitForStatus(server, sessionId, expected, limit = 200) {
 
 test('saved provider configuration can be edited without re-entering the key', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -164,7 +164,7 @@ test('saved provider configuration can be edited without re-entering the key', a
 
 test('a running analysis blocks editing and a changed model cannot be resumed', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -254,7 +254,7 @@ test('a running analysis blocks editing and a changed model cannot be resumed', 
 test('the analysis centre uses the edited model and keeps the saved key', async (t) => {
   const temp = createTempDir();
   const seenModels = [];
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

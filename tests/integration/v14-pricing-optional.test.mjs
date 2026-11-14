@@ -62,7 +62,7 @@ async function runWith(server, session, config) {
 
 async function withServer(t, fn) {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

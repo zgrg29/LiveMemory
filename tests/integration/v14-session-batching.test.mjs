@@ -124,7 +124,7 @@ async function waitForStatus(runner, sessionId, predicate, {timeoutMs = 8000} = 
 
 test('a large session is split by input tokens, every message is covered, and a final aggregate is required', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -198,7 +198,7 @@ test('a large session is split by input tokens, every message is covered, and a 
 
 test('a failed session batch does not cancel or lose a sibling batch that is already running', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

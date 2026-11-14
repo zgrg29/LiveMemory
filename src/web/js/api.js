@@ -41,6 +41,16 @@ async function request(path, {method = 'GET', body = undefined, signal = undefin
     }
   }
   if (!response.ok) {
+    if (response.status === 401) {
+      // Let the shell replace the page with the localized "open from
+      // LiveMemory" message instead of leaving every page showing a generic
+      // error. The event carries no credential.
+      try {
+        window.dispatchEvent(new CustomEvent('lm:auth-required', {detail: {status: 401}}));
+      } catch {
+        /* ignore */
+      }
+    }
     throw new ApiError({
       code: payload?.error?.code ?? 'INTERNAL',
       messageKey: payload?.error?.messageKey ?? 'errors.generic',

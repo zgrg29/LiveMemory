@@ -33,7 +33,7 @@ const HOUR = 3600 * 1000;
 const now = Date.now();
 const T = now - 3 * HOUR;
 
-const server = await startServer({dataDir, port, systemLocale: 'en'});
+const server = await startServer({auth: false, dataDir, port, systemLocale: 'en'});
 const db = server.db;
 const ingest = new EventIngest({db});
 const exportsDir = server.paths.exports;

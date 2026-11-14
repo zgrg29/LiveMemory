@@ -172,7 +172,7 @@ async function startFakeWeb() {
 test('a YouTube channel is monitored across two independent broadcasts', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

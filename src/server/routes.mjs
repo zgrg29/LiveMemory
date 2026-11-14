@@ -456,6 +456,30 @@ export function buildRoutes() {
     },
     {
       method: 'GET',
+      path: '/api/auth/status',
+      handler: ({req, res, deps}) => {
+        // Boolean only: this endpoint never returns a token or personal data.
+        const auth = deps.auth?.authenticate(req) ?? {ok: false};
+        sendJson(res, 200, {authenticated: Boolean(auth.ok)});
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/auth/session',
+      handler: async ({req, res, deps}) => {
+        const body = await readJsonBody(req, {limit: 8 * 1024});
+        const result = deps.auth?.exchange(body.token) ?? {ok: false, reason: 'no-auth-service'};
+        if (!result.ok) {
+          deps.logger?.warn({event: 'auth.session.rejected', reason: result.reason});
+          sendJson(res, 401, {error: {code: 'AUTH_REQUIRED', messageKey: 'errors.authRequired'}});
+          return;
+        }
+        deps.logger?.info({event: 'auth.session.created'});
+        sendJson(res, 200, {authenticated: true}, {'Set-Cookie': result.cookie});
+      }
+    },
+    {
+      method: 'GET',
       path: '/api/bootstrap',
       handler: ({res, deps}) => {
         sendJson(res, 200, {

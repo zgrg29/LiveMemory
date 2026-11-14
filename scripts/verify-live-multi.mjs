@@ -81,7 +81,7 @@ async function eventStats(base, sessionId) {
   };
 }
 
-if (!attachBase) server = await startServer({dataDir, port: 0, systemLocale: 'en'});
+if (!attachBase) server = await startServer({auth: false, dataDir, port: 0, systemLocale: 'en'});
 const base = attachBase ?? server.url;
 const report = {
   startedAt: new Date().toISOString(),

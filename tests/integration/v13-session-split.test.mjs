@@ -21,7 +21,7 @@ async function jsonRequest(url, {method = 'GET', body} = {}) {
 
 test('v0.13 session-only job imports without memory and reports complete', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -92,7 +92,7 @@ test('v0.13 session-only job imports without memory and reports complete', async
 
 test('v0.13 provider catalogue is public and configuration rejects unsafe base URLs', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -144,7 +144,7 @@ test('v0.13 provider catalogue is public and configuration rejects unsafe base U
 
 test('provider capability test route audits the result and updates the config', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -194,7 +194,7 @@ test('provider capability test route audits the result and updates the config', 
 
 test('memory is gated only by the verified technical capability, never by price', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

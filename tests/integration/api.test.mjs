@@ -43,7 +43,7 @@ function jsonRequest(url, {method = 'GET', body, headers = {}} = {}) {
 
 test('local API serves the console, records a session, exports a package and restricts access', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -227,11 +227,11 @@ test('local API serves the console, records a session, exports a package and res
 
 test('preferences survive a restart', async (t) => {
   const temp = createTempDir();
-  const first = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'zh-CN'});
+  const first = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'zh-CN'});
   await jsonRequest(`${first.url}api/settings`, {method: 'PATCH', body: {locale: 'ja', theme: 'dark', storageMode: 'full'}});
   await first.close();
 
-  const second = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'zh-CN'});
+  const second = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'zh-CN'});
   t.after(async () => {
     await second.close();
     temp.cleanup();

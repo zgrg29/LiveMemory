@@ -53,10 +53,11 @@ const SECURITY_HEADERS = {
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 
-export function sendJson(res, status, payload) {
+export function sendJson(res, status, payload, extraHeaders = null) {
   const body = Buffer.from(JSON.stringify(payload ?? null), 'utf8');
   res.writeHead(status, {
     ...SECURITY_HEADERS,
+    ...(extraHeaders ?? {}),
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': body.length,
     'Cache-Control': 'no-store'
@@ -126,11 +127,31 @@ export function isAllowedHost(hostHeader, port) {
   return host === `127.0.0.1:${port}` || host === `localhost:${port}` || host === `[::1]:${port}`;
 }
 
-/** Mutations must come from this origin when a browser sends Origin at all. */
+/**
+ * Every request that carries an Origin header must come from this console.
+ *
+ * `Origin: null` is never accepted: it is produced by sandboxed frames, data:
+ * URLs and some redirect chains, and cannot identify our page. A missing Origin
+ * is allowed for non-browser clients (curl/local tools); those still need a
+ * valid session cookie to reach a protected API.
+ */
 export function isAllowedOrigin(originHeader, port) {
-  if (!originHeader) return true; // same-origin fetch from our own page may omit it
+  if (!originHeader) return true;
   const origin = String(originHeader).toLowerCase();
+  if (origin === 'null') return false;
   return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}` || origin === `http://[::1]:${port}`;
+}
+
+/**
+ * Reject requests the browser itself marks as cross-site. Same-origin fetch and
+ * EventSource send `same-origin`; direct address-bar navigation sends `none`.
+ * `same-site` is also rejected because `localhost` and `127.0.0.1` are not the
+ * same origin and the console is always opened on one of them explicitly.
+ */
+export function isAllowedFetchSite(siteHeader) {
+  if (!siteHeader) return true;
+  const site = String(siteHeader).toLowerCase();
+  return site === 'same-origin' || site === 'none';
 }
 
 export function resolveWebRoot(metaUrl = import.meta.url) {

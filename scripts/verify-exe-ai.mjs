@@ -8,8 +8,8 @@
  *
  *   1. creates a real schema-v7 data folder with a seeded broadcast, so the
  *      packaged EXE must perform the v7 → v8 upgrade;
- *   2. copies dist/LiveMemory.exe to a temporary asInvoker build (this session is
- *      not elevated; the shipped EXE manifest is requireAdministrator);
+ *   2. launches dist/LiveMemory.exe directly (RC0 P0-5 ships an asInvoker
+ *      manifest) with a test-only bootstrap URL and exchanges it for a session;
  *   3. launches the EXE and drives the real console through headless Chrome:
  *      create a 3-batch task, import each batch JSON via paste, create the
  *      aggregate package, import the final JSON and read the report;
@@ -24,7 +24,6 @@
 
 import {spawn} from 'node:child_process';
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -41,7 +40,7 @@ import {createSession, endSession} from '../src/storage/repositories/sessions.mj
 import {upsertBroadcaster} from '../src/storage/repositories/broadcasters.mjs';
 import {EventIngest} from '../src/platforms/shared/ingest.mjs';
 import {readZipEntry} from '../src/shared/zip.mjs';
-import {setManifestLevel} from './pe-manifest.mjs';
+
 
 const args = process.argv.slice(2);
 function argValue(name, fallback) {
@@ -66,6 +65,17 @@ const port = requestedPort > 0 ? requestedPort : await new Promise((resolvePort,
   });
 });
 const base = `http://127.0.0.1:${port}`;
+const bootstrapFile = join(root, 'bootstrap.url');
+let authCookie = null;
+const nativeFetch = globalThis.fetch.bind(globalThis);
+async function fetchWithSession(input, init = {}) {
+  const url = typeof input === 'string' ? input : input?.url;
+  if (!authCookie || !url?.startsWith(base)) return nativeFetch(input, init);
+  const headers = new Headers(init.headers ?? {});
+  headers.set('cookie', authCookie);
+  return nativeFetch(input, {...init, headers});
+}
+globalThis.fetch = fetchWithSession;
 const report = {checks: []};
 function record(name, passed, details = {}) {
   report.checks.push({name, passed, ...details});
@@ -141,11 +151,30 @@ record('fixture is a real schema-v7 database with a recorded broadcast', existsS
 
 const distExe = resolve('dist', 'LiveMemory.exe');
 if (!existsSync(distExe)) throw new Error('dist/LiveMemory.exe is missing; run scripts/build-windows.mjs first');
-const exe = join(root, 'LiveMemory.asInvoker.exe');
-copyFileSync(distExe, exe);
-const exeBytes = readFileSync(exe);
-setManifestLevel(exeBytes, 'asInvoker');
-writeFileSync(exe, exeBytes);
+const exe = distExe;
+
+async function authenticate() {
+  const deadline = Date.now() + 15000;
+  let browserUrl = '';
+  while (Date.now() < deadline) {
+    if (existsSync(bootstrapFile)) {
+      browserUrl = readFileSync(bootstrapFile, 'utf8').trim();
+      if (browserUrl) break;
+    }
+    await sleep(100);
+  }
+  if (!browserUrl) throw new Error('bootstrap URL was not written by the EXE');
+  authCookie = null;
+  const token = new URL(browserUrl).hash.replace(/^#lm_bootstrap=/, '');
+  const response = await nativeFetch(`${base}/api/auth/session`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({token: decodeURIComponent(token)})
+  });
+  if (!response.ok) throw new Error(`auth exchange failed: ${response.status}`);
+  authCookie = (response.headers.get('set-cookie') ?? '').split(';')[0];
+  if (!authCookie.startsWith('lm_session=')) throw new Error('auth exchange returned no session cookie');
+}
 
 let child = null;
 let childCounter = 0;
@@ -157,7 +186,7 @@ async function launchExe() {
   const errFd = openSync(stderrFile, 'w');
   const instance = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', dataDir], {
     cwd: root,
-    env: {...process.env, LIVE_MEMORY_SKIP_ADMIN_CHECK: '1'},
+    env: {...process.env, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile},
     stdio: ['ignore', outFd, errFd],
     windowsHide: true
   });
@@ -178,6 +207,7 @@ async function launchExe() {
     if (Date.now() - started > 30000) throw new Error('EXE did not become healthy within 30s');
     await sleep(200);
   }
+  await authenticate();
   return instance;
 }
 function readFileSafe(file) {

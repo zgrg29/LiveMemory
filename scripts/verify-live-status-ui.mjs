@@ -6,8 +6,8 @@
  *   - a capture ended automatically by the platform (`platform_ended`);
  *   - a user stop while the platform was last confirmed live.
  *
- * Then launches dist/LiveMemory.exe (asInvoker copy in this non-elevated
- * session) and checks the real console through headless Chrome:
+ * Then launches dist/LiveMemory.exe directly (asInvoker since RC0 P0-5) with a
+ * test-only bootstrap URL and checks the real console through headless Chrome:
  *   - no green "Live" chip for a finished platform broadcast;
  *   - platform state and capture state are visibly separate;
  *   - the unknown platform end time is labelled unknown, never the last chat;
@@ -21,7 +21,6 @@
 
 import {spawn} from 'node:child_process';
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -33,7 +32,7 @@ import {createServer} from 'node:net';
 import {openDatabase, closeDatabase} from '../src/storage/database/connection.mjs';
 import {migrate} from '../src/storage/database/migrations/index.mjs';
 import {createSession} from '../src/storage/repositories/sessions.mjs';
-import {setManifestLevel} from './pe-manifest.mjs';
+
 
 const args = process.argv.slice(2);
 function argValue(name, fallback) {
@@ -57,6 +56,17 @@ const port = requestedPort > 0 ? requestedPort : await new Promise((resolvePort,
   });
 });
 const base = `http://127.0.0.1:${port}`;
+const bootstrapFile = join(root, 'bootstrap.url');
+let authCookie = null;
+const nativeFetch = globalThis.fetch.bind(globalThis);
+async function fetchWithSession(input, init = {}) {
+  const url = typeof input === 'string' ? input : input?.url;
+  if (!authCookie || !url?.startsWith(base)) return nativeFetch(input, init);
+  const headers = new Headers(init.headers ?? {});
+  headers.set('cookie', authCookie);
+  return nativeFetch(input, {...init, headers});
+}
+globalThis.fetch = fetchWithSession;
 
 const results = [];
 function record(name, passed, details = {}) {
@@ -149,11 +159,30 @@ record('fixture is a real schema-9 database', existsSync(dbFile));
 
 const distExe = resolve('dist', 'LiveMemory.exe');
 if (!existsSync(distExe)) throw new Error('dist/LiveMemory.exe is missing; run scripts/build-windows.mjs first');
-const exe = join(root, 'LiveMemory.asInvoker.exe');
-copyFileSync(distExe, exe);
-const exeBytes = readFileSync(exe);
-setManifestLevel(exeBytes, 'asInvoker');
-writeFileSync(exe, exeBytes);
+const exe = distExe;
+
+async function authenticate() {
+  const deadline = Date.now() + 15000;
+  let browserUrl = '';
+  while (Date.now() < deadline) {
+    if (existsSync(bootstrapFile)) {
+      browserUrl = readFileSync(bootstrapFile, 'utf8').trim();
+      if (browserUrl) break;
+    }
+    await sleep(100);
+  }
+  if (!browserUrl) throw new Error('bootstrap URL was not written by the EXE');
+  authCookie = null;
+  const token = new URL(browserUrl).hash.replace(/^#lm_bootstrap=/, '');
+  const response = await nativeFetch(`${base}/api/auth/session`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({token: decodeURIComponent(token)})
+  });
+  if (!response.ok) throw new Error(`auth exchange failed: ${response.status}`);
+  authCookie = (response.headers.get('set-cookie') ?? '').split(';')[0];
+  if (!authCookie.startsWith('lm_session=')) throw new Error('auth exchange returned no session cookie');
+}
 
 let child = null;
 async function launchExe() {
@@ -163,7 +192,7 @@ async function launchExe() {
   const errFd = openSync(stderrFile, 'w');
   const instance = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', dataDir], {
     cwd: root,
-    env: {...process.env, LIVE_MEMORY_SKIP_ADMIN_CHECK: '1'},
+    env: {...process.env, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile},
     stdio: ['ignore', outFd, errFd],
     windowsHide: true
   });
@@ -186,6 +215,7 @@ async function launchExe() {
     if (Date.now() - started > 45000) throw new Error('EXE did not become healthy within 45s');
     await sleep(250);
   }
+  await authenticate();
   return instance;
 }
 

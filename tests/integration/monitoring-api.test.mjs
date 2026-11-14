@@ -61,7 +61,7 @@ function request(url, {method = 'GET', body} = {}) {
 test('monitoring targets can be added, paused, resumed, inspected and deleted', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
-  let server = await startServer({
+  let server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -157,7 +157,7 @@ test('monitoring targets can be added, paused, resumed, inspected and deleted', 
 test('enabled targets survive a restart and are recovered without a live session', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
-  let server = await startServer({
+  let server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -175,7 +175,7 @@ test('enabled targets survive a restart and are recovered without a live session
   const id = created.target.id;
   await server.close();
 
-  server = await startServer({
+  server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

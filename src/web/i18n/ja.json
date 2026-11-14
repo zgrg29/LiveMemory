@@ -4,6 +4,12 @@
     "localOnly": "この PC のみ",
     "privacyNote": "データはすべてこの PC に保存されます"
   },
+  "auth": {
+    "title": "LiveMemory はロックされています",
+    "body": "このページにはアクセス権限がありません。データを保護するため、LiveMemory.exe からコンソールを開き直してください。",
+    "invalid": "このサインインリンクは無効か、有効期限が切れています。LiveMemory をもう一度起動して、新しいコンソールセッションを開いてください。",
+    "reload": "再読み込み"
+  },
   "a11y": {
     "skipToContent": "本文へ移動",
     "openNavigation": "ナビゲーションを開く",
@@ -1484,6 +1490,7 @@
   },
   "errors": {
     "generic": "問題が発生しました。もう一度お試しください。",
+    "authRequired": "このリクエストには有効な LiveMemory セッションが必要です。LiveMemory.exe からコンソールを開き直してください。",
     "network": "ローカルの LiveMemory サーバーに接続できません。コマンドライン画面が開いているか確認してください。",
     "sessionNotFound": "その配信は存在しません。",
     "sessionEmpty": "この配信には分析できるメッセージがまだありません。",

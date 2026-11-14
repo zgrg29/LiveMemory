@@ -4,6 +4,12 @@
     "localOnly": "仅本机",
     "privacyNote": "所有数据都保存在这台电脑"
   },
+  "auth": {
+    "title": "LiveMemory 已锁定",
+    "body": "此页面未获得访问授权。为保护你的数据，请从 LiveMemory.exe 重新打开控制台。",
+    "invalid": "本次登录链接无效或已过期。请重新运行 LiveMemory 以打开新的控制台会话。",
+    "reload": "重新加载"
+  },
   "a11y": {
     "skipToContent": "跳到主要内容",
     "openNavigation": "打开导航",
@@ -1484,6 +1490,7 @@
   },
   "errors": {
     "generic": "出现了问题，请再试一次。",
+    "authRequired": "该请求需要有效的 LiveMemory 会话。请从 LiveMemory.exe 重新打开控制台。",
     "network": "无法连接本地 LiveMemory 服务，请确认命令行窗口仍在运行。",
     "sessionNotFound": "该场次已不存在。",
     "sessionEmpty": "这个场次还没有可分析的消息。",

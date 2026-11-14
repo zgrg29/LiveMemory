@@ -18,7 +18,7 @@ function sessionAnswer() {
 
 test('paid verified runner can update memory without replacing the session report', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -112,7 +112,7 @@ test('paid verified runner can update memory without replacing the session repor
 
 test('a broadcast with no identifiable viewers keeps its session report and skips memory clearly', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -196,7 +196,7 @@ test('a broadcast with no identifiable viewers keeps its session report and skip
 test('a stale per-task budget field is ignored and never blocks analysis', async (t) => {
   const temp = createTempDir();
   let calls = 0;
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -244,7 +244,7 @@ test('a stale per-task budget field is ignored and never blocks analysis', async
 test('configured free API runner analyses only one session and saves it', async (t) => {
   const temp = createTempDir();
   const calls = [];
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

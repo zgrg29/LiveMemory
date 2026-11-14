@@ -208,7 +208,7 @@ async function launch(videoId) {
   const fake = await startFakeWeb(videoId);
   const temp = createTempDir();
   const records = [];
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

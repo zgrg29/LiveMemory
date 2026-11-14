@@ -28,7 +28,7 @@ function jsonRequest(url, {method = 'GET', body} = {}) {
 async function main() {
   const dataDir = join(root, `bili-verify-${Date.now()}`);
   mkdirSync(dataDir, {recursive: true});
-  const server = await startServer({dataDir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false, dataDir, port: 0, systemLocale: 'en'});
   const base = server.url;
   const results = [];
   let session = null;

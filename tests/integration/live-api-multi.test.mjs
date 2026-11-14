@@ -257,7 +257,7 @@ function liveRecordings(base) {
 test('two YouTube broadcasts record concurrently, switch independently and survive a restart', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
-  let server = await startServer({
+  let server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',
@@ -446,7 +446,7 @@ test('two YouTube broadcasts record concurrently, switch independently and survi
     });
 
     await server.close();
-    server = await startServer({
+    server = await startServer({auth: false,
       dataDir: temp.dir,
       port: 0,
       systemLocale: 'en',

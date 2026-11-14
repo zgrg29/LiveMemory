@@ -273,7 +273,7 @@ function request(url, {method = 'GET', body = null} = {}) {
 test('public-web YouTube chat end-to-end (the only YouTube path)', async (t) => {
   const fake = await startFakeWeb();
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

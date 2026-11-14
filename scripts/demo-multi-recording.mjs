@@ -139,7 +139,7 @@ class DemoTicker {
   }
 }
 
-const server = await startServer({dataDir, port, systemLocale: 'en'});
+const server = await startServer({auth: false, dataDir, port, systemLocale: 'en'});
 const manager = server.sessionManager;
 
 async function start(definition) {

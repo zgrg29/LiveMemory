@@ -4,6 +4,12 @@
     "localOnly": "Local only",
     "privacyNote": "Everything stays on this computer"
   },
+  "auth": {
+    "title": "LiveMemory is locked",
+    "body": "This page is not authorized. For your security, open the console from LiveMemory.exe.",
+    "invalid": "This sign-in link is invalid or has expired. Run LiveMemory again to open a new console session.",
+    "reload": "Reload"
+  },
   "a11y": {
     "skipToContent": "Skip to content",
     "openNavigation": "Open navigation",
@@ -1484,6 +1490,7 @@
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
+    "authRequired": "This request needs a valid LiveMemory session. Open the console from LiveMemory.exe again.",
     "network": "Cannot reach the local LiveMemory server. Is the console window still running?",
     "sessionNotFound": "That session no longer exists.",
     "sessionEmpty": "This session has no messages to analyse yet.",

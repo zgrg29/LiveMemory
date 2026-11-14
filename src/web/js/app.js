@@ -1,4 +1,5 @@
 import {api} from './api.js';
+import {establishSession} from './auth.js';
 import {loadDictionary, createTranslator, localeDisplayName} from './i18n.js';
 import {applyTheme} from './theme.js';
 import {
@@ -37,6 +38,7 @@ const state = {
 const LANGUAGE_CHOICES = Object.freeze(['zh-CN', 'ja', 'en']);
 
 let t = createTranslator({});
+let authErrorShown = false;
 
 const bus = new EventTarget();
 function emit(name, detail) {
@@ -392,7 +394,54 @@ function wireShell() {
   });
 }
 
+/** Best-effort locale for the unauthenticated error page (no server data). */
+function initialLocale() {
+  const language = String(navigator.language ?? navigator.languages?.[0] ?? 'en').toLowerCase();
+  if (language.startsWith('zh')) return 'zh-CN';
+  if (language.startsWith('ja')) return 'ja';
+  return 'en';
+}
+
+/**
+ * Render a localized "open from LiveMemory" page. This runs before any API
+ * data is available, so it uses the browser language and only static strings.
+ */
+async function renderAuthError(auth) {
+  if (authErrorShown) return;
+  authErrorShown = true;
+  const locale = initialLocale();
+  state.locale = locale;
+  state.dict = await loadDictionary(locale).catch(() => ({}));
+  t = createTranslator(state.dict);
+  document.documentElement.lang = locale;
+  const message = auth?.code === 'NETWORK'
+    ? t('errors.network')
+    : (auth?.code === 'AUTH_INVALID' ? t('auth.invalid') : t('auth.body'));
+  pageTitleEl.textContent = t('auth.title');
+  connectionPill.dataset.state = 'idle';
+  connectionText.textContent = t('status.idle');
+  clear(view);
+  view.append(el('div', {className: 'card card--padded'},
+    el('h1', {className: 'page-title', text: t('auth.title')}),
+    el('p', {className: 'page-subtitle', text: message}),
+    el('div', {className: 'inline', style: {marginTop: '16px'}},
+      el('button', {
+        className: 'button button--primary',
+        type: 'button',
+        text: t('auth.reload'),
+        onClick: () => window.location.reload()
+      }))));
+}
+
 async function boot() {
+  window.addEventListener('lm:auth-required', () => {
+    renderAuthError({code: 'AUTH_REQUIRED'});
+  });
+  const auth = await establishSession();
+  if (!auth.ok) {
+    await renderAuthError(auth);
+    return;
+  }
   try {
     const bootstrap = await api.get('/api/bootstrap');
     state.bootstrap = bootstrap;

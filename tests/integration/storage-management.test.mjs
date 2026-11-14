@@ -123,7 +123,7 @@ test('relocation copies, verifies and switches without touching the old folder',
     LIVE_MEMORY_BACKUP_DIR: join(temp.dir, 'external-backups'),
     OneDrive: join(temp.dir, 'OneDrive')
   };
-  const server = await startServer({dataDir: data, port: 0, systemLocale: 'en', env});
+  const server = await startServer({auth: false,dataDir: data, port: 0, systemLocale: 'en', env});
   const base = server.url;
   t.after(async () => {
     await server.close();
@@ -199,7 +199,7 @@ test('new data space creates an empty database and keeps settings/credentials', 
     LIVE_MEMORY_LOCATION_DIR: join(temp.dir, 'location'),
     LIVE_MEMORY_BACKUP_DIR: join(temp.dir, 'external-backups')
   };
-  const server = await startServer({dataDir: data, port: 0, systemLocale: 'en', env});
+  const server = await startServer({auth: false,dataDir: data, port: 0, systemLocale: 'en', env});
   const base = server.url;
   t.after(async () => {
     await server.close();
@@ -244,7 +244,7 @@ test('a copy interruption after the source stops rolls back to the original fold
     LIVE_MEMORY_BACKUP_DIR: join(temp.dir, 'external-backups'),
     OneDrive: join(temp.dir, 'OneDrive')
   };
-  const server = await startServer({dataDir: data, port: 0, systemLocale: 'en', env});
+  const server = await startServer({auth: false,dataDir: data, port: 0, systemLocale: 'en', env});
   const base = server.url;
   t.after(async () => {
     await server.close();
@@ -292,7 +292,7 @@ test('clear-data keeps preferences and credentials, and factory reset removes th
     LIVE_MEMORY_LOCATION_DIR: join(temp.dir, 'location'),
     LIVE_MEMORY_BACKUP_DIR: join(temp.dir, 'external-backups')
   };
-  const server = await startServer({dataDir: data, port: 0, systemLocale: 'en', env});
+  const server = await startServer({auth: false,dataDir: data, port: 0, systemLocale: 'en', env});
   const base = server.url;
   t.after(async () => {
     await server.close();

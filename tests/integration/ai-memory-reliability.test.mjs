@@ -175,7 +175,7 @@ async function waitFor(runner, sessionId, statuses, {attempts = 500} = {}) {
 }
 
 function startMockServer({temp, onMemory, sessionUsage, memoryUsage}) {
-  return startServer({
+  return startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

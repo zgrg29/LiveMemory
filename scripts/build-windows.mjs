@@ -76,6 +76,8 @@ const REQUIRED_MODULES = [
   'src/ai/runtime/scheduler.mjs',
   'src/ai/translation/service.mjs',
   'src/ai/translation/fields.mjs',
+  'src/server/auth.mjs',
+  'src/web/js/auth.js',
   'src/storage/repositories/ai-translations.mjs',
   'src/storage/repositories/ai-aggregate-nodes.mjs',
   'src/shared/build-info.mjs'
@@ -168,12 +170,14 @@ execFileSync(process.execPath, ['--experimental-sea-config', 'build/sea-config.j
 const exe = 'dist/LiveMemory.exe';
 const binary = await readFile(process.execPath);
 
-// The product decision is that the packaged EXE requests administrator rights
-// through its own RT_MANIFEST. Node's official node.exe ships an asInvoker
-// manifest; patch that resource before postject injects the SEA blob.
-setManifestLevel(binary, 'requireAdministrator');
-if (manifestLevel(binary) !== 'requireAdministrator') {
-  throw new Error('failed to apply requireAdministrator manifest');
+// RC0 P0-5: the packaged EXE runs with the current user's rights. Node's
+// official node.exe already ships an asInvoker manifest, but a previous
+// LiveMemory build patched it to requireAdministrator. Normalize it explicitly
+// and verify the final binary after postject injection so a build can never
+// silently ship the old elevated manifest.
+setManifestLevel(binary, 'asInvoker');
+if (manifestLevel(binary) !== 'asInvoker') {
+  throw new Error('failed to apply asInvoker manifest');
 }
 
 // PE layout: DOS header -> PE header -> optional header.
@@ -214,6 +218,9 @@ for (const needle of [buildId, 'src/ai/batching/tokens.mjs', 'src/ai/runtime/str
   if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {
     throw new Error(`built EXE does not contain expected build marker: ${needle}`);
   }
+}
+if (manifestLevel(exeBytes) !== 'asInvoker') {
+  throw new Error('final EXE manifest is not asInvoker');
 }
 console.log(`Built ${exe}`);
 console.log(`  size:    ${(size / 1024 / 1024).toFixed(1)} MB`);

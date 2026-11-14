@@ -32,7 +32,7 @@ const dataDir = join(root, `demo-history-${Date.now()}`);
 const HOUR = 3600 * 1000;
 const now = Date.now();
 
-const server = await startServer({dataDir, port, systemLocale: 'en'});
+const server = await startServer({auth: false, dataDir, port, systemLocale: 'en'});
 const db = server.db;
 const manager = server.sessionManager;
 

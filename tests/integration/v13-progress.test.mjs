@@ -6,7 +6,7 @@ import {addBroadcaster, seedSession, T0} from '../helpers/ai-fixtures.mjs';
 
 test('analysis status advances batch and viewer progress while the task is running', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     systemLocale: 'en',

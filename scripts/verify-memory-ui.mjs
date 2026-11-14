@@ -208,7 +208,7 @@ importMemoryUpdate({
 
   /* --------------------------------------------------------------- server */
 
-  server = await startServer({dataDir, port, systemLocale: 'en'});
+  server = await startServer({auth: false, dataDir, port, systemLocale: 'en'});
 }
 record('local server is healthy', (await fetch(`${base}/api/health`)).ok);
 

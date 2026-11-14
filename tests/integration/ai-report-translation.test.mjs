@@ -195,7 +195,7 @@ function translationFetch({state}) {
 
 async function setupServer(t, state) {
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     auto: {
@@ -524,7 +524,7 @@ test('translation does not fabricate evidence whose original chat was purged', a
 
 test('session and memory jobs use the same explicit analysis output locale', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -562,7 +562,7 @@ test('session and memory jobs use the same explicit analysis output locale', asy
 test('an older schema 1.1.0 report is still translatable as a read-only display', async (t) => {
   const state = {calls: 0, mode: 'ok'};
   const temp = createTempDir();
-  const server = await startServer({
+  const server = await startServer({auth: false,
     dataDir: temp.dir,
     port: 0,
     auto: {fetchImpl: translationFetch({state}), maxRetries: 0, chunkChars: 20000}

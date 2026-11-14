@@ -4,6 +4,7 @@ import {openDatabase, closeDatabase} from '../storage/database/connection.mjs';
 import {migrate} from '../storage/database/migrations/index.mjs';
 import {createPaths, ensureDirectories, assertWritable} from './paths.mjs';
 import {SettingsStore} from './settings-store.mjs';
+import {createAuthService} from './auth.mjs';
 import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
@@ -81,10 +82,21 @@ export async function startServer({
   beginLockMove = null,
   auto = null,
   buildInfo = null,
+  auth: authOptions = null,
   env = process.env
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
   const hub = new EventStream();
+  // Session security is enabled by default. `auth: false` exists solely for the
+  // large existing data/API test suite, which starts the server in-process and
+  // would otherwise need a cookie for every fixture request; the dedicated
+  // tests in tests/integration/api-auth.test.mjs exercise the enabled path.
+  const auth = createAuthService({
+    ...(authOptions && typeof authOptions === 'object' ? authOptions : {}),
+    enabled: authOptions !== false,
+    now,
+    logger
+  });
   let runtime = null;
 
   function buildRuntime(dir) {
@@ -232,6 +244,7 @@ export async function startServer({
     get translationService() { return runtime.translationService; },
     get maintenance() { return state.maintenance; },
     set maintenance(value) { state.maintenance = Boolean(value); },
+    auth,
     hub,
     logger,
     startedAt,
@@ -279,6 +292,17 @@ export async function startServer({
 
   state.port = server.address().port;
   const url = `http://127.0.0.1:${state.port}/`;
+  // Only the browser URL carries the one-time token, and only in the fragment.
+  // runtime.json/logs keep the plain URL so the token is never persisted.
+  const browserUrl = auth.browserUrl(url);
+  const testBootstrapFile = env.LIVE_MEMORY_TEST_BOOTSTRAP_FILE ?? null;
+  if (testBootstrapFile) {
+    try {
+      writeFileSync(testBootstrapFile, `${browserUrl}\n`, 'utf8');
+    } catch {
+      /* the automated replay can report a missing file itself */
+    }
+  }
   writeRuntime(deps.paths, {
     pid: process.pid,
     port: state.port,
@@ -346,6 +370,13 @@ export async function startServer({
     server.closeAllConnections?.();
     closeDatabase(runtime.db);
     removeRuntime(runtime.paths);
+    if (testBootstrapFile) {
+      try {
+        rmSync(testBootstrapFile, {force: true});
+      } catch {
+        /* best effort */
+      }
+    }
     logger?.info({event: 'server.closed', port: state.port});
     return true;
   }
@@ -353,6 +384,8 @@ export async function startServer({
   return {
     server,
     url,
+    browserUrl,
+    auth,
     port: state.port,
     get paths() { return runtime.paths; },
     get db() { return runtime.db; },

@@ -33,7 +33,7 @@ async function main() {
   if (!url) throw new Error('usage: node scripts/verify-youtube-anonymous.mjs <live-url> [seconds]');
   const dataDir = join(root, `yt-anon-verify-${Date.now()}`);
   mkdirSync(dataDir, {recursive: true});
-  const server = await startServer({dataDir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false, dataDir, port: 0, systemLocale: 'en'});
   const base = server.url;
   const result = {
     input: url,

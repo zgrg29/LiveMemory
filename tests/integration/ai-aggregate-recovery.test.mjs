@@ -200,7 +200,7 @@ test('a truncated aggregate is retried once, then the saved batches still comple
   const sessionId = 'ses_aggregate_truncated_retry';
   const calls = [];
   const state = {aggregateMode: 'truncate-once'};
-  let server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  let server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     try {
       await server.close();
@@ -244,7 +244,7 @@ test('a truncated aggregate is retried once, then the saved batches still comple
 
   // Restart and repeat Continue: complete is idempotent and calls no provider.
   await server.close();
-  server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   installMock(server, state, calls);
   const afterRestart = await fetch(
     `${server.url}api/ai/analyze/status?sessionId=${encodeURIComponent(sessionId)}`
@@ -268,7 +268,7 @@ test('a hard aggregate provider error stays resumable and Continue only retries 
   const sessionId = 'ses_aggregate_provider_error';
   const calls = [];
   const state = {aggregateMode: 'error'};
-  let server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  let server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     try {
       await server.close();
@@ -306,7 +306,7 @@ test('a hard aggregate provider error stays resumable and Continue only retries 
 
   await server.close();
   state.aggregateMode = 'success';
-  server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   installMock(server, state, calls);
   const afterRestart = await fetch(
     `${server.url}api/ai/analyze/status?sessionId=${encodeURIComponent(sessionId)}`
@@ -334,7 +334,7 @@ test('a hard aggregate provider error stays resumable and Continue only retries 
 
 test('a successful HTTP response with an invalid aggregate is rejected, then a deterministic report completes', async (t) => {
   const temp = createTempDir();
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();

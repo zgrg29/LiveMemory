@@ -248,7 +248,7 @@ test('32 saved batches aggregate through persisted nodes and resume without re-r
   const sessionId = 'ses_hierarchy_32';
   const calls = [];
   const state = {finalMode: 'error', digestMode: 'success'};
-  let server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  let server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     try {
       await server.close();
@@ -299,7 +299,7 @@ test('32 saved batches aggregate through persisted nodes and resume without re-r
 
   await server.close();
   state.finalMode = 'success';
-  server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   installMock(server, state, calls);
   const callCountBeforeResume = calls.length;
   const before = await fetch(
@@ -351,7 +351,7 @@ test('a truncated partial summary retries only that group', async (t) => {
   const sessionId = 'ses_hierarchy_truncate_group';
   const calls = [];
   const state = {finalMode: 'success', digestMode: 'truncate-once', truncateUsed: new Set()};
-  const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+  const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
   t.after(async () => {
     await server.close();
     temp.cleanup();
@@ -389,7 +389,7 @@ test('64 and 128 saved batches stay within the bounded request count', async (t)
     const sessionId = `ses_hierarchy_${expected}`;
     const calls = [];
     const state = {finalMode: 'success', digestMode: 'success', truncateUsed: new Set()};
-    const server = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'en'});
+    const server = await startServer({auth: false,dataDir: temp.dir, port: 0, systemLocale: 'en'});
     try {
       const session = await seed(server, sessionId, messageCount);
       installMock(server, state, calls);
