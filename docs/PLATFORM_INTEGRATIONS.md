@@ -294,6 +294,7 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 
 - **本地假网页端到端**：`tests/integration/youtube-anonymous-session.test.mjs` 覆盖检查、连接、聊天/SC/Sticker/会员/gift、badge、稳定身份、自动结束、保留上限、AI 包；`live-api-multi.test.mjs` 覆盖两个假直播的并发、隔离、Top 100、停止一场另一场继续、重启恢复。
 - **生命周期回归（v0.13.2 P0-4，Mock HTTP）**：`tests/unit/youtube-lifecycle-regression.test.mjs` 10 项 + `tests/integration/youtube-lifecycle.test.mjs` 2 项。覆盖连续 429、连续网络失败、500/502/503、缺 `continuationContents`、多种异常 200、stale token 重取、连续故障后同一 session 恢复、观看页两次 ended、聊天 ended/disabled 二次确认、用户停止、消息去重与单轮询器。全部通过。
+- **正式 EXE + 本地假 YouTube（v0.13.2 P0-4）**：`scripts/verify-youtube-lifecycle-exe.mjs` 用 asInvoker 测试副本与 loopback 假服务；关闭假服务 **180,513 ms** 后同一 session 恢复、消息去重、观看页 ended 只结束一次。是正式 EXE 回放，不是真实 YouTube 网络断网。
 - **真实直播间并发采样（v0.6.0，2026-11-09）**：两个 YouTube（Lofi Girl + Al Jazeera English 当日直播）各收到 80 / 63 条事件；跨场 `wrongSession=0`；重复启动 409；停止 A 后 B 仍 connected。另与 Bilibili room 6、三场并发、构建后 EXE 附加验证均通过。详见 TEST_PLAN §12.3。
 - **未验证**：真实 429/验证码/consent/age wall、真实网络级断网（拔网/切网）、真实 YouTube 直播的“网络中断→恢复→同一场次”端到端、数小时长直播、不同地区币种、Super Sticker/会员/赠送会员真实样本、同一真实观众跨两个主播的观测、官方授权（不存在）。
 - 该路径不是官方 API，可能违反 YouTube 服务条款；正式发布前仍需平台合规评估。

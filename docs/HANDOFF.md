@@ -33,16 +33,18 @@
 ### 0.3 修复前复现与测试
 
 - 修复前 `tests/unit/youtube-lifecycle-regression.test.mjs` **7/8 失败**：429、连续网络失败、500/502/503、缺 continuationContents、异常 200、stale token 复用、单次 ended/`video` 全部触发 `onEnd`。
-- 修复后新增 **10 个 unit + 2 个 integration**；全量 **721 passed / 0 failed**（191,207 ms，2026-11-14）。
+- 修复后新增 **10 个 unit + 2 个 integration**；全量 **721 passed / 0 failed**（192,929 ms，2026-11-14）。
 - 集成测试使用真实 server/SessionManager/SQLite + 假 YouTube 网页，验证：同一 session、同一 viewer、消息不丢、replay 去重、单轮询器、平台结束只一次、用户停止独立。
 
 ### 0.4 正式 EXE 与本地假 YouTube
 
-（构建与运行结果见本轮最终报告 / `log/2026-11-14-youtube-lifecycle-p0.md`；若未完成会用“未验证”明确标注，不写成真实验收。）
-
-- 正式构建：`dist/LiveMemory.exe`，buildId / commit / SHA-256 / assets 见最终报告。
-- asInvoker 测试副本 + `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>` + 本地假 YouTube：正常采集 → 模拟断网/429/异常 200 → 恢复 → 同一 session 继续 → 明确 ended → 结束；消息数/观众数/结束原因核对。
-- 不是真实 YouTube 网络断网，不是 UAC 双击，不是真实浏览器点击。
+- **正式构建**：`dist/LiveMemory.exe` buildId `59b7928cb78a` / commit `31886b2` / SHA-256 `e9fe576931a0562a7969afa3bba188a3418b95374ca68c2d75d09bc6d8805b2f` / 96,419,840 bytes（92.0 MB）/ 176 assets / `requireAdministrator` / builtAt 2026-11-14T03:28:37.819Z。
+- **回放**：asInvoker 测试副本（仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1` 与 `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>`）+ 本地假 YouTube，EXE 内 buildId/commit 与 `/api/health` 一致。
+  - 正常采集 3 条消息 / 2 位观众 → 关闭假 YouTube **180,513 ms**；
+  - 断连期间 session 仍 `live`、消息数仍 3、无第二个 session、无结束；
+  - 恢复后同一 session 继续到 4 条；stale 重放 `msg-1` 去重（事件行 5 / 唯一 5）；
+  - 明确 ended → `platform_ended`、`platform_status=ended`、结束前后计数一致、房间 1 条 session。
+- **性质**：这是正式 EXE + 本地 Mock 服务的确定性回放，不是真实 YouTube 网络断网，不是 UAC 双击，不是真实浏览器点击。
 
 ### 0.5 P0-4 结论与下一轮 P0-5 交接
 
@@ -51,7 +53,7 @@
 - **下一轮 P0-5「本地 HTTP API 无鉴权 + 管理员进程」交接**：
   - 现状：服务只监听 `127.0.0.1`，但所有 `/api/*` 无认证；仅对带 `Origin` 的写请求做同源校验（`src/server/app.mjs`）。本机任意进程可省略 `Origin` 直接调用 GET/POST/PATCH/DELETE。
   - 发布 EXE 以 `requireAdministrator` 运行，因此上述请求会以管理员权限执行（改设置、停止/删除场次、迁移数据目录、读取观众与聊天数据）。
-  - 建议复现：从普通 PowerShell 直接 `PATCH /api/settings`、`POST /api/sessions/:id/stop`、`GET /api/viewers`、`POST /api/storage/relocate`（先只读/测试数据目录），确认无 token 也成功；再用非管理员进程验证权限继承。
+  - 建议复现：从普通 PowerShell 直接 `PATCH /api/settings`、`POST /api/sessions/:id/stop`、`GET /api/viewers`、`POST /api/storage/location`（先只读/测试数据目录），确认无 token 也成功；再用非管理员进程验证权限继承。
   - 建议修复方向（需单独评审）：启动器生成每次运行随机 token；通过同源 `HttpOnly; SameSite=Strict` cookie 或 bootstrap 注入 + `Authorization` 校验所有 `/api/*`；SSE 同样校验；拒绝 `Origin: null` 与缺失 token；限制 CORS；把危险操作（迁移/删除/恢复出厂）放到需要用户确认的独立高权限 broker，而不是让任意本地 HTTP 调用提升权限；对 `runtime/` 与数据目录做 ACL 收紧。
   - 不要在本轮顺手加认证：会牵涉启动器、浏览器引导、SSE、测试与用户体验，需要独立回归。
 

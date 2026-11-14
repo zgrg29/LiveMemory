@@ -125,7 +125,7 @@ STATUS、HANDOFF、ROADMAP、PLATFORM_INTEGRATIONS、ARCHITECTURE、DATA_MODEL�
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-**721 passed / 0 failed / 0 skipped**，191,207 ms（2026-11-14）。基线 708；新增/更新净 +13。
+**721 passed / 0 failed / 0 skipped**，192,929 ms（2026-11-14）。基线 708；新增/更新净 +13。
 
 ### 5.3 Bilibili 回归
 
@@ -139,10 +139,39 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 - 结束：结束前后 `eventCount/messages/activeViewers` 完全一致。
 - 去重键仍为 `(session_id, dedupe_key)`，未改 EventIngest。
 
-## 7. 边界与未验证
+## 7. 正式 EXE 与本地假 YouTube（已实测）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | 96,419,840 bytes（92.0 MB） |
+| SHA-256 | `e9fe576931a0562a7969afa3bba188a3418b95374ca68c2d75d09bc6d8805b2f` |
+| buildId | `59b7928cb78a` |
+| commit | `31886b2d59873b574d3fb1703a0d592396ce42c7` |
+| builtAt | 2026-11-14T03:28:37.819Z |
+| 资源 | 176 files；12 个必需模块；RT_MANIFEST `requireAdministrator` |
+
+脚本：`scripts/verify-youtube-lifecycle-exe.mjs`。asInvoker 测试副本 + `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>` + 本地假 YouTube：
+
+```text
+EXE healthy buildId=59b7928cb78a commit=31886b2...
+session ses_01M7C1MH5KBQTKNQET2Q
+before outage: messages=3 viewers=2
+fake YouTube stopped; waiting 180 s (simulated network outage)
+outage lasted 180513 ms; session still live, messages=3
+fake YouTube restarted; waiting for reconnect
+recovered: messages=4 viewers=2
+after stale replay: rows=5, unique=5, session=ses_01M7C1MH5KBQTKNQET2Q
+ended: reason=platform_ended platform=ended messages=5
+PASS
+```
+
+- **是**：正式 EXE 的二进制包含了本轮代码；本地 3 分钟真实 TCP 断连；同一 session 恢复；重放去重；平台结束只一次。
+- **不是**：真实 YouTube 网络断网、UAC 双击、真实浏览器点击、真实平台 429/验证码/consent、数小时长直播。
+
+## 8. 边界与未验证
 
 - 真实 YouTube 直播拔网/切网 3 分钟、真实 429/验证码/consent、数小时长直播未验证。
-- 正式 EXE 与本地假 YouTube 的断网回放：见最终交付报告（若未完成明确标注）。
 - 真实 UAC 双击、真实浏览器点击未验证。
 - 没有访问真实 YouTube 高频请求，没有绕过平台限流。
 

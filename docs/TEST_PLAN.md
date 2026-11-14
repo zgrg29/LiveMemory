@@ -1285,7 +1285,7 @@ duration ≈ 155s
 
 ### 38.3 全量与跨平台回归
 
-- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，191,207 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，192,929 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
 - Bilibili 专项：adapter/lifecycle/service/status/mapper/API + manual-stop + session-multi 共 **53 passed / 0 failed**。
 - 新增测试数：10 unit + 2 integration；parser 更新 1 项。
 
@@ -1302,8 +1302,20 @@ duration ≈ 155s
 | 用户停止 | 立即 | 立即；不受二次确认延迟 |
 | 重连后的 session | 理论上保留 | 集成测试证明同一 session、消息去重、观众保留 |
 
-### 38.5 未验证
+### 38.5 正式 EXE 与本地假 YouTube（本轮实测）
+
+- 正式 EXE：buildId `59b7928cb78a` / commit `31886b2` / SHA-256 `e9fe5769…` / 96,419,840 bytes / 176 assets / `requireAdministrator`。
+- asInvoker 测试副本 + `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>` + 本地假 YouTube：
+  - `/api/health` buildId/commit 与 EXE 内一致；
+  - 正常采集 3 条消息 / 2 位观众；
+  - 关闭假服务 **180,513 ms**（3 分钟真实 TCP 断连）：session 仍 live，消息数 3，无第二场，无结束；
+  - 重启假服务：同一 session 恢复到 4 条；stale continuation 重放 `msg-1` 后事件行 5 / 唯一 5；
+  - 观看页 ended + 异常 200：`platform_ended`、`platform_status=ended`，结束前后计数一致，仅 1 条 session。
+- 脚本：`scripts/verify-youtube-lifecycle-exe.mjs`。
+- **不是**真实 YouTube 网络断网，**不是** UAC 双击，**不是**真实浏览器点击；真实平台 429/验证码/consent 仍未验证。
+
+### 38.6 未验证
 
 - 真实 YouTube 直播的拔网/切网 3 分钟、真实 429/验证码/consent、数小时长直播。
-- 正式 EXE 与本地假 YouTube 的 3 分钟断网回放（如未完成会明确标注）。
 - 真实 UAC 双击、真实浏览器点击；未访问真实平台高频请求。
+- 正式 EXE 的假服务地址只允许 loopback（`LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE`），不是生产用户配置项。

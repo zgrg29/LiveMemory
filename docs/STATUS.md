@@ -39,15 +39,34 @@
 
 ### 0.23.4 全量与 EXE
 
-- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，191,207 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
-- 正式 EXE：见 §0.23.6（构建与本地假 YouTube 验证结果）。
+- 全量：**721 passed / 0 failed / 0 skipped**（2026-11-14，192,929 ms，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）。
+- 正式 EXE：buildId `59b7928cb78a` / commit `31886b2` / SHA-256 `e9fe576931a0562a7969afa3bba188a3418b95374ca68c2d75d09bc6d8805b2f` / 96,419,840 bytes（92.0 MB）/ 176 assets / `requireAdministrator`。
+- **EXE + 本地假 YouTube 回放**（asInvoker 测试副本，仅测试设置 `LIVE_MEMORY_SKIP_ADMIN_CHECK=1` 与 `LIVE_MEMORY_TEST_YOUTUBE_WEB_BASE=http://127.0.0.1:<port>`）：
+  - 正常采集 3 条消息 / 2 位观众；随后关闭假 YouTube 服务 **180,513 ms**（3 分钟真实 TCP 断连）。
+  - 断连期间 `session` 始终 `live`，消息数保持 3，未生成第二个 session，未触发结束。
+  - 恢复后同一 session 继续到 4 条；强制 stale continuation 重开聊天页并重放 `msg-1`，事件行 5 / 内容唯一 5，无重复。
+  - 观看页 ended + 异常 200 → `platform_ended`、`platform_status=ended`，结束前后计数一致，房间仅 1 条 session。
+  - 结论：**正式 EXE + 本地 Mock 服务通过**，但**不是**真实 YouTube 网络断网，也**不是** UAC 双击/真实浏览器点击。
 
 ### 0.23.5 边界与待验收
 
 - **真实网络级断网未验证**：未在真实 YouTube 直播上拔网/切网 3 分钟；自动化使用可控假 HTTP 故障。
 - **真实 YouTube 长直播/429/验证码/consent 未验证**：本轮不发送真实平台高频请求，也不绕过限流。
-- **未验证真实 UAC 双击与真实浏览器点击**：EXE 验证使用 asInvoker 测试副本与本地假 YouTube（如完成）。
+- **未验证真实 UAC 双击与真实浏览器点击**：EXE 验证使用 asInvoker 测试副本与本地假 YouTube。
 - 平台若把真实结束表现为“200 空响应 + 观看页仍短暂 live”，会先留在重连状态，待观看页更新后结束；这是刻意的保守行为。
+
+### 0.23.6 正式构建标识
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | 96,419,840 bytes（92.0 MB） |
+| SHA-256 | `e9fe576931a0562a7969afa3bba188a3418b95374ca68c2d75d09bc6d8805b2f` |
+| buildId | `59b7928cb78a` |
+| commit | `31886b2d59873b574d3fb1703a0d592396ce42c7` |
+| builtAt | 2026-11-14T03:28:37.819Z（11:28:37 +08） |
+| 资源 | 176 files；12 个必需模块；RT_MANIFEST `requireAdministrator` |
+| source hash | `59b7928cb78ab52355f9e328a39e384a725b4fd2be83aa9503288dfad61086aa` |
 
 ## 0.22 RC0 P0-1：AI 定向补答回归修复（2026-11-14）
 

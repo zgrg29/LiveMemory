@@ -15,8 +15,9 @@
 ### 验证
 
 - 修复前新增用例 **7/8 失败**；修复后 **10 unit + 2 integration** 专项全部通过。
-- 全量 **721 passed / 0 failed**（2026-11-14，191,207 ms）。
+- 全量 **721 passed / 0 failed**（2026-11-14，192,929 ms）。
 - Bilibili adapter/lifecycle/service/status/mapper/API + manual-stop + session-multi **53 passed**，未改 Bilibili 结束逻辑。
+- 正式 EXE：buildId `59b7928cb78a` / commit `31886b2` / SHA-256 `e9fe576931a0562a7969afa3bba188a3418b95374ca68c2d75d09bc6d8805b2f`；asInvoker 测试副本 + 本地假 YouTube 实跑 3 分钟 TCP 断连 → 同一 session 恢复 → 去重 → `platform_ended`。
 - 未验证：真实 YouTube 断网 3 分钟/恢复、真实 429/长直播、真实 UAC 双击、真实浏览器点击。
 
 ## 0.13.2-r11 — 2026-11-14（RC0 P0-1：AI 定向补答回归修复）
