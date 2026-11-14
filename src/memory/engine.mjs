@@ -107,6 +107,14 @@ export function applyOperations({facts, operations, context}) {
       const statement = normalizeText(operation.statement ?? operation.note ?? topic ?? '', 400);
       const match = findMatch(working, {kind, topic, statement});
       if (match) {
+        // A matched add can re-confirm an existing fact only when it carries
+        // new evidence. Without evidence it is not a confirmation, and it may
+        // never promote an inference or an uncertain fact.
+        if (evidence.length === 0) {
+          results.push({...baseResult, status: 'skipped', reason: 'MEMORY_EVIDENCE_REQUIRED', factId: match.id});
+          warnings.push({code: 'MEMORY_EVIDENCE_REQUIRED', opIndex: index, factId: match.id});
+          continue;
+        }
         match.lastConfirmedAt = now;
         mergeEvidence(match, evidence);
         if (certainty === MEMORY_CERTAINTY.STATED && match.certainty === MEMORY_CERTAINTY.INFERRED) {
@@ -172,18 +180,21 @@ export function applyOperations({facts, operations, context}) {
         warnings.push({code: 'MEMORY_TARGET_SUPERSEDED', opIndex: index, factId: target.id});
         continue;
       }
+      const hasEvidence = evidence.length > 0;
       target.lastConfirmedAt = now;
       mergeEvidence(target, evidence);
-      if (operation.certainty && normalizeCertainty(operation.certainty) === MEMORY_CERTAINTY.STATED
+      if (hasEvidence && operation.certainty
+        && normalizeCertainty(operation.certainty) === MEMORY_CERTAINTY.STATED
         && target.certainty === MEMORY_CERTAINTY.INFERRED) {
         target.certainty = MEMORY_CERTAINTY.STATED;
       }
-      if (target.status === MEMORY_STATUS.OUTDATED) {
+      if (hasEvidence && target.status === MEMORY_STATUS.OUTDATED) {
         target.status = MEMORY_STATUS.ACTIVE;
         target.statusReason = null;
         target.validUntil = null;
       }
-      if (target.status === MEMORY_STATUS.NEEDS_CONFIRMATION && target.certainty !== MEMORY_CERTAINTY.UNCERTAIN) {
+      if (hasEvidence && target.status === MEMORY_STATUS.NEEDS_CONFIRMATION
+        && target.certainty !== MEMORY_CERTAINTY.UNCERTAIN) {
         target.status = MEMORY_STATUS.ACTIVE;
         target.statusReason = null;
       }

@@ -79,6 +79,40 @@ test('a stated statement upgrades an inference but an inference never downgrades
   assert.equal(kept.facts[0].certainty, 'stated');
 });
 
+test('a confirmation cannot promote an inference to stated without new evidence', () => {
+  const base = [existing({certainty: 'inferred', status: 'active'})];
+  const outcome = run([{op: 'confirm', targetFactId: base[0].id, certainty: 'stated'}], base);
+  assert.equal(outcome.facts[0].certainty, 'inferred');
+  assert.equal(outcome.facts[0].evidence.length, 0);
+});
+
+test('an untargeted add cannot promote or reactivate a fact without evidence', () => {
+  const base = [existing({certainty: 'inferred', status: 'active'})];
+  const upgraded = run([{
+    op: 'add',
+    kind: 'interest',
+    topic: 'RPG',
+    statement: '喜欢 RPG',
+    certainty: 'stated'
+  }], base);
+  assert.equal(upgraded.facts[0].certainty, 'inferred');
+
+  const uncertain = existing({
+    topic: '旅行',
+    statement: '可能去旅行',
+    certainty: 'uncertain',
+    status: 'needs_confirmation'
+  });
+  const activated = run([{
+    op: 'add',
+    kind: 'interest',
+    topic: '旅行',
+    statement: '可能去旅行',
+    certainty: 'stated'
+  }], [uncertain]);
+  assert.equal(activated.facts[0].status, 'needs_confirmation');
+});
+
 test('interest and dislike for the same topic become an explicit conflict', () => {
   const base = [existing({kind: 'interest', topic: 'Valorant'})];
   const outcome = run([{

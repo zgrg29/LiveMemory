@@ -509,6 +509,17 @@ export function validateMemoryImport({db, text, source = 'paste', now = Date.now
           warnings.push(issue('warning', `${opPath}.evidence`, 'MEMORY_NO_EVIDENCE', {}));
         }
       }
+      // A targeted confirmation may re-confirm a fact only when the answer
+      // really quotes a new message. Without evidence, "confirm + stated" is an
+      // unsupported promotion of an inference into a stated fact; skip that
+      // operation instead of failing the whole answer (which would cost another
+      // paid call). The fact itself is untouched.
+      if (op === MEMORY_OPERATION.CONFIRM
+        && certainty === MEMORY_CERTAINTY.STATED
+        && evidence.length === 0) {
+        warnings.push(issue('warning', `${opPath}.evidence`, 'MEMORY_EVIDENCE_REQUIRED', {certainty}));
+        continue;
+      }
 
       resolvedOps.push({
         op,

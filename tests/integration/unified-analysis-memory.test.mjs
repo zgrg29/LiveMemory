@@ -339,6 +339,44 @@ test('E: cross-batch viewers stay in one memory batch, re-import is idempotent',
   assert.equal(complete.missing_update, 0);
 });
 
+test('a stated confirmation in the analysis answer cannot promote an inference without a quote', async (t) => {
+  const db = openMemoryDb();
+  addBroadcaster(db);
+  const temp = createTempDir();
+  t.after(() => { temp.cleanup(); db.close(); });
+  const first = oneMessageSession(db, 0, '最近可能对画画感兴趣');
+  const firstJob = await createAnalysisJob({db, sessionId: first.id, locale: 'zh-CN', exportsDir: temp.dir, now: T0 + 10000});
+  const firstResult = makeResult(temp.dir, firstJob.packages[0], {
+    operationFor: (viewer, excerpts) => [{
+      op: 'add',
+      kind: 'interest',
+      topic: '绘画',
+      statement: '可能对画画感兴趣',
+      certainty: 'inferred',
+      evidence: [excerpts[0].seq]
+    }]
+  });
+  importAnalysisResult({db, text: firstResult.text});
+  const viewerId = 'youtube:UC_LOW_FREQ_0';
+  const memory = getMemory(db, {broadcasterId: 'youtube:UC_AI_TEST', viewerId});
+  const fact = listFacts(db, memory.id)[0];
+  assert.equal(fact.certainty, 'inferred');
+
+  const second = oneMessageSession(db, 1, '今天也在看直播');
+  const secondJob = await createAnalysisJob({db, sessionId: second.id, locale: 'zh-CN', exportsDir: temp.dir, now: T0 + 2 * HOUR});
+  const secondResult = makeResult(temp.dir, secondJob.packages[0], {
+    operationFor: () => [{op: 'confirm', target_fact_id: fact.id, certainty: 'stated'}]
+  });
+  const preview = validateAnalysisImport({db, text: secondResult.text});
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  assert.ok(preview.warnings.some((warning) => warning.code === 'MEMORY_EVIDENCE_REQUIRED'));
+  importAnalysisResult({db, text: secondResult.text});
+  const after = listFacts(db, memory.id).find((entry) => entry.id === fact.id);
+  assert.equal(after.certainty, 'inferred');
+  assert.equal(after.status, 'active');
+  assert.equal(after.evidenceCount, 1);
+});
+
 test('a missing viewer update is blocked instead of silently skipping the viewer', async (t) => {
   const db = openMemoryDb();
   addBroadcaster(db);

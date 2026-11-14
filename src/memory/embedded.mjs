@@ -370,6 +370,18 @@ export function validateEmbeddedMemoryUpdates({
         }
         if (certainty === MEMORY_CERTAINTY.INFERRED) certainty = MEMORY_CERTAINTY.UNCERTAIN;
       }
+      // See memory/validate.mjs: a confirmation that claims `stated` without a
+      // new quote is an unsupported promotion. Skip the operation, keep the
+      // fact and the rest of the answer.
+      if (op === MEMORY_OPERATION.CONFIRM
+        && certainty === MEMORY_CERTAINTY.STATED
+        && evidence.length === 0) {
+        warnings.push(issue('warning', `${opPath}.evidence`, 'MEMORY_EVIDENCE_REQUIRED', {
+          certainty,
+          allowedSeqs: listJobMemoryMessageSeqs(db, job.id, batch.batchIndex, viewerId)
+        }));
+        continue;
+      }
       resolvedOps.push({
         op,
         kind,

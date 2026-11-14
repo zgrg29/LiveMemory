@@ -573,6 +573,76 @@ test('a later session can supersede a fact created by an earlier session', async
   }
 });
 
+test('a stated confirmation without evidence is skipped, not promoted', async () => {
+  const db = openMemoryDb();
+  const exportsDir = mkdtempSync(join(tmpdir(), 'lm-memory-noevidence-'));
+  try {
+    addBroadcaster(db);
+    const first = seedSession(db, {messageCount: 10, viewerCount: 1});
+    let created = await createMemoryUpdateJob({
+      db, sessionId: first.id, locale: 'en', exportsDir, now: T0 + 1000
+    });
+    let pkg = await inspectMemoryPackage(join(exportsDir, created.batches[0].fileName));
+    const viewerId = pkg.context.viewers[0].viewer_id;
+    importMemoryUpdate({
+      db,
+      text: JSON.stringify(resultFor(pkg.manifest, {
+        viewer_operations: [{
+          viewer_id: viewerId,
+          operations: [{
+            op: 'add',
+            kind: 'interest',
+            topic: 'audit',
+            statement: 'May like auditing',
+            certainty: 'inferred',
+            evidence: [firstSeqFor(pkg, viewerId)]
+          }]
+        }]
+      })),
+      now: T0 + 2000
+    });
+    let memory = getMemory(db, {broadcasterId: BROADCASTER, viewerId});
+    const factId = listFacts(db, memory.id)[0].id;
+    assert.equal(listFacts(db, memory.id)[0].certainty, 'inferred');
+
+    const second = seedSession(db, {
+      messageCount: 10,
+      viewerCount: 1,
+      roomId: 'noevidence-room-2',
+      startedAt: T0 + T_DAY
+    });
+    created = await createMemoryUpdateJob({
+      db, sessionId: second.id, locale: 'en', exportsDir, now: T0 + T_DAY + 1000
+    });
+    pkg = await inspectMemoryPackage(join(exportsDir, created.batches[0].fileName));
+    const text = JSON.stringify(resultFor(pkg.manifest, {
+      viewer_operations: [{
+        viewer_id: viewerId,
+        operations: [{
+          op: 'confirm',
+          target_fact_id: factId,
+          certainty: 'stated'
+        }]
+      }]
+    }));
+    const preview = validateMemoryImport({db, text, now: T0 + T_DAY + 2000});
+    assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+    assert.equal(preview.totals.confirmed, 0, 'nothing was confirmed without a quote');
+    assert.ok(preview.warnings.some((warning) => warning.code === 'MEMORY_EVIDENCE_REQUIRED'));
+
+    importMemoryUpdate({db, text, now: T0 + T_DAY + 3000});
+    memory = getMemory(db, {broadcasterId: BROADCASTER, viewerId});
+    const fact = listFacts(db, memory.id).find((entry) => entry.id === factId);
+    assert.equal(fact.certainty, 'inferred');
+    assert.equal(fact.status, 'active');
+    assert.equal(fact.evidenceCount, 1);
+    assert.equal(memory.version, 1, 'a skipped confirmation does not create a memory version');
+  } finally {
+    db.close();
+    rmSync(exportsDir, {recursive: true, force: true});
+  }
+});
+
 test('a conflict is preserved for the streamer instead of being resolved by the AI', async () => {
   const ctx = await scenario({viewersPerBatch: 1});
   try {
