@@ -81,7 +81,7 @@
 ### 0.28.6 提交
 
 - 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
-- 文档收尾提交：`DOC_COMMIT_PLACEHOLDER`
+- 文档收尾提交：本文件所在的后续提交（HEAD）
 - 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；未 Push/Tag/发布。
 - `buildId` 由源码内容哈希决定，与提交哈希无关；用本轮源码可重建同一 `ab6098700897`。
