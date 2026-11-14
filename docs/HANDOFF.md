@@ -23,7 +23,8 @@
    区分 stated/inferred/uncertain。未改 Schema/提示词版本/DB schema/默认批次。
 5. **新增 17 项测试**：10 unit + 7 integration；oracle 在 5/10/20 下 100% 严格召回；
    退化/跨观众/截断/同名场景均有断言。
-6. **全量 814 passed / 0 failed**；正式 EXE 与 EXE 矩阵见 `docs/STATUS.md` §0.28.5。
+6. **全量 814 passed / 0 failed**；正式 EXE 与 EXE 矩阵见 `docs/STATUS.md` §0.28.5；
+   代码提交 `8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`。
 
 ### 0.2 下一轮必须先做
 

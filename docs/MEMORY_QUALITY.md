@@ -310,7 +310,9 @@ EXE 矩阵（全部针对最终二进制）：
 
 ## 13. Git、buildId、SHA-256
 
-- 代码提交：`GIT_COMMIT_PLACEHOLDER`
+- 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
+- 文档收尾提交：`DOC_COMMIT_PLACEHOLDER`
+- 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`（正式 EXE 的 `build-info.commit`）
 - buildId：`ab6098700897`
 - SHA-256：`3dfa563b88167f1e3a1985706e73f730c7b58e4c2c84c48817e48f35058fc233`
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`（仓库本地配置）

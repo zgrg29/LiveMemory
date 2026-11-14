@@ -76,8 +76,16 @@
   `scripts/verify-p0-5-exe.mjs`：**12/12**；`scripts/verify-ai-token-exe.mjs`：**16/16**。
 - 长期画像正常、Resume 正常、数据保存正常、备份恢复正常、API 认证正常、asInvoker 正常。
 - **性质**：正式 EXE + 本地 Mock Provider + 合成数据；**不是**真实付费 Provider 验收，
-  **不是**真实浏览器点击。构建在代码提交之前，`build-info.commit` 记录构建时 HEAD；
-  本轮最终提交见 §0.28.6。
+  **不是**真实浏览器点击。构建在代码提交之前，`build-info.commit` 记录构建时 HEAD。
+
+### 0.28.6 提交
+
+- 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
+- 文档收尾提交：`DOC_COMMIT_PLACEHOLDER`
+- 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`
+- 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；未 Push/Tag/发布。
+- `buildId` 由源码内容哈希决定，与提交哈希无关；用本轮源码可重建同一 `ab6098700897`。
+  构建在代码提交前完成，因此 `build-info.commit` 是构建时 HEAD，不是代码提交哈希。
 
 ## 0.27 RC0 P0-3：Provider 兼容性、DeepSeek 真实付费验收与 20→10 回退（2026-11-14）
 
