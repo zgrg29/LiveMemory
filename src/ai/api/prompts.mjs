@@ -290,6 +290,14 @@ export function buildTargetedMemoryPrompt({prompt, missingRefs}) {
           nickname: viewer.nickname ?? null,
           evidence_seqs: viewer.evidence_seqs ?? [],
           zero_excerpt: viewer.zero_excerpt === true,
+          ...(viewer.excerpt_omitted_messages !== undefined
+            ? {
+              excerpt_total_messages: Number(viewer.excerpt_total_messages ?? 0),
+              excerpt_included_messages: Number(viewer.excerpt_included_messages ?? 0),
+              excerpt_omitted_messages: Number(viewer.excerpt_omitted_messages ?? 0),
+              excerpt_window: viewer.excerpt_window ?? 'most_recent'
+            }
+            : {}),
           memory: viewer.memory ?? {status: 'none', version: 0, facts: []}
         };
       })

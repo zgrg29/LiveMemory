@@ -22,7 +22,7 @@ import {listSessionViewers} from '../../src/storage/repositories/viewers.mjs';
 import {getMemory} from '../../src/storage/repositories/viewer-memory.mjs';
 import {createSession, endSession} from '../../src/storage/repositories/sessions.mjs';
 import {EventIngest} from '../../src/platforms/shared/ingest.mjs';
-import {buildMemoryPrompt} from '../../src/ai/api/prompts.mjs';
+import {buildMemoryPrompt, buildTargetedMemoryPrompt} from '../../src/ai/api/prompts.mjs';
 
 /**
  * RC0-MEMORY-QUALITY integration test.
@@ -431,6 +431,12 @@ test('a high-frequency viewer excerpt window is disclosed, not silently truncate
     const prompt = buildMemoryPrompt(files, {structuredOutputs: false});
     assert.match(prompt.messages[1].content, /excerpt_omitted_messages/);
     assert.match(prompt.messages[1].content, /only that viewer's most recent messages/);
+    const targeted = buildTargetedMemoryPrompt({
+      prompt,
+      missingRefs: [prompt.refs[0].ref]
+    });
+    assert.match(targeted.messages[1].content, /excerpt_omitted_messages/);
+    assert.match(targeted.messages[1].content, /"excerpt_omitted_messages":30/);
   } finally {
     await server.close();
     temp.cleanup();
