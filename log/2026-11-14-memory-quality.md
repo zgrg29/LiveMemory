@@ -84,7 +84,7 @@
   - 跨观众证据导入前 `AI_IMPORT_INVALID`，0 事实写入；
   - 150 条高频观众 120/30 披露；
   - 昵称变化同一 ID、同名不同 ID 不合并。
-- 全量：814 passed / 0 failed / 0 skipped（219,730 ms）。
+- 全量：814 passed / 0 failed / 0 skipped（248,833 ms）。
 
 ## 5. 结构对照（25 观众 / 200 消息）
 

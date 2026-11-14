@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-14（RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正；814 全量；EXE `ab6098700897`）
+最后更新：2026-11-14（RC0-MEMORY-QUALITY：长期画像语义质量、标准答案集与度量修正；814 全量；EXE `d951f89fe379`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -56,7 +56,7 @@
 
 - 新增 10 unit + 7 integration；oracle 在 5/10/20 人批次下 100% 严格召回/准确率；
   退化答案被度量成漏提/误收；跨观众证据导入前被拒绝；150 条高频观众披露 120/30 截断。
-- 全量：**814 passed / 0 failed / 0 skipped（219,730 ms，2026-11-14）**；上一轮 797，本轮 +17。
+- 全量：**814 passed / 0 failed / 0 skipped（248,833 ms，2026-11-14）**；上一轮 797，本轮 +17。
 - 正式 EXE：见 §0.28.5（buildId / SHA-256 / commit / asInvoker / EXE 矩阵）。
 
 ### 0.28.5 正式 EXE（本轮）
@@ -64,13 +64,13 @@
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| 大小 | `96,665,088` bytes（92.2 MB） |
-| SHA-256 | `3dfa563b88167f1e3a1985706e73f730c7b58e4c2c84c48817e48f35058fc233` |
-| buildId | `ab6098700897` |
-| source hash | `ab6098700897c170aa260c2a11174444854fa29e0e1fa5f30ccbf26e9056935a` |
-| commit | `1b5f5809b2f622bff63fd336ac0e8bfc3541200d`（构建时 HEAD） |
-| builtAt | `2026-11-14T12:07:16.155Z` |
-| 资源 | `191` files；20 个必需模块；RT_MANIFEST `asInvoker` |
+| 大小 | `96,665,600` bytes（92.2 MB） |
+| SHA-256 | `dd4289804dae729f672bc06263558d734fbb0eed523d9ab6c1fede9dfce471bd` |
+| buildId | `d951f89fe379` |
+| source hash | `d951f89fe37939cda8b99b99131f85b9290897b81b6249aaa3a93cf4fb57a569` |
+| commit | `52bcf6cd6792396713fae3cd84308fd386f80a71`（构建时 HEAD） |
+| builtAt | `2026-11-14T12:19:42.897Z` |
+| 资源 | `191` files；20 个必需模块；asset hash `d951f89fe37939cda8b9`；RT_MANIFEST `asInvoker` |
 
 - `scripts/verify-exe.mjs`：**10/10**；`scripts/verify-p0-2-exe.mjs`：**13/13**；
   `scripts/verify-p0-5-exe.mjs`：**12/12**；`scripts/verify-ai-token-exe.mjs`：**16/16**。
@@ -83,9 +83,9 @@
 - 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
 - 补答披露补充：`2b317212c283f6fb9beabf76c35ba2e1c0459f99`
 - 文档收尾提交：本文件所在的后续提交（HEAD）
-- 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`
+- 构建时 HEAD：`52bcf6cd6792396713fae3cd84308fd386f80a71`
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`；未 Push/Tag/发布。
-- `buildId` 由源码内容哈希决定，与提交哈希无关；用本轮源码可重建同一 `ab6098700897`。
+- `buildId` 由源码内容哈希决定，与提交哈希无关；用本轮源码可重建同一 `d951f89fe379`。
   构建在代码提交前完成，因此 `build-info.commit` 是构建时 HEAD，不是代码提交哈希。
 
 ## 0.27 RC0 P0-3：Provider 兼容性、DeepSeek 真实付费验收与 20→10 回退（2026-11-14）

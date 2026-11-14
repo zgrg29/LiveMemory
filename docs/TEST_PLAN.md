@@ -28,7 +28,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 ## 2.1 本轮结果（2026-11-14，RC0-MEMORY-QUALITY）
 
-- 全量：**814 passed / 0 failed / 0 skipped（219,730 ms）**。
+- 全量：**814 passed / 0 failed / 0 skipped（248,833 ms）**。
 - 新增 **10 unit**：`tests/unit/memory-quality-metrics.test.mjs`（别名/归一化、严格召回、
   漏提、无证据支持、歧义单列、跨观众、误收、重复、同名不同人、成本）。
 - 新增 **7 integration**：`tests/integration/memory-quality-gold.test.mjs`

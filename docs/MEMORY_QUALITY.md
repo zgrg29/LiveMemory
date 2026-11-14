@@ -246,7 +246,7 @@ cap10 每次运行多发 3–4 个补答请求；cap20 为 0。补答只针对**
 ## 9. 全量测试
 
 - 命令：`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
-- 结果：**814 passed / 0 failed / 0 skipped（219,730 ms，2026-11-14）**
+- 结果：**814 passed / 0 failed / 0 skipped（248,833 ms，2026-11-14）**
 - 新增：10 unit + 7 integration（共 17）。
 - 既有 AI/画像/补答/Token/备份/认证/平台测试全部通过。
 
@@ -255,19 +255,19 @@ cap10 每次运行多发 3–4 个补答请求；cap20 为 0。补答只针对**
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| 大小 | `96,665,088` bytes（92.2 MB） |
-| SHA-256 | `3dfa563b88167f1e3a1985706e73f730c7b58e4c2c84c48817e48f35058fc233` |
-| buildId | `ab6098700897` |
-| source hash | `ab6098700897c170aa260c2a11174444854fa29e0e1fa5f30ccbf26e9056935a` |
-| commit | `1b5f5809b2f622bff63fd336ac0e8bfc3541200d`（构建时 HEAD） |
-| builtAt | `2026-11-14T12:07:16.155Z` |
-| 资源 | `191` files；20 个必需模块；asset hash `ab6098700897c170aa26` |
+| 大小 | `96,665,600` bytes（92.2 MB） |
+| SHA-256 | `dd4289804dae729f672bc06263558d734fbb0eed523d9ab6c1fede9dfce471bd` |
+| buildId | `d951f89fe379` |
+| source hash | `d951f89fe37939cda8b99b99131f85b9290897b81b6249aaa3a93cf4fb57a569` |
+| commit | `52bcf6cd6792396713fae3cd84308fd386f80a71`（构建时 HEAD） |
+| builtAt | `2026-11-14T12:19:42.897Z` |
+| 资源 | `191` files；20 个必需模块；asset hash `d951f89fe37939cda8b9` |
 | RT_MANIFEST | `asInvoker` |
 
 EXE 矩阵（全部针对最终二进制）：
 
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、
-  不可写目录、异目录、解压复用、CLI 三语；`--version` 返回 buildId `ab6098700897`）。
+  不可写目录、异目录、解压复用、CLI 三语；`--version` 返回 buildId `d951f89fe379`）。
 - `scripts/verify-p0-2-exe.mjs`：**13/13**（备份 592,376 B、独立校验、全新目录恢复、重启、
   再次备份）。
 - `scripts/verify-p0-5-exe.mjs`：**12/12**（未认证读写/SSE 401、伪造 Origin/Host 403、
@@ -313,9 +313,9 @@ EXE 矩阵（全部针对最终二进制）：
 - 代码提交：`8d4e024bc01561be6f418aa9415a2c0dc5bfa3c5`
 - 补答披露补充：`2b317212c283f6fb9beabf76c35ba2e1c0459f99`
 - 文档收尾提交：本文件所在的后续提交（HEAD）
-- 构建时 HEAD：`1b5f5809b2f622bff63fd336ac0e8bfc3541200d`（正式 EXE 的 `build-info.commit`）
-- buildId：`ab6098700897`
-- SHA-256：`3dfa563b88167f1e3a1985706e73f730c7b58e4c2c84c48817e48f35058fc233`
+- 构建时 HEAD：`52bcf6cd6792396713fae3cd84308fd386f80a71`（正式 EXE 的 `build-info.commit`）
+- buildId：`d951f89fe379`
+- SHA-256：`dd4289804dae729f672bc06263558d734fbb0eed523d9ab6c1fede9dfce471bd`
 - 提交身份：`zgrg29 <10182596+zgrg29@users.noreply.github.com>`（仓库本地配置）
 - 未 Push、未 Tag、未发布。
 
