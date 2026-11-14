@@ -58,7 +58,7 @@
   - `tests/unit/backup-ui.test.mjs` 5：设置页真实端点、预览字段、三语键/占位符、全部错误码翻译、无 innerHTML/alert。
   - `tests/integration/backup-restore.test.mjs` 10：完整备份内容、WAL 在线一致、取消、写入失败/磁盘不足/覆盖冲突、损坏/缺失/未来版本/损坏 SQLite/ZIP Slip/炸弹、全新目录恢复（场次/观众/AI 结果/长期事实/设置/无凭据/无旧绝对路径）、重启、重复恢复幂等、恢复中途回滚、journal 回滚/提交、维护期间认证、AI 写入调度并发。
   - `tests/integration/api-auth.test.mjs` 增补：备份 status/create/inspect/restore/jobs/open/pick 未认证 401。
-- 全量：**769 passed / 0 failed / 0 skipped（501,044 ms，2026-11-14，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**。
+- 全量：**769 passed / 0 failed / 0 skipped（307,126 ms，2026-11-14，`node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**。
 - schema 仍为 16；无数据库迁移；未改金额/身份/去重/AI 语义。
 
 ### 0.25.7 正式 EXE
@@ -75,7 +75,7 @@
 
 - 本轮代码提交：`9a23d45`。EXE 在提交前构建，因此 `build-info.commit` 记录构建时 HEAD `489ce07`；`buildId` 由源码内容哈希决定，可用提交 `9a23d45` 重建复现同一 buildId。文档提交在当前代码提交之后。
 
-- `scripts/verify-p0-2-exe.mjs`：**13/13**。正式 EXE 无 UAC 启动；认证后创建备份（约 0.59 MB）；检查摘要（1 场 / 6 事件 / 6 观众 / 1 AI 报告 / 6 长期事实）；恢复到全新绝对目录并服务；`secrets/` 为空；重启后行数与事实逐字节一致；再次备份并通过独立完整校验。
+- `scripts/verify-p0-2-exe.mjs`：**13/13**。正式 EXE 无 UAC 启动；认证后创建备份（约 0.59 MB）；检查摘要（1 场 / 4 事件 / 4 观众 / 1 AI 报告 / 4 长期事实）；恢复到全新绝对目录并服务；`secrets/` 为空；重启后行数与事实逐字节一致；再次备份并通过独立完整校验。
 - `scripts/verify-p0-5-exe.mjs`：**12/12**（认证/Origin/Host/SSE/token 不泄漏/重启失效）。
 - `scripts/verify-exe.mjs`：**10/10**（asInvoker、全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语）。
 - **性质**：正式 EXE + 真实 HTTP + 隔离数据目录 + 本机 Python/Node 生成的种子数据；**不是**真实浏览器点击，**不是**真实 Windows 文件对话框点击。

@@ -35,7 +35,7 @@
 ### 0.4 测试与 EXE
 
 - 新增 `backup-format` 9、`backup-ui` 5、`backup-restore` 10；`api-auth` 增补备份端点 401。
-- 全量 **769 passed / 0 failed / 0 skipped（501,044 ms，2026-11-14）**；schema 16 不变。
+- 全量 **769 passed / 0 failed / 0 skipped（307,126 ms，2026-11-14）**；schema 16 不变。
 - 正式 EXE：buildId `678e8d47b6c6` / commit `489ce070abca24ced6a8287cb4312cc575b24692` / SHA-256 `fa1e8367bed99ce221b1f20d4f0c7efc3eaf492d499d2f39c9014233f2dbf9e6` / `96,594,432` bytes / `189` assets / `asInvoker`。
 - 本轮代码提交 `9a23d45`；EXE 在提交前构建，`build-info.commit` 因此是上一提交。buildId 由源码内容哈希决定，用 `9a23d45` 可重建同一 buildId。
 - `verify-p0-2-exe` **13/13**：创建 → 验证 → 全新目录恢复 → 重启 → 再次备份 → 独立校验；`verify-p0-5-exe` **12/12**；`verify-exe` **10/10**。

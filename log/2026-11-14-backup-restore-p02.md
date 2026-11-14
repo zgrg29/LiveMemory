@@ -160,7 +160,7 @@ tests/integration/backup-restore.test.mjs 10
 
 ```text
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
-tests 769 / pass 769 / fail 0 / skipped 0 / duration 501,044 ms
+tests 769 / pass 769 / fail 0 / skipped 0 / duration 307,126 ms
 ```
 
 ## 10. 正式 EXE
