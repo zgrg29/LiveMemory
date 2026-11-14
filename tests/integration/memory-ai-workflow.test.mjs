@@ -326,6 +326,47 @@ test('a viewer id that was not in the package is rejected', async () => {
   }
 });
 
+test('a fact cannot cite another viewer message from the same batch', async () => {
+  const ctx = await scenario({viewersPerBatch: 2});
+  try {
+    const pkg = ctx.packages[0];
+    const [viewerA, viewerB] = pkg.context.viewers;
+    assert.notEqual(viewerA.viewer_id, viewerB.viewer_id);
+    const foreign = pkg.excerpts.find((line) => line.viewer_id === viewerB.viewer_id);
+    assert.ok(foreign, 'viewer B must have an excerpt in this batch');
+    const text = JSON.stringify(resultFor(pkg.manifest, {
+      viewer_operations: [
+        {
+          viewer_id: viewerA.viewer_id,
+          operations: [{
+            op: 'add',
+            kind: 'interest',
+            topic: 'borrowed',
+            statement: 'Borrowed another viewer message',
+            certainty: 'stated',
+            evidence: [foreign.seq]
+          }]
+        },
+        {
+          viewer_id: viewerB.viewer_id,
+          operations: []
+        }
+      ]
+    }));
+    const preview = validateMemoryImport({db: ctx.db, text, now: T0 + 2000});
+    assert.equal(preview.ok, false);
+    assert.ok(preview.errors.some((error) => error.code === 'MEMORY_EVIDENCE_OTHER_VIEWER'));
+    assert.throws(
+      () => importMemoryUpdate({db: ctx.db, text, now: T0 + 2000}),
+      (error) => error.code === 'MEMORY_IMPORT_INVALID'
+    );
+    const memory = getMemory(ctx.db, {broadcasterId: BROADCASTER, viewerId: viewerA.viewer_id});
+    assert.equal(memory, null, 'no fact or memory may be written from a rejected answer');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
 test('a stated fact without a quote is rejected, an unsupported inference is downgraded', async () => {
   const ctx = await scenario();
   try {

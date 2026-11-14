@@ -100,6 +100,7 @@ const FIX_GROUPS = Object.freeze({
   MEMORY_EVIDENCE_REQUIRED: 'evidence',
   MEMORY_REF_UNKNOWN: 'evidence',
   MEMORY_REF_OTHER_BATCH: 'evidence',
+  MEMORY_EVIDENCE_OTHER_VIEWER: 'evidence',
   MEMORY_EVIDENCE_TOO_MANY: 'size',
   MEMORY_OPS_TOO_MANY: 'size',
   MEMORY_DELETED: 'privacy',
@@ -477,6 +478,17 @@ export function validateMemoryImport({db, text, source = 'paste', now = Date.now
           continue;
         }
         const event = getEventById(db, eventId);
+        if (event && event.viewer_id && String(event.viewer_id) !== viewerId) {
+          // The seq exists in this batch, but it belongs to another viewer.
+          // Attaching it would create a cross-viewer fact; reject the operation
+          // even though both viewers are in the same package.
+          errors.push(issue('error', refPath, 'MEMORY_EVIDENCE_OTHER_VIEWER', {
+            seq: ref.seq,
+            viewerId,
+            actual: event.viewer_id
+          }));
+          continue;
+        }
         if (!event) {
           evidenceMissing += 1;
           warnings.push(issue('warning', refPath, 'MEMORY_EVIDENCE_DELETED', {seq: ref.seq}));
