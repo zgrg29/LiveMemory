@@ -236,6 +236,15 @@ Plan A 的 **$1.25** 硬上限覆盖上表任一单一模型；推荐 DeepSeek �
 Plan B（可选，$2.50）在 Plan A 基础上增加第二个 Provider 的 T0+T1 与 T3 的 cap10/cap20
 对照；只有在 Plan A 结果正常且用户再次确认后才执行。
 
+单价依据（2026-11-14 查询，执行前必须由用户再次确认；价格可能变化）：
+
+- DeepSeek：<https://api-docs.deepseek.com/quick_start/pricing>（deepseek-flash，高峰/非高峰两档）
+- OpenAI：<https://developers.openai.com/api/docs/pricing>（标准档）
+- Anthropic：<https://platform.claude.com/docs/en/about-claude/pricing>（Haiku 5.5 ≤100K 提示档）
+
+若用户实际账号有折扣、区域加价、企业网关或价格已调整，以用户确认的单价为准；上表只用于
+给出“数量级 + 保守上界”，不是报价。
+
 DeepSeek 高峰时段为 UTC 01:00–04:00 与 06:00–10:00（周一至周五），即北京时间
 09:00–12:00 与 14:00–18:00；其他时间为非高峰半价。
 
