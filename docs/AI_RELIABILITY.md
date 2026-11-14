@@ -391,9 +391,40 @@ AI 分析中心新增/明确显示：
 
 ### 13.3 验证
 
-- 新增 `tests/unit/ai-provider-compat.test.mjs` 12 项、`tests/integration/ai-provider-compat.test.mjs`
+- 新增 `tests/unit/ai-provider-compat.test.mjs` 13 项、`tests/integration/ai-provider-compat.test.mjs`
   3 项；全量结果见 `docs/STATUS.md` §0.27。
-- 仍未验证：真实 Provider 是否接受大 Schema、真实 429/5xx/空响应/截断、真实费用。
-  这些必须由用户授权的阶段 B 覆盖。
+- 阶段 B 已由用户授权并执行；DeepSeek 真实结果见 §14。其他 Provider 仍未验证。
+
+## 14. P0-3 阶段 B：DeepSeek 真实付费验收（2026-11-14）
+
+授权：DeepSeek `deepseek-flash`、$1.25 上限、仅合成数据；50 次真实请求、估算 $0.2553。
+
+### 14.1 真实失败与修复
+
+1. **能力检测空响应**：首次检测 `text` 阶段 `finish-reason-length-empty-content`。
+   根因是 DeepSeek V4 默认 thinking（effort=high），32 Token 探测被隐藏推理耗尽。
+   修复：显式发送 `thinking: {type: "disabled"}`；重新检测通过，真实任务
+   `reasoningTokens=0`。
+2. **缺失缓存单价被当作 0**：`Number(null) === 0` 导致缓存命中 Token 不计费。
+   修复后缺价按输入价估算并标 `cachePriced=false`，显式 0 才表示免费缓存。
+3. **20 人上限语义回归**：真实 A/B 中 20 人上限的有效事实只有 10 人的 73% / 51%。
+   RC0 恢复默认 10 人/批；20 仅保留为技术上限与实验参数。
+
+### 14.2 恢复语义实测
+
+- T3（100 观众）：暂停 → 停止进程 → 重启 → Resume → `complete` 100/100。
+  usage 8 次成功请求；暂停时 2 次在途请求被取消，未计入 usage（Provider 可能对输入计费）。
+  已保存批次未重发；0 重复 topic/statement，0 跨观众证据。
+- T4（60 观众日语）：Harness 请求上限在第 3 次触发本地停止（未发送的第 4 次不计费），
+  `needs_action`；Resume 后 `complete` 60/60、83 条事实、语言为日语。
+- 所有任务 0 重复事实、0 跨观众证据、0 无证据事实。
+- 单场报告 schema 1.3.0，4 批 + final；final 正确概括内容、无打赏/争论、模板化趋势。
+
+### 14.3 仍未验证
+
+- 其他 Provider 的真实 429/5xx/空响应/截断、真实大 Schema、真实费用。
+- 真实账单核对；2 次取消请求的计费；thinking 开启时的质量/费用。
+- 真实 EXE 的 Key 流程（若 §15 未完成）与真实浏览器截图。
+
 
 

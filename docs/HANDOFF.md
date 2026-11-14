@@ -5,65 +5,75 @@
 > 本轮**未调用任何真实付费 API**、未发送真实聊天、未修改生产数据库、未 Push/Tag/发布。
 > 全部测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
 
-## 0. 本轮（P0-3 阶段 A）
+## 0. 本轮（P0-3 阶段 A + DeepSeek 真实付费验收）
 
-完整底稿、兼容性矩阵与付费计划：`docs/AI_PROVIDER_COMPATIBILITY.md`；日志：
+完整底稿、兼容性矩阵与真实结果：`docs/AI_PROVIDER_COMPATIBILITY.md`；日志：
 `log/2026-11-14-p03-provider-compat.md`。
 
 ### 0.1 做了什么
 
-1. **审计 7 个 Provider**（OpenAI / DeepSeek / DashScope-Qwen / OpenRouter / Anthropic /
-   MiniMax / 自定义 OpenAI-compatible）的端点、鉴权、JSON 模式、输出上限、流式与 usage 语义；
-   建立 L1–L5 证据矩阵。**没有任何 Provider 达到 L3（真实 Provider 已验证）。**
-2. **修复 5 个确定性缺陷**（均有离线复现）：
-   - 能力测试的 `structuredOutputs` 入参是循环的，生产环境从不发 `json_schema`；
-   - 模型拒绝 `response_format` 时能力测试与真实任务都永久失败；
-   - OpenAI 推理模型被发送 `max_tokens` / `temperature: 0` / `system`；
-   - OpenAI `prompt_tokens_details.cache_write_tokens` 未解析；
-   - OpenRouter `usage.cost` 被丢弃。
-3. **建立 10 vs 20 的离线结构对照**与可复现 harness 开关 `--viewer-cap`（仅 runner 构造参数）。
-4. **全量测试 + 正式 EXE + EXE 矩阵**复跑，确认备份/认证/asInvoker 未回归。
+1. **阶段 A 审计 7 个 Provider** 的端点、鉴权、JSON 模式、输出上限、流式与 usage 语义，
+   建立 L1–L5 证据矩阵。
+2. **修复 8 个确定性缺陷**：结构化输出开关循环、`response_format` 拒绝后永久失败、
+   OpenAI 推理模型参数、OpenAI 缓存写入字段、OpenRouter 自报费用、DeepSeek thinking
+   消耗输出预算、缺失缓存价被当作 0、20 人批次事实质量回归。
+3. **阶段 B（用户授权）**：DeepSeek `deepseek-flash`、$1.25 上限、仅合成数据；
+   50 次真实请求、估算 $0.2553；用户通过隔离控制台的真实浏览器 UI 输入 Key。
+4. **真实 10 vs 20 对照**：20 人上限的事实保留率只有 73% / 51%，覆盖率仍 25/25；
+   RC0 恢复默认 10 人/批。
+5. **真实单场 + 画像、100 观众 Resume、日语 60 观众**全部 `complete`；0 重复事实、
+   0 跨观众证据、0 无证据事实。
+6. **全量测试 + 正式 EXE + EXE 矩阵**复跑（最终 buildId 见 `docs/STATUS.md` §0.27）。
 
 ### 0.2 结果
 
 | 指标 | 值 |
 | --- | --- |
-| 全量测试 | **796 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27） |
-| 新增测试 | 12 unit + 3 integration |
-| 25 观众 / 200 消息 | cap10 3 请求 / 25,881 输入；cap20 2 请求 / 22,898 输入；覆盖 25/25 |
-| 100 观众 / 1,000 消息 | cap10 10 请求 / 113,038 输入；cap20 6 请求 / 101,310 输入；覆盖 100/100 |
-| 正式 EXE | buildId `b0df3d53ff22` / commit `aac812f` / SHA-256 `da2b18b1dc15096ae9c54aa2c8319b4be08a810edebe75ff37931b6dd2008f1b` / `96,637,952` bytes / `189` assets / `asInvoker` |
-| EXE 验证 | `verify-ai-token-exe` 16/16、`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13 |
+| 全量测试 | **797 passed / 0 failed / 0 skipped**（2026-11-14，见 `docs/STATUS.md` §0.27） |
+| 新增测试 | 13 unit + 3 integration |
+| 真实请求 / 估算费用 | 50 次 / **$0.2553**（缓存按输入价，故意保守；授权 $1.25） |
+| 能力检测 | 首次 `length` 空内容 → 关闭 DeepSeek thinking → `passed` |
+| 10 vs 20（第 1 次） | 67 vs 49 条事实；7 vs 2 请求；覆盖 25/25 |
+| 10 vs 20（第 2 次） | 74 vs 38 条事实；6 vs 2 请求；覆盖 25/25 |
+| 单场 + 画像 | 80/80，85 条事实，session 4 批 + final，11 请求，$0.07833 |
+| 100 观众 + Resume | 100/100，243 条事实，6 批；暂停/重启/Resume 后完成；$0.07007 |
+| 日语 60 观众 | 60/60，83 条事实；kana 0.649 / CJK 0.984，无英语回退；$0.03017 |
+| 正式 EXE | buildId / commit / SHA-256 与真实 EXE 结果见 `docs/STATUS.md` §0.27 |
 
 ### 0.3 关键实现位置
 
-- `src/server/routes.mjs`：能力测试现在传入 Provider 目录声明的 `supportsStructuredOutputs`。
-- `src/ai/providers/verify.mjs`：`json_schema` 探测、一次格式降级、session 复杂 Schema 通过后
-  才记 `structuredOutputs=true`、推理模型预留、能力测试 usage 汇总。
-- `src/ai/api/runner.mjs`：`#isResponseFormatUnsupported()`、`withSchemaFallbackMessages()`、
-  任务级格式降级与持久化、`memoryViewerCapHard`（仅构造参数）、`providerReportedCost` 汇总。
-- `src/ai/providers/adapters.mjs`：OpenAI 推理参数、`developer` 角色、缓存写入字段、
-  `providerReportedCost`。
-- `src/ai/providers/catalog.mjs#isReasoningModelId()`、`src/ai/batching/tokens.mjs#resolveMaxCompletionTokens()`。
-- `src/ai/providers/store.mjs#downgradeStructuredOutputs()`。
-- `scripts/ai-efficiency-baseline.mjs --viewer-cap`。
+- `src/ai/providers/adapters.mjs`：DeepSeek `thinking:{type:"disabled"}`、OpenAI 推理参数、
+  `developer` 角色、缓存写入字段、`providerReportedCost`。
+- `src/ai/providers/pricing.mjs`：缺失缓存价不再被 `Number(null)` 当作 0；
+  缺价按输入价并标 `cachePriced=false`。
+- `src/ai/api/runner.mjs`：格式降级与 Schema 回填、`downgradeStructuredOutputs()`、
+  **默认 `memoryViewerCapHard=10`**、`providerReportedCost` 汇总。
+- `src/server/routes.mjs`：能力测试传入 Provider 目录声明的 `supportsStructuredOutputs`。
+- `src/ai/providers/verify.mjs`：`json_schema` 探测/一次降级/复杂 Schema 通过才记 true。
+- `scripts/ai-efficiency-baseline.mjs --viewer-cap`（离线结构对照）。
+- `scripts/ai-paid-acceptance.mjs` / `scripts/ai-paid-exe-acceptance.mjs`（真实付费验收，
+  含请求上限；不属于产品运行路径）。
 
-### 0.4 下一轮（P0-3 阶段 B）必须先做
+### 0.4 下一轮必须先做
 
-1. **等待用户明确授权**：选择 Provider 与模型、确认费用上限（建议 Plan A $1.25，见
-   `docs/AI_PROVIDER_COMPATIBILITY.md` §7）。此前不得发送任何真实请求。
-2. 使用隔离数据目录与合成数据；**不要**用生产数据库或未授权的真实聊天。
-3. 只验证用户选定的 Provider；不要因为一家成功就宣称全部通过。
-4. 真实语义质量必须盲评；“20 人批次请求更少”不是质量结论。
-5. 若 20 人批次出现漏写/串证据/补答率上升，回退 `viewersPerBatchHard=10`。
+1. **不要重新启用 20 人上限**，除非提示词/质量修复后用同一协议再次真实对照并达到不低于
+   10 人批次的“有效事实/观众”。
+2. 其他 Provider（OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义）仍为
+   L2/L4；要分别授权、分别验收，不能因为 DeepSeek 通过就宣称全部通过。
+3. 真实账单需用户在 DeepSeek 控制台核对；本程序只有估算（DeepSeek 不返回 `usage.cost`）。
+4. cap10 仍会漏部分事实；长期画像质量只达到“20 人明显更差、10 人较保守”的结论，
+   不是“已解决质量”。
+5. thinking 被关闭；若未来启用，需要重测输出预算、费用与事实质量。
+6. 真实 EXE 的 Key 流程、真实浏览器截图与取消请求计费仍需补证。
 
 ### 0.5 不要做
 
-1. 不要把本轮 Mock/离线证据写成“真实 Provider 验收通过”。
-2. 不要为了省事直接遍历全部 Provider 或使用最贵模型。
+1. 不要把 DeepSeek 的真实结果写成“所有 Provider 已验证”。
+2. 不要为了省请求重新打开 20 人上限；真实证据显示事实损失 27–49%。
 3. 不要在未校验 `response_format` 支持的 Provider 上恢复“Schema 只发一次”。
 4. 不要把格式降级做成无限重试；每次请求最多 2 次，且必须把 Schema 回填提示词。
-5. 不要把 `providerReportedCost` 当作本地账单；它只用于交叉核对。
+5. 不要把 `providerReportedCost` 或估算费用当作官方账单。
+6. 不要自动读取生产 `secrets/` 或复用用户已保存的 Key；真实测试必须由用户在隔离控制台输入。
 
 ## 0-B 上一轮（AI Token 效率与成本）
 

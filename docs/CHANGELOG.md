@@ -1,5 +1,40 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r17 — 2026-11-14（RC0 P0-3：DeepSeek 真实付费验收与 20→10 回退）
+
+### 真实 Provider 验收（用户授权）
+
+- 用户授权：DeepSeek `deepseek-flash`、$1.25 上限、仅合成数据；Key 由用户在隔离控制台的真实浏览器 UI 输入，Harness 未接触明文 Key。
+- 真实请求 50 次，估算费用 **$0.2553**（高峰单价、缓存按输入价、故意保守；授权额度 20.4%）。
+- 能力检测：首次 `finish-reason-length-empty-content` → 修复后 `passed`（577 输入 / 237 输出 / 推理 0）。
+- 单场 + 画像：80/80 观众、85 条事实、session 4 批 + final、schema 1.3.0、11 请求、$0.07833。
+- 100 观众 + Resume：100/100、243 条事实、暂停/重启/Resume 后完成、$0.07007。
+- 日语 60 观众：60/60、83 条事实、kana 0.649 / CJK 0.984、无英语回退、$0.03017。
+- 全部真实任务：0 重复 topic/statement、0 跨观众证据、0 无证据事实。
+
+### 20 人上限回退
+
+- 两次真实 A/B：10 人 67/74 条事实，20 人 49/38 条（保留率 **73% / 51%**）；覆盖均 25/25。
+- 20 人第一个批次 17 位观众只产生 17 条操作（每人 1 条）；10 人批次产生 37/11/26 条。
+- **RC0 默认改回 10 人/批**：`AnalysisRunner` 默认 `memoryViewerCapHard=10`；`MEMORY_MAX_VIEWERS_PER_BATCH=20` 仅保留为技术上限与实验参数。
+
+### 修复
+
+- **DeepSeek V4 默认 thinking 耗尽输出预算**：显式发送 `thinking:{type:"disabled"}`，使 `max_tokens` 回归回答预算；真实任务 `reasoningTokens=0`。
+- **缺失缓存单价被当作 0**：`Number(null) === 0` 导致二次归一写入 0、缓存命中不计费；现在缺价按输入价估算并标 `cachePriced=false`，显式 0 才表示免费缓存。
+
+### 测试与构建
+
+- 新增 16 项自动化（13 unit + 3 integration）；全量 **797 passed / 0 failed / 0 skipped**。
+- 正式 EXE 重建与矩阵见 `docs/STATUS.md` §0.27（buildId / commit / SHA-256）。
+- 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
+
+### 未完成
+
+- 其他 Provider（OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义）仍为 L2/L4；不得因 DeepSeek 通过而宣称全部通过。
+- 真实官方账单核对、取消请求计费、thinking 开启的质量/费用对照、真实 EXE 的 Key 流程（若未完成）。
+- cap10 仍会漏部分事实；长期画像质量只达到“20 明显更差、10 较保守”的结论。**P0-3 不能整体关闭。**
+
 ## 0.13.2-r16 — 2026-11-14（RC0 P0-3 阶段 A：Provider 兼容性与真实用量准备）
 
 ### 修复

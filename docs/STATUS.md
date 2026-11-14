@@ -4,20 +4,24 @@
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
-## 0.27 RC0 P0-3 阶段 A：Provider 兼容性、真实用量与付费测试计划（2026-11-14）
+## 0.27 RC0 P0-3：Provider 兼容性、DeepSeek 真实付费验收与 20→10 回退（2026-11-14）
 
 完整底稿、兼容性矩阵与付费方案：`docs/AI_PROVIDER_COMPATIBILITY.md`；开发日志：
 `log/2026-11-14-p03-provider-compat.md`。
-**未调用任何真实付费 API、未发送真实聊天/观众身份/长期画像、未修改生产数据库、未 Push/Tag/发布。**
-全部测试使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
+阶段 A 使用 `tests/.tmp` 隔离目录、合成数据与 Mock Provider。
+阶段 B 在用户明确授权后（Plan A / DeepSeek `deepseek-flash` / $1.25 / 仅合成数据）执行：
+**50 次真实请求、估算 $0.2553**；未读取生产 `secrets/`、未修改生产数据库、未 Push/Tag/发布。
+**只有 DeepSeek 达到 L3（真实 Provider 已验证）；其他 Provider 仍为 L2/L4。**
 
-### 0.27.1 阶段边界
+### 0.27.1 阶段边界与授权
 
-- **阶段 A（本轮完成）**：阅读/审计、离线复现、确定性修复、Mock/集成/全量测试、正式 EXE 与
+- **阶段 A（完成）**：阅读/审计、离线复现、确定性修复、Mock/集成/全量测试、正式 EXE 与
   EXE 矩阵。
-- **阶段 B（未开始）**：真实付费请求。必须先由用户选择 Provider 与模型、确认费用上限并明确
-  授权。此前填过 Key 不构成授权；不遍历全部 Provider、不使用最贵模型。
-- **P0-3 未完成，不得宣称通过。**
+- **阶段 B（已执行，仅 DeepSeek）**：用户明确选择 `deepseek-flash` 与 $1.25 上限；Key 由用户
+  在隔离控制台的真实浏览器 UI 中输入；Harness 未接触明文 Key。未遍历其他 Provider、未自动
+  扩大规模。
+- **P0-3 不能整体关闭**：DeepSeek 的真实链路可声明通过；其他 Provider、真实账单核对与
+  真实 EXE 的 Key 流程仍需分别验收。
 
 ### 0.27.2 发现并修复的确定性缺陷
 
@@ -43,13 +47,25 @@
    `prompt_tokens_details.cache_write_tokens` 未被读取，`cacheWriteInputTokens` 恒为 0。
 5. **OpenRouter `usage.cost` 被丢弃**：现在归一为 `providerReportedCost`，与本地
    「Token × 用户单价」的估算费用分开保存；`providerCostRequests` 区分完整/部分自报。
+6. **DeepSeek V4 默认 thinking 导致能力检测失败（真实付费发现）**：`deepseek-flash` 默认
+   `thinking` effort=high，32 Token 的文本探测被隐藏推理耗尽，返回空内容 + `finish_reason=length`
+   （`AUTO_OUTPUT_TRUNCATED`）。现在对 DeepSeek 显式发送 `thinking: {type: "disabled"}`，使
+   `max_tokens` 回归为回答预算；重新检测 `passed`，真实任务全部 `reasoningTokens=0`。
+7. **缺失缓存单价被当成 0（费用低估）**：`Number(null) === 0`，`normalizePricing()` 二次归一
+   把“未填缓存价”写成 0，`estimateCost()` 又把 0 当作免费缓存，导致缓存命中 Token 不计费。
+   现在用显式 null/undefined 判断；缺价时按普通输入价估算并标 `cachePriced=false`，
+   显式填 0 才表示免费缓存。
+8. **20 人批次出现真实语义质量回归**：两次真实 DeepSeek A/B 中，20 人上限的有效事实只有
+   10 人上限的 **73% / 51%**（覆盖仍 25/25）。RC0 恢复默认 10 人/批；
+   `MEMORY_MAX_VIEWERS_PER_BATCH=20` 仅保留为技术上限与实验参数。详见 §0.27.4 与
+   `docs/AI_PROVIDER_COMPATIBILITY.md` §9.4。
 
 ### 0.27.3 Provider 兼容性矩阵（摘要）
 
 | Provider | 协议/鉴权 | 结构化输出 | 输出上限 | 流式 | 证据等级 |
 | --- | --- | --- | --- | --- | --- |
 | OpenAI | Chat Completions / Bearer | `json_schema`（验证后）+ 一次降级 | `max_completion_tokens`；推理模型无 temperature/developer | SSE | **L2** |
-| DeepSeek | OpenAI-compatible / Bearer | 仅 `json_object` | `max_tokens` | SSE | **L2** |
+| DeepSeek | OpenAI-compatible / Bearer | 仅 `json_object` | `max_tokens`；显式关闭 thinking | SSE | **L3（`deepseek-flash`）** |
 | DashScope/Qwen | compatible-mode / Bearer | `json_object` | `max_tokens` + `max_completion_tokens` | SSE | **L2** |
 | OpenRouter | `/api/v1` / Bearer | 按模型；验证后 `json_schema` | `max_tokens` | SSE | **L2** |
 | Anthropic | Messages / `x-api-key` | 无 `response_format`（提示词 + 本地校验） | `max_tokens` | SSE | **L2** |
@@ -59,7 +75,9 @@
 所有 Provider 均未达到 **L3（真实 Provider 已验证）**；真实语义、真实计费与多语言仍待阶段 B。
 完整字段级差异、已知不兼容与单位/费用口径见 `docs/AI_PROVIDER_COMPATIBILITY.md` §2–§4。
 
-### 0.27.4 10 人与自适应 20 人（离线结构对照）
+### 0.27.4 10 vs 20：离线结构 + 真实语义，结论是回退 10
+
+离线结构（阶段 A，Mock）：
 
 | 数据 | 上限 | 请求 | 输入 Token（模拟） | 请求字节 | 覆盖/事实 |
 | --- | --- | --- | --- | --- | --- |
@@ -68,19 +86,30 @@
 | 100 观众 / 1,000 消息 | 10 | 10 | 113,038 | 361,706 | 100/100 |
 | 100 观众 / 1,000 消息 | 自适应 20 | 6 | 101,310 | 324,183 | 100/100 |
 
-只证明结构、覆盖与请求数；**不证明真实语义质量**。真实漏写率、跨观众证据污染、补答率与
-事实准确性必须由阶段 B 盲评；若 20 人批次明显变差，回退 `viewersPerBatchHard=10`。
-复现：`node scripts/ai-efficiency-baseline.mjs --only <scenario> --viewer-cap 10|20`。
+真实 DeepSeek `deepseek-flash`（阶段 B，同一数据、同一价格、温度 0、thinking 关闭）：
+
+| 运行 | 上限 | 状态 | 覆盖 | 有效事实 | 请求 | 输入 | 输出 | 缓存 | 费用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 第 1 次 | 10 | complete | 25/25 | **67** | 7 | 62,048 | 9,209 | 32,000 | $0.02967 |
+| 第 1 次 | 20 | complete | 25/25 | **49** | 2 | 24,487 | 3,297 | 1,536 | $0.01130 |
+| 第 2 次 | 10 | complete | 25/25 | **74** | 6 | 50,088 | 8,104 | 22,912 | $0.02475 |
+| 第 2 次 | 20 | complete | 25/25 | **38** | 2 | 24,475 | 2,686 | 1,536 | $0.01057 |
+
+- 事实保留率：**73%** 与 **51%**；覆盖、Schema、证据、去重全部通过。
+- cap20 的第一个批次含 17 位观众，只产生 17 条操作（每人 1 条）；cap10 的 10 人批次
+  分别产生 37 / 11 / 26 条。抽样：观众 15 的 8 条消息，cap10 提取 4 条、cap20 只 1 条。
+- **结论：20 人上限存在明显有效事实损失，按任务要求恢复保守默认 10 人/批。**
+  `AnalysisRunner` 默认 `memoryViewerCapHard=10`；`MEMORY_MAX_VIEWERS_PER_BATCH=20`
+  只保留为技术上限与实验参数。20 人只有在提示词/质量修复并再次真实对照后才能重新启用。
+- 复现：`scripts/ai-efficiency-baseline.mjs --viewer-cap 10|20`（离线结构）；
+  `scripts/ai-paid-acceptance.mjs`（真实 A/B，需用户授权与 Key）。
 
 ### 0.27.5 测试
 
-- 新增 `tests/unit/ai-provider-compat.test.mjs` **12** 项、`tests/integration/ai-provider-compat.test.mjs` **3** 项。
-- 全量：**796 passed / 0 failed / 0 skipped（468,209 ms，2026-11-14，
-  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`）**；
-  上一轮 781，本轮 +15。
+- 新增 `tests/unit/ai-provider-compat.test.mjs` **13** 项、`tests/integration/ai-provider-compat.test.mjs` **3** 项。
+- 全量：**797 passed / 0 failed / 0 skipped**（2026-11-14，最终结果见本节末尾）。
 - 回归捕获的真实缺陷：最初用 `/schema/` 识别格式拒绝，导致 `v13-scheduler` 的
-  “synthetic schema failure” 被当成格式拒绝并多发一次请求（预期 2、实际 3）。收窄匹配后
-  复跑 18/18，全量 796/0。
+  “synthetic schema failure” 被当成格式拒绝并多发一次请求（预期 2、实际 3）。收窄匹配后复跑。
 - 无数据库迁移、无备份格式变化、结果 Schema 仍 1.3.0、提示词版本仍 v13.2。
 
 ### 0.27.6 正式 EXE
@@ -109,17 +138,30 @@
 
 ### 0.27.7 结论与待验收
 
-**P0-3 未完成。** 阶段 A 的代码级与 Mock/EXE 级证据已完成；以下必须等用户授权阶段 B：
+**P0-3 不能整体关闭；DeepSeek `deepseek-flash` 单项可声明真实通过（L3）。**
 
-1. 用户选定的真实 Provider/模型完成能力测试、单场报告与长期画像。
-2. 真实 usage（input/output/reasoning/cached/cache write）、失败请求计费、Resume 不重复计费。
-3. 真实估算费用与实际账单核对（含 OpenRouter `providerReportedCost`）。
-4. 10 vs 20 的真实语义质量盲评；若回归则恢复 10。
-5. 三语言真实输出与证据不被翻译。
-6. 正式 EXE 中用户通过 UI 填 Key、真实浏览器操作的完整流程。
+已完成（真实付费，用户授权）：
 
-费用方案与硬上限见 `docs/AI_PROVIDER_COMPATIBILITY.md` §7（Plan A $1.25，Plan B $2.50）。
-**在用户明确批准前不得发送任何真实付费请求。**
+1. 能力检测 `passed`（首次真实失败 `length` 空内容已修复为 thinking 关闭）。
+2. 单场报告 + 长期画像：80/80、schema 1.3.0、85 条事实。
+3. 100 观众规模 + 暂停/重启/Resume：100/100，未重发已完成批次。
+4. 日语 60/60、83 条事实；kana 0.649 / CJK 0.984，无英语回退。
+5. 真实 usage（input/output/reasoning/cached）与估算费用；50 次请求、$0.2553。
+6. 0 重复 topic/statement、0 跨观众证据、0 无证据事实。
+7. 10 vs 20 真实对照：20 的事实保留率 73% / 51%，已回退默认 10。
+
+仍未完成：
+
+1. **其他 Provider**（OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义）
+   仍为 L2/L4，必须分别授权与验收。
+2. **官方账单核对**：DeepSeek 不返回 `usage.cost`，$0.2553 是按填写单价的估算；
+   2 次暂停取消请求是否计费未确认；thinking 开启的质量/费用未对照。
+3. **真实 EXE 的 Key 流程**：见 §0.27.8（若已完成则按该节；否则仍待验收）。
+4. 真实浏览器截图、真实 429/5xx/截断样本（未刻意制造）；cap10 仍会漏部分事实。
+5. 长期画像质量只达到“20 明显更差、10 较保守”的结论，不是“已解决质量”。
+
+费用方案与硬上限见 `docs/AI_PROVIDER_COMPATIBILITY.md` §7；实际执行见 §9。
+**金额一律是估算，不是官方账单；其他 Provider 未授权、未发送真实请求。**
 
 ## 0.26 RC0-AI-EFFICIENCY：Token 利用率与 API 成本量化审计（2026-11-14）
 

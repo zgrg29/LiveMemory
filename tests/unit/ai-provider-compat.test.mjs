@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {normalizeUsage, callOpenAICompatible} from '../../src/ai/providers/adapters.mjs';
 import {isReasoningModelId} from '../../src/ai/providers/catalog.mjs';
 import {verifyProviderConfig} from '../../src/ai/providers/verify.mjs';
-import {addUsage} from '../../src/ai/providers/pricing.mjs';
+import {addUsage, estimateCost, normalizePricing} from '../../src/ai/providers/pricing.mjs';
 import {resolveMaxCompletionTokens} from '../../src/ai/batching/tokens.mjs';
 
 /**
@@ -59,8 +59,33 @@ test('OpenAI reports cache writes on prompt_tokens_details.cache_write_tokens', 
   assert.equal(usage.outputTokens, 50);
 });
 
-test('a provider-reported charge stays separate from the local cost estimate', () => {
-  const usage = normalizeUsage({
+test('an absent cache price is not treated as a free cache', () => {
+  const normalized = normalizePricing({inputPerMillion: 1, outputPerMillion: 2, currency: 'USD'});
+  assert.equal(normalized.cachedInputPerMillion, null);
+  // Re-normalizing a stored config must not turn null into 0.
+  const twice = normalizePricing(normalized);
+  assert.equal(twice.cachedInputPerMillion, null);
+  const cost = estimateCost({
+    pricing: twice,
+    inputTokens: 1000,
+    outputTokens: 100,
+    cachedInputTokens: 400
+  });
+  assert.equal(cost.cachePriced, false);
+  assert.equal(cost.amount, (600 / 1e6) * 1 + (400 / 1e6) * 1 + (100 / 1e6) * 2);
+  // An explicit zero price means "cache hits are free"; it is allowed and must
+  // be distinguished from "no price entered".
+  const explicitFree = estimateCost({
+    pricing: normalizePricing({inputPerMillion: 1, outputPerMillion: 2, cachedInputPerMillion: 0}),
+    inputTokens: 1000,
+    outputTokens: 0,
+    cachedInputTokens: 400
+  });
+  assert.equal(explicitFree.cachePriced, true);
+  assert.equal(explicitFree.amount, (600 / 1e6) * 1);
+});
+
+test('a provider-reported charge stays separate from the local cost estimate', () => {  const usage = normalizeUsage({
     usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cost: 0.0012}
   });
   assert.equal(usage.providerReportedCost, 0.0012);
@@ -122,6 +147,9 @@ test('non-OpenAI families keep the documented max_tokens request shape', async (
     assert.equal(captured.body.max_tokens, 6000, providerId);
     assert.equal(captured.body.max_completion_tokens, undefined, providerId);
     assert.equal(captured.body.temperature, 0, providerId);
+    // DeepSeek V4 defaults to thinking with effort high; LiveMemory disables it
+    // so `max_tokens` is an answer budget, not a chain-of-thought budget.
+    assert.equal(captured.body.thinking?.type, providerId === 'deepseek' ? 'disabled' : undefined, providerId);
   }
 });
 

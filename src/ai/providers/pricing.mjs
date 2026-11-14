@@ -27,7 +27,13 @@ export function normalizePricing(input) {
   if (!/^[A-Z]{3,8}$/.test(currency)) return null;
   // Optional: providers with prompt caching usually publish a lower price for
   // cache hits. It is never required, and an absent value is never treated as 0.
-  const cachedInputPerMillion = Number(input.cachedInputPerMillion);
+  // `Number(null) === 0`, so an explicit presence check is required: without it,
+  // re-normalizing an already-normalized price turned "no cache price" into a
+  // free cache and understated the estimate.
+  const hasCachedPrice = input.cachedInputPerMillion !== null
+    && input.cachedInputPerMillion !== undefined
+    && input.cachedInputPerMillion !== '';
+  const cachedInputPerMillion = hasCachedPrice ? Number(input.cachedInputPerMillion) : NaN;
   return {
     currency,
     inputPerMillion,
@@ -112,7 +118,13 @@ export function estimateCost({
   const cacheWrite = Math.min(input, Math.max(0, Number(cacheWriteInputTokens) || 0));
   const inputPrice = Number(pricing.inputPerMillion ?? 0);
   const outputPrice = Number(pricing.outputPerMillion ?? 0);
-  const cachePriceKnown = Number.isFinite(Number(pricing.cachedInputPerMillion));
+  // An absent cache price must fall back to the normal input price. The previous
+  // `Number.isFinite(Number(value))` check treated `null` as 0 (because
+  // `Number(null) === 0`), which made cached tokens free and understated cost.
+  const cachePriceKnown = pricing.cachedInputPerMillion !== null
+    && pricing.cachedInputPerMillion !== undefined
+    && pricing.cachedInputPerMillion !== ''
+    && Number.isFinite(Number(pricing.cachedInputPerMillion));
   const cachedPrice = cachePriceKnown ? Number(pricing.cachedInputPerMillion) : inputPrice;
   // Cache *writes* are always costed at the normal input price (the provider's
   // write surcharge is not guessed). Cache hits use the configured cache price

@@ -514,6 +514,17 @@ export async function callOpenAICompatible({
   // for `temperature: 0`; every other supported family accepts 0, which keeps
   // the extraction task deterministic.
   if (!reasoningModel) body.temperature = 0;
+  if (config.providerId === 'deepseek') {
+    // DeepSeek V4 enables thinking mode by default with effort "high". In that
+    // mode `max_tokens` bounds the whole generation, so a small text/JSON probe
+    // can be consumed by hidden chain-of-thought and return
+    // `finish_reason=length` with empty content — observed on the first real
+    // capability test (2 requests, 140 input / 8 output tokens). LiveMemory
+    // needs a deterministic JSON answer, not chain-of-thought, so thinking is
+    // disabled explicitly with the provider's documented parameter. This also
+    // keeps the 6,000-token memory budget available for the answer itself.
+    body.thinking = {type: 'disabled'};
+  }
   // DashScope models that support thinking treat `max_tokens` as the answer
   // limit only; Chain-of-Thought is billed separately and its default can be
   // very large. `max_completion_tokens` bounds the whole output. It is sent only

@@ -501,11 +501,15 @@ export class AnalysisRunner {
     maxRetries = 2,
     random = Math.random,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
-    // Controlled-evaluation only: lets an offline harness run the same data with
-    // the previous 10-viewer ceiling and with the adaptive 20-viewer ceiling.
-    // It is a constructor/script option, never an HTTP or config setting, and it
-    // can only tighten the production ceiling.
-    memoryViewerCapHard = MEMORY_MAX_VIEWERS_PER_BATCH
+    // Shipped default viewer ceiling. `MEMORY_MAX_VIEWERS_PER_BATCH` (20) remains
+    // the technical maximum and is still used by the controlled A/B harness, but
+    // the real DeepSeek acceptance run showed a systematic quality regression at
+    // 20: in two independent runs the 20-viewer ceiling produced only 73% and 51%
+    // as many effective facts as the 10-viewer ceiling (coverage stayed 25/25).
+    // RC0 therefore ships the conservative 10 until a prompt/quality fix is
+    // verified against a real provider again. This is a constructor/script
+    // option, never an HTTP or config setting.
+    memoryViewerCapHard = 10
   }) {
     this.db = db;
     this.paths = paths;
@@ -518,7 +522,9 @@ export class AnalysisRunner {
     this.idleTimeoutMs = Math.max(10000, Number(idleTimeoutMs) || DEFAULT_IDLE_TIMEOUT_MS);
     this.memoryViewerCapHard = Math.max(1, Math.min(
       MEMORY_MAX_VIEWERS_PER_BATCH,
-      Math.floor(Number(memoryViewerCapHard) || MEMORY_MAX_VIEWERS_PER_BATCH)
+      Number.isFinite(Number(memoryViewerCapHard)) && Number(memoryViewerCapHard) > 0
+        ? Math.floor(Number(memoryViewerCapHard))
+        : 10
     ));
     this.active = new Map();
     this.schedulers = new Map();
