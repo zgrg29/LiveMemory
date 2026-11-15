@@ -1887,7 +1887,7 @@ commit `7da0e0d`，Manifest `requireAdministrator`。功能场景使用同一二
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-- **944 passed / 0 failed / 0 skipped（308,251 ms，2026-11-15 最终复跑）**；上一轮 923，本轮 +21。
+- **944 passed / 0 failed / 0 skipped（298,824 ms，2026-11-15 最终复跑）**；上一轮 923，本轮 +21。
 - `tests/integration/api-auth.test.mjs` 单独复跑 **14/14**。
 
 ### 47.3 真实浏览器扫码验证（未扫码）
@@ -1907,8 +1907,8 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 ### 47.4 正式 EXE
 
-正式 EXE：`D:\LiveMemory\dist\LiveMemory.exe`，buildId `aff3fbe6a2f1`，commit `91c2fb3`，
-SHA-256 `9e1940ca3174b264b4a63173d857734fa6eba813984a0184af0b91eafd5ce2ee`，`97,584,128` B，
+正式 EXE：`D:\LiveMemory\dist\LiveMemory.exe`，buildId `a0bc7f9136df`，commit `6f7f0d6`，
+SHA-256 `48cc12274c6c4e0b3d5e7a10e1c6766db8fb8f49f74c8a8f8ad7e2ae025aa699`，`97,584,640` B，
 Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker 测试副本。
 
 | 脚本 | 结果 |

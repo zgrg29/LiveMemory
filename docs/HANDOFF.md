@@ -24,9 +24,9 @@
    未观测写「尚未观测到」，不写成成功或失败。
 6. **安全**：专用 profile 有 `.livememory-owned` 标记；不读取用户日常浏览器资料；Cookie 不进日志/备份/HTTP；
    退出删除加密存储与资料目录；所有新路由仍要求本地会话认证。
-7. **测试**：全量 **944 passed / 0 failed / 0 skipped（308,251 ms，最终复跑）**；新增浏览器登录 10 项、服务 3 项、
+7. **测试**：全量 **944 passed / 0 failed / 0 skipped（298,824 ms，最终复跑）**；新增浏览器登录 10 项、服务 3 项、
    礼物阶梯 1 项，更新登录/Cookie 14 项与三语 UI/API 认证断言。
-8. **EXE**：`aff3fbe6a2f1` / commit `91c2fb3` / SHA-256 `9e1940ca…` / `97,584,128` B / requireAdministrator。
+8. **EXE**：`a0bc7f9136df` / commit `6f7f0d6` / SHA-256 `48cc1227…` / `97,584,640` B / requireAdministrator。
 9. **验证**：真实 Chrome 二维码捕获 **8/8**（未扫码）；EXE 验收 **25/27**（2 项浏览器启动被 DSH 沙箱作业对象阻止，教程资源在包内通过）；
    `verify-exe` **10/10**、`verify-twitch-exe` **20/20**。
 
@@ -41,7 +41,7 @@
 | Cookie 正向验证 | **未验证**（需要账号） |
 | 礼物 | 匿名 0；真实事件未观测；解析/合并/去重有自动化覆盖 |
 | 全量测试 | 944 passed / 0 failed / 0 skipped |
-| EXE | `aff3fbe6a2f1` / `9e1940ca…` / 93.1 MB / requireAdministrator |
+| EXE | `a0bc7f9136df` / `48cc1227…` / 93.1 MB / requireAdministrator |
 | EXE 登录 | 入口/状态/Cookie/教程/退出可用；浏览器启动在沙箱内被作业对象阻止，需人工验收 |
 | main | **未合并、未 Push、未 Tag、未 Release** |
 
@@ -58,7 +58,7 @@
 
 ### 0.4 边界与提交
 
-- 代码提交：`91c2fb35be184995e7433abec6ff67a034857eae`（`fix: add browser-assisted Douyin QR login and cookie verification`）；
+- 代码提交：`6f7f0d65fd95838e489a0021180ea66e87dfd26e`（`fix: add browser-assisted Douyin QR login and cookie verification`）；
   提交身份匿名；**未 Push / 未 Tag / 未发布**。
 - 真实手机扫码、真实 Cookie 正向、登录后礼物、干净 Windows 账户仍待人工验收。
 - 临时数据目录均为 `tests/.tmp`；未读取用户日常浏览器配置。

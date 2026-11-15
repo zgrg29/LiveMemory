@@ -49,7 +49,7 @@
 
 - 新增/更新：浏览器登录 10 项、登录/Cookie 14 项、服务集成 3 项、礼物阶梯 1 项、UI/三语帮助断言更新；
   API 认证新增 6 个抖音登录路由的未认证 401 断言。
-- 全量：**944 passed / 0 failed / 0 skipped（308,251 ms，2026-11-15 最终复跑）**；
+- 全量：**944 passed / 0 failed / 0 skipped（298,824 ms，2026-11-15 最终复跑）**；
   `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`。
 - `tests/integration/api-auth.test.mjs` 单独复跑 **14/14**。
 
@@ -59,12 +59,12 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| 大小 | `97,584,128` bytes（93.1 MB） |
-| SHA-256 | `9e1940ca3174b264b4a63173d857734fa6eba813984a0184af0b91eafd5ce2ee` |
-| Build ID | `aff3fbe6a2f1` |
-| source hash | `aff3fbe6a2f1c5b61ed784a462bd4676040ccd879ecd5d28f539156bd8ae905f` |
-| commit | `91c2fb35be184995e7433abec6ff67a034857eae` |
-| builtAt | `2026-11-15T05:27:27.152Z` |
+| 大小 | `97,584,640` bytes（93.1 MB） |
+| SHA-256 | `48cc12274c6c4e0b3d5e7a10e1c6766db8fb8f49f74c8a8f8ad7e2ae025aa699` |
+| Build ID | `a0bc7f9136df` |
+| source hash | `a0bc7f9136df8aebf9ddeb16f64bd334780a1a55487f3ed4cba824b16467c362` |
+| commit | `6f7f0d65fd95838e489a0021180ea66e87dfd26e` |
+| builtAt | `2026-11-15T05:59:01.388Z` |
 | 资源 | `215` files；40 个必需模块 |
 | RT_MANIFEST | **`requireAdministrator`** |
 

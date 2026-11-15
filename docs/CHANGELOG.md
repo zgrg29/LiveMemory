@@ -20,10 +20,10 @@
 
 ### 验证
 
-- 全量 **944 passed / 0 failed / 0 skipped（308,251 ms，最终复跑）**；新增浏览器登录 10、服务 3、礼物阶梯 1，
+- 全量 **944 passed / 0 failed / 0 skipped（298,824 ms，最终复跑）**；新增浏览器登录 10、服务 3、礼物阶梯 1，
   更新登录/Cookie 14 与三语/认证断言。
 - 真实 Chrome 二维码捕获 **8/8**（未扫码；约 54 秒、`is_frontier=true`）。
-- 正式 EXE `aff3fbe6a2f1` / commit `91c2fb3` / SHA-256 `9e1940ca…` / `97,584,128` B / requireAdministrator；
+- 正式 EXE `a0bc7f9136df` / commit `6f7f0d6` / SHA-256 `48cc1227…` / `97,584,640` B / requireAdministrator；
   `verify-douyin-exe` **25/27**（2 项浏览器启动被 DSH 作业对象阻止）；`verify-exe` **10/10**、
   `verify-twitch-exe` **20/20**。
 - **未验证**：真实手机扫码成功与成功率、真实 Cookie 正向、登录后礼物推送、真实礼物/连送、干净 Windows 账户。

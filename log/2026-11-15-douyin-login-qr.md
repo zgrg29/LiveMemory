@@ -42,7 +42,7 @@ Cookie 备用入口缺少教程；登录后的礼物采集未验证。要求先�
 node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
 ```
 
-- **944 passed / 0 failed / 0 skipped（308,251 ms，2026-11-15 最终复跑）**；上一轮 923，本轮 +21。
+- **944 passed / 0 failed / 0 skipped（298,824 ms，2026-11-15 最终复跑）**；上一轮 923，本轮 +21。
 - `api-auth` 单独复跑 14/14（新增 6 个抖音登录路由 401）。
 
 ### 真实浏览器（未扫码）
@@ -54,7 +54,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 ### 正式 EXE
 
-- Build ID `aff3fbe6a2f1`；commit `91c2fb3`；SHA-256 `9e1940ca…`；`97,584,128` B；requireAdministrator。
+- Build ID `a0bc7f9136df`；commit `6f7f0d6`；SHA-256 `48cc1227…`；`97,584,640` B；requireAdministrator。
 - `verify-douyin-exe`：**25/27**；2 项浏览器启动在 DSH 作业对象内失败（Chrome 子进程 `0x80000003`，
   PowerShell 回退无端口），其余登录状态/Cookie 负向/教程资源/匿名真实采集/重启/AI/三平台状态通过。
 - `verify-exe`：**10/10**；`verify-twitch-exe`：**20/20**（真实 Twitch + Bilibili/YouTube 状态）。
@@ -70,5 +70,5 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 ## 提交
 
-- `91c2fb35be184995e7433abec6ff67a034857eae`（`fix: add browser-assisted Douyin QR login and cookie verification`）。
+- `6f7f0d65fd95838e489a0021180ea66e87dfd26e`（`fix: add browser-assisted Douyin QR login and cookie verification`）。
 - 未 Push、未合并 main、未 Tag、未 Release。
