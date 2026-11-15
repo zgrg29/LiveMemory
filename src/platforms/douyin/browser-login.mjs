@@ -201,7 +201,6 @@ export function buildBrowserArgs({profileDir, loginPage = DOUYIN_LOGIN_PAGE} = {
     '--disable-sync',
     '--disable-background-mode',
     '--window-size=1280,900',
-    '--new-window',
     loginPage
   ];
 }
@@ -508,6 +507,10 @@ export class DouyinBrowserLogin {
       return this.status();
     }
     if (this.closingPromise) await this.closingPromise;
+    if (this.startPromise || (ACTIVE_STATES.has(this.state) && this.running)) {
+      this.#focusExistingWindow();
+      return this.status();
+    }
     this.startPromise = this.#startOnce();
     try {
       return await this.startPromise;
@@ -548,6 +551,7 @@ export class DouyinBrowserLogin {
     this.deadline = this.now() + this.options.timeoutMs;
     try {
       await this.#prepareProfile();
+      if (this.cancelled || this.closed) return this.status();
       const existing = await this.#findExistingBrowser();
       if (existing) {
         this.port = existing.port;
@@ -699,6 +703,55 @@ export class DouyinBrowserLogin {
     }
   }
 
+  #readPidFile() {
+    try {
+      const pid = Number(readFileSync(join(this.profileDir, 'browser.pid'), 'utf8').trim());
+      return Number.isInteger(pid) && pid > 0 ? pid : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Close only Chromium processes whose command line names LiveMemory's own
+   * dedicated profile. This is for an orphan left by a failed/aborted start;
+   * it can never match the user's daily Chrome/Edge profile.
+   */
+  async #terminateOwnedBrowsers() {
+    if (this.platform !== 'win32' || !this.profileDir) return;
+    const encodedProfile = Buffer.from(this.profileDir, 'utf8').toString('base64');
+    const script = [
+      "$ErrorActionPreference='SilentlyContinue'",
+      `$lmProfile=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedProfile}'))`,
+      "$targets=Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -and $_.CommandLine.Contains($lmProfile) }",
+      'foreach ($t in $targets) { Stop-Process -Id $t.ProcessId -Force -ErrorAction SilentlyContinue }'
+    ].join('; ');
+    const powershell = this.env.SystemRoot
+      ? join(this.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : 'powershell.exe';
+    try {
+      const child = this.spawnImpl(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        timer.unref?.();
+        child?.on?.('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        child?.on?.('error', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    } catch {
+      /* best effort: never let cleanup block a fresh launch */
+    }
+    await sleep(500);
+  }
+
   async #launchBrowser() {
     const args = buildBrowserArgs({profileDir: this.profileDir});
     const portFile = join(this.profileDir, 'DevToolsActivePort');
@@ -724,7 +777,43 @@ export class DouyinBrowserLogin {
       return;
     }
 
-    // Preferred: a normal child process. This is the path real users take.
+    if (this.platform === 'win32') {
+      // Direct child_process.spawn of Chrome from the elevated SEA process
+      // exits 0 without writing DevToolsActivePort on some Windows machines.
+      // It can still open a window; the old PowerShell fallback then opened a
+      // second one. Start exactly one browser through Start-Process instead.
+      await this.#terminateOwnedBrowsers();
+      this.launchKind = 'powershell';
+      try {
+        const result = await this.#launchViaPowerShell(args, portFile);
+        this.browserPid = Number(result?.pid) || this.#readPidFile();
+        const info = await this.#waitForPort(portFile, 30000);
+        if (!info?.port) {
+          this.browserPid = this.browserPid ?? this.#readPidFile();
+          this.logger?.warn({
+            event: 'douyin.login.browser.powershell_no_port',
+            diagnostics: this.launchDiagnostics,
+            pid: this.browserPid
+          });
+          throw Object.assign(new Error('browser did not start'), {reason: 'browser_did_not_start'});
+        }
+        this.port = info.port;
+        this.browserPid = this.browserPid ?? this.#readPidFile();
+        this.logger?.info({event: 'douyin.login.browser.launch', browser: this.browser.name, kind: 'powershell'});
+        return;
+      } catch (error) {
+        this.logger?.warn({
+          event: 'douyin.login.browser.powershell_failed',
+          diagnostics: this.launchDiagnostics,
+          reason: String(error?.reason ?? 'launch_failed').slice(0, 60)
+        });
+        throw Object.assign(new Error('browser launch failed'), {
+          reason: String(error?.reason ?? 'launch_failed').slice(0, 60)
+        });
+      }
+    }
+
+    // Non-Windows development path.
     let directError = null;
     try {
       this.launchDiagnostics = {direct: 'spawned'};
@@ -750,84 +839,20 @@ export class DouyinBrowserLogin {
           directExit: `${code ?? 'null'}/${signal ?? 'null'}`
         };
       });
-      let info = await this.#waitForPort(portFile, 12000);
-      if (!info?.port && !this.browserExited && isProcessAlive(this.browserPid)) {
-        // A cold profile (antivirus scan, first-run cache) can take longer.
-        // Wait for the SAME process instead of starting a second browser.
-        info = await this.#waitForPort(portFile, 20000);
+      const info = await this.#waitForPort(portFile, 15000);
+      if (!info?.port) {
+        throw Object.assign(new Error('browser did not start'), {reason: 'browser_did_not_start'});
       }
-      if (info?.port) {
-        this.port = info.port;
-        this.launchKind = 'spawn';
-        this.logger?.info({event: 'douyin.login.browser.launch', browser: this.browser.name, kind: 'spawn'});
-        return;
-      }
-      if (!this.browserExited && isProcessAlive(this.browserPid)) {
-        this.logger?.warn({
-          event: 'douyin.login.browser.no_devtools',
-          pid: this.browserPid,
-          portFile: existsSync(portFile)
-        });
-        throw Object.assign(new Error('browser did not expose devtools'), {reason: 'browser_no_devtools'});
-      }
-      directError = Object.assign(new Error('browser did not start'), {reason: 'browser_did_not_start'});
+      this.port = info.port;
+      this.launchKind = 'spawn';
+      this.logger?.info({event: 'douyin.login.browser.launch', browser: this.browser.name, kind: 'spawn'});
+      return;
     } catch (error) {
-      if (error?.reason === 'browser_no_devtools') {
-        // A browser process is alive but did not expose CDP. Starting another
-        // one here would create exactly the duplicate window this fix removes.
-        this.logger?.warn({event: 'douyin.login.browser.no_fallback', reason: error.reason});
-        throw error;
-      }
       directError = error;
       this.launchDiagnostics = {
         ...(this.launchDiagnostics ?? {}),
         direct: String(error?.code ?? error?.message ?? 'error').slice(0, 60)
       };
-    }
-    this.logger?.warn({
-      event: 'douyin.login.browser.direct_failed',
-      diagnostics: this.launchDiagnostics,
-      portFile: existsSync(portFile)
-    });
-    try {
-      this.child?.removeAllListeners?.('exit');
-      this.child?.kill?.();
-    } catch {
-      /* ignore */
-    }
-    this.child = null;
-    this.browserExited = false;
-
-    // Restricted Windows environments may deny anonymous pipes to a Chromium
-    // child. PowerShell's Start-Process starts the same browser outside that
-    // restriction. The command is fixed; every argument is base64 encoded.
-    if (this.platform === 'win32') {
-      try {
-        const result = await this.#launchViaPowerShell(args, portFile);
-        const info = await this.#waitForPort(portFile, 30000);
-        if (!info?.port) {
-          this.logger?.warn({
-            event: 'douyin.login.browser.powershell_no_port',
-            diagnostics: this.launchDiagnostics,
-            pid: result?.pid ?? null
-          });
-          throw Object.assign(new Error('browser did not start'), {reason: 'browser_did_not_start'});
-        }
-        this.port = info.port;
-        this.browserPid = result?.pid ?? this.browserPid;
-        this.launchKind = 'powershell';
-        this.logger?.info({event: 'douyin.login.browser.launch', browser: this.browser.name, kind: 'powershell'});
-        return;
-      } catch (error) {
-        this.logger?.warn({
-          event: 'douyin.login.browser.powershell_failed',
-          diagnostics: this.launchDiagnostics,
-          reason: String(error?.reason ?? 'launch_failed').slice(0, 60)
-        });
-        throw Object.assign(new Error('browser launch failed'), {
-          reason: String(error?.reason ?? directError?.reason ?? 'launch_failed').slice(0, 60)
-        });
-      }
     }
     throw directError ?? Object.assign(new Error('browser launch failed'), {reason: 'launch_failed'});
   }
@@ -840,11 +865,11 @@ export class DouyinBrowserLogin {
     const script = [
       "$ErrorActionPreference='Stop'",
       "$exe=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + exe + "'))",
-      "$args=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedArgs + "')) | ConvertFrom-Json",
+      "$browserArgs=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedArgs + "')) | ConvertFrom-Json",
       "$pidFile=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedPidFile + "'))",
       "$errorFile=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedErrorFile + "'))",
       'try {',
-      '  $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru',
+      '  $p=Start-Process -FilePath $exe -ArgumentList $browserArgs -PassThru',
       '  Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii',
       '} catch {',
       '  try { Set-Content -LiteralPath $errorFile -Value ("ERROR:" + $_.Exception.Message) -Encoding utf8 } catch {}',
@@ -1279,6 +1304,14 @@ export class DouyinBrowserLogin {
       while (Date.now() - started < 5000 && isProcessAlive(pid)) {
         await sleep(200);
       }
+    }
+    if (this.platform === 'win32'
+      && this.launchKind !== 'injected'
+      && this.launchKind !== null
+      && (!pid || isProcessAlive(pid))) {
+      // Failed launch may not have delivered a PID. Find only processes whose
+      // command line names this dedicated profile and close them.
+      await this.#terminateOwnedBrowsers();
     }
     try {
       this.child?.kill?.();

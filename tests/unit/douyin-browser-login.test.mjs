@@ -163,6 +163,7 @@ test('browser arguments stay conservative and use a dedicated profile', () => {
   assert.ok(args.includes('https://www.douyin.com/login_page?service=https%3A%2F%2Fwww.douyin.com'));
   assert.equal(args.includes('--headless'), false);
   assert.equal(args.includes('--no-sandbox'), false);
+  assert.equal(args.includes('--new-window'), false);
   assert.equal(args.includes('--disable-web-security'), false);
   assert.equal(args.some((arg) => /AutomationControlled|stealth/i.test(arg)), false);
 });
