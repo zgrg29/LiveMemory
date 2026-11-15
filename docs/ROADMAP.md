@@ -19,6 +19,19 @@
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
 
+## P26 PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查（v0.13.2，2026-11-15）🟡
+
+- ✅ Twitch 匿名 IRC 真实只读：5 频道 45 秒 **644 条 PRIVMSG**，644/644 带 `user-id`/`display-name`/消息 `id`；USERNOTICE 有 resub/viewermilestone；0 重复（239 条样本）；Bits 未观测
+- ✅ Twitch EventSub：`session_welcome` 成功；无 Token 订阅 **401 OAuth token is missing**；官方限制 3 WS / 300 订阅 / max cost 10；DCF 公共客户端可无 Secret
+- ✅ 抖音匿名 WSS 真实只读：约 7 秒 175 条消息；45 秒 16 chat / 192 member / 25 like / 3 follow / 8 room / **0 gift**；13/13 chat 有 UID/昵称/secUid/消息 ID/CJK；0 重复；公开页 `status=2/4`
+- ✅ TikTok 验证：TTLC 2.5.0/2.4.4 被 Euler **Business plan** 阻断；1.2.3 本地签名超时；页面 WAF；**未取得真实事件**
+- ✅ 官方 API：TikTok 无公开 LIVE 聊天/礼物 API；抖音官方“直播小玩法”需提案/软著/审核且最多 10 个弹幕指令，不是通用采集；Twitch 官方 EventSub 需 OAuth
+- ✅ 开源/License：TTLC/TikTokLive/douyin-live-toolkit/BarrageGrab/cyber-xiaoya 为 AGPL；dyhub 核心 MIT 但 lightweight 签名脚本 AGPL；DouyinLiveRecorder 仅录制；douyin-live-danmu 无许可证
+- ✅ 结论：**Twitch 第一、抖音第二（先决策 Cookie/AGPL）、TikTok 暂缓**
+- 🟡 未验证：Twitch Bits/OAuth/断网/下播；抖音礼物/连送/重连/多房间/高频；TikTok 全部；三平台 SEA
+- ⬜ 未改业务代码/DB/AI/备份；未 Push/Tag/Release；等待用户确认后开始 Twitch 正式开发
+- 完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`；日志：`log/2026-11-15-platform-research.md`
+
 ## P25 RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（v0.13.2，2026-11-14）✅
 
 - ✅ 正式 EXE RT_MANIFEST：`asInvoker` → **`requireAdministrator`**；Windows 显示标准 UAC，同意后提权启动，拒绝即取消

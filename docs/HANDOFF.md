@@ -1,11 +1,57 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · RC0-GITHUB-RELEASE-PREP：发布材料与发布包、未发布 · 正式 EXE `e438e74803cb` · Tag 建议 `v0.13.2-rc.0`
+本轮：2026-11-15 · PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查与只读验证 · 未改正式业务代码
+
+> 本轮只做调查、源码静态核对与公开直播间只读探测；**未改产品代码/数据库/AI/备份、未新增运行时依赖、未 Push/Tag/Release**。
+> 完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。
+
+## 0. 本轮（PLATFORM-RESEARCH）
+
+完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`；状态：`docs/STATUS.md` §0.33；日志：`log/2026-11-15-platform-research.md`。
+
+### 0.1 做了什么
+
+1. **真实只读探测 Twitch**：匿名 IRC 5 个公开频道，45 秒 644 条 PRIVMSG，644/644 带 `user-id`/`display-name`/消息 `id`；USERNOTICE 有 resub/viewermilestone；`ROOMSTATE room-id` 可用；EventSub 无 Token 订阅 401；Bits 三次探测未观测到。
+2. **真实只读探测抖音**：dyhub lightweight 匿名连接 `708764876300`，约 7 秒 175 条消息；45 秒 16 chat / 192 member / 25 like / 3 follow / 8 room / 0 gift；30 秒 13/13 chat 有 UID/昵称/secUid/消息 ID/CJK；公开页 `status=2/4`。
+3. **TikTok 可行性验证**：TTLC 2.5.0/2.4.4 均被 Euler 签名端点拒绝（Business plan）；1.2.3 本地签名超时；页面 WAF 挑战；未绕过，未取得真实事件。
+4. **官方 API 调查**：Twitch EventSub/IRC、TikTok 公开产品与 Webhooks、抖音官方直播玩法 FAQ；确认 TikTok 无公开 LIVE API、抖音官方小玩法不是通用采集、Twitch EventSub 需 OAuth 且 WebSocket 有 3 连接/300 订阅限制。
+5. **开源方案调查**：TTLC/TikTokLive/dyhub/douyin-live-toolkit/BarrageGrab/DouyinLiveRecorder/cyber-xiaoya/Twurple/Twitch CLI 的许可证、维护、依赖、能力与 SEA 风险；重点标注 AGPL 与无许可证项目。
+6. **工程兼容性设计**：canonical event 映射、连送最终态、赠订付款者/接收者、虚拟币不换算、监控 detector、30 天保留；未改 schema。
+7. **文档**：新增本报告；更新 STATUS/HANDOFF/ROADMAP/PLATFORM_INTEGRATIONS/TEST_PLAN/日志。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| Twitch 真实聊天 | 644 PRIVMSG / 45s；身份/消息 ID 644/644；0 重复（239 条样本） |
+| Twitch 付费 | 订阅/续订/赠订 USERNOTICE 有；Bits 未观测 |
+| 抖音真实聊天 | 13/13 chat 有 UID/昵称/secUid/消息 ID/CJK；0 重复 |
+| 抖音礼物 | 匿名 0；需登录 Cookie；未验证 |
+| TikTok | 未连接成功；付费签名 + AGPL + WAF |
+| 代码/数据库 | **未修改** |
+| 测试 | 未运行全量（无代码改动，不适用）；未新增测试 |
+| 提交 | 仅文档；未 Push/Tag/Release |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **先等用户确认**：是否按 Twitch 方案开始正式开发；抖音是否接受登录 Cookie 与 AGPL；TikTok 是否暂缓。
+2. 若开始 Twitch：先做 T0/T1（纯解析 + IRC adapter + 单场真实频道），不要同时接抖音/TikTok。
+3. **不要把匿名 IRC 写成官方 API**；不要把 Twitch Bits/TikTok 钻石/抖音钻石换算成人民币或美元；不要把抖音匿名 0 gift 写成“礼物已支持”。
+4. **不要复制 AGPL 代码/脚本**进 MIT 的 LiveMemory；不要用无许可证项目；不要在未评审的情况下改 DB schema。
+5. **不要引入 Euler 共享 Key 或强制云端采集**；TikTok 若做，只能实验性、用户自备 Key，并如实标注成本与漏消息风险。
+6. 若做抖音，先明确 Cookie 存储/撤销/加密与 UI 风险提示；不得要求普通用户必须登录才能使用基础弹幕。
+7. 任何新平台都必须走 `EventIngest`，不得单独建 AI 画像；不得改 Bilibili/YouTube 行为。
+
+### 0.4 边界与提交
+
+- 真实探测只读、公开直播间、未登录、未付费；临时目录已删除；未写用户数据目录。
+- **未验证**：Twitch Bits/EventSub OAuth/真实断网/下播；抖音礼物/连送/重连/多房间/高频；TikTok 全部；三平台 SEA。
+- 文档提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（RC0-GITHUB-RELEASE-PREP）
 
 > 本轮只准备发布材料；**未改产品代码/版本、未 Push、未创建本地或远程 Tag、未创建 Release、未上传资产**。
 > 发布包位于 `dist/`（gitignored），面向用户的 Notes 位于 `docs/release-notes/`。
-
-## 0. 本轮（RC0-GITHUB-RELEASE-PREP）
 
 完整报告：`docs/STATUS.md` §0.32；Release Notes：`docs/release-notes/v0.13.2-rc.0.md`；发布流程：`docs/RELEASE.md` §10；日志：`log/2026-11-15-rc0-release-prep.md`。
 

@@ -1,8 +1,41 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（RC0-GITHUB-RELEASE-PREP：发布材料与发布包、未发布；正式 EXE `e438e74803cb`）
+最后更新：2026-11-15（PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查；只读实测；未改业务代码）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.33 PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查与可行性验证（2026-11-15）🟡
+
+范围：只做调查、源码静态核对与公开直播间只读探测。**没有修改正式业务代码、数据库 schema、AI、备份、Bilibili/YouTube 采集，也没有新增运行时依赖。** 完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`；日志：`log/2026-11-15-platform-research.md`。
+
+### 0.33.1 真实只读探测（2026-11-15 10:10–10:45 Asia/Shanghai）
+
+- **Twitch 匿名 IRC**（`wss://irc-ws.chat.twitch.tv:443`，5 个公开频道）：45 秒 **644 条 PRIVMSG，644/644 带 `user-id`、`display-name`、消息 `id`**；USERNOTICE 出现 resub/viewermilestone；`ROOMSTATE` 返回 `room-id=71092938`；25 秒样本 239 条、0 重复消息 ID、9 条带 `emotes` 标签；**Bits 事件三次探测均未观测到**。
+- **Twitch EventSub**：`wss://eventsub.wss.twitch.tv/ws` 返回 `session_welcome`（keepalive 10s）；无 Token 创建 `channel.chat.message` 订阅返回 **401 OAuth token is missing**，确认 WebSocket 握手不等于免授权。
+- **抖音匿名 WSS**（`live.douyin.com/708764876300`，dyhub lightweight 临时验证）：连接为 `live`；约 7 秒 175 条消息；45 秒窗口 16 chat / 192 member / 25 like / 3 follow / 8 room / **0 gift**；30 秒 13 条 chat，13/13 有 `user.id`、昵称、`secUid`、消息 ID、CJK，0 重复；公开页 `room.status=2`（直播）/`4`（结束）。
+- **TikTok**：TTLC 2.5.0 与 2.4.4 连接真实 LIVE 账号均被 `fetchWebcastSignatureFromEulerRoute` 拒绝：**“This endpoint requires a Business plan”**；1.2.3 本地签名 5 秒超时；TikTok 页面返回 WAF 挑战，未绕过。**未取得任何真实 TikTok 事件。**
+- 未登录任何账号、未提供 Cookie、未购买/赠送礼物、未保存聊天正文；临时目录已删除，未写用户数据目录。
+
+### 0.33.2 结论
+
+1. **Twitch 推荐第一个正式开发**：免登录公开聊天、稳定 User ID、消息 ID、订阅/赠订 USERNOTICE 均有真实证据；可用内置 `WebSocket` + 自研 IRC 解析，零新增依赖，适合 Node SEA。匿名 IRC 未在官方文档承诺，必须标注为非官方兼容路径；Bits 真实事件、OAuth/EventSub、断线与下播仍待专项验证。
+2. **抖音可以第二个做，但礼物必须先决策**：匿名弹幕/昵称/稳定 UID 实测可用；**2026 年起礼物只推给登录会话**，匿名 0 gift；本地签名脚本为 **AGPL-3.0**，与 MIT 的 LiveMemory 分发冲突；逆向协议有风控/条款风险。官方“直播小玩法”需提案/软著/审核，且最多 10 个弹幕指令，不是通用采集 API。
+3. **TikTok 暂缓**：官方公开产品页没有 LIVE 聊天/礼物 API；第三方库 AGPL、约 60 个 npm 包，签名需 Euler Business（$50/月起），公开 Issue 报告漏消息；本机页面被 WAF 阻断。不能把它描述成免费、本地优先、普通用户即用的能力。
+4. **三平台都不能把虚拟礼物展示价值当主播实际收入**：Twitch Bits/Tier、TikTok/抖音钻石均无本币金额；只能记数量/档位/展示价值，`amount_minor=null`、`value_kind=unknown`，UI 显示「金额未知」。
+
+### 0.33.3 工程兼容性
+
+- 所有新平台事件仍只经 `src/platforms/shared/ingest.mjs`；`src/shared/events.mjs` 的 canonical 字段足够表达聊天/礼物/订阅，无需改库。
+- 现有 schema 对“连送组/最终态、订阅 Tier/月数、Bits 数量、赠订付款者/接收者、平台虚拟币”没有一等字段；报告提出映射方案（最终态才写 `gift`、付款者/接收者分两条、虚拟币只写 `amount_display`），**本轮不改 schema**。
+- 自动开播监听可复用 `MonitoringManager` + 新 detector；不改变 Bilibili/YouTube 行为；Twitch/抖音都能用公开页面状态做检测原语。
+- 新平台默认沿用 30 天原文保留策略（可配置 1–30 天），保留稳定 ID/计数/金额合计；需法律评审。
+
+### 0.33.4 验证边界
+
+- **未验证**：Twitch Bits 真实事件、EventSub OAuth/DCF 端到端、真实断网恢复、真实下播；抖音礼物（需登录 Cookie）、连送、跨场次改名、下播/重连/多房间/千条每秒；TikTok 全部真实事件；三平台 Node SEA 打包。
+- **未修改**：业务代码、数据库、AI/备份/画像、Bilibili/YouTube 行为、版本号、EXE。
+- **未执行**：全量测试（本轮无代码改动，不适用）；未 Push、未 Tag、未发布。
+- **等待用户确认**：是否按 Twitch 方案开始正式开发；抖音是否接受登录 Cookie 与 AGPL；TikTok 是否暂缓或采用用户自备 Euler Business Key 的实验方案。
 
 ## 0.32 RC0-GITHUB-RELEASE-PREP：GitHub Release 发布准备（2026-11-15）✅（未发布）
 

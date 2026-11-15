@@ -1684,3 +1684,63 @@ SHA-256 `8aa08f0e1e908e80880b578b8cf6d6eb24f560f968d338824ff5684bf5598a2f`。
 
 发布材料完整、哈希可复核、无敏感内容；**可以进入用户确认后的 GitHub Release 步骤**，
 但不能把“材料就绪”描述为“已发布”。
+
+## 45. PLATFORM-RESEARCH：TikTok / Twitch / 抖音只读验证（v0.13.2，2026-11-15）
+
+### 45.1 范围与性质
+
+本轮只做调查与公开直播间只读探测，**没有业务代码改动**，因此没有新增自动化测试、没有重跑
+828 项全量测试（不适用）。下列结果是平台探测证据，不是 LiveMemory 产品的自动化测试。
+未登录账号、未提供 Cookie、未购买/赠送礼物、未保存聊天正文；临时目录已删除。
+
+### 45.2 Twitch
+
+| 项目 | 结果 |
+| --- | --- |
+| 连接 | `wss://irc-ws.chat.twitch.tv:443`；`CAP REQ :twitch.tv/tags twitch.tv/commands`；匿名 `NICK justinfan98765` |
+| 频道 | `xqc`、`shroud`、`sodapoppin`、`moonmoon`、`ludwig` |
+| 45 秒样本 | **644 PRIVMSG**；`withUserId=644`、`withDisplayName=644`、`withMessageId=644`；ROOMSTATE 5；NOTICE 0 |
+| 25 秒样本 | 239 条；非 ASCII 8；`emotes` 标签 9；0 重复消息 ID；Bits 0 |
+| USERNOTICE | resub（Tier 1000/Prime、累计月数）、viewermilestone；较早样本出现 sub/subgift/submysterygift |
+| 房间 ID | `@...room-id=71092938... :tmi.twitch.tv ROOMSTATE #xqc` |
+| EventSub | `session_welcome` 成功；无 Token 订阅 `channel.chat.message` → HTTP 401 `OAuth token is missing` |
+
+**结论：** 昵称、稳定 User ID、消息 ID、聊天原文在可观测窗口内可用；Bits 未观测；EventSub 需 OAuth；
+匿名 IRC 未文档化，不能写成官方 API。
+
+### 45.3 抖音
+
+| 项目 | 结果 |
+| --- | --- |
+| 对象 | `live.douyin.com/708764876300`（东方甄选官方旗舰店） |
+| 连接 | dyhub 0.3.1 lightweight（临时目录）；`status=live`；`frameCount=42`；约 7 秒 175 条消息 |
+| 45 秒事件 | 16 chat / 192 member / 25 like / 3 follow / 8 room / **0 gift** |
+| 30 秒 chat | 13 条；13/13 有 `user.id`、昵称、`secUid`、消息 ID；13/13 含 CJK；0 重复 |
+| 房间状态 | 直播 `status=2`；已结束 `status=4`；公开页无需登录 |
+| 礼物 | 匿名 0；README/源码说明 2026 年起礼物只推登录会话；未提供 Cookie，未验证 |
+
+**结论：** 匿名弹幕/昵称/稳定 UID 可用；礼物必须登录 Cookie；本地签名脚本 AGPL；逆向协议有风险。
+
+### 45.4 TikTok
+
+| 项目 | 结果 |
+| --- | --- |
+| 库 | `tiktok-live-connector` 2.5.0 / 2.4.4 / 1.2.3（临时目录，hoisted） |
+| 2.5.0 / 2.4.4 | `SignatureMissingTokensError`；`fetchWebcastSignatureFromEulerRoute` 返回 “This endpoint requires a Business plan” |
+| 1.2.3 | 本地签名请求 5 秒超时；无事件 |
+| 页面 | `tiktok.com/@.../live` 返回 WAF “Please wait...” 挑战页；未绕过 |
+| 真实事件 | **0**（没有连接成功） |
+
+**结论：** 当前免费/无第三方路径不可用；AGPL + 约 60 依赖 + 付费签名；只能标“尚未验证/暂缓”。
+
+### 45.5 证据边界
+
+- 上述数字只代表 2026-11-15 的时间窗口与公开房间，不代表平台保证；不能据此承诺“零漏消息”。
+- 未验证：Twitch Bits/EventSub OAuth/DCF/真实断网/下播；抖音礼物/连送/重连/多房间/千条每秒；
+  TikTok 全部真实事件；三平台 Node SEA。
+- 临时验证目录（TTLC 安装、dyhub 构建、探测脚本）已删除；未写 `%LOCALAPPDATA%\LiveMemory`。
+
+### 45.6 结论
+
+Twitch 具备进入正式开发的条件；抖音需要先决策登录 Cookie 与 AGPL；TikTok 暂缓。
+完整报告与引用见 `docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。

@@ -446,3 +446,23 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 - 用户明确点击「开始接收弹幕」（`action:resume_capture`）清除抑制并创建新的本地 session；不会重新打开已结束的旧记录。
 - 暂停整个监听（`paused`）与停止当前采集（`live_stopped`）是不同状态；暂停不会删除抑制。
 - 真实平台“停止后仍直播→重启”未执行；Mock + 可控时钟覆盖同周期、重启、错误、离线、新场、主动恢复。
+
+## 10. 2026-11-15 多平台调研结论（TikTok / Twitch / 抖音）
+
+完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。**本节只是结论索引；没有新增平台代码，也没有改变 Bilibili/YouTube 行为。**
+
+| 平台 | 推荐 | 已验证 | 主要阻碍 |
+| --- | --- | --- | --- |
+| **Twitch** | **第一个正式开发** | 匿名 IRC 5 频道 45 秒 644 条 PRIVMSG，644/644 有 `user-id`/`display-name`/消息 `id`；USERNOTICE 有 resub/viewermilestone；`ROOMSTATE room-id`；EventSub 无 Token 订阅 401；公开页 `isLiveBroadcast` 可判定开播 | 匿名 IRC 未在官方文档承诺；Bits 未观测；OAuth/EventSub、真实断网/下播未验证 |
+| **抖音** | **第二个，先决策** | 匿名 WSS 连接真实房间；约 7 秒 175 条消息；45 秒 16 chat / 192 member / 25 like / 3 follow / 8 room / **0 gift**；13/13 chat 有 UID/昵称/secUid/消息 ID/CJK；公开页 `status=2/4` | **2026 年起礼物只推登录会话**；本地签名脚本 AGPL-3.0；逆向协议风控/条款风险；官方“直播小玩法”不是通用采集 |
+| **TikTok** | **暂缓** | TTLC 2.5.0/2.4.4 均被 Euler 签名端点拒绝（Business plan）；1.2.3 本地签名超时；页面 WAF；**无真实事件** | 官方无公开 LIVE API；Euler Business $50/月起；AGPL + 约 60 包；Issue #280 报告漏消息 |
+
+**接入原则（下一轮 Twitch 必须遵守）：**
+
+1. 所有事件只经 `src/platforms/shared/ingest.mjs`；不改 Bilibili/YouTube。
+2. 稳定身份：Twitch `user-id`、抖音 `user.id`、TikTok `userId`；昵称只作展示。
+3. 金额：Twitch Bits/Tier、TikTok/抖音钻石均无本币金额；`amount_minor=null`、`value_kind=unknown`，不得换算。
+4. 连送：只在 `repeatEnd`/最终态写一条 `gift`；赠订付款者与接收者分两条，接收者 `is_paid=false`。
+5. 自动开播：Twitch/抖音用公开页面状态，二次确认下播；不因聊天安静结束。
+6. 保留：默认 30 天原文清理（可配置 1–30 天）；保留稳定 ID/计数/金额合计。
+7. 许可证：不复制 AGPL 代码/脚本；不使用无许可证项目；MIT/Apache 保留声明。
