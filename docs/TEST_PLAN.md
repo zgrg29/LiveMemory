@@ -1925,3 +1925,44 @@ Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker �
 - **登录后礼物推送、真实礼物/连送/付费留言**：匿名 0 条，标为未观测。
 - **EXE 浏览器启动**：沙箱内失败；同一模块在普通 Node 顶层真实 Chrome 8/8，需人工在普通桌面验收。
 - 干净 Windows 电脑、无 Chrome/Edge 环境、非管理员账户、真实 UAC 点击。
+
+## 48. DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复（v0.13.2，2026-11-15）
+
+### 48.1 根因与复现
+
+- `DouyinBrowserLogin.start()` 修复前仅用 `state && this.running` 防重入，而 `running` 在 CDP 握手后才赋值。
+  `opening` 期间并发 `start()` 会各自 `#launchBrowser()` → 两个独立窗口。
+- 真实复现：`Promise.all([flow.start(), flow.start()])`；修复后真实 Chrome 1 target / 1 window。
+- 次因：直接 Chrome 慢启动 12 秒后 PowerShell 回退；直接 spawn 未写 `browser.pid` 导致重启后无法复用。
+- 排除：干净/复用 Profile 下 `--new-window`、仅 URL、仅 new-window 都是 1 窗口；未同时启动 Chrome/Edge。
+
+### 48.2 新增测试
+
+| 文件 | 数量 | 断言 |
+| --- | --- | --- |
+| `tests/unit/douyin-browser-login.test.mjs` | +3 | 并发 start 只 1 次 launch；活动窗口只 focus；取消后重新 start 只 1 次 |
+| `scripts/verify-douyin-browser-login.mjs` | 12 项真实 Chrome | 单次 1 窗口；再次点击 0 launch/1 窗口；并发双击 1 launch/1 窗口；已有窗口 reuse 同 port/1 窗口；取消/清理 |
+
+### 48.3 真实 Chrome 窗口计数（非模拟）
+
+| 场景 | 结果 |
+| --- | --- |
+| 单次点击 | 1 target / 1 window |
+| 已打开时再次点击 | 0 次新 launch、1 window、focus +1 |
+| 快速双击 | 1 次 launch、1 target / 1 window |
+| 第二个 LiveMemory 侧流程 | `kind=reuse`、同 port、1 window |
+| 取消/清理 | 窗口关闭、Profile 可删除 |
+| **合计** | **12/12** |
+
+### 48.4 全量与 EXE
+
+- 全量：**947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**；上一轮 944，本轮 +3。
+- `verify-exe`：**10/10**。
+- `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止，与本轮修复无关。
+- 新 EXE：`6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / `97,589,760` B / requireAdministrator。
+
+### 48.5 未验证 / 不得宣称
+
+- **EXE 内实际窗口数量**：沙箱无法自动验证；需普通 Windows 桌面双击 EXE 人工确认。
+- 真实手机扫码复验；真实礼物仍为未观测。
+- 不要用模拟 DOM/假 CDP 结果冒充真实窗口计数；本轮计数来自真实 Chrome + `Browser.getWindowForTarget`。

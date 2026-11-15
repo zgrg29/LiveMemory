@@ -1,8 +1,71 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（DOUYIN-LOGIN-FIX：本机浏览器扫码登录、Cookie 验证分级、三语 12 步教程、礼物四级状态、Windows EXE；feature/douyin 等待人工验收）
+最后更新：2026-11-15（DOUYIN-SINGLE-WINDOW：修复扫码登录重复浏览器窗口；真实 Chrome 12/12；Windows EXE 已重建；feature/douyin 等待人工验收）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.37 DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复（2026-11-15）🟡（feature/douyin，等待人工验收）
+
+范围：只消除「点击一次扫码登录打开两个独立浏览器窗口」的问题。**未改扫码 URL、官方身份验证、
+会话验证、AES-256-GCM 保存、Cookie 备用、礼物采集与三语 UI。未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.37.1 根因与证据
+
+- **主因**：`DouyinBrowserLogin.start()` 只用 `ACTIVE_STATES.has(state) && this.running` 防重入，
+  而 `this.running` 在 CDP 握手后才赋值。`opening` 期间的第二次调用看到 `running=null`，重新初始化并再次
+  `#launchBrowser()` → 两个独立 Chrome 窗口。真实复现：并发 `Promise.all([start(), start()])`。
+- **次因 1**：直接 `spawn` Chrome 后只等 12 秒；若进程仍活着但 `DevToolsActivePort` 未写出，代码会 kill 后
+  再用 PowerShell 启动第二次 → 第二个窗口。
+- **次因 2**：直接 spawn 未写 `browser.pid`，`#findExistingBrowser()` 无法复用重启前的专用窗口。
+- **排除**：干净 Profile 的 `--new-window`/URL/仅 new-window 都是 1 窗口；同一 Profile 连续启动仍各 1 窗口；
+  未同时启动 Chrome/Edge；未复现 Profile 恢复旧窗口。真实 Chrome 154 + `Browser.getWindowForTarget` 计数。
+
+### 0.37.2 修复
+
+| 位置 | 修复 |
+| --- | --- |
+| `browser-login.mjs#start` | 同步 `startPromise` 锁；初始化期间第二次点击返回当前状态并 `Page.bringToFront`，不新建 |
+| `browser-login.mjs#launchBrowser` | 直接进程存活时继续等同一进程（12s+20s），绝不并行 PowerShell 回退；仅进程退出后回退 |
+| `browser-login.mjs` | 直接 spawn 写 `browser.pid`；`#findExistingBrowser()` 复用同 Profile 专用窗口（同 port/PID） |
+| `browser-login.mjs#closeBrowser` | 串行化关闭，清理 `DevToolsActivePort`/`browser.pid`；只管理 `.livememory-owned` Profile |
+| `live.js` | `douyinBrowserStarting` 防止重复请求；活动窗口按钮保持禁用 |
+| 日志 | 只记录 event/浏览器/PID/target ID；不含 Cookie/sessionid/token |
+
+### 0.37.3 真实 Chrome 窗口计数（非模拟）
+
+`node scripts/verify-douyin-browser-login.mjs`（Chrome 154，专用测试 Profile，不扫码）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 单次点击 | 1 target / 1 window |
+| 打开时再次点击 | 0 次新 launch、1 窗口、focus +1 |
+| 快速双击（并发 start） | 1 次 launch、1 target / 1 window |
+| 第二个 LiveMemory 侧流程 | `kind=reuse`、同 port、1 窗口 |
+| 取消/清理 | 窗口关闭、Profile 可删除 |
+| **合计** | **12/12** |
+
+### 0.37.4 测试与 EXE
+
+- 新增 3 项浏览器测试：并发 start 只 1 次 launch、活动窗口只 focus、取消后重新 start 1 次。
+- 全量：**947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**。
+- `verify-exe`：**10/10**。
+- `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止
+  （Chrome 子进程 `0x80000003`、PowerShell 无端口），与本轮修复无关。
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| 大小 | `97,589,760` bytes |
+| SHA-256 | `a67163e3d3f2e116173ee067949b73adae34bd57a8bdd0409aec27cb9d372cc4` |
+| Build ID | `6a65b07dbf08` |
+| source hash | `6a65b07dbf0898b2d9b2fc74ea788abebd8c18c398fe27f8e8bd89ea97365923` |
+| commit | `db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c` |
+| builtAt | `2026-11-15T08:00:17.430Z` |
+| RT_MANIFEST | `requireAdministrator` |
+
+**EXE 内窗口数量无法在 DSH 沙箱自动验证**：EXE 子进程中的 Chrome 被作业对象终止。真实窗口计数来自同一模块 +
+真实 Chrome；必须由开发者在普通 Windows 桌面双击 EXE 人工验收。**真实手机扫码仍需人工复验。**
 
 ## 0.36 DOUYIN-LOGIN-FIX：浏览器扫码登录、Cookie 验证与礼物分级（2026-11-15）🟡（feature/douyin，等待人工验收）
 

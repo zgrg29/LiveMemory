@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.2（2026-11-15，DOUYIN-SINGLE-WINDOW）：修复扫码登录「一次点击两个独立浏览器窗口」。真实 Chrome + CDP 窗口计数定位：`start()` 在 `running` 赋值前无并发锁，opening 期间第二次调用再次启动浏览器；慢启动 PowerShell 回退与直接 spawn 未写 PID 也会导致多开。改为同步 `startPromise` 锁 + 聚焦已有窗口 + 直接进程存活时绝不回退 + PID 复用。真实 Chrome 12/12（单次/双击/复用均 1 窗口）；全量 **947 passed / 0 failed**；EXE `6a65b07dbf08` / commit `db0dcb1` / requireAdministrator；未改扫码/官方验证/Cookie/礼物。**未合并 main、未 Push/Tag/Release；EXE 内窗口数量待普通桌面人工验收。**
 > v0.13.2（2026-11-15，DOUYIN-LOGIN-FIX）：修复抖音登录验收问题。纯 HTTP 扫码确认不可行（SSO 返回 HTML 指纹页、passport 返回 `4031`）；改为本机 Chrome/Edge + 专用资料目录 + 官方登录页 + CDP，应用内显示官网二维码；真实 Chrome 捕获 **8/8**（未扫码）。区分 Cookie 格式/不完整/过期/平台拒绝/网络/无效；三语 12 步 Cookie 教程；扫码/会话/连接/礼物四级状态。全量 **944 passed / 0 failed**；EXE `a0bc7f9136df` / commit `6f7f0d6` / requireAdministrator；EXE 验收 **25/27**（2 项浏览器启动被 DSH 作业对象阻止）；`verify-exe` 10/10、`verify-twitch-exe` 20/20。**未合并 main、未 Push/Tag/Release；真实手机扫码与真实 Cookie 正向待人工验收。** 详见 `docs/STATUS.md` §0.36、`docs/DOUYIN_LOGIN_RESEARCH.md`。
 > v0.13.2（2026-11-15，DOUYIN-M2M3）：先合并已验收的 Twitch（`main` = `d5e9a7c`，合并后全量 875 passed），再从最新 main 创建 `feature/douyin`，完成抖音公开直播间匿名单播采集：昵称、稳定 UID（`douyin:<user.id>`）、弹幕原文、Unicode、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播、SQLite、AI 读取与长期画像；礼物解析（连送只在 `repeatEnd=1` 写一条、钻石只作展示价值、无金额不记 0）、登录框架（扫码被风控阻止时如实报错 + 本地加密 Cookie 备用）、三语 UI（64 键 × 3）。真实匿名采集 7 条 chat（7/7 UID/昵称/消息 ID/CJK）与正式 EXE 2 条；**真实礼物与真实扫码登录未验证**。新增 48 测试；正式 EXE `0f848c77c2d6`（requireAdministrator）；`verify-douyin-exe` **17/17**。**未合并抖音到 main、未 Push/Tag/Release，等待人工验收。** 详见 `docs/STATUS.md` §0.35、`docs/PLATFORM_INTEGRATIONS.md` §3B、`docs/LICENSE_AGPL_DOUYIN.md`。
 > v0.13.2（2026-11-15，TWITCH-M1）：Twitch 正式接入（匿名 IRC + 公开元数据），真实 6 频道并发 418 条事件、418/418 有稳定 User ID + 消息 ID、1 条真实 resub；Bits/赠订已解析但真实事件未观测；新增 47 测试，全量 875 passed；正式 EXE `a4bf602de264`（`requireAdministrator`，96,828,416 B）；EXE Twitch 验证 20/20，既有矩阵全部通过。**已按开发者授权合并到 main（`d5e9a7c`）；未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.34。
@@ -21,6 +22,19 @@
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
+
+## P30 DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复（v0.13.2，2026-11-15）🟡 等待人工验收
+
+- ✅ 真实 Chrome + CDP 窗口计数定位：并发 `start()` 在 `running` 赋值前重复启动浏览器
+- ✅ 同步 `startPromise` 锁；初始化期间第二次点击只返回状态并 `Page.bringToFront`
+- ✅ 直接 Chrome 存活时绝不启动 PowerShell 回退；仅进程退出后回退
+- ✅ 直接 spawn 写 `browser.pid`；同一专用 Profile 的已有窗口复用（同 port/PID）
+- ✅ 关闭串行化并清理 `DevToolsActivePort`/`browser.pid`；只管理 `.livememory-owned` Profile
+- ✅ 真实 Chrome 12/12：单次 1 窗口、再次点击 0 launch、并发双击 1 window、reuse 1 window
+- ✅ 全量 947 passed / 0 failed；`verify-exe` 10/10；`verify-douyin-exe` 25/27（2 项沙箱浏览器限制）
+- ✅ 正式 EXE `6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / requireAdministrator
+- 🟡 **未验证**：EXE 内实际窗口数量（DSH 沙箱作业对象阻止 Chrome）、真实手机扫码复验
+- ⬜ 等待开发者普通桌面人工验收；未合并 main、未 Push/Tag/Release
 
 ## P29 DOUYIN-LOGIN-FIX：浏览器扫码登录、Cookie 验证与礼物分级（v0.13.2，2026-11-15）🟡 等待人工验收
 

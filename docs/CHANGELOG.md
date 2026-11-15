@@ -1,5 +1,30 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r24 — 2026-11-15（DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复）
+
+### 修复
+
+- 修复点击一次「扫码登录（浏览器）」打开两个独立浏览器窗口：
+  - `start()` 增加同步 `startPromise` 锁；初始化期间的第二次调用不再启动浏览器，只返回当前状态并
+    `Page.bringToFront` 聚焦已有窗口。
+  - 直接 Chrome 进程仍存活时继续等待同一进程，不再 kill 后启动 PowerShell 回退；只有确认进程退出或
+    spawn 失败才回退。
+  - 直接 spawn 写入 `browser.pid`；应用重启后可复用同一专用 Profile 的已有窗口（同 port/PID）。
+  - 关闭串行化并清理 `DevToolsActivePort`/`browser.pid`；只管理带 `.livememory-owned` 的 Profile。
+  - 前端 `douyinBrowserStarting` 防止重复请求。
+- 未修改：扫码 URL、官方身份验证、`sessionid` 捕获/验证、AES-256-GCM 保存、Cookie 备用、礼物采集、
+  三语 UI。
+
+### 验证
+
+- 真实 Chrome 154 + CDP 窗口计数 **12/12**：单次 1 窗口、再次点击 0 launch、并发双击 1 window、
+  已有窗口 `kind=reuse` 同 port/1 window。
+- 全量 **947 passed / 0 failed / 0 skipped（253,845 ms）**；新增 3 项并发/复用测试。
+- EXE `6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / `97,589,760` B / requireAdministrator；
+  `verify-exe` **10/10**；`verify-douyin-exe` **25/27**（2 项沙箱浏览器启动限制）。
+- **未验证**：EXE 内实际窗口数量（需普通桌面人工验收）、真实手机扫码复验、真实礼物。
+- 未合并 main、未 Push、未 Tag、未 Release。
+
 ## 0.13.2-r23 — 2026-11-15（DOUYIN-LOGIN-FIX：浏览器扫码、Cookie 验证与礼物分级）
 
 ### 新增 / 修复
