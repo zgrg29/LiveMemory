@@ -8,7 +8,8 @@
 
 范围：在独立分支 `feature/twitch` 完成 Twitch 匿名 IRC 公开聊天 + 只读公开频道元数据接入，接入统一
 `EventIngest`、`SessionManager`、`MonitoringManager`、数据库、读模型与 AI 读取链路；构建 Windows EXE
-并用真实公开频道运行验证。**未改数据库 schema（仍 16）、结果 Schema 1.3.0、提示词 v13.2、默认 10 人/批、
+并用真实公开频道运行验证。完整验收报告：`docs/ACCEPTANCE_TWITCH_M1.md`。
+**未改数据库 schema（仍 16）、结果 Schema 1.3.0、提示词 v13.2、默认 10 人/批、
 Bilibili 适配器、YouTube 适配器、AI Provider/调度/提示词规则；未新增运行时依赖；未合并 main、未 Push、
 未创建 Tag、未发布 Release。**
 

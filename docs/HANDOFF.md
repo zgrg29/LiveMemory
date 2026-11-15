@@ -4,7 +4,8 @@
 
 > 本轮在 `feature/twitch` 完成 Twitch 匿名 IRC + 公开元数据接入，构建正式 EXE 并用真实公开频道验证。
 > **未合并 main、未 Push、未创建 Tag、未发布 Release。** 完整交付说明：`docs/STATUS.md` §0.34；
-> 平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3A；日志：`log/2026-11-15-twitch-m1.md`。
+> 验收报告：`docs/ACCEPTANCE_TWITCH_M1.md`；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3A；
+> 日志：`log/2026-11-15-twitch-m1.md`。
 
 ## 0. 本轮（TWITCH-M1）
 
