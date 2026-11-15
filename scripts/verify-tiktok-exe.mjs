@@ -16,9 +16,10 @@ import {prepareTestExe} from './test-exe-copy.mjs';
  * key, no payment), a fresh isolated data folder, the same one-time bootstrap
  * token exchange as the browser, and SQLite checks after a clean shutdown.
  *
- * It never prints chat bodies or credentials. The free signer allows five new
- * connections per minute for anonymous clients, so this script makes at most
- * two capture connections and waits between them.
+ * It never prints chat bodies or credentials. The anonymous free signer has a
+ * discovered 30 requests/hour account ceiling, so LiveMemory paces requests at
+ * about one every two minutes; the script allows for that pacing instead of
+ * assuming a 15 s poll.
  */
 
 const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
@@ -219,9 +220,17 @@ try {
       && status.json?.capabilities?.requiresPaidPlan === false
       && status.json?.capabilities?.roomMetadata === 'verified-public'
       && status.json?.capabilities?.gifts === 'parsed-not-observed'
-      && status.json?.capabilities?.transportBrowser === 'experimental-login-required', [
+      && status.json?.capabilities?.transportBrowser === 'experimental-login-required'
+      && status.json?.login?.state, [
       `HTTP ${status.status}, mode ${status.json?.mode ?? 'missing'}`,
-      `capabilities ${JSON.stringify(status.json?.capabilities ?? null)}`
+      `login state ${status.json?.login?.state ?? 'missing'}`,
+      `rateLimit hourly ${status.json?.rateLimit?.hourlyLimit ?? 'missing'}`
+    ]);
+
+    const loginStatus = await httpJson(new URL('/api/tiktok/login/status', info.url).href);
+    record('TikTok browser login status is exposed separately from capture', loginStatus.status === 200
+      && typeof loginStatus.json?.login?.state === 'string', [
+      `HTTP ${loginStatus.status}, state ${loginStatus.json?.login?.state ?? 'missing'}`
     ]);
 
     const roomResponse = await httpJson(new URL('/api/tiktok/room', info.url).href, {
@@ -250,7 +259,8 @@ try {
       sessionId = connected.json?.session?.id ?? null;
       record('the packaged EXE connects to TikTok through the free signing transport', connected.status === 201
         && sessionId
-        && connected.json?.session?.platform === 'tiktok', [
+        && connected.json?.session?.platform === 'tiktok'
+        && ['connected', 'reconnecting', 'rate_limited'].includes(connected.json?.connection?.state), [
         `HTTP ${connected.status}`,
         `session ${sessionId ?? 'missing'}`,
         `connection ${connected.json?.connection?.state ?? 'missing'}`,
@@ -288,8 +298,9 @@ try {
         ]);
       }
 
-      // Automatic monitoring through the packaged EXE. The free signer allows
-      // five connections per minute, so this waits before the second capture.
+      // Automatic monitoring through the packaged EXE. The anonymous free
+      // signer has a 30/hour account ceiling; the shared budget may delay the
+      // second capture until the next ~130 s slot, so allow for that.
       await sleep(13000);
       const created = await httpJson(new URL('/api/monitoring', info.url).href, {
         method: 'POST',
@@ -318,7 +329,7 @@ try {
             const payload = await httpJson(new URL('/api/live/recordings', info.url).href);
             const found = (payload.json?.recordings ?? []).find((item) => item.sessionId === autoSessionId);
             return found && found.messageCount > 0 ? found : null;
-          }, {timeoutMs: 120000, intervalMs: 2000});
+          }, {timeoutMs: 300000, intervalMs: 3000});
           const autoEvents = await httpJson(new URL(`/api/events?sessionId=${encodeURIComponent(autoSessionId)}&limit=50`, info.url).href);
           record('the auto-monitored TikTok session ingests real chat in the EXE', (autoEvents.json?.events ?? [])
             .some((event) => String(event.viewerId ?? '').startsWith('tiktok:')), [

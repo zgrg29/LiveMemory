@@ -1,10 +1,19 @@
-import {spawn} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
 import {PlatformAdapter, CONNECTION_STATE} from '../shared/adapter.mjs';
 import {TIKTOK_ERRORS, TikTokError} from './errors.mjs';
 import {decodeWebcastResponse, mapTikTokMessage} from './messages.mjs';
+import {
+  BROWSER_MARKER,
+  buildBrowserArgs,
+  findBrowserExecutable,
+  findBrowserExecutables,
+  findExistingBrowser,
+  launchBrowser,
+  parseDevToolsActivePort,
+  terminateOwnedBrowsers,
+  tiktokBrowserProfileDir
+} from './browser-launch.mjs';
 
 /**
  * Experimental browser relay ("transport B").
@@ -19,72 +28,28 @@ import {decodeWebcastResponse, mapTikTokMessage} from './messages.mjs';
  * (`POST /webcast/room/enter/` answers 403 while the page is anonymous), the
  * relay reports `TIKTOK_LOGIN_REQUIRED` instead of pretending to record.
  *
+ * The profile is shared with `browser-login.mjs`, so logging in once is enough
+ * and starting a capture reuses the already-open window instead of opening a
+ * second one. Stopping a capture closes only the tab created for it; the login
+ * window and the profile stay until the user closes them.
+ *
  * Verification status: the browser window, the CDP session and the page's
  * WebSocket are real (see the research notes), but logged-in chat delivery has
  * NOT been verified because no TikTok account was available. Treat transport B
  * as experimental until a logged-in capture is recorded.
  */
 
-const BROWSER_MARKER = '.livememory-owned';
 const MAX_SEEN_IDS = 5000;
 
-export function findBrowserExecutable({platform = process.platform, env = process.env, fileExists = existsSync} = {}) {
-  const candidates = [];
-  const add = (path) => {
-    if (path) candidates.push(path);
-  };
-  if (platform === 'win32') {
-    const programFiles = env.ProgramFiles ?? env.PROGRAMFILES;
-    const programFilesX86 = env['ProgramFiles(x86)'] ?? env['PROGRAMFILES(X86)'];
-    const localAppData = env.LOCALAPPDATA;
-    add(programFiles ? join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe') : null);
-    add(programFilesX86 ? join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe') : null);
-    add(localAppData ? join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe') : null);
-    add(programFiles ? join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null);
-    add(programFilesX86 ? join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null);
-    add(localAppData ? join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null);
-  } else if (platform === 'darwin') {
-    add('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
-    add('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
-  } else {
-    add('/usr/bin/google-chrome');
-    add('/usr/bin/microsoft-edge');
-    add('/usr/bin/chromium');
-  }
-  for (const candidate of candidates) {
-    try {
-      if (fileExists(candidate)) return candidate;
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
-
-export function buildBrowserArgs({profileDir, liveUrl}) {
-  return [
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-crash-reporter',
-    '--disable-breakpad',
-    '--disable-extensions',
-    '--disable-sync',
-    '--disable-background-mode',
-    '--window-size=1280,900',
-    liveUrl
-  ];
-}
-
-export function parseDevToolsActivePort(text) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const port = Number(lines[0]);
-  const wsPath = String(lines[1] ?? '').trim();
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  if (!wsPath.startsWith('/devtools/browser/')) return null;
-  return {port, wsPath};
-}
+export {
+  buildBrowserArgs,
+  findBrowserExecutable,
+  findBrowserExecutables,
+  parseDevToolsActivePort,
+  tiktokBrowserProfileDir,
+  terminateOwnedBrowsers,
+  BROWSER_MARKER
+};
 
 /** Minimal Chrome DevTools Protocol client over the built-in WebSocket. */
 export class CdpClient {
@@ -98,6 +63,7 @@ export class CdpClient {
     this.pending = new Map();
     this.listeners = new Set();
     this.closed = true;
+    this.onClose = null;
   }
 
   async open() {
@@ -130,6 +96,11 @@ export class CdpClient {
       entry.reject(error);
     }
     this.pending.clear();
+    try {
+      this.onClose?.();
+    } catch {
+      /* ignore */
+    }
   }
 
   #onMessage(event) {
@@ -187,6 +158,7 @@ export class CdpClient {
   }
 
   close() {
+    const wasOpen = !this.closed;
     this.closed = true;
     try {
       this.ws?.close();
@@ -194,6 +166,13 @@ export class CdpClient {
       /* ignore */
     }
     this.ws = null;
+    if (wasOpen) {
+      try {
+        this.onClose?.();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
 
@@ -219,11 +198,24 @@ export function decodeFramePayload(base64) {
 }
 
 /**
- * One browser session per recording. The adapter below owns the lifecycle; this
- * class only manages the browser/CDP handle.
+ * One browser page per recording. The adapter below owns the lifecycle; this
+ * class only manages the browser/CDP handle and the page's own network stream.
  */
 export class BrowserSession {
-  constructor({uniqueId, roomId, liveUrl, dataDir, logger = null, now = Date.now, spawnImpl = spawn, WebSocketImpl = globalThis.WebSocket, launchTimeoutMs = 25000, loginWaitMs = 20000} = {}) {
+  constructor({
+    uniqueId = null,
+    roomId = null,
+    liveUrl,
+    dataDir = null,
+    logger = null,
+    now = Date.now,
+    spawnImpl = null,
+    WebSocketImpl = globalThis.WebSocket,
+    fetchImpl = globalThis.fetch,
+    launchTimeoutMs = 25000,
+    loginWaitMs = 20000,
+    env = process.env
+  } = {}) {
     this.uniqueId = uniqueId;
     this.roomId = roomId;
     this.liveUrl = liveUrl;
@@ -232,74 +224,168 @@ export class BrowserSession {
     this.now = now;
     this.spawnImpl = spawnImpl;
     this.WebSocketImpl = WebSocketImpl;
+    this.fetchImpl = fetchImpl;
     this.launchTimeoutMs = launchTimeoutMs;
     this.loginWaitMs = loginWaitMs;
-    this.child = null;
+    this.env = env;
     this.cdp = null;
     this.sessionId = null;
+    this.targetId = null;
+    this.createdTarget = false;
+    this.port = null;
     this.profileDir = null;
     this.roomEnterStatus = null;
     this.frameCount = 0;
     this.decodedCount = 0;
+    this.closed = false;
+    this.reusedBrowser = false;
+    this.browserPid = null;
+    this.launchKind = null;
     this.onFrame = () => {};
+    this.onClose = () => {};
   }
 
   async launch() {
-    const executable = findBrowserExecutable();
-    if (!executable) {
+    const executables = findBrowserExecutables({env: this.env});
+    if (executables.length === 0) {
       throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
         messageKey: 'errors.tiktokBrowserUnavailable',
         httpStatus: 503,
         details: {reason: 'browser_not_found'}
       });
     }
-    const base = this.dataDir ?? join(process.env.TEMP ?? '.', 'livememory');
-    this.profileDir = join(base, 'browser', 'tiktok', String(this.uniqueId).replace(/[^A-Za-z0-9._-]/g, '_'));
-    mkdirSync(this.profileDir, {recursive: true});
-    writeFileSync(join(this.profileDir, BROWSER_MARKER), 'LiveMemory dedicated TikTok browser profile\n');
-    const args = buildBrowserArgs({profileDir: this.profileDir, liveUrl: this.liveUrl});
-    this.child = this.spawnImpl(executable, args, {detached: true, stdio: 'ignore'});
-    this.child?.unref?.();
-
-    const portFile = join(this.profileDir, 'DevToolsActivePort');
-    const deadline = this.now() + this.launchTimeoutMs;
-    let parsed = null;
-    while (this.now() < deadline) {
-      if (existsSync(portFile)) {
-        parsed = parseDevToolsActivePort(readFileSync(portFile, 'utf8'));
-        if (parsed) break;
+    const base = this.dataDir ?? join(this.env.TEMP ?? this.env.TMP ?? '.', 'livememory');
+    this.profileDir = tiktokBrowserProfileDir(base);
+    const args = buildBrowserArgs({profileDir: this.profileDir, startUrl: 'about:blank'});
+    let launched = null;
+    let lastError = null;
+    for (const executable of executables) {
+      try {
+        launched = await launchBrowser({
+          profileDir: this.profileDir,
+          args,
+          browserPath: executable,
+          spawnImpl: this.spawnImpl ?? undefined,
+          env: this.env,
+          timeoutMs: this.launchTimeoutMs,
+          logger: this.logger
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        this.logger?.warn({
+          event: 'tiktok.browser.launch.failed',
+          browser: executable,
+          reason: error?.reason ?? error?.message ?? 'launch_failed'
+        });
+        // A Chromium may have opened a window but never wrote its DevTools
+        // port. Close only processes carrying this exact profile before trying
+        // the next installed browser, so fallback never creates a second window.
+        await terminateOwnedBrowsers({profileDir: this.profileDir, env: this.env});
       }
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 200);
-        timer.unref?.();
-      });
     }
-    if (!parsed) {
-      await this.close();
+    if (!launched) {
       throw new TikTokError(TIKTOK_ERRORS.BROWSER_FAILED, {
         messageKey: 'errors.tiktokBrowserFailed',
         httpStatus: 502,
-        details: {reason: 'no_devtools_port'}
+        details: {reason: lastError?.reason ?? 'browser_did_not_start'}
       });
     }
+    this.reusedBrowser = launched.kind === 'reuse';
+    this.browserPid = launched.pid ?? null;
+    this.launchKind = launched.kind;
+    this.port = launched.port;
 
-    this.cdp = new CdpClient({url: `ws://127.0.0.1:${parsed.port}${parsed.wsPath}`, WebSocketImpl: this.WebSocketImpl});
+    const page = await this.#openPage(launched.port);
+    this.targetId = page.id;
+    this.createdTarget = page.created;
+    this.cdp = new CdpClient({
+      url: page.webSocketDebuggerUrl,
+      WebSocketImpl: this.WebSocketImpl
+    });
+    this.cdp.onClose = () => {
+      if (this.closed) return;
+      this.closed = true;
+      try {
+        this.onClose();
+      } catch {
+        /* ignore */
+      }
+    };
     await this.cdp.open();
-    const {targetId} = await this.cdp.send('Target.createTarget', {url: 'about:blank'});
-    const attached = await this.cdp.send('Target.attachToTarget', {targetId, flatten: true});
-    this.sessionId = attached.sessionId;
-    const session = this.sessionId;
-    await this.cdp.send('Page.enable', {}, {sessionId: session});
-    await this.cdp.send('Network.enable', {}, {sessionId: session});
-    this.cdp.onEvent((message) => this.#onEvent(message, session));
-    await this.cdp.send('Page.navigate', {url: this.liveUrl}, {sessionId: session});
-    this.logger?.info({event: 'tiktok.browser.navigated', uniqueId: this.uniqueId, roomId: this.roomId});
+    // Page-level CDP: this is the same approach as the working Douyin browser
+    // flow. Browser-level `Target.attachToTarget` sessions are much more
+    // fragile on recent Edge/Chrome builds.
+    await this.cdp.send('Page.enable');
+    await this.cdp.send('Network.enable');
+    await this.cdp.send('Runtime.enable').catch(() => {});
+    this.cdp.onEvent((message) => this.#onEvent(message));
+    await this.cdp.send('Page.navigate', {url: this.liveUrl});
+    this.logger?.info({
+      event: 'tiktok.browser.navigated',
+      uniqueId: this.uniqueId,
+      roomId: this.roomId,
+      kind: this.launchKind,
+      reusedBrowser: this.reusedBrowser
+    });
     return this;
   }
 
-  #onEvent(message, session) {
+  /**
+   * Reuse the tab that already points at the target URL, otherwise create a
+   * fresh tab over the HTTP DevTools endpoint. Each tab has its own page-level
+   * CDP socket, so login and capture never fight over one session.
+   */
+  async #openPage(port) {
+    const base = `http://127.0.0.1:${port}`;
+    let pages = [];
+    try {
+      const response = await this.fetchImpl(`${base}/json/list`, {
+        headers: {accept: 'application/json'},
+        signal: AbortSignal.timeout?.(5000)
+      });
+      if (response.ok) pages = await response.json();
+    } catch {
+      /* create below */
+    }
+    const wanted = String(this.liveUrl ?? '').split('?')[0];
+    const existing = Array.isArray(pages)
+      ? pages.find((target) => target?.type === 'page' && wanted && String(target.url ?? '').startsWith(wanted))
+      : null;
+    if (existing?.webSocketDebuggerUrl) {
+      return {id: existing.id, webSocketDebuggerUrl: existing.webSocketDebuggerUrl, created: false};
+    }
+    const attempts = [
+      {method: 'PUT', url: `${base}/json/new?${encodeURIComponent('about:blank')}`},
+      {method: 'PUT', url: `${base}/json/new?url=${encodeURIComponent('about:blank')}`},
+      {method: 'GET', url: `${base}/json/new?about:blank`}
+    ];
+    let lastError = null;
+    for (const attempt of attempts) {
+      try {
+        const response = await this.fetchImpl(attempt.url, {
+          method: attempt.method,
+          headers: {accept: 'application/json'},
+          signal: AbortSignal.timeout?.(5000)
+        });
+        if (!response.ok) continue;
+        const created = await response.json();
+        if (created?.webSocketDebuggerUrl) {
+          return {id: created.id, webSocketDebuggerUrl: created.webSocketDebuggerUrl, created: true};
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new TikTokError(TIKTOK_ERRORS.BROWSER_FAILED, {
+      messageKey: 'errors.tiktokBrowserFailed',
+      httpStatus: 502,
+      details: {reason: 'page_target_unavailable', message: String(lastError?.message ?? '').slice(0, 80)}
+    });
+  }
+
+  #onEvent(message) {
     const params = message.params;
-    if (message.sessionId && message.sessionId !== session) return;
     if (message.method === 'Network.responseReceived') {
       const url = String(params?.response?.url ?? '');
       if (url.includes('/webcast/room/enter/')) {
@@ -338,32 +424,105 @@ export class BrowserSession {
     return this.roomEnterStatus === 403;
   }
 
+  isAlive() {
+    return !this.closed && Boolean(this.cdp) && !this.cdp.closed;
+  }
+
+  async waitForReady({timeoutMs = this.loginWaitMs} = {}) {
+    const startedAt = this.now();
+    for (;;) {
+      if (this.closed || !this.isAlive()) return {closed: true, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      if (this.requiresLogin()) return {closed: false, loginRequired: true, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      if (this.decodedCount > 0 || this.roomEnterStatus === 200) {
+        return {closed: false, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      }
+      if (this.now() - startedAt >= timeoutMs) {
+        return {closed: false, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus, timedOut: true};
+      }
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 250);
+        timer.unref?.();
+      });
+    }
+  }
+
+  async navigate(url) {
+    if (!this.cdp || this.cdp.closed) throw new Error('browser session is not open');
+    await this.cdp.send('Page.navigate', {url});
+  }
+
+  async getCookies(urls = ['https://www.tiktok.com', 'https://www.tiktok.com/login']) {
+    if (!this.cdp || this.cdp.closed) return [];
+    try {
+      const result = await this.cdp.send('Network.getCookies', {urls});
+      return Array.isArray(result?.cookies) ? result.cookies : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async evaluate(expression) {
+    if (!this.cdp || this.cdp.closed) return null;
+    try {
+      const result = await this.cdp.send('Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: true
+      });
+      return result?.result?.value ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async close() {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.createdTarget && this.targetId && this.port) {
+      try {
+        await this.fetchImpl(`http://127.0.0.1:${this.port}/json/close/${encodeURIComponent(this.targetId)}`, {
+          signal: AbortSignal.timeout?.(2000)
+        });
+      } catch {
+        /* the tab may already be gone */
+      }
+    }
     try {
       this.cdp?.close();
     } catch {
       /* ignore */
     }
     this.cdp = null;
-    try {
-      if (this.child?.pid) process.kill(this.child.pid);
-    } catch {
-      /* already gone */
-    }
-    this.child = null;
-    if (this.profileDir) {
-      try {
-        rmSync(this.profileDir, {recursive: true, force: true});
-      } catch {
-        /* profile may still be locked; the next launch reuses it */
-      }
-    }
   }
+}
+
+function captureCategory(state, detail) {
+  if (state === CONNECTION_STATE.CONNECTED) {
+    return detail?.eventsVerified ? 'normal' : 'waiting_events';
+  }
+  if (state === CONNECTION_STATE.RECONNECTING) return 'auto_reconnect';
+  if (state === CONNECTION_STATE.AUTH_REQUIRED) return 'user_action';
+  if (state === CONNECTION_STATE.RATE_LIMITED) return 'rate_limit';
+  if (state === CONNECTION_STATE.FAILED) return 'failed';
+  if (state === CONNECTION_STATE.STOPPED) return detail?.reason === 'platform_ended' ? 'ended' : 'stopped';
+  if (state === CONNECTION_STATE.CONNECTING) return 'connecting';
+  return 'idle';
 }
 
 /** Adapter over a browser session: same ingest contract as the signer adapter. */
 export class TikTokBrowserAdapter extends PlatformAdapter {
-  constructor({uniqueId, roomId, liveUrl = null, dataDir = null, logger = null, now = Date.now, sessionFactory = null, ...options} = {}) {
+  constructor({
+    uniqueId,
+    roomId,
+    liveUrl = null,
+    dataDir = null,
+    logger = null,
+    now = Date.now,
+    sessionFactory = null,
+    loginWaitMs = 20000,
+    env = process.env,
+    ...options
+  } = {}) {
     super({id: 'tiktok-browser', platform: 'tiktok', label: 'TikTok Live (browser)', capabilities: ['chat', 'gift']});
     this.uniqueId = String(uniqueId ?? '').replace(/^@/, '');
     this.roomId = roomId === null || roomId === undefined ? null : String(roomId);
@@ -371,13 +530,53 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.dataDir = dataDir;
     this.logger = logger;
     this.now = now;
+    this.env = env;
     this.sessionFactory = sessionFactory ?? ((args) => new BrowserSession(args));
     this.options = options;
+    this.loginWaitMs = loginWaitMs;
     this.session = null;
     this.started = false;
     this.seen = new Set();
     this.counters = {frames: 0, messages: 0, chats: 0, gifts: 0, duplicates: 0, ignored: 0};
     this.loginRequired = false;
+    this.lastEventAt = null;
+    this.lastEventType = null;
+    this.eventsVerified = false;
+    this.roomEnterStatus = null;
+    this.reconnectAttempts = 0;
+    this.recoveries = 0;
+    this.nextRetryAt = null;
+    this.lastFailure = null;
+    this.timer = null;
+    this.reconnecting = false;
+  }
+
+  #detail(extra = {}) {
+    return {
+      uniqueId: this.uniqueId,
+      roomId: this.roomId,
+      transport: 'browser',
+      category: captureCategory(this.state, {eventsVerified: this.eventsVerified, reason: extra.reason}),
+      lastEventAt: this.lastEventAt,
+      lastEventType: this.lastEventType,
+      lastSuccessAt: this.eventsVerified ? this.lastEventAt : null,
+      eventsVerified: this.eventsVerified,
+      waitingForEvents: Boolean(this.session?.isAlive?.()) && !this.eventsVerified,
+      roomEnterStatus: this.roomEnterStatus,
+      browserOpen: Boolean(this.session?.isAlive?.()),
+      browserReused: Boolean(this.session?.reusedBrowser),
+      reconnectAttempts: this.reconnectAttempts,
+      recoveries: this.recoveries,
+      nextRetryAt: this.nextRetryAt,
+      lastFailure: this.lastFailure,
+      loginRequired: this.loginRequired,
+      counters: {...this.counters},
+      ...extra
+    };
+  }
+
+  #setState(state, extra = {}) {
+    this.setState(state, this.#detail(extra));
   }
 
   async start({onEvent = () => {}, onStateChange = null, onEnd = null, onPlatformStatus = null} = {}) {
@@ -386,17 +585,10 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.onEnd = onEnd ?? (() => {});
     this.onPlatformStatus = onPlatformStatus ?? (() => {});
     this.started = true;
-    this.setState(CONNECTION_STATE.CONNECTING, {uniqueId: this.uniqueId, roomId: this.roomId, transport: 'browser'});
-    const session = this.sessionFactory({
-      uniqueId: this.uniqueId,
-      roomId: this.roomId,
-      liveUrl: this.liveUrl,
-      dataDir: this.dataDir,
-      logger: this.logger,
-      now: this.now
-    });
+    this.eventsVerified = false;
+    this.#setState(CONNECTION_STATE.CONNECTING, {uniqueId: this.uniqueId, roomId: this.roomId, transport: 'browser'});
+    const session = this.#createSession();
     this.session = session;
-    session.onFrame = (message) => this.#handleMessage(message);
     try {
       await session.launch();
     } catch (error) {
@@ -406,18 +598,17 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       } catch {
         /* ignore */
       }
-      this.setState(CONNECTION_STATE.FAILED, {code: error?.code ?? 'unknown'});
+      this.lastFailure = {code: error?.code ?? 'unknown', at: this.now(), reason: error?.details?.reason ?? null};
+      this.#setState(CONNECTION_STATE.FAILED, {code: error?.code ?? 'unknown', messageKey: error?.messageKey ?? null});
       throw error;
     }
-    // Give the official page a moment to open its own IM socket. A 403 on room
-    // entry is TikTok's login gate, not a technical failure.
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, Math.min(Number(this.options.loginWaitMs ?? 20000), 20000));
-      timer.unref?.();
-    });
-    if (session.requiresLogin()) {
+    const ready = session.waitForReady
+      ? await session.waitForReady({timeoutMs: this.loginWaitMs})
+      : {loginRequired: session.requiresLogin?.(), events: 0};
+    this.roomEnterStatus = ready.roomEnterStatus ?? null;
+    if (ready.loginRequired) {
       this.loginRequired = true;
-      this.setState(CONNECTION_STATE.AUTH_REQUIRED, {uniqueId: this.uniqueId, reason: 'login_required'});
+      this.#setState(CONNECTION_STATE.AUTH_REQUIRED, {reason: 'login_required', code: TIKTOK_ERRORS.LOGIN_REQUIRED});
       await this.stop();
       throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
         messageKey: 'errors.tiktokLoginRequired',
@@ -425,12 +616,134 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
         details: {reason: 'room_enter_403'}
       });
     }
-    this.setState(CONNECTION_STATE.CONNECTED, {
+    if (ready.closed) {
+      this.started = false;
+      await this.stop();
+      throw new TikTokError(TIKTOK_ERRORS.BROWSER_FAILED, {
+        messageKey: 'errors.tiktokBrowserFailed',
+        httpStatus: 502,
+        details: {reason: 'page_closed'}
+      });
+    }
+    this.eventsVerified = Number(ready.events ?? 0) > 0;
+    this.#setState(CONNECTION_STATE.CONNECTED, {
       uniqueId: this.uniqueId,
       roomId: this.roomId,
       transport: 'browser',
-      decodedFrames: session.decodedCount
+      eventsVerified: this.eventsVerified,
+      waitingForEvents: !this.eventsVerified,
+      roomEnterStatus: this.roomEnterStatus
     });
+    this.#startWatchdog();
+  }
+
+  #createSession() {
+    const session = this.sessionFactory({
+      uniqueId: this.uniqueId,
+      roomId: this.roomId,
+      liveUrl: this.liveUrl,
+      dataDir: this.dataDir,
+      logger: this.logger,
+      now: this.now,
+      env: this.env,
+      loginWaitMs: this.loginWaitMs
+    });
+    session.onFrame = (message) => this.#handleMessage(message);
+    session.onClose = () => this.#onBrowserClosed();
+    return session;
+  }
+
+  #onBrowserClosed() {
+    if (!this.started || this.reconnecting) return;
+    this.logger?.warn({event: 'tiktok.browser.closed', uniqueId: this.uniqueId});
+    this.nextRetryAt = this.now();
+    this.#setState(CONNECTION_STATE.RECONNECTING, {
+      category: 'auto_reconnect',
+      code: TIKTOK_ERRORS.BROWSER_FAILED,
+      reason: 'browser_closed'
+    });
+    this.#reconnect().catch(() => {});
+  }
+
+  #startWatchdog() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = setInterval(() => {
+      if (!this.started) return;
+      if (!this.session?.isAlive?.() && !this.reconnecting) {
+        this.nextRetryAt = this.now();
+        this.#setState(CONNECTION_STATE.RECONNECTING, {
+          category: 'auto_reconnect',
+          code: TIKTOK_ERRORS.BROWSER_FAILED,
+          reason: 'browser_unavailable'
+        });
+        this.#reconnect().catch(() => {});
+      }
+    }, 15000);
+    this.timer.unref?.();
+  }
+
+  async #reconnect() {
+    if (!this.started || this.reconnecting) return;
+    this.reconnecting = true;
+    try {
+      for (let attempt = 1; attempt <= 3 && this.started; attempt += 1) {
+        this.reconnectAttempts += 1;
+        const delay = Math.min(30000, 1000 * 2 ** (attempt - 1));
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, delay);
+          timer.unref?.();
+        });
+        if (!this.started) return;
+        try {
+          await this.session?.close?.();
+        } catch {
+          /* ignore */
+        }
+        const session = this.#createSession();
+        this.session = session;
+        try {
+          await session.launch();
+          const ready = session.waitForReady
+            ? await session.waitForReady({timeoutMs: this.loginWaitMs})
+            : {loginRequired: false, events: 0};
+          if (ready.loginRequired) {
+            this.loginRequired = true;
+            this.lastFailure = {code: TIKTOK_ERRORS.LOGIN_REQUIRED, at: this.now(), reason: 'login_required'};
+            this.#setState(CONNECTION_STATE.AUTH_REQUIRED, {reason: 'login_required'});
+            this.started = false;
+            this.recoveries += 1;
+            return;
+          }
+          this.roomEnterStatus = ready.roomEnterStatus ?? null;
+          this.eventsVerified = Number(ready.events ?? 0) > 0;
+          this.nextRetryAt = null;
+          this.recoveries += 1;
+          this.#setState(CONNECTION_STATE.CONNECTED, {
+            category: this.eventsVerified ? 'normal' : 'waiting_events',
+            eventsVerified: this.eventsVerified,
+            waitingForEvents: !this.eventsVerified,
+            recoveredAt: this.now(),
+            roomEnterStatus: this.roomEnterStatus
+          });
+          return;
+        } catch (error) {
+          this.lastFailure = {code: error?.code ?? 'unknown', at: this.now(), reason: error?.details?.reason ?? null};
+          this.logger?.warn({event: 'tiktok.browser.reconnect.failed', attempt, code: error?.code ?? 'unknown'});
+        }
+      }
+      if (this.started) {
+        this.#setState(CONNECTION_STATE.FAILED, {
+          category: 'failed',
+          code: TIKTOK_ERRORS.BROWSER_FAILED,
+          retrying: false,
+          needsUserAction: true,
+          retryAfterMs: null,
+          nextRetryAt: null
+        });
+      }
+    } finally {
+      this.reconnecting = false;
+    }
   }
 
   #handleMessage(message) {
@@ -459,6 +772,9 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.counters.messages += 1;
     if (event.event_type === 'chat') this.counters.chats += 1;
     if (event.event_type === 'gift') this.counters.gifts += 1;
+    this.lastEventAt = this.now();
+    this.lastEventType = event.event_type;
+    this.eventsVerified = true;
     try {
       this.onEvent(event);
     } catch (error) {
@@ -468,6 +784,10 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
 
   async stop() {
     this.started = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
     const session = this.session;
     this.session = null;
     if (session) {
@@ -477,11 +797,23 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
         /* ignore */
       }
     }
-    this.setState(CONNECTION_STATE.STOPPED, {uniqueId: this.uniqueId, loginRequired: this.loginRequired});
+    this.#setState(CONNECTION_STATE.STOPPED, {uniqueId: this.uniqueId, loginRequired: this.loginRequired, reason: 'user'});
+  }
+
+  capture() {
+    return this.#detail();
   }
 
   snapshot() {
-    return {...super.snapshot(), uniqueId: this.uniqueId, roomId: this.roomId, counters: {...this.counters}, loginRequired: this.loginRequired};
+    return {
+      ...super.snapshot(),
+      uniqueId: this.uniqueId,
+      roomId: this.roomId,
+      counters: {...this.counters},
+      loginRequired: this.loginRequired,
+      lastEventAt: this.lastEventAt,
+      capture: this.capture()
+    };
   }
 }
 
@@ -495,10 +827,11 @@ export class TikTokBrowserRelay {
     this.sessions = new Set();
   }
 
-  createAdapter({uniqueId, roomId, logger = null}) {
+  createAdapter({uniqueId, roomId, liveUrl = null, logger = null}) {
     const adapter = new TikTokBrowserAdapter({
       uniqueId,
       roomId,
+      liveUrl,
       dataDir: this.dataDir,
       logger: logger ?? this.logger,
       now: this.now,
@@ -517,6 +850,12 @@ export class TikTokBrowserRelay {
       }
     }
     this.sessions.clear();
+  }
+
+  /** Close only the dedicated LiveMemory TikTok profile's browser windows. */
+  async closeBrowser() {
+    if (!this.dataDir) return false;
+    return terminateOwnedBrowsers({profileDir: tiktokBrowserProfileDir(this.dataDir)});
   }
 }
 

@@ -32,6 +32,11 @@ test('the live page exposes a TikTok tab and uses every TikTok API route', () =>
   assert.match(liveSource, /tiktokTab/);
   assert.match(liveSource, /buildTikTokPanel/);
   assert.match(liveSource, /\/api\/tiktok\/status/);
+  assert.match(liveSource, /\/api\/tiktok\/login\/status/);
+  assert.match(liveSource, /\/api\/tiktok\/login\/start/);
+  assert.match(liveSource, /\/api\/tiktok\/login\/verify/);
+  assert.match(liveSource, /\/api\/tiktok\/login\/cancel/);
+  assert.match(liveSource, /\/api\/tiktok\/login\/logout/);
   assert.match(liveSource, /\/api\/tiktok\/room/);
   assert.match(liveSource, /\/api\/tiktok\/connect/);
   assert.match(liveSource, /\/api\/tiktok\/transport/);
@@ -68,6 +73,26 @@ test('all three locales carry the same TikTok UI and error keys', () => {
     'live.source.tiktokCapabilityNote',
     'live.source.tiktokNoPaidPlan',
     'live.source.tiktokPolicyTitle',
+    'live.source.tiktokLoginTitle',
+    'live.source.tiktokLoginOpen',
+    'live.source.tiktokLoginVerify',
+    'live.source.tiktokLoginCancel',
+    'live.source.tiktokLoginStateIdle',
+    'live.source.tiktokLoginStateWaiting',
+    'live.source.tiktokLoginStateVerifying',
+    'live.source.tiktokLoginStateLoggedIn',
+    'live.source.tiktokLoginStateExpired',
+    'live.source.tiktokLoginStateRefused',
+    'live.source.tiktokLoginStateUnavailable',
+    'live.source.tiktokCaptureTitle',
+    'live.source.tiktokCaptureStateConnected',
+    'live.source.tiktokCaptureStateRateLimited',
+    'live.source.tiktokCaptureStateNeedsAction',
+    'live.source.tiktokCaptureLastMessage',
+    'live.source.tiktokCaptureReconnects',
+    'live.source.tiktokCaptureLastFailure',
+    'live.source.tiktokCapturePossibleGap',
+    'live.tabs.stateRateLimited',
     'errors.tiktokLinkInvalid',
     'errors.tiktokRoomNotFound',
     'errors.tiktokRoomOffline',
@@ -99,6 +124,11 @@ test('all three locales carry the same TikTok UI and error keys', () => {
 test('the TikTok HTTP routes and Windows build modules are present', () => {
   for (const route of [
     '/api/tiktok/status',
+    '/api/tiktok/login/status',
+    '/api/tiktok/login/start',
+    '/api/tiktok/login/verify',
+    '/api/tiktok/login/cancel',
+    '/api/tiktok/login/logout',
     '/api/tiktok/transport',
     '/api/tiktok/room',
     '/api/tiktok/connect',
@@ -109,11 +139,14 @@ test('the TikTok HTTP routes and Windows build modules are present', () => {
   }
   for (const module of [
     'src/platforms/tiktok/adapter.mjs',
+    'src/platforms/tiktok/browser-launch.mjs',
+    'src/platforms/tiktok/browser-login.mjs',
     'src/platforms/tiktok/browser-relay.mjs',
     'src/platforms/tiktok/client.mjs',
     'src/platforms/tiktok/link.mjs',
     'src/platforms/tiktok/messages.mjs',
     'src/platforms/tiktok/protobuf.mjs',
+    'src/platforms/tiktok/rate-budget.mjs',
     'src/platforms/tiktok/service.mjs',
     'src/platforms/tiktok/signer.mjs',
     'src/platforms/tiktok/transports.mjs',

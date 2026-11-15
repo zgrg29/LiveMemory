@@ -39,6 +39,7 @@ const STATE_META = {
   connecting: {label: 'live.tabs.stateConnecting', tone: 'neutral', dot: true, ended: false},
   connected: {label: 'live.tabs.stateRecording', tone: 'live', dot: true, ended: false},
   reconnecting: {label: 'live.tabs.stateReconnecting', tone: 'warn', dot: true, ended: false},
+  rate_limited: {label: 'live.tabs.stateRateLimited', tone: 'warn', dot: true, ended: false},
   auth_required: {label: 'live.tabs.stateFailed', tone: 'danger', dot: false, ended: true},
   failed: {label: 'live.tabs.stateFailed', tone: 'danger', dot: false, ended: true},
   stopped: {label: 'live.tabs.stateStopped', tone: 'neutral', dot: false, ended: true},
@@ -104,7 +105,7 @@ function tabName(recording, t) {
 
 function inferFinalState(recording) {
   const state = recording?.connection?.state;
-  if (state === 'failed' || state === 'auth_required' || state === 'reconnecting' || state === 'connecting') {
+  if (state === 'failed' || state === 'auth_required' || state === 'reconnecting' || state === 'rate_limited' || state === 'connecting') {
     return 'failed';
   }
   return 'stopped';
@@ -172,6 +173,11 @@ export const livePage = {
     let douyinBrowserStarting = false;
     let douyinCookieDraft = '';
     let douyinCookieError = '';
+    let tiktokLogin = null;
+    let tiktokLoginTimer = null;
+    let tiktokLoginBusy = false;
+    let tiktokCaptureHost = null;
+    let tiktokLoginHost = null;
     let douyinLoginHint = '';
 
     const summaryCache = new Map();
@@ -383,7 +389,9 @@ export const livePage = {
 
     async function refreshTikTokStatus() {
       try {
-        tiktokStatus = await api.get('/api/tiktok/status');
+        const next = await api.get('/api/tiktok/status');
+        tiktokStatus = next;
+        if (next?.login) tiktokLogin = next.login;
       } catch {
         /* keep the previous snapshot */
       }
@@ -460,6 +468,7 @@ export const livePage = {
           refs.session.lastLiveSeenAt = selected.lastLiveSeenAt ?? refs.session.lastLiveSeenAt;
         }
         updateHeroConnection(selected);
+        updateTikTokCaptureHost();
       }
       return payload;
     }
@@ -526,6 +535,7 @@ export const livePage = {
       const detail = recording.connection?.detail ?? {};
       const retrying = state === 'reconnecting' || (state === 'failed' && detail.retrying);
       if (state === 'reconnecting') host.append(chip(t('live.tabs.stateReconnecting'), 'warn'));
+  if (state === 'rate_limited') host.append(chip(t('live.tabs.stateRateLimited'), 'warn'));
       if (state === 'failed' && detail.retrying) host.append(chip(t('live.tabs.stateRecovering'), 'warn'));
       if (retrying) {
         const reason = videoReasonText(detail.lastFailureCode ?? detail.errorCode ?? detail.code);
@@ -544,8 +554,23 @@ export const livePage = {
       if (Number(detail.gapSuspected) > 0) {
         host.append(chip(t('live.source.youtubePossibleGaps', {n: detail.gapSuspected}), 'neutral'));
       }
-      if (Number(detail.attempt) > 1 && state === 'reconnecting') {
+      if (Number(detail.attempt) > 1 && (state === 'reconnecting' || state === 'rate_limited')) {
         host.append(chip(t('live.tabs.retryAttempt', {n: detail.attempt}), 'neutral'));
+      }
+      if (recording.platform === 'tiktok') {
+        const tk = recording.capture ?? detail;
+        if (tk.lastEventAt) {
+          host.append(chip(t('live.source.tiktokCaptureLastMessage', {time: formatTime(tk.lastEventAt, ctx.locale)}), 'neutral'));
+        } else if (state === 'connected') {
+          host.append(chip(t('live.source.tiktokCaptureNoMessage'), 'neutral'));
+        }
+        if (Number(tk.reconnectAttempts) > 0) {
+          host.append(chip(t('live.source.tiktokCaptureReconnects', {n: tk.reconnectAttempts}), 'warn'));
+        }
+        if (tk.lastFailure?.code) {
+          host.append(chip(t('live.source.tiktokCaptureLastFailure', {reason: tiktokReasonText(tk.lastFailure.code)}), 'warn'));
+        }
+        if (tk.possibleGap) host.append(chip(t('live.source.tiktokCapturePossibleGapShort'), 'warn'));
       }
       if (retrying) {
         host.append(el('div', {
@@ -561,7 +586,7 @@ export const livePage = {
       const state = recording?.connection?.state ?? 'connected';
       const meta = connectionStateMeta(recording, t);
       const session = refs.session ?? null;
-      const transportTrouble = ['connecting', 'reconnecting', 'auth_required', 'failed'].includes(state);
+      const transportTrouble = ['connecting', 'reconnecting', 'rate_limited', 'auth_required', 'failed'].includes(state);
       if (session && !transportTrouble) {
         // Capture state and platform state are separate. The capture chip turns
         // non-green as soon as the platform reports an end, even while the last
@@ -1487,6 +1512,8 @@ export const livePage = {
       loginHintHost = null;
       qrCanvasRef = null;
       qrWrapRef = null;
+      tiktokCaptureHost = null;
+      tiktokLoginHost = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
           el('div', {className: 'card-title', text: t('live.source.title')}),
@@ -1929,8 +1956,221 @@ export const livePage = {
       return t('live.source.tiktokTransportAuto');
     }
 
+    function tiktokLoginStateMeta(login) {
+      const state = login?.state ?? 'idle';
+      if (state === 'logged_in') return {key: 'live.source.tiktokLoginStateLoggedIn', tone: 'accent'};
+      if (state === 'opening') return {key: 'live.source.tiktokLoginStateOpening', tone: 'warn'};
+      if (state === 'waiting') return {key: 'live.source.tiktokLoginStateWaiting', tone: 'warn'};
+      if (state === 'verifying') return {key: 'live.source.tiktokLoginStateVerifying', tone: 'warn'};
+      if (state === 'expired') return {key: 'live.source.tiktokLoginStateExpired', tone: 'danger'};
+      if (state === 'refused') return {key: 'live.source.tiktokLoginStateRefused', tone: 'danger'};
+      if (state === 'unavailable') return {key: 'live.source.tiktokLoginStateUnavailable', tone: 'danger'};
+      if (state === 'error') return {key: 'live.source.tiktokLoginStateError', tone: 'danger'};
+      return {key: 'live.source.tiktokLoginStateIdle', tone: 'neutral'};
+    }
+
+    function tiktokLoginStateText(login) {
+      const meta = tiktokLoginStateMeta(login);
+      let text = t(meta.key);
+      if (login?.state === 'logged_in' && login.verifiedAt) {
+        text += ` · ${t('live.source.tiktokLoginVerifiedAt', {time: formatDateTime(login.verifiedAt, ctx.locale)})}`;
+      }
+      return text;
+    }
+
+    function tiktokReasonText(code) {
+      const map = {
+        TIKTOK_RATE_LIMITED: 'live.source.tiktokReasonRateLimit',
+        TIKTOK_NETWORK: 'live.source.tiktokReasonNetwork',
+        TIKTOK_PROTOCOL: 'live.source.tiktokReasonProtocol',
+        TIKTOK_CONNECT_TIMEOUT: 'live.source.tiktokReasonTimeout',
+        TIKTOK_SIGNER_UNAVAILABLE: 'live.source.tiktokReasonSignerUnavailable',
+        TIKTOK_SIGNER_PREMIUM_REQUIRED: 'live.source.tiktokReasonSignerPremium',
+        TIKTOK_LOGIN_REQUIRED: 'live.source.tiktokReasonLoginRequired',
+        TIKTOK_BROWSER_UNAVAILABLE: 'live.source.tiktokReasonBrowserUnavailable',
+        TIKTOK_BROWSER_FAILED: 'live.source.tiktokReasonBrowserFailed',
+        watchdog: 'live.source.tiktokReasonWatchdog'
+      };
+      return map[code] ? t(map[code]) : t('live.source.tiktokReasonUnknown');
+    }
+
+    function tiktokCaptureMeta(capture) {
+      const category = capture?.category;
+      if (category === 'normal') return {key: 'live.source.tiktokCaptureStateConnected', tone: 'live'};
+      if (category === 'waiting_events') return {key: 'live.source.tiktokCaptureStateWaitingEvents', tone: 'neutral'};
+      if (category === 'connecting') return {key: 'live.source.tiktokCaptureStateConnecting', tone: 'neutral'};
+      if (category === 'temporary') return {key: 'live.source.tiktokCaptureStateInterrupted', tone: 'warn'};
+      if (category === 'auto_reconnect') return {key: 'live.source.tiktokCaptureStateReconnecting', tone: 'warn'};
+      if (category === 'rate_limit') return {key: 'live.source.tiktokCaptureStateRateLimited', tone: 'warn'};
+      if (category === 'user_action') return {key: 'live.source.tiktokCaptureStateNeedsAction', tone: 'danger'};
+      if (category === 'ended') return {key: 'live.source.tiktokCaptureStateEnded', tone: 'neutral'};
+      if (category === 'stopped') return {key: 'live.source.tiktokCaptureStateStopped', tone: 'neutral'};
+      if (category === 'failed') return {key: 'live.source.tiktokCaptureStateFailed', tone: 'warn'};
+      return {key: 'live.source.tiktokCaptureStateIdle', tone: 'neutral'};
+    }
+
+    function tiktokLoginCaptureText(capture) {
+      if (!capture) return '';
+      if (capture.state === 'events_received') return t('live.source.tiktokLoginCaptureEvents');
+      if (capture.state === 'connected_no_events') return t('live.source.tiktokLoginCaptureNoEvents');
+      if (capture.state === 'login_required') return t('live.source.tiktokLoginCaptureLoginRequired');
+      if (capture.state === 'platform_refused') return t('live.source.tiktokLoginCaptureRefused');
+      return t('live.source.tiktokLoginCaptureUnknown');
+    }
+
+    function currentTikTokCapture() {
+      const selected = recordings.find((recording) => recording.sessionId === selectedId);
+      if (selected?.platform === 'tiktok' && selected.capture) return selected.capture;
+      return tiktokStatus?.capture ?? null;
+    }
+
+    function updateTikTokCaptureHost() {
+      if (!tiktokCaptureHost || destroyed) return;
+      clear(tiktokCaptureHost);
+      tiktokCaptureHost.append(tiktokCaptureCard(currentTikTokCapture()));
+    }
+
+    function updateTikTokLoginHost() {
+      if (!tiktokLoginHost || destroyed) return;
+      clear(tiktokLoginHost);
+      const status = tiktokStatus;
+      const requestedBrowser = status?.transport?.requested === 'browser' || status?.transport?.active === 'browser';
+      if (requestedBrowser) tiktokLoginHost.append(tiktokLoginCard(tiktokLogin ?? status?.login ?? null));
+    }
+
+    function tiktokCaptureCard(capture) {
+      const card = el('section', {className: 'card card--padded tiktok-capture-card'});
+      const meta = tiktokCaptureMeta(capture);
+      const head = el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.tiktokCaptureTitle')}),
+        chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'}));
+      card.append(head);
+      if (!capture) {
+        card.append(el('p', {className: 'source-note', text: t('live.source.tiktokCaptureIdle')}));
+        return card;
+      }
+      const lines = [];
+      lines.push(capture.lastEventAt
+        ? t('live.source.tiktokCaptureLastMessage', {time: formatDateTime(capture.lastEventAt, ctx.locale)})
+        : t('live.source.tiktokCaptureNoMessage'));
+      if (Number(capture.reconnectAttempts) > 0) {
+        lines.push(t('live.source.tiktokCaptureReconnects', {n: formatInteger(capture.reconnectAttempts, ctx.locale)}));
+      }
+      if (capture.lastFailure?.code) {
+        lines.push(t('live.source.tiktokCaptureLastFailure', {reason: tiktokReasonText(capture.lastFailure.code)}));
+      }
+      if (capture.category === 'rate_limit' && capture.rateLimit) {
+        const limit = capture.rateLimit.limit ?? '—';
+        const remaining = capture.rateLimit.remaining ?? 0;
+        const resetAt = capture.rateLimit.resetAt ?? capture.nextRetryAt;
+        lines.push(t('live.source.tiktokCaptureRateLimit', {
+          limit: formatInteger(limit, ctx.locale),
+          remaining: formatInteger(remaining, ctx.locale),
+          time: resetAt ? formatTime(resetAt, ctx.locale) : '—'
+        }));
+      } else if (capture.nextRetryAt && ['temporary', 'auto_reconnect', 'failed'].includes(capture.category)) {
+        lines.push(t('live.source.tiktokCaptureNextRetry', {time: formatTime(capture.nextRetryAt, ctx.locale)}));
+      }
+      if (capture.possibleGap) lines.push(t('live.source.tiktokCapturePossibleGap'));
+      if (capture.category === 'rate_limit') lines.push(t('live.source.tiktokCaptureRateLimitHint'));
+      if (capture.category === 'user_action') lines.push(t('live.source.tiktokCaptureActionHint'));
+      if (capture.category === 'waiting_events') lines.push(t('live.source.tiktokCaptureWaitHint'));
+      for (const line of lines) card.append(el('p', {className: 'source-note', text: line}));
+
+      const details = el('details', {className: 'auto-details'});
+      details.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
+      const counters = capture.counters ?? {};
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokCaptureCounters', {
+        messages: formatInteger(counters.messages ?? 0, ctx.locale),
+        chats: formatInteger(counters.chats ?? 0, ctx.locale),
+        duplicates: formatInteger(counters.duplicates ?? 0, ctx.locale)
+      })}));
+      if (capture.rateLimit) {
+        details.append(el('p', {className: 'small', text: t('live.source.tiktokCaptureBudgetDetail', {
+          limit: formatInteger(capture.rateLimit.limit ?? 0, ctx.locale),
+          remaining: formatInteger(capture.rateLimit.remaining ?? 0, ctx.locale),
+          requests: formatInteger(capture.rateLimit.requests ?? 0, ctx.locale)
+        })}));
+      }
+      if (capture.gap) {
+        details.append(el('p', {className: 'small', text: t('live.source.tiktokCaptureGapDetail', {
+          from: formatDateTime(capture.gap.startedAt, ctx.locale),
+          to: formatDateTime(capture.gap.endedAt, ctx.locale),
+          duration: formatDuration(capture.gap.durationMs, t),
+          last: capture.gap.lastEventAt ? formatDateTime(capture.gap.lastEventAt, ctx.locale) : t('live.source.tiktokCaptureNoMessage')
+        })}));
+      }
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokSignerBudgetNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokCaptureNotCompleteNote')}));
+      card.append(details);
+      return card;
+    }
+
+    function tiktokLoginCard(login) {
+      const card = el('section', {className: 'card card--padded tiktok-login-card'});
+      const meta = tiktokLoginStateMeta(login);
+      card.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.tiktokLoginTitle')}),
+        chip(t(meta.key), meta.tone, {dot: meta.tone === 'warn'})));
+      card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginHint')}));
+      if (login?.browserOpen) card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginBrowserOpen')}));
+      else if (login?.state === 'logged_in') card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginBrowserClosed')}));
+      if (login?.error?.code) {
+        card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginError', {
+          reason: login.error.reason ?? login.error.code
+        })}));
+      }
+      if (login?.capture) {
+        card.append(el('div', {className: 'source-status'},
+          el('span', {className: 'label', text: t('live.source.tiktokLoginCaptureTitle')}),
+          chip(tiktokLoginCaptureText(login.capture), login.capture.state === 'events_received' ? 'accent' : 'neutral')));
+      }
+      const actions = el('div', {className: 'hero-actions', style: {marginTop: '12px', flexWrap: 'wrap'}});
+      const loggedIn = login?.state === 'logged_in';
+      const active = ['opening', 'waiting', 'verifying'].includes(login?.state);
+      if (!loggedIn && !active) {
+        actions.append(el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('live.source.tiktokLoginOpen'),
+          onClick: (event) => startTikTokLogin(event.currentTarget)
+        }));
+      }
+      if (loggedIn) {
+        actions.append(el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: t('live.source.tiktokLoginVerify'),
+          onClick: (event) => verifyTikTokLogin(event.currentTarget)
+        }));
+        actions.append(el('button', {
+          className: 'button button--ghost button--small',
+          type: 'button',
+          text: t('live.source.tiktokLoginLogout'),
+          onClick: (event) => logoutTikTokLogin(event.currentTarget)
+        }));
+      }
+      if (active || login?.browserOpen) {
+        actions.append(el('button', {
+          className: 'button button--secondary button--small',
+          type: 'button',
+          text: t('live.source.tiktokLoginCancel'),
+          onClick: () => cancelTikTokLogin()
+        }));
+      }
+      card.append(actions);
+      card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginVerifyHint')}));
+      const security = el('details', {className: 'auto-details'});
+      security.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
+      security.append(el('p', {className: 'small', text: t('live.source.tiktokLoginSecurityNote')}));
+      card.append(security);
+      return card;
+    }
+
     function buildTikTokPanel() {
       const panel = el('div', {className: 'source-panel'});
+      tiktokCaptureHost = null;
+      tiktokLoginHost = null;
       panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIntro')}));
 
       const status = tiktokStatus;
@@ -1939,6 +2179,7 @@ export const livePage = {
           t('live.source.tiktokUnavailable')));
         return panel;
       }
+      if (!tiktokLogin) tiktokLogin = status.login ?? null;
 
       const transportRow = el('div', {className: 'source-row', style: {marginTop: '12px'}},
         el('label', {className: 'field', style: {flex: '1 1 280px'}},
@@ -1949,8 +2190,22 @@ export const livePage = {
 
       panel.append(transportRow);
       panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokTransportHint')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokSignerNote')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokBrowserNote')}));
+
+      const requestedBrowser = status.transport?.requested === 'browser' || status.transport?.active === 'browser';
+      if (requestedBrowser) {
+        tiktokLoginHost = el('div');
+        tiktokLoginHost.append(tiktokLoginCard(tiktokLogin ?? status.login ?? null));
+        panel.append(tiktokLoginHost);
+        if (['opening', 'waiting', 'verifying'].includes((tiktokLogin ?? status.login)?.state) && !tiktokLoginTimer) {
+          startTikTokLoginPolling();
+        }
+      } else {
+        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokBrowserLoginHint')}));
+      }
+
+      tiktokCaptureHost = el('div');
+      tiktokCaptureHost.append(tiktokCaptureCard(currentTikTokCapture()));
+      panel.append(tiktokCaptureHost);
 
       panel.append(autoMonitorToggle('tiktok', tiktokAutoMonitor, (checked) => {
         tiktokAutoMonitor = checked;
@@ -1960,8 +2215,6 @@ export const livePage = {
       if (tiktokAutoMonitor) {
         panel.append(buildAutoMonitorSection('tiktok'));
         panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
-        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIdentityNote')}));
-        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokGiftNote')}));
         return panel;
       }
 
@@ -1989,14 +2242,18 @@ export const livePage = {
 
       if (checkedTikTok) panel.append(buildTikTokRoomMeta(checkedTikTok));
 
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIdentityNote')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokGiftNote')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokCapabilityNote')}));
-      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokNoPaidPlan')}));
-
+      const details = el('details', {className: 'auto-details', style: {marginTop: '12px'}});
+      details.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokMetadataNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokIdentityNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokGiftNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokCapabilityNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokNoPaidPlan')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokSignerNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokBrowserNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.tiktokTransportWhyManual')}));
       if (status.policy) {
-        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+        details.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
           el('div', {className: 'field', style: {flex: '1 1 320px'}},
             el('span', {className: 'label', text: t('live.source.tiktokPolicyTitle')}),
             el('div', {className: 'source-status', text: t('live.source.tiktokPolicyBody', {days: status.policy.days})})),
@@ -2007,7 +2264,7 @@ export const livePage = {
             onClick: (event) => applyTikTokRetention(event.currentTarget)
           })));
       }
-
+      panel.append(details);
       return panel;
     }
 
@@ -2031,6 +2288,7 @@ export const livePage = {
       try {
         const payload = await api.post('/api/tiktok/transport', {transport});
         tiktokStatus = payload.tiktok ?? tiktokStatus;
+        tiktokLogin = tiktokStatus?.login ?? tiktokLogin;
         renderSource();
         ctx.toast(t('live.source.tiktokTransportSaved'));
       } catch (error) {
@@ -2069,6 +2327,131 @@ export const livePage = {
         })));
       if (!canStart) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
       return meta;
+    }
+
+    function tiktokInputValue() {
+      return String(refs.tiktokInput?.value ?? checkedTikTok?.input ?? '').trim();
+    }
+
+    function stopTikTokLoginPolling() {
+      if (tiktokLoginTimer) {
+        clearInterval(tiktokLoginTimer);
+        tiktokLoginTimer = null;
+      }
+    }
+
+    function startTikTokLoginPolling() {
+      stopTikTokLoginPolling();
+      tiktokLoginTimer = window.setInterval(async () => {
+        if (destroyed || sourceMode !== 'tiktok') {
+          stopTikTokLoginPolling();
+          return;
+        }
+        try {
+          const payload = await api.get('/api/tiktok/login/status');
+          tiktokLogin = payload.login ?? tiktokLogin;
+          if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+          updateTikTokLoginHost();
+          if (!['opening', 'waiting', 'verifying'].includes(tiktokLogin?.state)) {
+            stopTikTokLoginPolling();
+            refreshTikTokStatus().then(() => {
+              if (!destroyed) {
+                updateTikTokLoginHost();
+                updateTikTokCaptureHost();
+              }
+            }).catch(() => {});
+          }
+        } catch {
+          /* transient: keep polling */
+        }
+      }, 2500);
+    }
+
+    async function startTikTokLogin(button) {
+      if (tiktokLoginBusy) return;
+      tiktokLoginBusy = true;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokLoginOpening');
+      try {
+        const payload = await api.post('/api/tiktok/login/start', {url: tiktokInputValue() || null});
+        tiktokLogin = payload.login ?? tiktokLogin;
+        if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        updateTikTokLoginHost();
+        startTikTokLoginPolling();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      } finally {
+        tiktokLoginBusy = false;
+      }
+    }
+
+    async function verifyTikTokLogin(button) {
+      if (tiktokLoginBusy) return;
+      const url = tiktokInputValue();
+      if (!url) {
+        ctx.toast(t('errors.tiktokLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      tiktokLoginBusy = true;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokLoginVerifying');
+      try {
+        const payload = await api.post('/api/tiktok/login/verify', {url});
+        tiktokLogin = payload.login ?? tiktokLogin;
+        if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        updateTikTokLoginHost();
+        if (tiktokLogin?.capture?.state === 'events_received') {
+          ctx.toast(t('live.source.tiktokLoginCaptureEvents'));
+        } else if (tiktokLogin?.capture?.state === 'connected_no_events') {
+          ctx.toast(t('live.source.tiktokLoginCaptureNoEvents'), {tone: 'warn'});
+        } else if (tiktokLogin?.capture?.state === 'platform_refused') {
+          ctx.toast(t('live.source.tiktokLoginCaptureRefused'), {tone: 'error'});
+        } else {
+          ctx.toast(t('live.source.tiktokLoginCaptureUnknown'), {tone: 'warn'});
+        }
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      } finally {
+        tiktokLoginBusy = false;
+        button.disabled = false;
+        button.textContent = original;
+        refreshTikTokStatus().then(() => {
+          if (!destroyed) {
+            updateTikTokLoginHost();
+            updateTikTokCaptureHost();
+          }
+        }).catch(() => {});
+      }
+    }
+
+    async function cancelTikTokLogin() {
+      stopTikTokLoginPolling();
+      try {
+        const payload = await api.post('/api/tiktok/login/cancel', {});
+        tiktokLogin = payload.login ?? tiktokLogin;
+        if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        updateTikTokLoginHost();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      }
+    }
+
+    async function logoutTikTokLogin(button) {
+      button.disabled = true;
+      stopTikTokLoginPolling();
+      try {
+        const payload = await api.post('/api/tiktok/login/logout', {});
+        tiktokLogin = payload.login ?? tiktokLogin;
+        if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        updateTikTokLoginHost();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
     }
 
     async function checkTikTok(button) {
@@ -3135,6 +3518,7 @@ export const livePage = {
       clearInterval(elapsedTimer);
       clearInterval(loginTimer);
       clearInterval(douyinBrowserTimer);
+      stopTikTokLoginPolling();
       clearInterval(pollTimer);
       clearTimeout(summaryRefreshTimer);
       clearTimeout(leaderboardRefreshTimer);

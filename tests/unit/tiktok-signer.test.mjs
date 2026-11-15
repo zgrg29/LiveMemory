@@ -100,6 +100,33 @@ test('an invalid room id is rejected before any network call', async () => {
   assert.equal(called, false);
 });
 
+test('the anonymous tier is paced for its hidden 30/hour ceiling, not 15 s', async () => {
+  let calls = 0;
+  const signer = new TikTokSigner({
+    fetchImpl: async () => {
+      calls += 1;
+      return protobufResponse(fetchResult(), {
+        headers: {
+          'ratelimit-limit': '1500',
+          'ratelimit-policy': '1500;w=60',
+          'ratelimit-remaining': '1499',
+          'ratelimit-reset': '60'
+        }
+      });
+    }
+  });
+  await signer.connect({roomId: '7700000000000000001'});
+  const availability = signer.availability();
+  assert.equal(availability.hourlyLimit, 30);
+  assert.ok(availability.intervalMs >= 120000, `anonymous interval ${availability.intervalMs}`);
+  await assert.rejects(() => signer.connect({roomId: '7700000000000000001'}), (error) => {
+    assert.equal(error.code, 'TIKTOK_RATE_LIMITED');
+    assert.match(String(error.details?.reason ?? ''), /local_budget/);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
 test('a custom signer base URL is honored (self-hosted compatible provider)', async () => {
   let seen = null;
   const signer = new TikTokSigner({
@@ -112,3 +139,89 @@ test('a custom signer base URL is honored (self-hosted compatible provider)', as
   await signer.connect({roomId: '7700000000000000001'});
   assert.ok(seen.startsWith('https://sign.example.test/webcast/rooms/'));
 });
+
+test('the advertised hourly budget is observed and a second request is paced', async () => {
+  let calls = 0;
+  const signer = new TikTokSigner({
+    budgetOptions: {minIntervalMs: 1000},
+    fetchImpl: async () => {
+      calls += 1;
+      return protobufResponse(fetchResult(), {
+        headers: {
+          'ratelimit-limit': '30',
+          'ratelimit-policy': '30;w=3600',
+          'ratelimit-remaining': '29',
+          'ratelimit-reset': '3600'
+        }
+      });
+    }
+  });
+  await signer.connect({roomId: '7700000000000000001'});
+  const availability = signer.availability();
+  assert.equal(availability.limit, 30);
+  assert.equal(availability.remaining, 29);
+  assert.ok(availability.intervalMs >= 100000, `interval ${availability.intervalMs}`);
+  await assert.rejects(() => signer.connect({roomId: '7700000000000000001'}), (error) => {
+    assert.equal(error.code, 'TIKTOK_RATE_LIMITED');
+    assert.match(String(error.details?.reason ?? ''), /local_budget/);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test('HTTP 429 keeps the full hourly retry-after instead of shortening it', async () => {
+  const signer = new TikTokSigner({
+    fetchImpl: async () => protobufResponse(Buffer.from('{"code":429,"message":"rate limit"}'), {
+      status: 429,
+      headers: {
+        'ratelimit-limit': '30',
+        'ratelimit-policy': '30;w=3600',
+        'ratelimit-remaining': '0',
+        'ratelimit-reset': '2708',
+        'retry-after': '2708'
+      }
+    })
+  });
+  await assert.rejects(() => signer.connect({roomId: '7700000000000000001'}), (error) => {
+    assert.equal(error.code, 'TIKTOK_RATE_LIMITED');
+    assert.ok(error.retryAfterMs >= 2_700_000, `retryAfterMs ${error.retryAfterMs}`);
+    return true;
+  });
+  const availability = signer.availability();
+  assert.equal(availability.remaining, 0);
+  assert.ok(availability.blockedUntil > Date.now() + 2_600_000);
+});
+
+test('a 403 that is actually a rate-limit response is not reported as premium', async () => {
+  const signer = new TikTokSigner({
+    fetchImpl: async () => protobufResponse(Buffer.from('{"code":429,"message":"You have reached the rate limit","limit_label":"rate_limit_account_hour"}'), {
+      status: 403,
+      headers: {
+        'ratelimit-limit': '30',
+        'ratelimit-policy': '30;w=3600',
+        'ratelimit-remaining': '0',
+        'ratelimit-reset': '120',
+        'retry-after': '120'
+      }
+    })
+  });
+  await assert.rejects(() => signer.connect({roomId: '7700000000000000001'}), (error) => {
+    assert.equal(error.code, 'TIKTOK_RATE_LIMITED');
+    assert.equal(error.messageKey, 'errors.tiktokRateLimit');
+    return true;
+  });
+});
+
+test('a 200 JSON rate-limit body is classified as rate limit, not a protocol bug', async () => {
+  const signer = new TikTokSigner({
+    fetchImpl: async () => protobufResponse(Buffer.from('{"code":429,"message":"rate limit"}'), {
+      status: 200,
+      headers: {'ratelimit-limit': '30', 'ratelimit-policy': '30;w=3600', 'ratelimit-remaining': '0', 'retry-after': '60'}
+    })
+  });
+  await assert.rejects(() => signer.connect({roomId: '7700000000000000001'}), (error) => {
+    assert.equal(error.code, 'TIKTOK_RATE_LIMITED');
+    return true;
+  });
+});
+

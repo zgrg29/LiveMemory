@@ -6,6 +6,7 @@ import {retentionStatus, runRetention} from '../../storage/retention.mjs';
 import {TikTokClient} from './client.mjs';
 import {TikTokSigner} from './signer.mjs';
 import {TikTokAdapter} from './adapter.mjs';
+import {TikTokBrowserLogin, TIKTOK_LOGIN_STATES} from './browser-login.mjs';
 import {parseTikTokInput} from './link.mjs';
 import {TIKTOK_ERRORS, TikTokError} from './errors.mjs';
 import {TIKTOK_TRANSPORTS, normalizeTikTokTransport} from './transports.mjs';
@@ -90,6 +91,8 @@ export class TikTokService {
     client = null,
     signer = null,
     browserRelay = null,
+    browserLogin = null,
+    dataDir = null,
     adapterOptions = null
   } = {}) {
     this.sessionManager = sessionManager;
@@ -101,12 +104,24 @@ export class TikTokService {
     this.client = client ?? new TikTokClient({fetchImpl, now});
     this.signer = signer ?? new TikTokSigner({fetchImpl, now});
     this.browserRelay = browserRelay;
+    this.browserLogin = browserLogin ?? (dataDir
+      ? new TikTokBrowserLogin({dataDir, logger, now, fetchImpl})
+      : null);
     this.adapterOptions = adapterOptions;
     this.lastEnd = null;
   }
 
   #recordings() {
     return this.sessionManager.status().recordings.filter((recording) => recording.platform === 'tiktok');
+  }
+
+  #recordingCapture(recording) {
+    try {
+      const active = this.sessionManager.getRecording?.(recording.sessionId);
+      return active?.adapter?.snapshot?.() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   #retentionDays() {
@@ -124,17 +139,47 @@ export class TikTokService {
       : requested === 'browser'
         ? (browserAvailable ? 'browser' : null)
         : (signerAvailable ? 'signer' : (browserAvailable ? 'browser' : null));
-    return {requested, active, signerAvailable, browserAvailable};
+    const login = this.browserLogin?.status?.() ?? null;
+    return {
+      requested,
+      active,
+      signerAvailable,
+      browserAvailable,
+      browserLoginState: login?.state ?? 'unavailable',
+      browserReady: Boolean(login && login.state === TIKTOK_LOGIN_STATES.LOGGED_IN)
+    };
   }
 
   status() {
-    const recordings = this.#recordings();
+    const raw = this.#recordings();
+    const recordings = raw.map((recording) => {
+      const snapshot = this.#recordingCapture(recording);
+      return {
+        ...recording,
+        capture: snapshot?.capture ?? null,
+        tiktok: snapshot ? {
+          counters: snapshot.counters ?? null,
+          lastEventAt: snapshot.lastEventAt ?? null,
+          gaps: snapshot.gaps ?? []
+        } : null
+      };
+    });
     const latest = recordings.at(-1) ?? null;
     const transport = this.transport();
+    const login = this.browserLogin?.status?.() ?? {
+      state: 'unavailable',
+      supported: false,
+      browserOpen: false,
+      error: null,
+      capture: null
+    };
+    const rateLimit = this.signer?.availability?.() ?? null;
     return {
       available: true,
       mode: transport.active ?? 'unavailable',
       transport,
+      login,
+      rateLimit,
       connection: latest
         ? {
           state: latest.connection.state,
@@ -142,10 +187,11 @@ export class TikTokService {
           uniqueId: latest.meta?.uniqueId ?? latest.platformRoomId,
           roomId: latest.platformRoomId,
           title: latest.meta?.room?.title ?? latest.roomTitle,
-          viewers: latest.connection.detail?.viewerCount ?? null,
+          viewers: latest.capture?.viewerCount ?? latest.connection.detail?.viewerCount ?? null,
           lastEnd: this.lastEnd
         }
         : {state: 'idle', detail: null, uniqueId: null, roomId: null, title: null, viewers: null, lastEnd: this.lastEnd},
+      capture: latest?.capture ?? null,
       recordings,
       recording: latest?.connection.state ?? 'idle',
       session: latest
@@ -168,6 +214,7 @@ export class TikTokService {
       capabilities: {
         requiresApiKey: false,
         requiresLogin: false,
+        browserRequiresLogin: true,
         requiresPaidPlan: false,
         requiresCookie: false,
         liveOnly: true,
@@ -208,13 +255,20 @@ export class TikTokService {
           httpStatus: 503
         });
       }
+      const login = this.browserLogin?.status?.() ?? null;
+      if (this.browserLogin && login?.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
+          messageKey: 'errors.tiktokLoginRequired',
+          httpStatus: 403,
+          details: {reason: 'login_required', loginState: login?.state ?? 'unavailable'}
+        });
+      }
       adapter = this.browserRelay.createAdapter({
         uniqueId: room.uniqueId,
         roomId: room.roomId,
-        client: this.client,
+        liveUrl: room.liveUrl,
         logger: this.logger,
-        now: this.now,
-        ...(this.adapterOptions ? this.adapterOptions : {})
+        now: this.now
       });
     } else if (transport.active === 'signer') {
       adapter = new TikTokAdapter({
@@ -281,7 +335,7 @@ export class TikTokService {
     return {
       session: result.session,
       room: roomView(room, input),
-      connection: adapter.snapshot()
+      connection: adapter.capture?.() ?? adapter.snapshot()
     };
   }
 
@@ -352,11 +406,68 @@ export class TikTokService {
     };
   }
 
+  /** Login lifecycle for the browser transport. */
+  loginStatus() {
+    if (!this.browserLogin) {
+      return {
+        state: 'unavailable',
+        supported: false,
+        browserOpen: false,
+        error: {code: TIKTOK_ERRORS.BROWSER_UNAVAILABLE, reason: 'login_not_configured'},
+        capture: null
+      };
+    }
+    return this.browserLogin.status();
+  }
+
+  async loginStart({input = null, uniqueId = null} = {}) {
+    if (!this.browserLogin) {
+      throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
+        messageKey: 'errors.tiktokBrowserUnavailable',
+        httpStatus: 503
+      });
+    }
+    let handle = uniqueId ? String(uniqueId).replace(/^@/, '') : null;
+    if (input) handle = parseTikTokInput(input).uniqueId;
+    return this.browserLogin.start({uniqueId: handle});
+  }
+
+  async loginVerify({input = null, uniqueId = null, timeoutMs = null} = {}) {
+    if (!this.browserLogin) {
+      throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
+        messageKey: 'errors.tiktokBrowserUnavailable',
+        httpStatus: 503
+      });
+    }
+    let handle = uniqueId ? String(uniqueId).replace(/^@/, '') : null;
+    if (input) handle = parseTikTokInput(input).uniqueId;
+    return this.browserLogin.verify({
+      uniqueId: handle,
+      ...(Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0 ? {timeoutMs: Number(timeoutMs)} : {})
+    });
+  }
+
+  async loginCancel() {
+    if (!this.browserLogin) return this.loginStatus();
+    return this.browserLogin.cancel();
+  }
+
+  async loginLogout() {
+    if (!this.browserLogin) return this.loginStatus();
+    return this.browserLogin.logout();
+  }
+
   async shutdown() {
     try {
       await this.browserRelay?.stop?.();
     } catch (error) {
       this.logger?.warn({event: 'tiktok.relay.shutdown.failed', code: error?.code ?? 'unknown'});
+    }
+    try {
+      if (this.browserLogin) await this.browserLogin.shutdown();
+      else await this.browserRelay?.closeBrowser?.();
+    } catch (error) {
+      this.logger?.warn({event: 'tiktok.login.shutdown.failed', code: error?.code ?? 'unknown'});
     }
   }
 }

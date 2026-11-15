@@ -60,12 +60,17 @@ class FakeSigner {
   }
 }
 
-function harness({queue} = {}) {
+function harness({queue, settings = {}, browserLogin = null, browserRelay = null} = {}) {
   const db = openDatabase({memory: true});
   migrate(db, {now: T0});
   let clock = T0;
   const now = () => clock;
-  const sessionManager = new SessionManager({db, settings: {get: () => ({storageMode: 'compact'})}, now});
+  const settingsStore = {get: () => ({storageMode: 'compact', ...settings})};
+  const sessionManager = new SessionManager({
+    db,
+    settings: settingsStore,
+    now
+  });
   const client = {
     async resolveRoom(uniqueId) {
       const id = typeof uniqueId === 'string' ? uniqueId : uniqueId?.uniqueId;
@@ -97,8 +102,11 @@ function harness({queue} = {}) {
   const service = new TikTokService({
     sessionManager,
     db,
+    settings: settingsStore,
     client,
     signer,
+    browserLogin,
+    browserRelay,
     now,
     adapterOptions: {
       pollIntervalMs: 10,
@@ -130,6 +138,14 @@ test('a TikTok live room records chat, stable viewer identity and gift display v
 
     await waitFor(() => Number(getSession(db, sessionId).message_count) >= 1);
     await waitFor(() => db.prepare('SELECT COUNT(*) AS c FROM events WHERE session_id = ?').get(sessionId).c >= 2);
+
+    const liveStatus = service.status();
+    const liveRecording = liveStatus.recordings.find((recording) => recording.sessionId === sessionId);
+    assert.ok(liveRecording?.capture, 'the live status exposes the adapter capture state');
+    assert.ok(liveRecording.capture.lastEventAt > 0, 'last real event time is exposed');
+    assert.equal(liveRecording.capture.category, 'normal');
+    assert.ok(liveStatus.capture, 'the latest capture is exposed at the top level');
+    assert.ok(Object.hasOwn(liveStatus, 'rateLimit'), 'the shared signer budget field is exposed');
 
     const rows = db.prepare('SELECT * FROM events WHERE session_id = ? ORDER BY id').all(sessionId);
     assert.equal(rows.length, 2, 'the replayed message id was not inserted twice');
@@ -224,6 +240,82 @@ test('status reports the transport, capability boundaries and retention policy',
     assert.equal(status.policy.maxDays, 30);
     assert.equal(status.policy.policy, 'tiktok-raw-content');
     assert.equal(typeof status.policy.pendingPurge, 'number');
+    assert.equal(status.login.state, 'unavailable');
+    assert.ok(status.rateLimit === null || typeof status.rateLimit === 'object');
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+    db.close();
+  }
+});
+
+test('browser transport requires a verified login before a session can start', async () => {
+  const login = {
+    state: 'idle',
+    status() {
+      return {
+        state: this.state,
+        supported: true,
+        browserOpen: false,
+        verifiedAt: null,
+        capture: null,
+        error: null
+      };
+    },
+    async start() {
+      this.state = 'waiting';
+      return this.status();
+    },
+    async verify() {
+      this.state = 'logged_in';
+      return this.status();
+    },
+    async cancel() {
+      this.state = 'idle';
+      return this.status();
+    },
+    async logout() {
+      this.state = 'idle';
+      return this.status();
+    },
+    async shutdown() {}
+  };
+  const adapter = {
+    state: 'connected',
+    async start({onStateChange}) {
+      onStateChange?.({adapter: 'fake', state: 'connected', detail: {category: 'normal'}});
+    },
+    async stop() {},
+    snapshot() {
+      return {state: 'connected', detail: {category: 'normal'}};
+    },
+    capture() {
+      return {category: 'normal', lastEventAt: T0, reconnectAttempts: 0};
+    }
+  };
+  const relay = {
+    async start() {},
+    createAdapter() {
+      return adapter;
+    },
+    async stop() {},
+    async closeBrowser() {}
+  };
+  const {db, sessionManager, service} = harness({
+    settings: {tiktokTransport: 'browser'},
+    browserLogin: login,
+    browserRelay: relay
+  });
+  try {
+    const status = service.status();
+    assert.equal(status.transport.active, 'browser');
+    assert.equal(status.transport.browserReady, false);
+    await assert.rejects(() => service.connect('creator'), (error) => error.code === 'TIKTOK_LOGIN_REQUIRED');
+
+    login.state = 'logged_in';
+    const started = await service.connect('creator');
+    assert.equal(started.session.platform, 'tiktok');
+    assert.equal(service.status().transport.browserReady, true);
+    await service.disconnect({sessionId: started.session.id});
   } finally {
     await sessionManager.shutdown().catch(() => {});
     db.close();

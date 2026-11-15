@@ -98,6 +98,7 @@ export async function startServer({
   tiktokClient = null,
   tiktokSigner = null,
   tiktokBrowserRelay = null,
+  tiktokBrowserLogin = null,
   tiktokAdapterOptions = null,
   tiktokFetchImpl = null,
   beginLockMove = null,
@@ -206,10 +207,12 @@ export async function startServer({
       settings: settingsStore,
       logger,
       now,
+      dataDir: paths.root,
       ...(tiktokFetchImpl ? {fetchImpl: tiktokFetchImpl} : {}),
       ...(tiktokClient ? {client: tiktokClient} : {}),
       ...(tiktokSigner ? {signer: tiktokSigner} : {}),
       browserRelay: tiktokRelay,
+      ...(tiktokBrowserLogin ? {browserLogin: tiktokBrowserLogin} : {}),
       ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
     });
     const monitoring = new MonitoringManager({
