@@ -27,9 +27,9 @@
 | 修复后短测 | 24 chat / 11 viewers / 24 msgId / 0 重连 |
 | 30 分钟长测 | 146 chat / 49 位可识别观众 / 146 个不同 msgId / 146/146 UID / 63 条非 ASCII / 0 重连 / 0 限流 / 14 次请求 |
 | 浏览器登录 | 实现完成；真实浏览器/扫码 **BLOCKED**，待人工桌面验收 |
-| 自动化 | **1028 passed / 0 failed / 0 skipped（519,353.40 ms）** |
+| 自动化 | **1028 passed / 0 failed / 0 skipped（508,176.15 ms）** |
 | 真实回归 | Bilibili 4 chat/3 viewers；YouTube 51 chat/51 channel id/1 gift；Twitch EXE 20/20；抖音 EXE 25/27（2 项沙箱浏览器） |
-| 新 EXE | `842c53b4ae55` / `9effcd6c37f39a53f8431d16beabc0e39c500334` / requireAdministrator |
+| 新 EXE | `a97447fe6329` / `607e5cd2942d8af104344e6ed9c6259bb41691c3` / requireAdministrator |
 | main | **未合并、未 Push、未 Tag、未 Release** |
 
 ### 0.3 下一轮 / 人工验收必须先做
@@ -46,7 +46,7 @@
 
 - 真实 TikTok 只读公开直播间；未登录、未付费、未保存/展示正文到仓库；测试均用 `tests/.tmp` 隔离目录。
 - 真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间真实并发、干净 Windows 账户仍未验证。
-- 本轮代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）；文档/构建记录为最终 HEAD。
+- 本轮代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）、`607e5cd2942d8af104344e6ed9c6259bb41691c3`（factory reset 清理专用浏览器 profile）；文档/构建记录为最终 HEAD。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
 ## 0-A. 上一轮（TIKTOK-M1）

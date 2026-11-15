@@ -2027,7 +2027,7 @@ SQLite 6/6 external_id；自动监听目标 check → recording → 真实 chat 
 
 - `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
 - 首跑：**1027 passed / 1 failed / 0 skipped（478,698.94 ms）**；唯一失败是 `monitoring-api` 重启瞬间断言 `waiting` 实际为 `checking` 的时序问题，与 TikTok 无关。
-- 修正测试等待稳定状态后重跑：**1028 passed / 0 failed / 0 skipped（519,353.40 ms，2026-11-15）**。
+- 修正测试等待稳定状态后重跑：**1028 passed / 0 failed / 0 skipped（508,176.15 ms，2026-11-15）**。
 - 新增 25 项；上一轮 1003。
 
 ### 50.3 真实平台

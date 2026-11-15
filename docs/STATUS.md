@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（TIKTOK-M2：修复免费通道频繁重连；共享请求预算与完整 Retry-After；浏览器登录生命周期；真实 30 分钟采集 146 条；1028 测试；EXE `842c53b4ae55`）
+最后更新：2026-11-15（TIKTOK-M2：修复免费通道频繁重连；共享请求预算与完整 Retry-After；浏览器登录生命周期；真实 30 分钟采集 146 条；1028 测试；EXE `a97447fe6329`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -67,14 +67,14 @@ M1 每 15 秒轮询（240 次/小时），约 7.5 分钟用尽 30 次；适配�
 
 - 官方登录页 `https://www.tiktok.com/login` 同时提供「Use QR code」与「Use phone / email / username」；程序只打开官方页，不生成二维码、不读取密码、不绕过验证码。
 - 登录状态与采集状态分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`。
-- 单窗口：单飞行锁；重复点击只聚焦；关闭窗口后状态可恢复；采集停止只关自己的 tab；只管理 `<data>/browser/tiktok/account` 专用 profile。
+- 单窗口：单飞行锁；重复点击只聚焦；关闭窗口后状态可恢复；采集停止只关自己的 tab；只管理 `<data>/browser/tiktok/account` 专用 profile；factory reset 会关闭并删除该专用 profile。
 - **BLOCKED**：当前 DSH 沙箱从 Node 启动 Chrome/Edge 后被作业对象终止（`0x80000003`，无 DevTools 端口），无法自动验收真实登录/扫码/登录后弹幕。这不是普通 Windows 桌面 EXE 的结论；必须人工验收。
 - `scripts/verify-tiktok-browser-login.mjs` 在当前环境输出 **BLOCKED**，不伪造 PASS。
 
 ### 0.39.6 自动化测试
 
-- 新增：`tiktok-rate-budget` 5、`tiktok-reconnect` 6、`tiktok-browser-login` 8；扩充 `tiktok-signer` 5、`tiktok-session` 2、`tiktok-ui` 登录/路由/构建模块、`api-auth` 5 个登录路由 401。
-- 全量：**1028 passed / 0 failed / 0 skipped（519,353.40 ms，2026-11-15）**。首跑 1027/1 为 `monitoring-api` 重启瞬间 `checking/waiting` 时序，修正测试等待稳定状态后重跑全绿；未放宽产品断言。
+- 新增：`tiktok-rate-budget` 5、`tiktok-reconnect` 6、`tiktok-browser-login` 8；扩充 `tiktok-signer` 5、`tiktok-session` +1、`tiktok-ui` 登录/路由/构建模块、`api-auth` 5 个登录路由 401。
+- 全量：**1028 passed / 0 failed / 0 skipped（508,176.15 ms，2026-11-15）**。首跑 1027/1 为 `monitoring-api` 重启瞬间 `checking/waiting` 时序，修正测试等待稳定状态后重跑全绿；未放宽产品断言。
 - 真实回归：Bilibili 房间 `6` 15 秒 **4 条 chat / 3 位可识别观众 / 停止 ended**；YouTube `4t4AQ15yj1M` 15 秒 **51 条 chat / 51 个 channel id / 1 条 gift / 停止 ended**；Twitch `kato_junichi0817` EXE **25 条 chat / 25 个 `twitch:<id>` / 停止 ended / 20/20**；抖音 `708764876300` EXE **3 条 chat / 3 个 `douyin:<id>` / 停止 ended / 25/27**（2 项浏览器启动受沙箱限制）。
 
 ### 0.39.7 功能完成状态（必须按此口径验收）
@@ -100,10 +100,10 @@ M1 每 15 秒轮询（240 次/小时），约 7.5 分钟用尽 30 次；适配�
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| Build ID | `842c53b4ae55` |
-| source hash | `842c53b4ae55d7af560b780b3fd3aa573a2222408d98bf8ebba976ac86dbf11d` |
-| commit（构建时 HEAD） | `9effcd6c37f39a53f8431d16beabc0e39c500334` |
-| 大小 / SHA-256 | `97,831,424` bytes / `95ba213124b45333a48b7a9ac06dc978000a675431f76bcfa5088e3c42d4fcda` |
+| Build ID | `a97447fe6329` |
+| source hash | `a97447fe6329f2a2b73651e1990eabaa7d716c5620ae81b3cdebdcafe2d64fe3` |
+| commit（构建时 HEAD） | `607e5cd2942d8af104344e6ed9c6259bb41691c3` |
+| 大小 / SHA-256 | `97,831,936` bytes / `aca70bd621c096a6ec93c8b5bcf3e61d93fbf0adb683be4f0494aa375519badb` |
 | RT_MANIFEST | **`requireAdministrator`** |
 | EXE 验证 | `verify-exe` **10/10**；`verify-tiktok-exe` **21/21**；`verify-twitch-exe` **20/20**；`verify-douyin-exe` **25/27 + 1 NOT-OBSERVED（2 项浏览器启动受沙箱限制）** |
 | 资源 / 模块 | 229 files / 53 required modules |
@@ -122,7 +122,7 @@ M1 每 15 秒轮询（240 次/小时），约 7.5 分钟用尽 30 次；适配�
 ### 0.39.10 Git
 
 - 分支：`feature/tiktok`；本轮开始前 HEAD：`012c4efa8921f0eb471434201174888fcc6df004`。
-- 代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）。
+- 代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）、`607e5cd2942d8af104344e6ed9c6259bb41691c3`（factory reset 清理专用浏览器 profile）。
 - 文档与构建记录提交：本轮最终 HEAD（见 `git log -1`）。
 - **未合并 main、未 Push、未创建 Tag、未发布 Release。**
 

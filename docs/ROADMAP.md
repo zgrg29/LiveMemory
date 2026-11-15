@@ -34,9 +34,9 @@
 - ✅ 单窗口/复用/关闭恢复：单飞行锁、专用 profile marker、仅管理 LiveMemory profile；停止采集只关自己的 tab
 - ✅ 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received`/`connected_no_events`/`login_required`/`platform_refused`
 - ✅ 三语 UI：采集方式、是否需要登录、最近弹幕、重连次数、最近故障、下次重试、免费额度；错误就地显示，技术详情折叠
-- ✅ 自动化：**1028 passed / 0 failed / 0 skipped（519,353.40 ms）**；rate-budget 5、reconnect 6、browser-login 8、signer +5、session +1、UI/API 认证
+- ✅ 自动化：**1028 passed / 0 failed / 0 skipped（508,176.15 ms）**；rate-budget 5、reconnect 6、browser-login 8、signer +5、session +1、UI/API 认证
 - ✅ 真实回归：Bilibili 4 chat/3 viewers；YouTube 51 chat/51 channel id/1 gift；Twitch EXE 20/20；抖音 EXE 25/27（2 项沙箱浏览器）
-- ✅ 最新 EXE：`842c53b4ae55` / commit `9effcd6` / SHA-256 `95ba2131…` / `97,831,424` B / requireAdministrator；`verify-exe` 10/10、`verify-tiktok-exe` 21/21
+- ✅ 最新 EXE：`a97447fe6329` / commit `607e5cd` / SHA-256 `aca70bd6…` / `97,831,936` B / requireAdministrator；`verify-exe` 10/10、`verify-tiktok-exe` 21/21
 - 🟡 **BLOCKED**：DSH 沙箱从 Node 启动 Chromium 被作业对象终止（`0x80000003`）；真实扫码/登录/登录后弹幕必须普通 Windows 桌面人工验收
 - 🟡 未验证：真实礼物/连送/订阅、真实断网、真实下播长跑、多房间真实并发、干净 Windows 账户、真实 UAC 双击
 - ⬜ 未合并 main、未 Push、未 Tag、未 Release
