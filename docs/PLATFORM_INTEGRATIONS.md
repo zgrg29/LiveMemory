@@ -542,7 +542,7 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 **未验证 / 不得宣称**：真实手机扫码成功、登录后的礼物推送、真实礼物、真实连送、真实付费留言、
 真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
 
-## 3C. TikTok Live（M1，2026-11-15，`feature/tiktok`）
+## 3C. TikTok Live（M2，2026-11-15，`feature/tiktok`）
 
 完整可行性报告：`docs/TIKTOK_FEASIBILITY_2026-11.md`。以下只记录工程事实。
 
@@ -550,12 +550,13 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 
 | 传输 | 说明 | 默认 |
 | --- | --- | --- |
-| `signer` | 免费社区签名通道 `GET /webcast/rooms/<id>/connect`；无 API Key、无付费、不要求 Business；15 秒轮询；`baseUrl` 可换自建/兼容服务 | ✅ |
-| `browser` | 本机 Chrome/Edge 专用资料目录 + CDP，读取官方直播页自身的 WebSocket 帧；匿名 `room/enter 403` → `TIKTOK_LOGIN_REQUIRED` | 可选（实验性） |
+| `signer` | 免费社区签名通道 `GET /webcast/rooms/<id>/connect`；无 API Key、无付费、不要求 Business；匿名约 130 秒/请求（见 §3C.6）；`baseUrl` 可换自建/兼容服务 | ✅ |
+| `browser` | 本机 Chrome/Edge 专用资料目录 + 页面级 CDP，读取官方直播页自身的 WebSocket 帧；必须先完成官方登录；匿名 `room/enter 403` → `TIKTOK_LOGIN_REQUIRED` | 可选（实验性） |
 
 - 无 Key/无付费；**不得**把免费社区签发描述成官方 API。
-- 免费通道对匿名客户端的新连接突发上限为 **5 次/分钟**；适配器 15 秒轮询（4/分钟），429 按 `Retry-After` 退避。
+- 匿名免费通道实际有 **30 次/小时** 账号/IP 上限；只在用尽后通过 429 暴露。M1 的 15 秒轮询（240/h）会在约 7.5 分钟后耗尽，是频繁重连的根因。M2 改为共享预算 + 130 秒节奏，并完整遵守 `Retry-After`/`ratelimit-reset`。
 - 浏览器中继不启用 `--no-sandbox`、不关闭 Web 安全、不注入 stealth、不伪造签名。
+- 自动切换未启用：浏览器中继需要登录且登录后的真实事件仍待人工验证；手动选择避免重复事件/错误状态。
 
 ### 3C.2 本地免费公开接口
 
@@ -596,13 +597,52 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 官方网页匿名 | `room/enter` 403；聊天面板“正在加载”；移动端不可用 |
 | 未登录直连推送 WS | 被拒（HTTP 200 代替 101 / 1006）；未签名 `im/fetch` 0 字节 |
 | 免费社区签名通道 | 真实 `WebcastChatMessage`；6/6 有 `user.id` + `msgId` + Unicode 正文 |
-| 源码服务器 | 连接 201、6 条 chat / 5 个身份、停止 `ended` |
-| 正式 EXE（`verify-tiktok-exe`） | **20/20**：真实房间/连接/6 条 chat（3 身份）、SQLite 6/6 external_id、自动监听、重启、AI、四平台状态 |
-| 礼物/连送/订阅 | 已解析 + 自动化测试；**真实事件未观测** |
-| 浏览器中继 | 匿名 403 已实测；**登录后未验证（无账号）** |
+| 源码服务器短测（M2） | 3 分钟 24 条 chat / 11 位可识别观众 / 24 个不同 msgId / 24 条稳定 UID / 0 重连 / 0 限流 / 2 次请求（130 秒间隔） |
+| 源码服务器 30 分钟（M2） | 见 `docs/STATUS.md` §0.39；报告由 `scripts/verify-tiktok-live-30m.mjs` 输出 |
+| 正式 EXE（`verify-tiktok-exe`） | 见 §0.39 与最终交付；不再宣称旧的 20/20 覆盖新登录 API |
+| 礼物/连送/订阅 | 已解析 + 自动化测试；**真实事件仍未观测** |
+| 浏览器中继 | 登录入口、状态机、单窗口复用已实现并单元测试；**真实浏览器启动在本 DSH 沙箱 BLOCKED**，登录后真实弹幕投递待人工验收 |
 
-**未验证 / 不得宣称**：真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间真实并发、
-TikTok 官方稳定性、干净 Windows 账户。
+### 3C.6 免费通道预算与重连状态机
+
+真实 429 证据：
+
+```text
+HTTP 429
+ratelimit-limit: 30
+ratelimit-policy: 30;w=3600
+ratelimit-remaining: 0
+ratelimit-reset: 2708
+retry-after: 2708
+{"code":429,"message":"You have reached the rate limit...","limit_label":"rate_limit_account_hour"}
+```
+
+实现：
+
+- `TikTokRateBudget` 进程内共享（按 IP），所有房间共用；默认匿名 `130000 ms` 最小间隔。
+- 429 使用完整 `Retry-After`/`ratelimit-reset`（不再截断到 30 秒），状态为 `rate_limited`，不是 `failed`，也不是下播。
+- `failed` 仅用于连续 15 次可恢复传输失败后的慢探测；`auth_required` 只用于登录要求；`stopped` 只用于用户停止或确认下播。
+- 0 消息批次是成功；暂时低弹幕频率不触发重连。
+- 协议错误/过期 cursor 会重置 cursor 并重新校验房间；房间 ID 变化会作为离线观测，两次确认后结束同一场。
+- 每次中断/恢复记录 `disconnectedAt`、`recoveredAt`、`gapMs`、`lastEventAt`、`possibleMissed=true`；不声称补录。
+
+### 3C.7 浏览器登录生命周期
+
+| 状态 | 含义 |
+| --- | --- |
+| `idle` | 未登录 |
+| `opening` | 正在启动专用 Chrome/Edge |
+| `waiting` | 官方登录页已打开，等待用户完成二维码/手机/邮箱/用户名登录 |
+| `verifying` | 检测到官方 Cookie，正在验证 |
+| `logged_in` | 官方登录状态已识别（`verifiedBy` 标明 cookie/页面/直播间） |
+| `expired` | Cookie 过期或被移除 |
+| `refused` | 有登录状态但官方 `room/enter` 仍 403，平台拒绝访问 |
+| `unavailable` | 本机没有 Chrome/Edge 或无法使用专用 profile |
+| `error` | 启动/导航失败 |
+
+- 只使用 `<data>/browser/tiktok/account` 专用 profile（`.livememory-owned` 标记）；不读取/清理用户日常浏览器资料。
+- 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`。
+- 同一登录任务单飞行；重复点击只聚焦已有窗口；关闭窗口后状态可恢复；采集停止只关闭自己创建的 tab。
 
 ## 4. 统一事件模型
 

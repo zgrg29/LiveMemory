@@ -23,6 +23,24 @@
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
 
+## P32 TIKTOK-M2：连接稳定性、浏览器登录与真实 EXE 验收（v0.13.2，2026-11-15）🟡 等待人工验收
+
+- ✅ 根因（真实 429）：匿名签名通道有 **30 次/小时** 账号/IP 上限；M1 15 秒轮询约 7.5 分钟用尽，随后把 `Retry-After: 2708` 截断为 30 秒，形成整小时重试
+- ✅ `TikTokRateBudget`：进程内共享预算；匿名 130 秒/请求；完整遵守 `ratelimit-*`/`Retry-After`；多房间共享
+- ✅ 适配器状态机：`rate_limited` 独立于 `failed`；单飞轮询；失效 cursor 重置并重校验房间；房间 ID 变化；gap 时间线；0 消息批次不代表失败
+- ✅ 真实短测：`aljazeeraenglish` 3 分钟 24 条 chat / 11 位可识别观众 / 24/24 UID + msgId / 0 重连 / 2 次请求
+- ✅ 真实 30 分钟长测：146 chat / 49 viewers / 146 个不同 msgId / 146/146 UID / 63 条非 ASCII / 0 重连 / 0 限流 / 14 次请求
+- ✅ 浏览器登录生命周期：官方 `tiktok.com/login`；二维码/手机/邮箱由用户完成；`idle/opening/waiting/verifying/logged_in/expired/refused/unavailable/error`
+- ✅ 单窗口/复用/关闭恢复：单飞行锁、专用 profile marker、仅管理 LiveMemory profile；停止采集只关自己的 tab
+- ✅ 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received`/`connected_no_events`/`login_required`/`platform_refused`
+- ✅ 三语 UI：采集方式、是否需要登录、最近弹幕、重连次数、最近故障、下次重试、免费额度；错误就地显示，技术详情折叠
+- ✅ 自动化：**1028 passed / 0 failed / 0 skipped（519,353.40 ms）**；rate-budget 5、reconnect 6、browser-login 8、signer +5、session +1、UI/API 认证
+- ✅ 真实回归：Bilibili 4 chat/3 viewers；YouTube 51 chat/51 channel id/1 gift；Twitch EXE 20/20；抖音 EXE 25/27（2 项沙箱浏览器）
+- ✅ 最新 EXE：`842c53b4ae55` / commit `9effcd6` / SHA-256 `95ba2131…` / `97,831,424` B / requireAdministrator；`verify-exe` 10/10、`verify-tiktok-exe` 21/21
+- 🟡 **BLOCKED**：DSH 沙箱从 Node 启动 Chromium 被作业对象终止（`0x80000003`）；真实扫码/登录/登录后弹幕必须普通 Windows 桌面人工验收
+- 🟡 未验证：真实礼物/连送/订阅、真实断网、真实下播长跑、多房间真实并发、干净 Windows 账户、真实 UAC 双击
+- ⬜ 未合并 main、未 Push、未 Tag、未 Release
+
 ## P31 TIKTOK-M1：TikTok LIVE 接入、双传输与 Windows EXE（v0.13.2，2026-11-15）🟡 等待人工验收
 
 - ✅ 前置：`feature/douyin` 本地合并到 `main`（`410bfc3`，父 `d5e9a7c` + `e3cf6e7`）；合并后全量 947 passed

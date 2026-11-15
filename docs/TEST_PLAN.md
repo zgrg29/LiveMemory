@@ -2007,3 +2007,46 @@ SQLite 6/6 external_id；自动监听目标 check → recording → 真实 chat 
 - 浏览器中继登录后的聊天投递（无 TikTok 账号）；匿名 `room/enter 403` 已实测。
 - 真实断网、真实“直播中→下播”长跑、多房间并发（免费签名通道 5 次/分钟突发限制）。
 - 真实 Windows UAC 双击；干净 Windows 账户。
+
+## 50. TIKTOK-M2：连接稳定性、浏览器登录与真实长测（2026-11-15）
+
+### 50.1 新增/扩充自动化（25 项）
+
+| 文件 | 数量 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/tiktok-rate-budget.test.mjs` | 5 | 解析 `ratelimit-*`/`Retry-After`；按窗口分摊；429 完整等待；窗口滚动；两个房间共享预算 |
+| `tests/unit/tiktok-reconnect.test.mjs` | 6 | 429 进入 `rate_limited` 且不提前重试；0 消息批次算成功；协议错误重置 cursor；断线恢复记录 gap；房间 ID 变化结束同一场；付费拒绝为 user-action |
+| `tests/unit/tiktok-browser-login.test.mjs` | 8 | Cookie+页面→已登录；无/过期 Cookie；验证与事件接收分离；cookie+403→平台拒绝；并发 start 只启一次；cancel；持久化；无 dataDir |
+| `tests/unit/tiktok-signer.test.mjs` | +5 | 匿名 30/h 节奏；完整 Retry-After；403 rate-limit 不误报付费；200 JSON rate-limit；共享预算本地拒绝 |
+| `tests/integration/tiktok-session.test.mjs` | +1（共 4） | 状态暴露 capture/rateLimit/login；浏览器中继必须先 `logged_in` 才建 session |
+| `tests/unit/tiktok-ui.test.mjs` | 更新 | 登录 5 路由、登录/采集状态键、三语一致、构建模块（rate-budget/browser-launch/browser-login） |
+| `tests/integration/api-auth.test.mjs` | +5 断言 | 5 个 TikTok 登录路由未认证 401 |
+| `tests/integration/monitoring-api.test.mjs` | 时序稳健性 | 重启恢复允许短暂 `checking`，等待稳定 `waiting`；不改变产品逻辑 |
+
+### 50.2 全量
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- 首跑：**1027 passed / 1 failed / 0 skipped（478,698.94 ms）**；唯一失败是 `monitoring-api` 重启瞬间断言 `waiting` 实际为 `checking` 的时序问题，与 TikTok 无关。
+- 修正测试等待稳定状态后重跑：**1028 passed / 0 failed / 0 skipped（519,353.40 ms，2026-11-15）**。
+- 新增 25 项；上一轮 1003。
+
+### 50.3 真实平台
+
+| 脚本/窗口 | 结果 |
+| --- | --- |
+| `scripts/verify-tiktok-live-30m.mjs aljazeeraenglish 3` | 24 chat / 11 viewers / 24 msgId / 24 UID / 0 重连 / 0 限流 / 2 请求 |
+| `scripts/verify-tiktok-live-30m.mjs aljazeeraenglish 30` | **146 chat / 49 viewers / 146 msgId / 146 UID / 63 非 ASCII / 0 重连 / 0 限流 / 14 请求 / 30.01 分钟** |
+| `scripts/verify-bilibili.mjs 6 15` | 4 chat / 3 可识别观众 / 停止 `ended` |
+| `scripts/verify-youtube-anonymous.mjs 4t4AQ15yj1M 15` | 51 chat / 51 channel id / 1 gift / 10 活跃观众 / 停止 `ended` |
+| `scripts/verify-tiktok-browser-login.mjs` | **BLOCKED**：DSH 沙箱无法从 Node 启动 Chromium；不伪造 PASS |
+| `scripts/verify-tiktok-exe.mjs` | **21/21** |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-twitch-exe.mjs kato_junichi0817` | **20/20**（25 chat / 25 `twitch:<id>`） |
+| `scripts/verify-douyin-exe.mjs` | **25/27 + 1 NOT-OBSERVED**（3 chat / 3 `douyin:<id>`；2 项浏览器启动受沙箱限制） |
+
+### 50.4 未验证 / 不得宣称
+
+- 真实浏览器扫码/登录/登录后弹幕：BLOCKED，待普通 Windows 桌面人工验收。
+- 真实礼物/连送/订阅：未观测。
+- 真实网络中断、真实“直播中→下播”长跑、多房间真实并发：未执行；自动化覆盖状态机。
+- 真实 UAC 双击、干净 Windows 账户：未验证。

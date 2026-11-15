@@ -1,13 +1,57 @@
 # 交接文档（HANDOFF）
 
+本轮：2026-11-15 · TIKTOK-M2：连接稳定性、浏览器登录与真实 EXE 验收 · **等待人工验收**
+
+> 在 `feature/tiktok` 继续修复 M1 真实使用问题：免费签名通道频繁重连、浏览器登录入口不完整。
+> **未合并 main、未 Push、未 Tag、未 Release。**
+> 根因与实现：`log/2026-11-15-tiktok-m2.md`；状态：`docs/STATUS.md` §0.39；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C。
+
+## 0. 本轮（TIKTOK-M2）
+
+### 0.1 做了什么
+
+1. **真实根因**：免费匿名签名通道有 30 次/小时账号/IP 上限；M1 15 秒轮询约 7.5 分钟用尽，429 的 `Retry-After: 2708` 又被截断到 30 秒，导致整小时重试。
+2. **共享预算**：新增 `src/platforms/tiktok/rate-budget.mjs`；匿名 130 秒/请求、多房间共享、完整遵守 `ratelimit-*`/`Retry-After`；429 状态为 `rate_limited` 而不是 `failed` 或下播。
+3. **状态机**：单飞轮询；失效 cursor 重置并重校验房间；房间 ID 变化两次确认；0 消息批次算成功；记录断线/恢复/最后事件/可能缺口；确认下播后清理定时器。
+4. **浏览器登录**：新增 `browser-login.mjs`/`browser-launch.mjs`；打开官方 `tiktok.com/login`；区分未登录/等待/验证/已登录/失效/拒绝/不可用；单飞行锁、单窗口复用、只管理专用 profile；登录与真实事件接收分开验证。
+5. **三语 UI**：TikTok 面板改为「采集方式 + 登录卡 + 采集卡」；显示最近弹幕、重连次数、最近故障、下次重试、免费额度/用户操作；技术详情折叠。
+6. **真实测试**：3 分钟真实 TikTok 24 条 chat / 11 位可识别观众 / 24/24 UID+msgId / 0 重连；30 分钟长测见 §0.2；Bilibili/YouTube 真实回归通过。
+7. **自动化**：新增 rate-budget/reconnect/browser-login 测试，扩充 signer/session/UI/auth；全量与 EXE 结果见 `docs/STATUS.md` §0.39。
+8. **EXE**：重建并验证 Build ID、Manifest、启动、TikTok、四平台回归；结果见 §0.2。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 免费通道根因 | 30 次/小时匿名上限 + Retry-After 被截断 |
+| 修复后短测 | 24 chat / 11 viewers / 24 msgId / 0 重连 |
+| 30 分钟长测 | 146 chat / 49 位可识别观众 / 146 个不同 msgId / 146/146 UID / 63 条非 ASCII / 0 重连 / 0 限流 / 14 次请求 |
+| 浏览器登录 | 实现完成；真实浏览器/扫码 **BLOCKED**，待人工桌面验收 |
+| 自动化 | **1028 passed / 0 failed / 0 skipped（519,353.40 ms）** |
+| 真实回归 | Bilibili 4 chat/3 viewers；YouTube 51 chat/51 channel id/1 gift；Twitch EXE 20/20；抖音 EXE 25/27（2 项沙箱浏览器） |
+| 新 EXE | `842c53b4ae55` / `9effcd6c37f39a53f8431d16beabc0e39c500334` / requireAdministrator |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+### 0.3 下一轮 / 人工验收必须先做
+
+1. **普通 Windows 桌面双击** `D:\LiveMemory\dist\LiveMemory.exe`（UAC 允许），进入直播页 → TikTok Tab → 浏览器中继 → 打开 TikTok 登录，用官方二维码/手机/邮箱登录；确认只打开 1 个专用窗口，状态变为「已登录」。
+2. 输入真实 TikTok LIVE 链接 → 验证直播连接：确认显示「已收到真实事件」或「已连接，尚未收到事件」，不能伪造成功；然后开始记录，确认浏览器中继真实弹幕/稳定 UID/停止/重启。
+3. **免费通道**：选择一个正在直播的房间，运行 30 分钟以上；确认不再长期「重连中」，限流时显示「等待免费额度恢复」并自动恢复。
+4. 真实断网 1–2 分钟后再恢复，确认同 session、无重复消息、UI 从重连回到正常。
+5. 有送礼的直播间确认礼物/连送只计一次、钻石仅展示价值。
+6. **不要**把浏览器自动化 BLOCKED 写成产品失败；也不要写成通过。真实扫码/登录后弹幕必须人工验收。
+7. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.4 边界与提交
+
+- 真实 TikTok 只读公开直播间；未登录、未付费、未保存/展示正文到仓库；测试均用 `tests/.tmp` 隔离目录。
+- 真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间真实并发、干净 Windows 账户仍未验证。
+- 本轮代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）；文档/构建记录为最终 HEAD。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A. 上一轮（TIKTOK-M1）
+
 本轮：2026-11-15 · TIKTOK-M1：抖音合并 + TikTok 双传输接入 · **等待人工验收**
-
-> 已按开发者授权把 `feature/douyin` 本地合并到 `main`（`410bfc3`）；从最新 `main` 创建 `feature/tiktok`，
-> 完成 TikTok 房间/聊天/礼物解析、统一入库、监控、三语 UI 与 Windows EXE。
-> **未合并 `feature/tiktok` 到 main、未 Push、未 Tag、未 Release。**
-> 可行性：`docs/TIKTOK_FEASIBILITY_2026-11.md`；状态：`docs/STATUS.md` §0.38；日志：`log/2026-11-15-tiktok-live.md`。
-
-## 0. 本轮（TIKTOK-M1）
 
 ### 0.1 做了什么
 
