@@ -602,6 +602,8 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 正式 EXE（`verify-tiktok-exe`） | 见 §0.39 与最终交付；不再宣称旧的 20/20 覆盖新登录 API |
 | 礼物/连送/订阅 | 已解析 + 自动化测试；**真实事件仍未观测** |
 | 浏览器中继 | 登录入口、状态机、单窗口复用已实现并单元测试；**真实浏览器启动在本 DSH 沙箱 BLOCKED**，登录后真实弹幕投递待人工验收 |
+| 浏览器中继可用性（M3） | 真实 `TikTokBrowserRelay` 只暴露 `createAdapter`；`transport()` 已改为按此判断。打包 EXE `verify-tiktok-exe` 断言 `requested=browser / browserAvailable=true / active=browser`，并可无重启切回 signer |
+| 浏览器中继数据路径（M3） | 合成帧已验证 chat/gift → `EventIngest` → SQLite：原文、昵称、`tiktok:<user.id>`、`msgId`、事件时间、连送最终数量；**真实登录后投递仍 BLOCKED** |
 
 ### 3C.6 免费通道预算与重连状态机
 
@@ -641,8 +643,13 @@ retry-after: 2708
 | `error` | 启动/导航失败 |
 
 - 只使用 `<data>/browser/tiktok/account` 专用 profile（`.livememory-owned` 标记）；不读取/清理用户日常浏览器资料。
-- 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`。
+- 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`；M3 增加 `needs_room`（未填写直播间，不改变登录状态）。
 - 同一登录任务单飞行；重复点击只聚焦已有窗口；关闭窗口后状态可恢复；采集停止只关闭自己创建的 tab。
+- **M3 可用性判断**：`TikTokBrowserRelay` 没有 `start()`，可用性必须检查 `createAdapter()`。旧代码检查 `start` 导致显式 browser 时 `active=null`，最终返回 `TIKTOK_NOT_CONFIGURED` 503。
+- **M3 持久会话验证**：磁盘上的 `logged_in` 只是提示；profile 仍存在时允许中继实际打开直播页，真实 200/事件回写 `logged_in`，真实 403 回写 `refused`，不再信任旧标记。
+- **M3 关闭窗口**：关闭登录页保留 `logged_in`，设置 `loginWindowClosedAt` 与 `revalidationRequired`；正在采集时只关闭登录 tab，不终止专用浏览器；采集中拒绝退出登录（`TIKTOK_CAPTURE_ACTIVE`）。
+- **M3 礼物**：浏览器适配器按 `groupKey` 合并连送，最终态或 10 秒超时写一条 `gift`；钻石只写 `amount_display`，`amount_minor=null`、`value_kind=unknown`。
+- **M3 验证反馈**：`verify` 返回 `reason`、`eventsReceived`、`roomEnterStatus`、`timedOut`、`uniqueId`、`liveUrl`、`checkedAt`；UI 将登录/直播间/连接/事件/记录五项分开显示。
 
 ## 4. 统一事件模型
 

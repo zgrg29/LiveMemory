@@ -1,12 +1,73 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · TIKTOK-M2：连接稳定性、浏览器登录与真实 EXE 验收 · **等待人工验收**
+本轮：2026-11-15 · TIKTOK-M3：浏览器中继「采集尚未配置」修复 · **等待人工验收**
 
-> 在 `feature/tiktok` 继续修复 M1 真实使用问题：免费签名通道频繁重连、浏览器登录入口不完整。
+> 在 `feature/tiktok` 继续修复真实 Windows 桌面验收问题：登录与 room check 成功后，
+> 点击「开始记录」提示「TikTok 采集尚未配置」。
 > **未合并 main、未 Push、未 Tag、未 Release。**
-> 根因与实现：`log/2026-11-15-tiktok-m2.md`；状态：`docs/STATUS.md` §0.39；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C。
+> 根因与实现：`log/2026-11-15-tiktok-m3-browser-relay-start.md`；状态：`docs/STATUS.md` §0.40；
+> 平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C。
 
-## 0. 本轮（TIKTOK-M2）
+## 0. 本轮（TIKTOK-M3）
+
+### 0.1 根因
+
+1. **主因**：`TikTokService.transport()` 用 `Boolean(this.browserRelay?.start)` 判断浏览器中继；
+   `TikTokBrowserRelay` 没有 `start()`，只有 `createAdapter()`。选择 `browser` 后
+   `browserAvailable=false`、`active=null`，`connect` 落入 `TIKTOK_NOT_CONFIGURED` 503。
+   已用真实 relay + fake login/room 复现，与“已登录/直播间已识别”无关。
+2. **次因**：浏览器适配器只接收 `mapped.kind === 'event'`，礼物映射是 `kind:'gift'`，
+   导致浏览器中继丢弃全部礼物。已修复为连送合并/超时冲刷。
+
+### 0.2 修复
+
+- 中继可用性改查 `createAdapter`；显式 browser 不依赖 signer；`NOT_CONFIGURED` 仅用于确实无通道。
+- 持久化 `logged_in` 只作提示；真实 200/事件回写登录，真实 403 回写 `refused`；
+  浏览器启动失败记录准确原因。
+- 关闭登录窗口保留登录但标记 `revalidationRequired`；采集中关闭只关登录 tab，
+  不终止专用浏览器；采集中拒绝退出登录。
+- 「验证直播连接」无直播间返回 `needs_room`，不再污染登录状态；按钮下方显示
+  `reason/eventsReceived/roomEnterStatus/checkedAt`；UI 五项状态分开：
+  登录 / 直播间识别 / 采集连接 / 真实事件 / 开始记录。
+- 连接失败后刷新登录徽标，避免 UI 继续显示与实际 403 不一致的「已登录」。
+- 浏览器中继礼物写入统一 `EventIngest`；钻石只作展示价值。
+
+### 0.3 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 主因复现 | `transport.active=null` → `TIKTOK_NOT_CONFIGURED` 503 |
+| 修复后 | 真实 `TikTokBrowserRelay` → `active=browser`；显式 browser 不依赖 signer |
+| 自动化 | **1037 passed / 0 failed / 0 skipped（504,497.50 ms）** |
+| 定向 TikTok | 90 passed / 0 failed |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe` | **23/23**，含 EXE 内 browser 通道识别 |
+| 真实 TikTok | 6 chat / 5 唯一身份 / 6/6 UID+msgId+原文；自动监听 6 条；重启保留 |
+| 浏览器登录脚本 | **1/9 passed，0 failed，8 BLOCKED**（DSH 沙箱终止 Chromium） |
+| 新 EXE | `e11f4008b9e3` / commit `1b9a38b` / `97,867,776` B / `requireAdministrator` |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+### 0.4 下一轮 / 人工验收必须先做
+
+1. 普通 Windows 桌面双击 `D:\LiveMemory\dist\LiveMemory.exe`，允许 UAC。
+2. TikTok → 浏览器中继 → 打开官方登录并完成登录；确认只打开一个专用窗口。
+3. 输入真实正在直播的链接 → 检查直播间 → 验证直播连接：
+   必须显示「已收到真实事件」或「已连接，尚未收到事件」，失败显示具体原因。
+4. 点击「开始记录」：不得再出现「TikTok 采集尚未配置」；成功时确认 SQLite 中有
+   原文、昵称、`tiktok:<uid>`、消息 ID、事件时间；有礼物时确认只计一次。
+5. 关闭登录窗口：确认采集中继仍可用或明确提示；重新开始记录应复用同一专用 profile。
+6. 停止记录后测试退出登录；确认不会误删日常浏览器资料。
+7. **不要把浏览器自动化 BLOCKED 写成通过；也不要写成产品失败。**
+8. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.5 边界与提交
+
+- 真实登录后的浏览器弹幕/礼物投递仍未验证（沙箱阻止 Chromium）；必须人工验收。
+- 免费签名通道仍是第三方云服务；匿名约 30 次/小时。
+- 代码与测试提交：`1b9a38bf69ddc56e308a5fab10e2bc931af9a732`；文档提交：`bd476c97a362eb469d4b363757e6268f8b67c904`。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A. 上一轮（TIKTOK-M2）
 
 ### 0.1 做了什么
 
@@ -49,7 +110,7 @@
 - 本轮代码提交：`392f854d8b8c7d8761617a8f4f7ddc187e166a0a`（主体）、`9effcd6c37f39a53f8431d16beabc0e39c500334`（connect 响应 capture state）、`607e5cd2942d8af104344e6ed9c6259bb41691c3`（factory reset 清理专用浏览器 profile）；文档/构建记录为最终 HEAD。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
-## 0-A. 上一轮（TIKTOK-M1）
+## 0-B. 更早（TIKTOK-M1）
 
 本轮：2026-11-15 · TIKTOK-M1：抖音合并 + TikTok 双传输接入 · **等待人工验收**
 

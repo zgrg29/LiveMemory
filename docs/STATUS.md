@@ -1,8 +1,102 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（TIKTOK-M2：修复免费通道频繁重连；共享请求预算与完整 Retry-After；浏览器登录生命周期；真实 30 分钟采集 146 条；1028 测试；EXE `a97447fe6329`）
+最后更新：2026-11-15（TIKTOK-M3：修复浏览器中继「采集尚未配置」；登录/窗口/采集状态分离；浏览器中继礼物；1037 测试；EXE `e11f4008b9e3`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.40 TIKTOK-M3：浏览器中继「采集尚未配置」修复（2026-11-15）🟡（feature/tiktok，等待人工验收）
+
+范围：只修复真实 Windows 桌面验收发现的问题——TikTok 登录成功、直播间识别成功，
+点击「开始记录」却提示「TikTok 采集尚未配置」。同时修复该路径上的登录窗口生命周期、
+验证反馈与浏览器中继礼物事件。
+**未改数据库 schema（16）、AI 结果 Schema、提示词、其他平台适配器；未新增运行时依赖；
+未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.40.1 根因（代码 + 复现）
+
+- 「TikTok 采集尚未配置。」来源：`src/web/i18n/zh-CN.json` 的
+  `errors.tiktokNotConfigured`，由 `TikTokService.#startWithRoom()` 在
+  `transport.active` 为空时抛出的 `TikTokError(TIKTOK_ERRORS.NOT_CONFIGURED)` 使用。
+- `TikTokService.transport()` 旧代码用 `Boolean(this.browserRelay?.start)` 判断浏览器中继；
+  但 `TikTokBrowserRelay` 只有 `createAdapter` / `stop` / `closeBrowser`，**没有 `start`**。
+  因此选择 `browser` 后 `browserAvailable=false`、`active=null`，无论登录与 room check 是否成功，
+  `connect` 都返回 503 `TIKTOK_NOT_CONFIGURED`。
+- 已用真实 `TikTokBrowserRelay` + fake login `logged_in` + fake room check 复现：
+  `transport.active=null`，`connect` 得到 `TIKTOK_NOT_CONFIGURED / errors.tiktokNotConfigured / 503`。
+  M2 测试中的假 relay 恰好提供 `start()`，掩盖了真实缺陷。
+- 次因：`TikTokBrowserAdapter.#handleMessage()` 只接受 `mapped.kind === 'event'`，
+  而礼物映射返回 `kind:'gift'`，导致浏览器中继即使连上也会丢弃全部礼物。已修复。
+
+### 0.40.2 修复
+
+| 模块 | 内容 |
+| --- | --- |
+| `service.mjs` | 中继可用性改查 `createAdapter`；显式 `browser` 不依赖 signer；缺少中继/签名通道分别返回 `TIKTOK_BROWSER_UNAVAILABLE` / `TIKTOK_SIGNER_UNAVAILABLE`；`NOT_CONFIGURED` 只在确实没有任何通道时出现；新增 `browserRelayAvailable`、`profileOwned`、`captureActive`、`revalidationRequired` |
+| `service.mjs` | 持久化 `logged_in` 只作提示：profile 存在时允许中继实际尝试；真实 200/事件回写 `logged_in`，真实 403 回写 `refused`；启动/中继失败回写准确原因 |
+| `browser-login.mjs` | `cancel/closeBrowser` 保留登录；记录 `loginWindowClosedAt` 与 `revalidationRequired`；采集中关闭登录页只关自己的 tab，不终止专用浏览器；采集中拒绝 `logout`；`verify` 无直播间返回 `needs_room`，不再把登录状态改成 `error`；capture 增加 `reason/eventsReceived/roomEnterStatus/timedOut/uniqueId/liveUrl/checkedAt`；新增 `markCaptureVerified/markCaptureLoginRequired/markCaptureFailed` |
+| `browser-relay.mjs` | 浏览器中继礼物按 `groupKey` 合并最终态，10 秒超时冲刷；写入统一 `EventIngest`；`pendingGifts` 暴露在 capture |
+| `live.js` + 三语 | 验证结果与失败原因显示在按钮下方；新增五项独立状态（登录/直播间/采集连接/真实事件/开始记录）；关闭窗口与采集中继分别说明；采集中禁用退出登录；连接失败后刷新登录徽标；切换通道/直播间清除旧验证结果 |
+| `scripts/verify-tiktok-exe.mjs` | 新增打包 EXE 的 browser 通道识别与切回 signer 两项断言 |
+
+### 0.40.3 自动化测试
+
+- 新增 9 项：真实 relay 可用性、浏览器帧→SQLite（chat/gift/UID/msgId/时间）、连送合并、
+  旧登录 + 403、显式 browser 不依赖 signer、无直播间验证、关闭窗口保留登录、
+  采集中关闭登录页不终止浏览器、采集中拒绝退出、capture 回写登录。
+- 定向 TikTok：**90 passed / 0 failed / 0 skipped**。
+- 全量：**1037 passed / 0 failed / 0 skipped（504,497.50 ms，2026-11-15）**。
+
+### 0.40.4 真实 EXE 验收
+
+| 脚本 | 结果 |
+| --- | --- |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe` | **23/23** |
+| `verify-tiktok-browser-login` | **1/9 passed，0 failed，8 BLOCKED**（DSH 作业对象终止 Chromium） |
+
+`verify-tiktok-exe` 新增并通过：
+
+```text
+PASS  the packaged EXE recognizes the selected browser relay as an available transport
+      requested browser, browserAvailable true, active browser
+PASS  switching back to the signing transport takes effect without a restart
+      active signer
+```
+
+真实 TikTok：`aljazeeraenglish` / room `7706695538414062349` / 主播稳定 ID
+`7074562477175424046`；6 条 chat / 6/6 `tiktok:<user.id>` / 5 个唯一身份 / 6/6 原文；
+自动监听 recording + 6 条真实事件；SQLite 6/6 `user_id`、`external_id`、`content`；
+重启后 messages 6；AI report 200；TikTok viewers 9；四平台状态均 200。
+
+### 0.40.5 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `e11f4008b9e3` |
+| source hash | `e11f4008b9e3c88dc19701d0a3aab986ba4a45af4737fb7279d28e4fff8bd5b7` |
+| commit（构建时 HEAD） | `1b9a38bf69ddc56e308a5fab10e2bc931af9a732` |
+| 大小 / SHA-256 | `97,867,776` bytes / `8ee91aa8db4e08f77dfdb030dc95d12096341271fbb1efd7fa1981b0ed472d88` |
+| builtAt | `2026-11-15T14:33:50.564Z` |
+| 资源 / 模块 | 229 files / 53 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+
+### 0.40.6 边界与未验证
+
+- **真实登录后的浏览器中继投递仍是 BLOCKED**：DSH 沙箱终止 Chromium，
+  无法自动验收真实扫码/登录后弹幕/礼物；必须由开发者在普通 Windows 桌面验收。
+- 代码级与 SQLite 级已用合成帧覆盖 chat/gift/UID/msgId/时间/去重；不得把它写成真实平台投递通过。
+- 免费社区签名通道仍是第三方云服务；匿名约 30 次/小时；本轮未改预算。
+- 未验证：真实网络中断、真实下播长跑、干净 Windows 账户、真实 UAC 双击。
+
+### 0.40.7 Git
+
+- 分支：`feature/tiktok`；本轮代码与测试提交：
+  **`1b9a38bf69ddc56e308a5fab10e2bc931af9a732`**
+  （`fix: start TikTok browser relay capture and report real login state`）。
+- 文档与构建记录：**`bd476c97a362eb469d4b363757e6268f8b67c904`**
+  （`docs: record TikTok M3 browser relay fix and EXE acceptance`）。
+- **未合并 main、未 Push、未创建 Tag、未发布 Release。**
 
 ## 0.39 TIKTOK-M2：连接稳定性、浏览器登录与真实 EXE 验收（2026-11-15）🟡（feature/tiktok，等待人工验收）
 
