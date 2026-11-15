@@ -27,8 +27,9 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/youtube/      公开网页聊天（唯一路径；可多直播）
          ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
          ├─ src/platforms/twitch/       匿名 IRC 公开聊天 + 公开元数据（M1；可多频道）
-         ├─ src/monitoring/             自动监听：目标状态机、调度/退避、平台检测器（Bilibili roomStatus、YouTube /live + RSS 回退、Twitch 公开频道元数据）
-         ├─ src/storage/retention.mjs   YouTube/Twitch 原文/badge/过期昵称保留策略
+         ├─ src/platforms/douyin/       公开页 + 签名匿名 WebSocket（M2/M3；protobuf/礼物/登录框架）
+         ├─ src/monitoring/             自动监听：目标状态机、调度/退避、平台检测器（Bilibili roomStatus、YouTube /live + RSS 回退、Twitch 公开频道元数据、Douyin 公开页 status）
+         ├─ src/storage/retention.mjs   YouTube/Twitch/Douyin 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像/历史搜索/AI 报告）
          ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
@@ -307,9 +308,48 @@ parseTwitchInput(link/login)
 - 自动监听：`TwitchChannelDetector` 每 120 秒（90–180s 抖动）读公开元数据；`stream.id` 作为周期键。
 - 保留：Twitch-only 30 天清理原文/表情/徽章/展示标签与过期昵称，保留计数与稳定 ID。
 
+## 3.1.3 抖音公开页 + 签名匿名 WebSocket（M2/M3，2026-11-15）
+
+```text
+parseDouyinInput(link/web_rid)
+  → DouyinWebClient.fetchRoom(web_rid)      公开页：内部 room_id / status 2|4 / 标题 / 主播 id/secUid/昵称 / 在线数
+  → 未开播/已结束/非直播间链接 → 明确错误码（三语）
+  → SessionManager.startPlatform({platform:'douyin', platformRoomId: room_id})
+       → DouyinLiveAdapter.start()
+           ├─ get_sign(md5(<协议参数串>)) → signature（node:vm 沙箱执行 vendored AGPL 脚本）
+           ├─ wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?…&signature=…
+           ├─ 5s PushFrame{payload_type:'hb'}；needAck → PushFrame{payload_type:'ack'}
+           ├─ PushFrame → gzip → Response → Message[] → protobuf.mjs
+           ├─ Chat/Gift/Member/Like/Social/RoomUserSeq → messages.mjs
+           │    ├─ chat：user.id → douyin:<id>；msgId → external_id；content 原文
+           │    └─ gift：仅 repeatEnd=1 写一条；groupId 合并连送；钻石只写 amount_display
+           ├─ EventIngest（UNIQUE(session_id,dedupe_key) + 观众/金额/计数）
+           └─ SSE → 控制台
+
+直播状态（与 WebSocket 连接分离）
+  ├─ 每 60s 读一次公开页
+  ├─ 连续 2 次有效 offline/ended → platform_ended（结束当前 session）
+  ├─ 网络/429/风控页 → 只退避，不结束
+  └─ 用户停止 → 立即结束，不再重连
+
+重连
+  ├─ close / 90s 无帧 → reconnecting
+  ├─ 指数退避 1→30s，同一 session，适配器内 10,000 条消息 ID 去重
+  ├─ 15 次失败 → failed（可恢复）→ 每 5 分钟低速探测
+  └─ 多房间各自独立 adapter/session，互不影响
+```
+
+- 身份：`user.id`（BigInt 保精度）→ `douyin:<user.id>`；昵称只展示；`secUid` 解析但不作身份。
+- 正文：`content` 原样保存；Unicode/Emoji/平台表情代码不替换、不猜情绪。
+- 金额：钻石/抖音币是展示价值，`amount_minor=null`、`currency=null`、`value_kind=unknown`，只写 `amount_display`；无金额不记 0 元。
+- 礼物证据：解析与连送合并有自动化测试；匿名连接真实观测到 0 礼物，真实事件未验证。
+- 登录：受控扫码 + 本地 AES-GCM Cookie + 状态/过期/退出；风控阻止时明确报错，不伪造登录。
+- 自动监听：`DouyinRoomDetector` 每 90 秒（60–150s 抖动）读公开页；无可靠场次键，手动停止后抑制到确认下播。
+- 保留：Douyin-only 30 天清理原文/展示标签与过期昵称，保留计数与稳定 ID。
+
 ## 3.2 保留策略
 
-`src/storage/retention.mjs` 在启动、YouTube/Twitch 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的对应平台聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定平台 ID 与金额合计。两个平台使用独立 scope（`platform='youtube'` / `'twitch'`），互不清理对方数据。目的与局限见 `PRIVACY_SECURITY.md` §14。
+`src/storage/retention.mjs` 在启动、YouTube/Twitch/Douyin 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的对应平台聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定平台 ID 与金额合计。各平台使用独立 scope（`platform='youtube'` / `'twitch'` / `'douyin'`），互不清理对方数据。目的与局限见 `PRIVACY_SECURITY.md` §14。
 
 ## 3.3 多场并发记录（v0.6.0）
 

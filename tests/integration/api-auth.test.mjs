@@ -120,7 +120,9 @@ test('local API requires a browser session and rejects cross-site requests', asy
       'api/storage/location',
       'api/backup/status',
       'api/ai/providers',
-      'api/monitoring'
+      'api/monitoring',
+      'api/douyin/login/browser/status',
+      'api/douyin/login/check'
     ]) {
       const response = await jsonRequest(base, path);
       assert.equal(response.status, 401, path);
@@ -141,7 +143,11 @@ test('local API requires a browser session and rejects cross-site requests', asy
       ['POST', 'api/backup/restore', {path: 'C:\\backup.livememory', confirmText: 'RESTORE'}],
       ['POST', 'api/backup/jobs/job_missing/cancel', {}],
       ['POST', 'api/backup/open', {}],
-      ['POST', 'api/memory/viewers/viewer_missing/delete', {confirm: true}]
+      ['POST', 'api/memory/viewers/viewer_missing/delete', {confirm: true}],
+      ['POST', 'api/douyin/login/browser/start', {}],
+      ['POST', 'api/douyin/login/browser/cancel', {}],
+      ['POST', 'api/douyin/login/cookie', {cookie: 'sessionid=x'}],
+      ['POST', 'api/douyin/login/logout', {}]
     ];
     for (const [method, path, body] of cases) {
       const response = await jsonRequest(base, path, {method, body});

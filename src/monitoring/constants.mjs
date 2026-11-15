@@ -7,7 +7,7 @@
  * request storm is not.
  */
 
-export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch']);
+export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch', 'douyin']);
 
 export const MONITOR_STATE = Object.freeze({
   /** Enabled, not live, waiting for the next scheduled check. */
@@ -79,6 +79,18 @@ export const MONITOR_POLICY = Object.freeze({
     endCooldownMs: 15000,
     maxConsecutiveFailures: 4,
     requestGapMs: 1500
+  }),
+  douyin: Object.freeze({
+    platform: 'douyin',
+    /** 1 public live-page read every 90 seconds per offline room. */
+    baseMs: 90000,
+    minMs: 60000,
+    maxMs: 150000,
+    errorBaseMs: 90000,
+    errorMaxMs: 1200000,
+    endCooldownMs: 20000,
+    maxConsecutiveFailures: 4,
+    requestGapMs: 2000
   })
 });
 

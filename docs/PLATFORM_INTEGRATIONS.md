@@ -408,6 +408,140 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 
 **未验证 / 不得宣称**：真实 Bits 事件、真实赠订事件、EventSub OAuth 端到端、真实长时间断网/下播、千条每秒压力、Twitch 官方稳定性承诺。
 
+## 3B. 抖音 Douyin Live（M2/M3，2026-11-15，`feature/douyin`）
+
+### 3B.1 接入边界与代码结构
+
+- 唯一路径：**公开直播间网页 + 签名的匿名 WebSocket**。弹幕、昵称、稳定 UID、进场/点赞/关注不需要登录；
+  礼物自 2026 年起只推给登录会话。
+- 公开网页与 `webcast` WebSocket 都**不是抖音官方承诺的稳定 API**；界面与文档不得描述为“官方授权”或“合规接口”。
+- 不绕过验证码、风控、登录或访问控制；失败显示真实原因。浏览器授权/扫码流程被风控阻止时如实报告。
+- 只附加正在直播的公开直播间；用户页、视频、搜索、短链一律拒绝。
+- 签名组件为 **AGPL-3.0**，单独目录分发；主项目 `LICENSE` 仍为 MIT。见 `docs/LICENSE_AGPL_DOUYIN.md`。
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/platforms/douyin/link.mjs` | `live.douyin.com/<rid>`、裸房间号、`/root/live/<rid>`；拒绝用户/视频/搜索/短链 |
+| `src/platforms/douyin/client.mjs` | 公开页解析、匿名 cookie、签名 WSS URL |
+| `src/platforms/douyin/protobuf.mjs` | 自研 protobuf wire 编解码（零依赖、BigInt 保精度） |
+| `src/platforms/douyin/messages.mjs` | PushFrame/Response/消息体解码、gzip、canonical 映射、连送合并 |
+| `src/platforms/douyin/sign.mjs` | `node:vm` 沙箱执行 vendored 签名脚本 |
+| `src/platforms/douyin/adapter.mjs` | WSS 生命周期、心跳/ack/看门狗/重连/去重/下播确认 |
+| `src/platforms/douyin/login.mjs` | Cookie 诊断（格式/不完整/过期）、平台有效性复查、已验证/未验证状态、退出 |
+| `src/platforms/douyin/browser-login.mjs` | 本机 Chrome/Edge + CDP：打开官方登录页、捕获官方二维码、等待 `sessionid`、专用资料目录、取消/清理 |
+| `src/platforms/douyin/cookie-store.mjs` | AES-256-GCM 本地 Cookie（白名单、验证标记、备份排除） |
+| `src/platforms/douyin/service.mjs` | 路由/监控与 `SessionManager` 粘合、30 天保留 |
+| `src/monitoring/detectors/douyin.mjs` | 公开页直播状态检测与稳定 target |
+| `src/platforms/douyin/vendor/` | AGPL-3.0 `sign.js` + 完整许可证与来源（未分发 `a_bogus.js`） |
+
+### 3B.2 连接流程
+
+```text
+用户输入链接/房间号
+  → parseDouyinInput()
+  → GET https://live.douyin.com/<web_rid>（公开页）
+      → room_id（19 位内部 ID）、status=2/4、标题、主播 id/secUid/昵称、在线数
+      → Set-Cookie ttwid（匿名）
+  → get_sign(md5(<协议参数串>)) → signature
+  → wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?…&signature=…
+      → 5 秒心跳（PushFrame payload_type=hb）、needAck 时回 ack
+      → gzip PushFrame → Response → Message[]
+      → Chat/Gift/Member/Like/Social/RoomUserSeq
+      → mapper / 连送合并 → EventIngest（去重/观众/金额/计数）
+      → SSE → 控制台
+```
+
+### 3B.3 观众身份与聊天
+
+- `user.id` → `viewer_uid` → 长期身份 `douyin:<user.id>`；`nickname` 只作展示，`secUid` 解析但不作为身份。
+  缺失/为零时 `viewer_uid=null`，绝不用昵称建档案或把不同观众合并。
+- 消息 `msgId` → `external_id`；适配器另保留最近 10,000 个消息 ID 作为连接内快速去重，数据库仍以
+  `UNIQUE(session_id, dedupe_key)` 兜底。
+- `common.createTime`（秒）→ `occurred_at`（毫秒）；偏离接收窗口过大的时间回退到本地接收时间。
+- 正文 `content` 原样保存（中文/日文/Emoji/`[比心]` 等平台表情代码），不替换、不猜情绪；`rtfContent`
+  仅在有可靠文本时才使用，缺失时不伪造。
+- Member/Like/Social 只计数，不写普通聊天，更不写付费事件。
+
+### 3B.4 礼物、连送与价值
+
+| 事件 | 映射 | 金额语义 | 证据等级 |
+| --- | --- | --- | --- |
+| `WebcastGiftMessage`（`repeatEnd=1`） | `gift`，`gift_id`、`gift_name`、`gift_quantity`=连送最终数量 | `amount_minor=null`、`currency=null`、`value_kind=unknown`；`amount_display="<钻石合计> 抖音币"` 仅展示 | **已解析，真实礼物未观测到** |
+| 连送中间消息 | 只更新合并状态，不写库 | — | 防止重复计数 |
+| 未收到 `repeatEnd` 的连送 | TTL 后丢弃，不猜成礼物 | — | 不把未知当已支付 |
+| 无 `diamondCount` 的礼物 | `amount_display=null` | 不写 0 元 | 不得把“没有金额”记成零收入 |
+
+- 钻石/抖音币是平台展示价值，**不是人民币，也不是主播实际收入**；不得换算。
+- 礼物发送者使用 `user.id`（付款者）；`toUser` 不是付款者，不据此增加付费人数。
+- 礼物事件 ID 使用最终消息 `msgId`；重连 replay 命中唯一约束后不会再入库。
+- 进场、点赞、关注、房间统计永远不会被映射成 `gift`。
+
+### 3B.5 登录（礼物所需）
+
+目标体验：普通用户点击「扫码登录」，在浏览器官方页面/应用内二维码完成扫码，不需要自己找 Cookie。
+技术调查与证据见 `docs/DOUYIN_LOGIN_RESEARCH.md`。
+
+- **纯 HTTP 直连不可用（2026-11-15 复测）**：`sso.douyin.com/get_qrcode` 返回 `text/html` 设备指纹挑战页；
+  `www.douyin.com/passport/web/get_qrcode` 返回 `error_code 4031`「安全风险，已阻止此次访问」。
+  这不是「抖音禁止扫码」，而是平台拒绝非浏览器客户端。LiveMemory 不伪造指纹/`a_bogus`/challenge。
+- **浏览器扫码（本轮实现）**：`browser-login.mjs` 启动本机 Chrome/Edge 的**专用资料目录**
+  （`<数据目录>/runtime/douyin-browser-profile`，带 `.livememory-owned` 标记），打开官方
+  `https://www.douyin.com/login_page?service=https%3A%2F%2Fwww.douyin.com`，通过 CDP 读取官网自己的
+  `get_qrcode` JSON，把同一张二维码显示在应用内。用户用抖音 App 扫码；若平台要求 `is_frontier`
+  身份验证/验证码，用户必须在**官方浏览器页面**完成，程序只等待结果。
+- 官网写入 `sessionid` 后，LiveMemory 用
+  `GET https://www.douyin.com/aweme/v1/web/user/profile/self/?device_platform=webapp&aid=6383`
+  实际验证；只有 `status_code=0` 且有用户信息才记为「已登录（已验证）」。
+- **状态分离**：未登录 / Cookie 已保存但未验证 / 已登录（已验证）/ 登录失效 / 登录无效或被平台限制。
+  验证被网络或平台拒绝阻断时保存为 `saved_unverified`，不显示为登录成功。
+- **手动 Cookie 备用**：界面临近输入框提供完整中文/日文/英文 12 步教程（F12 → Network → 刷新 →
+  `live.douyin.com` 请求 → Headers → Request Headers → Cookie → 复制 → 保存并验证）。
+- Cookie 只保存到 `secrets/douyin-login.json`（AES-256-GCM），不进入日志、错误、备份、HTTP 响应或 Git；
+  「删除 Cookie / 退出登录」同时清除加密存储并尝试删除专用浏览器资料目录。
+- 仍未绕过验证码、风控或访问控制；**真实手机扫码本轮未执行**（无账号），二维码捕获用真实 Chrome 验证。
+
+### 3B.6 直播状态、结束与重连
+
+- 连接成功不等于仍在直播。适配器每 60 秒读一次公开页；**连续 2 次有效离线**才确认
+  `platform_ended`。网络错误、429、风控页只退避，绝不结束。
+- 90 秒无帧看门狗、连接关闭、服务端断流：进入 `reconnecting`，1→30 秒指数退避，保留同一 session；
+  连续 15 次失败进入可恢复 `failed`，之后每 5 分钟低速探测。
+- 多直播间各自独立 adapter/session；同一 `platform + room` 双重拒绝重复启动。
+- 平台状态写入 `sessions.platform_status` / `platform_ended_at` / `platform_end_quality`。
+
+### 3B.7 自动开播监听
+
+- `MonitoringManager` 新增 `douyin` detector：等待时每 90 秒（60–150 秒抖动）读取一次公开页；
+  每平台一个 pacer（抖音 ≥2 秒），最多 2 个并发检查。
+- 目标 key 为 `web_rid`，`platform_uid` 为主播 id；公开页没有可靠的“本场开始 id”，因此
+  `liveCycleKey('douyin')` 返回 `null`：手动停止后保持抑制，直到页面确认下播，避免把同一场重复开播。
+- 发现开播后调用 `DouyinService.connectDetected`，复用普通适配器/`EventIngest`；关播后目标保留。
+
+### 3B.8 数据保留
+
+- 抖音原文、展示标签与过期昵称按 **30 天**清理（Douyin-only scope）；保留事件行、计数、稳定 UID。
+- 清理在启动、抖音场次结束与 `POST /api/douyin/retention/apply` 时执行。
+- 这不等于完全删除个人数据；文档与界面不得声称“已彻底删除”。
+
+### 3B.9 验证状态（2026-11-15，Asia/Shanghai）
+
+真实公开直播间 `708764876300`（未登录、未付费、未保存/展示正文）：
+
+| 验证 | 结果 |
+| --- | --- |
+| 源码路径 20 秒 | 7 条 chat，7/7 有 `user.id`、昵称、消息 ID、CJK；7 个唯一身份；0 重复；144 member / 4 like / 2 follow / 3 stats；0 gift |
+| 正式 EXE | 连接成功，2 条真实 chat 入库；2/2 有 `douyin:<id>`、昵称、消息 ID、原文；停止 `ended`；重启后数据仍在 |
+| 正式 EXE 自动监听 | 创建目标 → check → `recording` + 正常 session → 停止 → 删除目标 |
+| 浏览器扫码（真实 Chrome/Edge、未扫码） | 官方登录页打开；捕获官方 `get_qrcode` 二维码（PNG base64，`is_frontier=true`，约 60 秒）；取消后资料目录可删除；`verify-douyin-browser-login` **8/8** |
+| 真实手机扫码 | **未执行（无账号）**；不得写成成功或失败 |
+| Cookie 负向验证 | 格式错误/不完整/假 session 分别被 400/400/401 拒绝；不保存为登录 |
+| Cookie 正向验证 | **未验证**（需要真实账号 Cookie） |
+| 礼物/连送 | 匿名 0；真实事件未观测到；自动化覆盖解析/合并/去重/金额未知 |
+| 断线/下播/多房间 | 自动化覆盖；真实拔网与“直播中→下播”未捕获 |
+
+**未验证 / 不得宣称**：真实手机扫码成功、登录后的礼物推送、真实礼物、真实连送、真实付费留言、
+真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：

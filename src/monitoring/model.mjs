@@ -110,6 +110,13 @@ export function liveCycleKey(platform, target, observation) {
     if (login && streamId) return `twitch:${login}:${streamId}`;
     return null;
   }
+  if (platform === 'douyin') {
+    // The public room page exposes no reliable broadcast start id. Inventing a
+    // key from the room id would make every check look like a new broadcast, so
+    // no key is returned: a manual stop stays suppressed until the page
+    // confirms the room went offline.
+    return null;
+  }
   return null;
 }
 
@@ -217,16 +224,16 @@ export function classifyMonitorError(error) {
   if (Object.values(MONITOR_ERROR).includes(code)) {
     return {code, retryAfterMs: error?.details?.retryAfterMs ?? null};
   }
-  if (['YOUTUBE_WEB_NETWORK', 'NETWORK', 'CONNECT_TIMEOUT', 'TWITCH_NETWORK', 'TWITCH_CONNECT_TIMEOUT'].includes(code)) {
+  if (['YOUTUBE_WEB_NETWORK', 'NETWORK', 'CONNECT_TIMEOUT', 'TWITCH_NETWORK', 'TWITCH_CONNECT_TIMEOUT', 'DOUYIN_NETWORK', 'DOUYIN_CONNECT_TIMEOUT'].includes(code)) {
     return {code: MONITOR_ERROR.NETWORK, retryAfterMs: null};
   }
-  if (['YOUTUBE_RATE_LIMITED', 'RATE_LIMITED', 'TWITCH_RATE_LIMITED'].includes(code)) {
+  if (['YOUTUBE_RATE_LIMITED', 'RATE_LIMITED', 'TWITCH_RATE_LIMITED', 'DOUYIN_RATE_LIMITED'].includes(code)) {
     return {code: MONITOR_ERROR.RATE_LIMITED, retryAfterMs: error?.details?.retryAfterMs ?? error?.retryAfterMs ?? null};
   }
-  if (['YOUTUBE_WEB_BLOCKED', 'YOUTUBE_WEB_RESTRICTED', 'AUTH_REQUIRED', 'FORBIDDEN', 'TWITCH_CHANNEL_UNAVAILABLE'].includes(code)) {
+  if (['YOUTUBE_WEB_BLOCKED', 'YOUTUBE_WEB_RESTRICTED', 'AUTH_REQUIRED', 'FORBIDDEN', 'TWITCH_CHANNEL_UNAVAILABLE', 'DOUYIN_BLOCKED', 'DOUYIN_LOGIN_BLOCKED'].includes(code)) {
     return {code: MONITOR_ERROR.BLOCKED, retryAfterMs: null};
   }
-  if (['YOUTUBE_WEB_PROTOCOL', 'YOUTUBE_WEB_STALE', 'BAD_RESPONSE', 'STATUS_INVALID', 'TWITCH_PROTOCOL'].includes(code)) {
+  if (['YOUTUBE_WEB_PROTOCOL', 'YOUTUBE_WEB_STALE', 'BAD_RESPONSE', 'STATUS_INVALID', 'TWITCH_PROTOCOL', 'DOUYIN_PROTOCOL', 'DOUYIN_SIGNATURE_FAILED'].includes(code)) {
     return {code: MONITOR_ERROR.PROTOCOL, retryAfterMs: null};
   }
   if ([
@@ -235,7 +242,8 @@ export function classifyMonitorError(error) {
     'ROOM_NOT_FOUND',
     'YOUTUBE_CHANNEL_NOT_FOUND',
     'UNKNOWN_CHANNEL',
-    'TWITCH_CHANNEL_NOT_FOUND'
+    'TWITCH_CHANNEL_NOT_FOUND',
+    'DOUYIN_ROOM_NOT_FOUND'
   ].includes(code)) {
     return {code: MONITOR_ERROR.NOT_FOUND, retryAfterMs: null};
   }
@@ -254,7 +262,9 @@ export function classifyMonitorError(error) {
     'YOUTUBE_NOT_LIVE_VIDEO',
     'YOUTUBE_NOT_LIVE_ENDED',
     'ROOM_NOT_LIVE',
-    'ROOM_ROUND'
+    'ROOM_ROUND',
+    'DOUYIN_ROOM_OFFLINE',
+    'DOUYIN_ROOM_ENDED'
   ].includes(code)) {
     return {code: MONITOR_ERROR.OFFLINE_RACE, retryAfterMs: null};
   }

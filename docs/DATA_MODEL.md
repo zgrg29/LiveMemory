@@ -790,3 +790,49 @@ ai_job_memory_viewers
   `cacheWriteInputTokens`。
 - 该文件仍**不包含**提示词、回答或聊天正文；备份继续排除 `runtime/`。
 
+## 21. 抖音事件映射（M2/M3，**无 schema 变更**）
+
+数据库仍为 **schema 16**，备份格式仍为 `.livememory` v1；没有新增表或列，也没有迁移。
+抖音复用既有 `events` / `viewers` / `broadcasters` / `sessions` / 画像流程。
+
+### 21.1 `events` 字段映射
+
+| canonical 字段 | 抖音来源 | 说明 |
+| --- | --- | --- |
+| `platform` | `'douyin'` | 平台枚举 |
+| `event_type` | `chat` / `gift` | 只有这两类写库；member/like/follow/stats 只计数 |
+| `external_id` | 消息 `msgId` | 平台消息 ID；适配器内另做 10,000 条快速去重 |
+| `viewer_uid` | `user.id`（BigInt → 十进制字符串） | 稳定 UID；缺失/为 0 时为 `NULL` |
+| `viewer_id` | `douyin:<user.id>` | 长期身份；昵称永不参与 |
+| `display_name` | `user.nickName` | 仅展示 |
+| `content` | `ChatMessage.content` | 原文；Unicode/Emoji/平台表情代码不替换 |
+| `occurred_at` | `common.createTime`（秒 → 毫秒） | 偏离接收窗口过大时回退本地接收时间 |
+| `gift_id` / `gift_name` | `giftId` / `gift.name` | 礼物身份与名称 |
+| `gift_quantity` | `repeatCount`（最终态） | 连送最终数量；中间态不写库 |
+| `amount_minor` / `currency` | 不设置 | 抖音不给本币金额；保持 `NULL` |
+| `amount_display` | `diamondCount × quantity` → `"N 抖音币"` | 展示价值；没有钻石数时为 `NULL`，不写 0 |
+| `value_kind` | `'unknown'` | 绝不标成 `actual` |
+| `is_paid` | 礼物 `1`；聊天 `0` | 进场/点赞/关注不写事件 |
+| `source_quality` | `verified`（有 UID + 消息 ID）/ `unknown` | 与 Bilibili/Twitch 口径一致 |
+
+### 21.2 去重与连送
+
+- 数据库仍由 `UNIQUE(session_id, dedupe_key)` 兜底；`dedupe_key = ext:<msgId>`。
+- 连送以 `groupId`（缺失时 `user + giftId`）合并；只有 `repeatEnd=1` 写一条 `gift`，
+  数量取连送过程中观察到的最大值，避免中间步骤重复计费。
+- 未收到最终态的连送在 TTL 后丢弃，不写成猜测值；重连 replay 的同一 `msgId` 不会再次入库。
+
+### 21.3 主播身份与监控目标
+
+- 主播使用 `broadcasters`：`id = douyin:<anchor.id>`，`platform_uid = anchor.id`；
+  房间内部 ID 只作为 `sessions.platform_room_id`，不当作主播身份。
+- 监控目标 `target_key = web_rid`，`platform_uid = anchor.id`；`meta_json` 保存 roomId、
+  标题、在线数与最近观察时间。
+- 公开页没有可靠的“本场开始 id”，因此抖音不提供 `liveCycleKey`；手动停止后抑制到页面确认下播。
+
+### 21.4 未改动的部分
+
+- `events`/`sessions`/`viewers`/`broadcasters`/长期记忆/AI 结果结构均未改。
+- 备份、恢复、清空、删除场次、保留策略沿用既有实现；抖音只增加独立 `platform='douyin'` scope。
+- 没有为抖音新增 AI 系统；AI 包、单场报告与长期画像读取的是同一套 canonical 数据。
+

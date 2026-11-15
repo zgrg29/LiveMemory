@@ -504,6 +504,16 @@ function twitchError(error) {
   });
 }
 
+/** Douyin failures are mapped by DouyinService (including login states). */
+function douyinError(error) {
+  if (error instanceof AppError) return error;
+  return new AppError('DOUYIN_ERROR', {
+    messageKey: 'errors.douyinError',
+    httpStatus: 502,
+    cause: error
+  });
+}
+
 export function createRouter(routes, deps) {
   const compiled = routes.map((route) => {
     const names = [];
@@ -2484,6 +2494,142 @@ export function buildRoutes() {
         await readOptionalJson(req);
         const result = deps.twitch.applyRetention();
         sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/douyin/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.douyin.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/room',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const room = await deps.douyin.checkRoom(body.url ?? body.webRid ?? body.input);
+          sendJson(res, 200, {room});
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.douyin.connect(body.url ?? body.webRid ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            room: result.room,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/disconnect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.douyin.disconnect({sessionId: body.sessionId ?? null});
+          if (result.reason === 'session_id_required') {
+            throw sessionIdRequiredError({count: result.count, platform: 'douyin'});
+          }
+          sendJson(res, 200, {
+            stopped: Boolean(result?.stopped),
+            session: serializeSessionRow(result?.session ?? null)
+          });
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.douyin.applyRetention();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/login/browser/start',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const result = await deps.douyin.startBrowserLogin();
+          sendJson(res, 200, result);
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/douyin/login/browser/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.douyin.browserLoginStatus());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/login/browser/cancel',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const result = await deps.douyin.cancelBrowserLogin();
+          sendJson(res, 200, result);
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/douyin/login/check',
+      handler: async ({res, deps}) => {
+        try {
+          const result = await deps.douyin.checkLogin();
+          sendJson(res, 200, result);
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/login/logout',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        try {
+          const status = await deps.douyin.logout();
+          sendJson(res, 200, status);
+        } catch (error) {
+          throw douyinError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/douyin/login/cookie',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.douyin.applyCookie(body.cookie);
+          sendJson(res, 200, result);
+        } catch (error) {
+          throw douyinError(error);
+        }
       }
     },
     {

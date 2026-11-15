@@ -26,6 +26,50 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
+## 2.0 本轮结果（2026-11-15，DOUYIN-M2M3 + Twitch 合并）
+
+### 2.0.1 Twitch 合并后回归
+
+- 合并提交 `d5e9a7c`（`main`）；合并后全量 **875 passed / 0 failed / 0 skipped（215,586.9 ms）**。
+- 合并前工作区干净；无冲突；`feature/twitch` 保留。
+
+### 2.0.2 抖音专项（新增 48 项）
+
+| 文件 | 数量 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/douyin-link.test.mjs` | 4 | URL/房间号、share 形式、拒绝用户/视频/搜索/短链 |
+| `tests/unit/douyin-messages.test.mjs` | 10 | protobuf 编解码/截断/未知字段、gzip、昵称/UID/原文/Unicode、礼物、连送、无金额、TTL |
+| `tests/unit/douyin-client.test.mjs` | 7 | 公开页解析（status 2/4）、匿名 cookie、签名 URL、429/403/404、风控页 |
+| `tests/unit/douyin-adapter.test.mjs` | 5 | 连接、去重、心跳、连送最终态、重连、两次离线、停止 |
+| `tests/unit/douyin-login.test.mjs` | 9 | 匿名状态、风控阻止、QR JSON、轮询成功/过期、过期检查、Cookie 白名单 |
+| `tests/unit/douyin-ui.test.mjs` | 6 | 三语键集/占位符、UI/路由/监控/构建接线、无 innerHTML |
+| `tests/integration/douyin-session.test.mjs` | 3 | 真实 SessionManager/EventIngest/SQLite/AI 包、多房间、非付费事件不写库 |
+| `tests/integration/douyin-monitoring.test.mjs` | 4 | 自动开播、离线不出场、not-found、双目标独立 session |
+
+### 2.0.3 全量
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`：
+  **923 passed / 0 failed / 0 skipped（283,515.6 ms，2026-11-15）**。
+
+### 2.0.4 正式 EXE
+
+| 脚本 | 结果 |
+| --- | --- |
+| `verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI + 三平台状态） | **17/17**；礼物 1 条 NOT-OBSERVED |
+| `verify-exe.mjs` | **10/10** |
+| `verify-p0-5-exe.mjs` | **12/12** |
+| `verify-p0-2-exe.mjs` | **13/13** |
+| `verify-help-exe.mjs` | **14/14** |
+| `verify-ai-token-exe.mjs` | **16/16** |
+
+### 2.0.5 真实平台
+
+- 抖音 `708764876300`：公开页 `status=2`；源码路径 20 秒 7 条 chat（7/7 UID/昵称/消息 ID/CJK、0 重复）；
+  正式 EXE 2 条 chat（2/2 同上）；0 gift。
+- Bilibili 房间 `6`（真实 `7734200`）20 秒：6 条消息 / 6 个可识别观众 / 0 付费 / 6 个 viewer profile，停止 `ended`。
+- YouTube `4t4AQ15yj1M` 12 秒：75 条消息 / 12 位活跃观众 / 0 付费，停止 `ended`。
+- Twitch 正式 EXE `verify-twitch-exe` **20/20**（真实频道、自动监听、重启、AI、三平台状态）。
+
 ## 2.1 本轮结果（2026-11-14，RC0-MEMORY-QUALITY）
 
 - 全量：**814 passed / 0 failed / 0 skipped（248,833 ms）**。
@@ -1823,3 +1867,104 @@ commit `7da0e0d`，Manifest `requireAdministrator`。功能场景使用同一二
 - **真实 UAC 双击/点击**：自动化不能点击 UAC；只断言 Manifest 与同一二进制功能副本。
 - **长时间 10+ 频道、千条/秒、限流叠加**：未验证。
 - 不得把匿名 IRC / 公开 GQL 描述为 Twitch 官方稳定 API；不得把 Bits/Tier/月数换算成收入。
+
+## 47. DOUYIN-LOGIN-FIX：浏览器扫码、Cookie 验证与礼物分级（v0.13.2，2026-11-15）
+
+### 47.1 新增 / 更新测试
+
+| 文件 | 数量 | 关键断言 |
+| --- | --- | --- |
+| `tests/unit/douyin-browser-login.test.mjs` | 10 | 启动参数不含 headless/no-sandbox/stealth；只接受已知 Chrome/Edge；`DevToolsActivePort` 解析；只保留 `douyin.com` Cookie；二维码只接受官方域名；Fake CDP 捕获二维码并验证；无浏览器/未标记资料目录/取消/清理 |
+| `tests/unit/douyin-login.test.mjs` | 14 | 格式/不完整/过期分类；只有平台确认才保存为登录；假会话/4031/网络/不确定状态；`sid_guard`；状态不返回 Cookie；加密存储验证标记 |
+| `tests/integration/douyin-login-service.test.mjs` | 3 | Service 层登录状态、`saved_unverified` 能力、退出后回到匿名 |
+| `tests/integration/douyin-session.test.mjs` | 4（+1） | 原有采集/多房间/礼物；新增「扫码/会话/连接/礼物」四级状态与断开后仍保留观测 |
+| `tests/unit/douyin-ui.test.mjs` / `i18n.test.mjs` | 8 + 4 | 三语键集/占位符；浏览器登录端点；12 步 Cookie 教程；无 `innerHTML`；构建必需模块 |
+| `tests/integration/api-auth.test.mjs` | 14 | 新增 6 个抖音登录路由未认证 401 |
+
+### 47.2 全量
+
+```bat
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+```
+
+- **944 passed / 0 failed / 0 skipped（298,824 ms，2026-11-15 最终复跑）**；上一轮 923，本轮 +21。
+- `tests/integration/api-auth.test.mjs` 单独复跑 **14/14**。
+
+### 47.3 真实浏览器扫码验证（未扫码）
+
+`node scripts/verify-douyin-browser-login.mjs`（真实 Chrome，专用资料目录）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 检测 Chrome/Edge | PASS（Chrome 157） |
+| 打开流程/状态不声称登录 | PASS（`waiting`） |
+| 捕获官方二维码 | PASS（PNG base64，`is_frontier=true`，约 54 秒） |
+| 状态不含 Cookie/二维码 token | PASS |
+| 取消并移除二维码 | PASS |
+| 专用资料目录可删除 | PASS |
+| 无浏览器回退 | PASS（`unavailable`） |
+| **合计** | **8/8**；**未扫码** |
+
+### 47.4 正式 EXE
+
+正式 EXE：`D:\LiveMemory\dist\LiveMemory.exe`，buildId `a0bc7f9136df`，commit `6f7f0d6`，
+SHA-256 `48cc12274c6c4e0b3d5e7a10e1c6766db8fb8f49f74c8a8f8ad7e2ae025aa699`，`97,584,640` B，
+Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker 测试副本。
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-douyin-exe.mjs` | **25/27**；2 项浏览器启动在 DSH 作业对象内被阻止（Chrome 直接子进程 `0x80000003`、PowerShell 回退无端口），其余登录状态/Cookie 负向/教程资源/匿名采集/重启/AI 通过 |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-twitch-exe.mjs` | **20/20** |
+| Bilibili / YouTube / Twitch 状态 | 均 200 |
+
+### 47.5 未验证 / 不得宣称
+
+- **真实手机扫码成功、扫码成功率**：本轮 0 次扫码（无账号），不能给成功率。
+- **真实 Cookie 正向验证**：需要账号；本轮只验证格式/不完整/假会话负向。
+- **登录后礼物推送、真实礼物/连送/付费留言**：匿名 0 条，标为未观测。
+- **EXE 浏览器启动**：沙箱内失败；同一模块在普通 Node 顶层真实 Chrome 8/8，需人工在普通桌面验收。
+- 干净 Windows 电脑、无 Chrome/Edge 环境、非管理员账户、真实 UAC 点击。
+
+## 48. DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复（v0.13.2，2026-11-15）
+
+### 48.1 根因与复现
+
+- **真实 EXE 日志（单次点击）**：`directExit=0`、`portFile=false`，随后 `kind:powershell` 启动成功。
+  直接 `spawn` 的 Chrome 未写 DevTools 端口却可能已开窗，PowerShell 回退再开一个 → 两个窗口。
+- **并发**：`start()` 修复前仅用 `state && this.running` 防重入，而 `running` 在 CDP 握手后才赋值；
+  `opening` 期间并发 `start()` 会各自 `#launchBrowser()`。真实复现 `Promise.all([start(), start()])`。
+- **孤儿/复用**：直接 spawn 未写 `browser.pid`；失败/取消时无法 taskkill，下次无法复用。
+- **排除**：干净/复用 Profile 下 `--new-window`、仅 URL、仅 new-window 都是 1 窗口；未同时启动 Chrome/Edge。
+- **修复**：Windows 只走一次 PowerShell；启动前清理专用 Profile 孤儿；同步并发锁；PID 复用；移除 `--new-window`。
+
+### 48.2 新增测试
+
+| 文件 | 数量 | 断言 |
+| --- | --- | --- |
+| `tests/unit/douyin-browser-login.test.mjs` | +3 | 并发 start 只 1 次 launch；活动窗口只 focus；取消后重新 start 只 1 次 |
+| `scripts/verify-douyin-browser-login.mjs` | 12 项真实 Chrome | 单次 1 窗口；再次点击 0 launch/1 窗口；并发双击 1 launch/1 窗口；已有窗口 reuse 同 port/1 窗口；取消/清理 |
+
+### 48.3 真实 Chrome 窗口计数（非模拟）
+
+| 场景 | 结果 |
+| --- | --- |
+| 单次点击 | 1 target / 1 window |
+| 已打开时再次点击 | 0 次新 launch、1 window、focus +1 |
+| 快速双击 | 1 次 launch、1 target / 1 window |
+| 第二个 LiveMemory 侧流程 | `kind=reuse`、同 port、1 window |
+| 取消/清理 | 窗口关闭、Profile 可删除 |
+| **合计** | **12/12** |
+
+### 48.4 全量与 EXE
+
+- 全量：**947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**；上一轮 944，本轮 +3。
+- `verify-exe`：**10/10**。
+- `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止，与本轮修复无关。
+- 新 EXE：`d37c8f262dc4` / commit `75c574c` / SHA-256 `c3b1fa8b…` / `97,591,296` B / requireAdministrator。
+
+### 48.5 未验证 / 不得宣称
+
+- **EXE 内实际窗口数量**：沙箱无法自动验证；需普通 Windows 桌面双击 EXE 人工确认。
+- 真实手机扫码复验；真实礼物仍为未观测。
+- 不要用模拟 DOM/假 CDP 结果冒充真实窗口计数；本轮计数来自真实 Chrome + `Browser.getWindowForTarget`。

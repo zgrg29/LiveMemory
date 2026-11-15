@@ -1,8 +1,286 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（TWITCH-M1：Twitch 正式接入、自动化测试、真实直播验证与 Windows EXE；等待人工验收）
+最后更新：2026-11-15（DOUYIN-SINGLE-WINDOW：修复扫码登录重复浏览器窗口；真实 Chrome 12/12；Windows EXE 已重建；feature/douyin 等待人工验收）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.37 DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复（2026-11-15）🟡（feature/douyin，等待人工验收）
+
+范围：只消除「点击一次扫码登录打开两个独立浏览器窗口」的问题。**未改扫码 URL、官方身份验证、
+会话验证、AES-256-GCM 保存、Cookie 备用、礼物采集与三语 UI。未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.37.1 根因与证据
+
+- **决定性证据（真实 EXE 单次点击日志，16:05:34）**：`directExit=0`、`portFile=false`，紧接着
+  `kind:powershell` 启动成功。直接 `child_process.spawn` Chrome 从提权 SEA 进程启动后立即退出、未写
+  `DevToolsActivePort`，但可能已开出一个不受 CDP 管理的窗口；PowerShell 回退再开一个 → 两个独立窗口。
+  现场 Profile 无 `DevToolsActivePort`/`browser.pid`，Chrome 父进程是已退出的 PowerShell。
+- **并发风险**：`start()` 只用 `state && this.running` 防重入，而 `this.running` 在 CDP 握手后赋值；
+  `opening` 期间并发 `start()` 会重复启动。真实复现 `Promise.all([start(), start()])`。
+- **孤儿/复用缺口**：直接 spawn 未写 PID，失败/取消时可能无法 taskkill；下次无法复用专用窗口。
+- **排除**：干净 Profile 的 `--new-window`/URL/仅 new-window 都是 1 窗口；同一 Profile 连续启动仍各 1 窗口；
+  未同时启动 Chrome/Edge；未复现 Profile 恢复旧窗口。真实 Chrome 154 + `Browser.getWindowForTarget` 计数。
+
+### 0.37.2 修复
+
+| 位置 | 修复 |
+| --- | --- |
+| `browser-login.mjs#launchBrowser` | **Windows 只走一次 PowerShell `Start-Process`**；不再先直接 spawn 再回退 |
+| `browser-login.mjs` | 启动前按专用 Profile 命令行清理孤儿 Chrome（只匹配 LiveMemory Profile，绝不动日常浏览器） |
+| `browser-login.mjs#start` | 同步 `startPromise` 锁；初始化期间第二次点击返回当前状态并 `Page.bringToFront`，不新建 |
+| `browser-login.mjs` | 启动后立即记录 `browser.pid`；`#findExistingBrowser()` 复用同 Profile 专用窗口（同 port/PID） |
+| `browser-login.mjs#closeBrowser` | 串行化关闭；PID 缺失/仍存活时再按 Profile 清理；清理 `DevToolsActivePort`/`browser.pid` |
+| `buildBrowserArgs` | 移除 `--new-window`（官方 URL 本身 1 个窗口），降低 handoff 多开风险 |
+| `live.js` | `douyinBrowserStarting` 防止重复请求；活动窗口按钮保持禁用 |
+| 日志 | 只记录 event/浏览器/PID/target ID；不含 Cookie/sessionid/token |
+
+### 0.37.3 真实 Chrome 窗口计数（非模拟）
+
+`node scripts/verify-douyin-browser-login.mjs`（Chrome 154，专用测试 Profile，不扫码）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 单次点击 | 1 target / 1 window |
+| 打开时再次点击 | 0 次新 launch、1 窗口、focus +1 |
+| 快速双击（并发 start） | 1 次 launch、1 target / 1 window |
+| 第二个 LiveMemory 侧流程 | `kind=reuse`、同 port、1 窗口 |
+| 取消/清理 | 窗口关闭、Profile 可删除 |
+| **合计** | **12/12** |
+
+### 0.37.4 测试与 EXE
+
+- 新增 3 项浏览器测试：并发 start 只 1 次 launch、活动窗口只 focus、取消后重新 start 1 次。
+- 全量：**947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**。
+- `verify-exe`：**10/10**。
+- `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止
+  （Chrome 子进程 `0x80000003`、PowerShell 无端口），与本轮修复无关。
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| 大小 | `97,591,296` bytes |
+| SHA-256 | `c3b1fa8b95603826ebcd98e0ecf8fa92fcccdcc9626e0483ddb06b04f67b6315` |
+| Build ID | `d37c8f262dc4` |
+| source hash | `d37c8f262dc4ed6dd9d678c50ca051f811ac0bfecc2ba1a5add440c267253f36` |
+| commit | `75c574c0ec1824603559de88b37669466abd33ff` |
+| builtAt | `2026-11-15T09:45:00.851Z` |
+| RT_MANIFEST | `requireAdministrator` |
+
+**EXE 内窗口数量无法在 DSH 沙箱自动验证**：EXE 子进程中的 Chrome 被作业对象终止。真实窗口计数来自同一模块 +
+真实 Chrome；必须由开发者在普通 Windows 桌面双击 EXE 人工验收。**真实手机扫码仍需人工复验。**
+
+## 0.36 DOUYIN-LOGIN-FIX：浏览器扫码登录、Cookie 验证与礼物分级（2026-11-15）🟡（feature/douyin，等待人工验收）
+
+范围：只修复抖音 M2/M3 验收发现的登录问题。**未合并 main、未 Push、未 Tag、未 Release。**
+完整调查：`docs/DOUYIN_LOGIN_RESEARCH.md`；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3B；
+验收报告：`docs/ACCEPTANCE_DOUYIN_M2M3_FIX.md`；日志：`log/2026-11-15-douyin-login-qr.md`。
+
+### 0.36.1 结论：浏览器扫码可行，纯 HTTP 扫码不可行
+
+- 旧实现直接请求 `sso.douyin.com/get_qrcode` → HTTP 200 `text/html` 设备指纹挑战页；
+  `www.douyin.com/passport/web/get_qrcode` → `error_code 4031`「安全风险，已阻止此次访问」。
+  这是平台拒绝非浏览器客户端，不是「抖音禁止扫码」；LiveMemory 不伪造指纹/`a_bogus`/challenge。
+- 改用**本机 Chrome/Edge + 专用资料目录 + 官方登录页 + CDP**：官方页自身成功调用 `get_qrcode`
+  （`error_code=0`、二维码 PNG base64、`is_frontier=true`、约 60 秒有效），应用内显示同一二维码。
+- 真实手机扫码**未执行**（无账号）；不得写成成功或失败。二维码捕获/取消/目录清理用真实 Chrome 验证 **8/8**。
+
+### 0.36.2 实现
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/platforms/douyin/browser-login.mjs` | 查找 Chrome/Edge；专用 profile（`.livememory-owned`）；CDP 连接；捕获官方 `get_qrcode`；等待 `sessionid`；页面内 profile 校验；取消/关闭/清理；不用 headless/no-sandbox/stealth |
+| `src/platforms/douyin/login.mjs` | Cookie 诊断（格式/不完整/过期）、平台有效性复查（`/aweme/v1/web/user/profile/self/`）、已验证/未验证/失效/无效、退出 |
+| `src/platforms/douyin/cookie-store.mjs` | 加密保存 `verified/verifiedAt/reason`；状态永不返回 Cookie |
+| `src/platforms/douyin/service.mjs` | 浏览器登录生命周期；扫码/会话/连接/礼物四级状态；退出清理 |
+| `src/server/{index,routes}.mjs` | `/api/douyin/login/browser/start|status|cancel`；保留 `check|cookie|logout`；关闭时关闭浏览器 |
+| `src/web/js/pages/live.js` + 三语 i18n | 登录状态胶囊；扫码登录/取消/验证/删除；完整 12 步 Cookie 教程；四级礼物验证 |
+| `scripts/verify-douyin-browser-login.mjs` | 真实浏览器二维码捕获验证（不扫码） |
+
+### 0.36.3 登录状态与安全
+
+- 状态：`anonymous` / `saved_unverified` / `logged_in` / `expired` / `invalid`；
+  「浏览器登录完成」与「会话验证通过」分开，验证不确定时保存为 `saved_unverified`。
+- Cookie 仅 AES-256-GCM 保存在本机 `secrets/`；不进入日志、错误、备份、HTTP 响应、Git。
+- 「删除 Cookie / 退出登录」清除加密存储并尝试删除专用浏览器资料目录（锁定则返回 `locked`）。
+- 验证码/`is_frontier` 身份验证由用户在官方浏览器页面完成，程序不绕过。
+
+### 0.36.4 Cookie 帮助
+
+- 中文/日文/英文各 12 步：Chrome/Edge → `https://live.douyin.com/` → 登录 → F12 → Network → F5 →
+  选 `live.douyin.com` 请求 → Headers → Request Headers → Cookie → 复制值 → 粘贴 → 保存并验证。
+- 含 Firefox 差异、找不到 Cookie 的排查、AES-256-GCM 本地保护说明；错误直接显示在输入区下方。
+
+### 0.36.5 自动化测试
+
+- 新增/更新：浏览器登录 10 项、登录/Cookie 14 项、服务集成 3 项、礼物阶梯 1 项、UI/三语帮助断言更新；
+  API 认证新增 6 个抖音登录路由的未认证 401 断言。
+- 全量：**944 passed / 0 failed / 0 skipped（298,824 ms，2026-11-15 最终复跑）**；
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`。
+- `tests/integration/api-auth.test.mjs` 单独复跑 **14/14**。
+
+### 0.36.6 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| 大小 | `97,584,640` bytes（93.1 MB） |
+| SHA-256 | `48cc12274c6c4e0b3d5e7a10e1c6766db8fb8f49f74c8a8f8ad7e2ae025aa699` |
+| Build ID | `a0bc7f9136df` |
+| source hash | `a0bc7f9136df8aebf9ddeb16f64bd334780a1a55487f3ed4cba824b16467c362` |
+| commit | `6f7f0d65fd95838e489a0021180ea66e87dfd26e` |
+| builtAt | `2026-11-15T05:59:01.388Z` |
+| 资源 | `215` files；40 个必需模块 |
+| RT_MANIFEST | **`requireAdministrator`** |
+
+EXE 验证：
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-douyin-browser-login.mjs`（真实 Chrome，未扫码） | **8/8** |
+| `scripts/verify-douyin-exe.mjs`（真实匿名抖音 + 登录状态/Cookie/教程/退出 + 重启/AI） | **25/27**；2 项浏览器启动在 DSH 沙箱内被作业对象阻止（Chrome 直接子进程 `0x80000003`，PowerShell 回退无端口），其余通过 |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-twitch-exe.mjs`（真实 Twitch 回归） | **20/20** |
+| Bilibili / YouTube / Twitch 状态 | 均 200（在上述 EXE 脚本中） |
+
+**EXE 浏览器启动未在沙箱内通过**：同一 `DouyinBrowserLogin` 在普通 Node 顶层进程中用真实 Chrome 捕获二维码 8/8，
+但 EXE 子进程中的 Chrome 被 DSH 作业对象终止；这不是普通 Windows 用户环境的结论，必须人工验收。
+**未执行真实手机扫码**。
+
+### 0.36.7 明确未验证
+
+- 真实手机扫码成功、扫码成功率（未扫码，不能给出比率）。
+- 真实 Cookie 正向验证（需要账号）。
+- 登录后的礼物推送、真实礼物/连送/付费留言（本轮匿名 0 条，标为未观测）。
+- 干净 Windows 电脑、无 Chrome/Edge 环境、非管理员账户、真实 UAC 点击。
+
+
+## 0.35 DOUYIN-M2M3：抖音接入、登录与礼物解析（2026-11-15）🟡（feature/douyin，等待人工验收）
+
+范围：在 `feature/douyin`（从已合并 Twitch 的 `main` 创建）实现抖音公开直播间接入：URL/房间号解析、
+公开页直播状态、昵称与稳定 UID、弹幕原文、Unicode/Emoji、消息 ID、事件去重、断线重连、多直播间隔离、
+自动开播监听、SQLite、AI 读取链路与长期观众画像；另实现登录框架与礼物解析（含连送合并）。
+**本轮未修改数据库 schema（仍 16）、结果 Schema 1.3.0、提示词 v13.2、Bilibili/YouTube 适配器；
+未新增 npm 运行时依赖；未合并抖音分支到 main；未 Push、未创建 Tag、未发布 Release。**
+
+### 0.35.1 Twitch 合并（前置步骤）
+
+- 已按开发者授权把 `feature/twitch` 合并到 `main`：本地合并提交 **`d5e9a7c5b58bb8127ddf72c46918ce51c557f312`**
+  （`Merge branch 'feature/twitch' into main`，父提交 `21a5bf5` + `5bb0ad0`），未 Push/Tag/Release。
+- 合并后全量测试 **875 passed / 0 failed / 0 skipped（215,586.9 ms）**；工作区干净，无冲突。
+- `feature/twitch` 分支保留；`main` 内容与 `feature/twitch` 一致（`git diff` 为空）。
+
+### 0.35.2 实现内容
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/platforms/douyin/link.mjs` | `live.douyin.com/<rid>`、裸房间号、`www.douyin.com/root/live/<rid>`；拒绝用户页/视频/搜索/短链 |
+| `src/platforms/douyin/client.mjs` | 公开页解析（`web_rid`、内部 `room_id`、`status` 2/4、标题、主播 id/secUid/昵称、在线数）；匿名 cookie；签名 WSS URL |
+| `src/platforms/douyin/protobuf.mjs` | 自研 protobuf wire 编解码（varint/length/fixed、嵌套、未知字段跳过、BigInt 保精度），零依赖 |
+| `src/platforms/douyin/messages.mjs` | PushFrame/Response/Message 解码；gzip；Chat/Gift/Member/Like/Social/RoomUserSeq；连送合并；canonical 映射 |
+| `src/platforms/douyin/sign.mjs` | `node:vm` 沙箱加载 vendored 签名脚本，计算 WSS `signature`；失败明确报错，不伪造/不降级为未签名 |
+| `src/platforms/douyin/adapter.mjs` | WSS、5 秒心跳、ack、90 秒看门狗、1→30 秒退避、15 次后 5 分钟低速重连、连接内 10,000 消息 ID 去重、两次离线确认下播 |
+| `src/platforms/douyin/login.mjs` | 受控扫码登录流程（`get_qrcode` → `check_qrconnect` → 重定向换 cookie）、状态检查、过期提示、退出登录、显式本地 Cookie 备用入口 |
+| `src/platforms/douyin/cookie-store.mjs` | AES-256-GCM 加密的本地 Cookie（白名单字段、备份排除、日志脱敏） |
+| `src/platforms/douyin/service.mjs` | HTTP/监控/SessionManager 粘合；重复房间拒绝；Douyin-only 30 天保留 |
+| `src/monitoring/detectors/douyin.mjs` | 自动开播检测（公开页 `status`）；错误分类；目标状态机 |
+| `src/server/{index,routes}.mjs` | `/api/douyin/status|room|connect|disconnect|retention/apply|login/*` |
+| `src/web/js/pages/live.js` + 三语 i18n | 抖音来源 Tab、房间检查/开播判断/自动监听/登录/保留；64 个 `douyin` 键 × 三语 |
+| `src/platforms/douyin/vendor/` | AGPL-3.0 签名组件（独立目录、完整许可证、来源与哈希）+ 主项目 MIT 未改 |
+
+事件映射：`WebcastChatMessage`/`WebcastEmojiChatMessage` → `chat`（`external_id` = 消息 id，
+`viewer_uid` = `user.id`，昵称仅显示）；`WebcastGiftMessage` → **仅在 `repeatEnd=1` 时写一条 `gift`**，
+数量为连送最大值，`amount_minor=null`、`currency=null`、`value_kind=unknown`，
+`amount_display="<钻石合计> 抖音币"`（展示价值，不是收入）；Member/Like/Social/RoomUserSeq 只计数，
+绝不写礼物或付费事件。
+
+### 0.35.3 真实抖音只读验证（匿名、未登录、未付费）
+
+| 验证 | 结果 |
+| --- | --- |
+| 公开页解析（`708764876300`） | `room_id=7708163643157859082`、`status=2`、主播「东方甄选官方旗舰店」、稳定主播 id、secUid、在线 `500+` |
+| 签名 WSS 直连 20 秒（源码路径） | **7 条 chat**；7/7 有 `user.id`、昵称、消息 id、CJK；7 个唯一身份；0 重复；同一窗口 144 member / 4 like / 2 follow / 3 room stats |
+| 正式 EXE（asInvoker 测试副本，真实房间） | 连接成功；2 条真实 chat 入库；2/2 有 `douyin:<id>`、昵称、消息 ID、原文；停止后 `ended` |
+| 正式 EXE 自动监听 | 创建目标 → check → `recording` + 正常 session；真实 chat 入库；停止后删除目标 |
+| 礼物 | **匿名 0 条**；与「2026 年起礼物只推给登录会话」一致，未观测到真实礼物 |
+| 登录 | `sso.douyin.com/get_qrcode` 返回风控 HTML；`www.douyin.com/passport/web/get_qrcode` 返回 `error_code 4031`（访问被阻止）。**未完成真实扫码登录**，未绕过验证码/风控 |
+
+### 0.35.4 自动化测试
+
+- 新增 **48** 项：`douyin-link` 4、`douyin-messages` 10、`douyin-client` 7、`douyin-adapter` 5、
+  `douyin-login` 9、`douyin-ui` 6、`douyin-session` 3、`douyin-monitoring` 4。
+- 覆盖：URL 解析、房间 ID/状态、protobuf 编解码/截断/未知字段、gzip、昵称、稳定 UID、弹幕原文、
+  Unicode/Emoji、消息 ID、礼物解析、连送合并与去重、无金额礼物不记 0 元、登录成功/过期/风控、
+  Cookie 白名单、断线重连、两次离线确认、自动开播、多直播间隔离、SQLite、AI 包、长期画像、三语 UI、
+  Windows 构建必需模块。
+- 全量：**923 passed / 0 failed / 0 skipped（283,515.6 ms，2026-11-15）**；
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`。
+
+### 0.35.5 Windows EXE（本轮交付物）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件名 | `LiveMemory.exe` |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `0f848c77c2d6` |
+| source hash | `0f848c77c2d6cff5882856f27af375060fdcc9811b99529480119c87d5c11fee` |
+| commit（构建时 HEAD） | `1f73bed49c35e386ada1e5ca67768bc2e9f916d3`（包含抖音代码提交 `c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`） |
+| builtAt | `2026-11-15T04:33:52.697Z` |
+| 资源 | `214` files；39 个必需模块 |
+| RT_MANIFEST | **`requireAdministrator`** |
+| Node | `v24.21.0` |
+
+EXE 验证（正式二进制断言 Manifest；功能场景使用同一二进制的 asInvoker 测试副本）：
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI 读取 + 三平台状态 + 登录状态） | **17/17**，1 条礼物 NOT-OBSERVED（与矩阵并行时曾启动超时一次，单独重跑通过） |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-p0-5-exe.mjs` | **12/12** |
+| `scripts/verify-p0-2-exe.mjs` | **13/13** |
+| `scripts/verify-help-exe.mjs` | **14/14** |
+| `scripts/verify-ai-token-exe.mjs` | **16/16** |
+| `scripts/verify-twitch-exe.mjs`（真实 Twitch 回归） | **20/20** |
+
+### 0.35.6 功能完成状态（必须按此口径验收）
+
+| 功能 | 状态 |
+| --- | --- |
+| 观众昵称 | **已实现且真实直播实测通过**（7/7 与 2/2 均有昵称） |
+| 稳定 UID | **已实现且真实直播实测通过**（`user.id` → `douyin:<id>`；从未用昵称代替） |
+| 实时弹幕原文 | **已实现且真实直播实测通过**（Unicode/CJK；消息 id 去重） |
+| 礼物 | **已实现解析 + 自动化测试**；**真实礼物未观测到**（匿名连接平台不推送） |
+| 连送礼物 | **已实现最终态合并 + 自动化测试**；真实连送未观测到 |
+| 礼物展示价值 | **已实现**：钻石合计写入 `amount_display`，`amount_minor=null`、`value_kind=unknown`；不冒充收入 |
+| 登录 | **部分实现**：受控扫码流程 + 本地加密 Cookie + 状态/过期/退出；**真实扫码被风控阻止，未验证成功登录** |
+| 自动监听 | **已实现**：集成测试 + 正式 EXE 真实创建目标/开播 check/删除 |
+| 断线重连 | **已实现**：自动化覆盖 close/退避/看门狗/同 session；真实拔网未验证 |
+| 多直播间 | **已实现**：集成测试两房间独立 session/身份；正式 EXE 单房间实测 |
+| AI 分析 | **已实现**：正式 EXE `GET /api/ai/sessions/:id/report` 返回 200；未用真实付费 Provider 重跑语义分析 |
+| 长期观众画像 | **已实现**：正式 EXE 观众读取 200，`douyin:<id>` 进入现有画像；真实 AI 语义画像未重跑 |
+
+### 0.35.7 边界与未验证
+
+- **真实平台回归**：Bilibili 房间 `6`（真实 `7734200`）20 秒 6 条消息 / 6 个可识别观众 / 停止 `ended`；
+  YouTube `4t4AQ15yj1M` 12 秒 75 条消息 / 12 位活跃观众 / 停止 `ended`；Twitch 正式 EXE `verify-twitch-exe` 20/20。
+  首次 Bilibili 房间 `5050` 单次 `BILIBILI_NETWORK` 502 为瞬时网络失败，换房间后成功，代码未变。
+
+- **真实礼物、真实连送、真实付费留言未观测到**；不能写“礼物已完整支持”，只能写“已解析/自动化测试”。
+- **真实扫码登录未成功**：平台风控返回 HTML/4031；未绕过验证码、风控或访问控制。登录后的礼物推送因此未验证。
+- **真实断网、真实“直播中→下播”长跑未捕获**；自动化覆盖状态机，但不能替代真实网络演练。
+- **签名组件为 AGPL-3.0**：EXE 分发必须履行 AGPL 源码义务；主项目 MIT 未改。详见 `docs/LICENSE_AGPL_DOUYIN.md`。
+- 签名脚本可能随平台更新失效；失效时明确报 `DOUYIN_SIGNATURE_FAILED`，不伪造签名。
+- 未在另一台干净 Windows 电脑验收；未做 10+ 房间/千条每秒压力测试。
+- 抖音保留窗口在 M2/M3 固定 30 天，暂未提供设置项。
+
+### 0.35.8 Git 与等待验收
+
+- 分支：`feature/douyin`（从 `main` 的 `d5e9a7c` 创建）。
+- 抖音代码与文档提交：**`c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`**
+  （`feat: add Douyin live integration`，48 files，+13,646/−37）。
+- **未合并 main、未 Push、未创建 Tag、未发布 Release、未删除 `feature/twitch` / `feature/douyin`。**
+- **状态：EXE 已生成并完成真实抖音匿名采集/自动监听/重启验证；礼物与登录按实际限制标注；等待开发者人工验收。**
 
 ## 0.34 TWITCH-M1：Twitch 正式接入、测试与 Windows EXE（2026-11-15）🟡（等待人工验收）
 

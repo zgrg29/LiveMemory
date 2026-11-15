@@ -446,3 +446,44 @@ CORS 与 SameSite 只约束**浏览器**如何发送/读取跨站请求；本机
 - Origin 同源、`Origin:null` 拒绝、跨站 `Sec-Fetch-Site` 拒绝、Host 严格校验与 CORS 策略全部保持；不存在因为管理员权限而放行的端点。
 - 管理员权限会放大“本机同一用户进程能做什么”，但不会让 HTTP 调用绕过 Cookie。同一 Windows 用户的恶意软件仍是本地威胁，且可能继承提升后的令牌，因此不得把提权描述为安全增强。
 - 用户拒绝 UAC 时 Windows 直接取消启动；程序没有“失败后降级为非提权运行”的隐藏路径。
+
+## 32. 抖音登录凭据与公开数据（M2/M3，2026-11-15）
+
+### 32.1 保存什么
+
+- **匿名模式**：只保存公开直播间的聊天事件、昵称、稳定 UID（`user.id`）、主播身份与观看聚合；不需要账号。
+- **登录模式（可选）**：
+  - Cookie 保存在 `%LOCALAPPDATA%\LiveMemory\secrets\douyin-login.json` 与 `.douyin-key`，AES-256-GCM 加密，
+    字段白名单（`sessionid`、`sessionid_ss`、`sid_guard`、`ttwid`、`passport_csrf_token`、`bd_ticket_guard_*` 等）。
+  - 浏览器扫码使用**专用资料目录** `<数据目录>\runtime\douyin-browser-profile`，内含
+    `.livememory-owned` 标记。它**不是**用户日常 Chrome/Edge 的资料目录；LiveMemory 不读取、不修改、
+    不删除用户日常浏览器的 Cookie 数据库或配置。
+  - 该专用目录是 Chrome/Edge 自己的会话数据；退出登录时程序先关闭本次浏览器，再尝试删除该目录。
+- Cookie **不进入**：配置 JSON、日志、ZIP 分析包、数据库、备份、SSE 或 HTTP 响应；
+  `/api/douyin/status` 只返回登录状态、显示名、保存/验证时间与是否保存，不返回 Cookie 值或二维码 token。
+
+### 32.2 保护范围（如实说明）
+
+- 保护目标：另一个 Windows 账户读取文件；误提交/误打包；日志泄漏。
+- **不是 DPAPI**：同一 Windows 用户的进程可以读取密钥与密文；专用浏览器资料目录也由 Chrome/Edge
+  自身的 DPAPI 保护，但同一账户的进程仍可能读取。用户显式选择共享/同步目录时，该目录的其他访问者也可能读取。
+- 退出登录会删除 Cookie 文件并尝试删除专用浏览器资料目录；若浏览器仍占用目录而删除失败，界面/接口返回
+  `locked`，加密 Cookie 仍会被清除，用户可关闭残留浏览器窗口后手动删除该目录。
+- 登录验证调用 `https://www.douyin.com/aweme/v1/web/user/profile/self/`；只有平台返回
+  `status_code=0` 且含用户信息才标记「已验证」。网络或平台拒绝导致无法确认时，状态为
+  `saved_unverified`，不会把「Cookie 已保存」当作「登录成功」。
+
+### 32.3 不会做什么
+
+- 不上传 Cookie、弹幕或观众数据到 LiveMemory 开发者服务器；没有开发者运营的采集服务。
+- 不绕过验证码、风控、登录或访问控制；不伪造 `a_bogus`/设备指纹，不注入 stealth 脚本，
+  不启用 `--no-sandbox`/`--disable-web-security`/headless 登录。平台要求人工验证时，由用户在
+  **官方浏览器页面**完成。
+- 不读取用户日常浏览器的 Cookie 库；只读取 LiveMemory 自己启动的专用资料目录。
+- 不把抖音币/钻石换算成人民币或主播收入；不把没有金额的礼物记为零元。
+
+### 32.4 数据保留
+
+- 抖音弹幕原文、展示标签与过期昵称按 30 天清理（`platform='douyin'` 独立 scope）；保留事件行、计数、稳定 UID。
+- 清理发生在启动、场次结束与手动触发时；原文清理后 AI 证据明确标注不可用，不会伪造引用。
+- 这与 Bilibili/YouTube/Twitch 的保留口径一致；不等同于完全删除个人数据。

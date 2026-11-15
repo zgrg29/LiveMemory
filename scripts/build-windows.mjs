@@ -89,7 +89,19 @@ const REQUIRED_MODULES = [
   'src/platforms/twitch/link.mjs',
   'src/platforms/twitch/mapper.mjs',
   'src/platforms/twitch/service.mjs',
+  'src/platforms/douyin/adapter.mjs',
+  'src/platforms/douyin/browser-login.mjs',
+  'src/platforms/douyin/client.mjs',
+  'src/platforms/douyin/cookie-store.mjs',
+  'src/platforms/douyin/link.mjs',
+  'src/platforms/douyin/login.mjs',
+  'src/platforms/douyin/messages.mjs',
+  'src/platforms/douyin/protobuf.mjs',
+  'src/platforms/douyin/service.mjs',
+  'src/platforms/douyin/sign.mjs',
+  'src/platforms/douyin/vendor/sign.js',
   'src/monitoring/detectors/twitch.mjs',
+  'src/monitoring/detectors/douyin.mjs',
   'src/web/js/auth.js',
   'src/web/js/pages/help.js',
   'src/storage/repositories/ai-translations.mjs',
@@ -234,6 +246,8 @@ for (const needle of [
   'src/ai/batching/tokens.mjs',
   'src/ai/runtime/stream.mjs',
   'src/server/backup/restore.mjs',
+  'src/platforms/douyin/vendor/sign.js',
+  'src/platforms/douyin/adapter.mjs',
   'restore-journal.json'
 ]) {
   if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {
