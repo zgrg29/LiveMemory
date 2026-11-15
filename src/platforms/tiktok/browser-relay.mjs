@@ -556,6 +556,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       uniqueId: this.uniqueId,
       roomId: this.roomId,
       transport: 'browser',
+      state: this.state,
       category: captureCategory(this.state, {eventsVerified: this.eventsVerified, reason: extra.reason}),
       lastEventAt: this.lastEventAt,
       lastEventType: this.lastEventType,

@@ -135,6 +135,7 @@ test('a TikTok live room records chat, stable viewer identity and gift display v
     const sessionId = result.session.id;
     assert.equal(result.session.platform, 'tiktok');
     assert.equal(result.room.isLive, true);
+    assert.ok(['connected', 'reconnecting', 'rate_limited'].includes(result.connection?.state));
 
     await waitFor(() => Number(getSession(db, sessionId).message_count) >= 1);
     await waitFor(() => db.prepare('SELECT COUNT(*) AS c FROM events WHERE session_id = ?').get(sessionId).c >= 2);

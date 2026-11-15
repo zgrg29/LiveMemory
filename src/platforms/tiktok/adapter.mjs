@@ -203,6 +203,7 @@ export class TikTokAdapter extends PlatformAdapter {
       uniqueId: this.uniqueId,
       roomId: this.roomId,
       transport: this.transport,
+      state: this.state,
       category: extra.category ?? this.#category(),
       attempt: this.consecutiveFailures,
       reconnectAttempts: this.reconnectAttempts,
