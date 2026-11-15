@@ -317,6 +317,11 @@ test('clear-data keeps preferences and credentials, and factory reset removes th
   writeFileSync(join(data, 'exports', 'old-package.zip'), 'zip', 'utf8');
   mkdirSync(join(data, 'backups'), {recursive: true});
   writeFileSync(join(data, 'backups', 'keep-backup.bin'), 'backup', 'utf8');
+  // A dedicated TikTok browser profile contains real login cookies. "Clear
+  // data" must keep it (credentials survive) and factory reset must remove it.
+  mkdirSync(join(data, 'browser', 'tiktok', 'account'), {recursive: true});
+  writeFileSync(join(data, 'browser', 'tiktok', 'account', '.livememory-owned'), 'owned\n', 'utf8');
+  writeFileSync(join(data, 'browser', 'tiktok', 'account', 'Cookies'), 'cookie-store', 'utf8');
 
   const wrong = await json(base, '/storage/clear', {
     method: 'POST',
@@ -348,6 +353,7 @@ test('clear-data keeps preferences and credentials, and factory reset removes th
   assert.ok(existsSync(join(data, 'secrets', 'dummy-secret.txt')));
   assert.equal(readFileSync(join(data, 'personal-note.txt'), 'utf8'), 'keep me');
   assert.ok(existsSync(join(data, 'backups', 'keep-backup.bin')));
+  assert.ok(existsSync(join(data, 'browser', 'tiktok', 'account', 'Cookies')));
   assert.equal(existsSync(join(data, 'exports', 'old-package.zip')), false);
   const emptyViewers = await json(base, '/viewers');
   assert.equal(emptyViewers.body.viewers.length, 0);
@@ -377,6 +383,7 @@ test('clear-data keeps preferences and credentials, and factory reset removes th
   assert.equal(existsSync(join(data, 'secrets', 'dummy-secret.txt')), false);
   assert.equal(existsSync(join(data, 'exports', 'again.zip')), false);
   assert.equal(existsSync(join(data, 'logs', 'dummy.log')), false);
+  assert.equal(existsSync(join(data, 'browser', 'tiktok', 'account', 'Cookies')), false);
   assert.equal(readFileSync(join(data, 'personal-note.txt'), 'utf8'), 'keep me');
   assert.ok(existsSync(join(data, 'backups', 'keep-backup.bin')));
   // The launch pointer is not inside a managed folder and survives reset.
