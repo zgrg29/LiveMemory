@@ -16,8 +16,8 @@
 | 当前分支 | `feature/douyin`（从 `main` 的 `d5e9a7c` 创建） |
 | Twitch 合并提交 | `d5e9a7c5b58bb8127ddf72c46918ce51c557f312`（`Merge branch 'feature/twitch' into main`；父 `21a5bf5` + `5bb0ad0`） |
 | 基线 `main` | `d5e9a7c5b58bb8127ddf72c46918ce51c557f312`（合并后；未 Push） |
-| 本轮代码/文档提交 | `COMMIT_PLACEHOLDER`（`feat: add Douyin live integration`） |
-| 与 main 差异 | 见 `git diff --stat main...HEAD`；代码、测试、文档与构建脚本（无 schema 迁移） |
+| 本轮代码/文档提交 | `c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`（`feat: add Douyin live integration`，48 files，+13,646/−37） |
+| 与 main 差异 | `git diff --stat main...HEAD`：48 files changed（代码、测试、文档、构建脚本；无 schema 迁移） |
 | 工作区 | 提交后干净（`git status --porcelain` 为空） |
 | 提交身份 | `zgrg29 <10182596+zgrg29@users.noreply.github.com>` |
 | 未执行 | **未合并抖音到 main、未 Push、未创建 Tag、未发布 Release、未删除 `feature/twitch` / `feature/douyin`** |

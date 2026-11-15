@@ -58,7 +58,8 @@
 
 - 真实抖音只读公开直播间；未登录、未付费、未保存/展示正文；测试均用 `tests/.tmp` 隔离目录。
 - 真实礼物/连送、真实扫码登录、真实断网、真实“直播中→下播”、干净 Windows 账户仍未验证。
-- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+- 代码与文档提交：`c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`（`feat: add Douyin live integration`）；
+  提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
 ## 0-A 上一轮（TWITCH-M1）
 

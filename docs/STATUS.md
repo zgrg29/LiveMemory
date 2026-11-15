@@ -125,7 +125,8 @@ EXE 验证（正式二进制断言 Manifest；功能场景使用同一二进制�
 ### 0.35.8 Git 与等待验收
 
 - 分支：`feature/douyin`（从 `main` 的 `d5e9a7c` 创建）。
-- 抖音代码与文档提交见本轮最终提交（本文件所在提交之后可能还有构建记录提交）。
+- 抖音代码与文档提交：**`c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`**
+  （`feat: add Douyin live integration`，48 files，+13,646/−37）。
 - **未合并 main、未 Push、未创建 Tag、未发布 Release、未删除 `feature/twitch` / `feature/douyin`。**
 - **状态：EXE 已生成并完成真实抖音匿名采集/自动监听/重启验证；礼物与登录按实际限制标注；等待开发者人工验收。**
 
