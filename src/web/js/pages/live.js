@@ -166,6 +166,7 @@ export const livePage = {
     let douyinBrowser = null;
     let douyinBrowserSignature = '';
     let douyinBrowserError = '';
+    let douyinBrowserStarting = false;
     let douyinCookieDraft = '';
     let douyinCookieError = '';
     let douyinLoginHint = '';
@@ -2369,6 +2370,8 @@ export const livePage = {
     }
 
     async function startDouyinBrowserLogin(button) {
+      if (douyinBrowserStarting) return;
+      douyinBrowserStarting = true;
       button.disabled = true;
       douyinBrowserError = '';
       try {
@@ -2390,6 +2393,8 @@ export const livePage = {
         douyinBrowserError = ctx.describeError(error);
         ctx.toast(douyinBrowserError, {tone: 'error'});
         button.disabled = false;
+      } finally {
+        douyinBrowserStarting = false;
       }
     }
 

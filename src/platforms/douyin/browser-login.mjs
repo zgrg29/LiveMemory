@@ -448,6 +448,10 @@ export class DouyinBrowserLogin {
     this.pendingResponseTasks = new Set();
     this.launchDiagnostics = null;
     this.reloadAttempts = 0;
+    this.startPromise = null;
+    this.closingPromise = null;
+    this.pageTargetId = null;
+    this.focusCount = 0;
   }
 
   status() {
@@ -491,7 +495,28 @@ export class DouyinBrowserLogin {
   }
 
   async start() {
-    if (ACTIVE_STATES.has(this.state) && this.running) return this.status();
+    // A single click (or a fast double click) must never launch two browsers.
+    // `running` is only assigned after the CDP handshake, so use a synchronous
+    // in-flight promise as the real guard. The second caller gets the current
+    // state and asks the already-open window to come to the front.
+    if (this.startPromise) {
+      this.#focusExistingWindow();
+      return this.status();
+    }
+    if (ACTIVE_STATES.has(this.state) && this.running) {
+      this.#focusExistingWindow();
+      return this.status();
+    }
+    if (this.closingPromise) await this.closingPromise;
+    this.startPromise = this.#startOnce();
+    try {
+      return await this.startPromise;
+    } finally {
+      this.startPromise = null;
+    }
+  }
+
+  async #startOnce() {
     if (!this.dataDir || !this.profileDir) {
       this.#setState(BROWSER_LOGIN_STATES.UNAVAILABLE, {
         error: {code: 'DOUYIN_BROWSER_UNAVAILABLE', reason: 'no_data_dir'}
@@ -523,7 +548,20 @@ export class DouyinBrowserLogin {
     this.deadline = this.now() + this.options.timeoutMs;
     try {
       await this.#prepareProfile();
-      await this.#launchBrowser();
+      const existing = await this.#findExistingBrowser();
+      if (existing) {
+        this.port = existing.port;
+        this.browserPid = existing.pid;
+        this.launchKind = 'reuse';
+        this.logger?.info({
+          event: 'douyin.login.browser.reuse',
+          port: existing.port,
+          pid: existing.pid
+        });
+      } else {
+        await this.#launchBrowser();
+      }
+      if (this.cancelled || this.closed) return this.status();
       await this.#connectCdp();
     } catch (error) {
       this.logger?.warn({
@@ -539,6 +577,7 @@ export class DouyinBrowserLogin {
       });
       return this.status();
     }
+    if (this.cancelled || this.closed) return this.status();
     this.#setState(BROWSER_LOGIN_STATES.WAITING);
     this.running = this.#run()
       .catch((error) => {
@@ -552,6 +591,14 @@ export class DouyinBrowserLogin {
       });
     await this.#waitFor(() => this.qr !== null || !ACTIVE_STATES.has(this.state), this.options.qrWaitMs);
     return this.status();
+  }
+
+  /** Bring the already-open official login window to the front; never create one. */
+  #focusExistingWindow() {
+    this.focusCount += 1;
+    this.logger?.info({event: 'douyin.login.browser.focus_request', count: this.focusCount});
+    if (!this.cdp) return;
+    this.cdp.send('Page.bringToFront', {}, {timeoutMs: 2000}).catch(() => {});
   }
 
   async cancel() {
@@ -624,6 +671,34 @@ export class DouyinBrowserLogin {
     writeFileSync(marker, BROWSER_PROFILE_MARKER_TEXT, {mode: 0o600});
   }
 
+  /**
+   * Reconnect to a dedicated browser window that is still alive from a previous
+   * LiveMemory run. Only a profile carrying our ownership marker and a live PID
+   * we wrote ourselves can be reused.
+   */
+  async #findExistingBrowser() {
+    try {
+      const marker = join(this.profileDir, BROWSER_PROFILE_MARKER);
+      if (!existsSync(marker) || readFileSync(marker, 'utf8') !== BROWSER_PROFILE_MARKER_TEXT) return null;
+      const portFile = join(this.profileDir, 'DevToolsActivePort');
+      const pidFile = join(this.profileDir, 'browser.pid');
+      if (!existsSync(portFile) || !existsSync(pidFile)) return null;
+      const parsed = parseDevToolsActivePort(readFileSync(portFile, 'utf8'));
+      const pid = Number(readFileSync(pidFile, 'utf8').trim());
+      if (!parsed || !Number.isInteger(pid) || !isProcessAlive(pid)) return null;
+      const response = await this.fetchImpl(`http://127.0.0.1:${parsed.port}/json/version`, {
+        headers: {accept: 'application/json'},
+        signal: AbortSignal.timeout?.(3000)
+      });
+      if (!response.ok) return null;
+      const version = await response.json();
+      if (!version?.webSocketDebuggerUrl) return null;
+      return {port: parsed.port, pid};
+    } catch {
+      return null;
+    }
+  }
+
   async #launchBrowser() {
     const args = buildBrowserArgs({profileDir: this.profileDir});
     const portFile = join(this.profileDir, 'DevToolsActivePort');
@@ -655,6 +730,13 @@ export class DouyinBrowserLogin {
       this.launchDiagnostics = {direct: 'spawned'};
       this.child = this.spawnImpl(this.browser.path, args, {stdio: 'ignore', windowsHide: false});
       this.browserPid = this.child?.pid ?? null;
+      if (this.browserPid) {
+        try {
+          writeFileSync(join(this.profileDir, 'browser.pid'), String(this.browserPid), {mode: 0o600});
+        } catch {
+          /* reuse is best-effort; the port file still identifies the instance */
+        }
+      }
       this.child?.on?.('error', (error) => {
         this.launchDiagnostics = {
           ...(this.launchDiagnostics ?? {}),
@@ -668,15 +750,34 @@ export class DouyinBrowserLogin {
           directExit: `${code ?? 'null'}/${signal ?? 'null'}`
         };
       });
-      const info = await this.#waitForPort(portFile, 12000);
+      let info = await this.#waitForPort(portFile, 12000);
+      if (!info?.port && !this.browserExited && isProcessAlive(this.browserPid)) {
+        // A cold profile (antivirus scan, first-run cache) can take longer.
+        // Wait for the SAME process instead of starting a second browser.
+        info = await this.#waitForPort(portFile, 20000);
+      }
       if (info?.port) {
         this.port = info.port;
         this.launchKind = 'spawn';
         this.logger?.info({event: 'douyin.login.browser.launch', browser: this.browser.name, kind: 'spawn'});
         return;
       }
+      if (!this.browserExited && isProcessAlive(this.browserPid)) {
+        this.logger?.warn({
+          event: 'douyin.login.browser.no_devtools',
+          pid: this.browserPid,
+          portFile: existsSync(portFile)
+        });
+        throw Object.assign(new Error('browser did not expose devtools'), {reason: 'browser_no_devtools'});
+      }
       directError = Object.assign(new Error('browser did not start'), {reason: 'browser_did_not_start'});
     } catch (error) {
+      if (error?.reason === 'browser_no_devtools') {
+        // A browser process is alive but did not expose CDP. Starting another
+        // one here would create exactly the duplicate window this fix removes.
+        this.logger?.warn({event: 'douyin.login.browser.no_fallback', reason: error.reason});
+        throw error;
+      }
       directError = error;
       this.launchDiagnostics = {
         ...(this.launchDiagnostics ?? {}),
@@ -813,6 +914,12 @@ export class DouyinBrowserLogin {
 
   async #connectCdp() {
     const page = await this.#waitForPageTarget(15000);
+    this.pageTargetId = page.id ?? null;
+    this.logger?.info({
+      event: 'douyin.login.browser.target',
+      targetId: this.pageTargetId,
+      url: String(page.url ?? '')
+    });
     this.cdp = new CdpConnection({
       url: page.webSocketDebuggerUrl,
       WebSocketImpl: this.WebSocketImpl,
@@ -1113,6 +1220,14 @@ export class DouyinBrowserLogin {
   /* ----------------------------------------------------------- cleanup */
 
   async #closeBrowser() {
+    if (this.closingPromise) return this.closingPromise;
+    this.closingPromise = this.#closeBrowserInternal().finally(() => {
+      this.closingPromise = null;
+    });
+    return this.closingPromise;
+  }
+
+  async #closeBrowserInternal() {
     const cdp = this.cdp;
     if (cdp && !cdp.closed) {
       try {
@@ -1172,6 +1287,14 @@ export class DouyinBrowserLogin {
     }
     this.child = null;
     this.browserPid = null;
+    this.pageTargetId = null;
+    for (const name of ['DevToolsActivePort', 'browser.pid', 'browser-launch-error.txt']) {
+      try {
+        rmSync(join(this.profileDir, name), {force: true});
+      } catch {
+        /* best effort */
+      }
+    }
   }
 
   async #waitFor(predicate, timeoutMs) {

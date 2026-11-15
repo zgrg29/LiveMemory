@@ -332,3 +332,79 @@ test('a profile is deleted only when it carries the ownership marker', async () 
   assert.equal(existsSync(profile), false);
   rmSync(dir, {recursive: true, force: true});
 });
+
+test('two simultaneous start calls launch exactly one browser', async () => {
+  const dir = tempDir();
+  let launches = 0;
+  const login = new DouyinBrowserLogin({
+    dataDir: dir,
+    browser: {path: 'C:/fake/chrome.exe', name: 'Chrome'},
+    platform: 'win32',
+    launchImpl: async (options) => {
+      launches += 1;
+      return fakeLaunch()(options);
+    },
+    WebSocketImpl: FakeCdpSocket,
+    fetchImpl: fakeTargetsFetch(),
+    login: {saveBrowserCookie: async () => ({ok: true, verified: true})},
+    options: {pollIntervalMs: 50, qrWaitMs: 1000, timeoutMs: 10000}
+  });
+  const [first, second] = await Promise.all([login.start(), login.start()]);
+  assert.equal(launches, 1, 'a double click must not spawn a second browser');
+  assert.notEqual(first.state, BROWSER_LOGIN_STATES.ERROR);
+  assert.notEqual(second.state, BROWSER_LOGIN_STATES.ERROR);
+  assert.equal(login.focusCount, 1, 'the second click should ask the existing window to focus');
+  await login.cancel();
+  rmSync(dir, {recursive: true, force: true});
+});
+
+test('clicking again while the login window is open only focuses it', async () => {
+  const dir = tempDir();
+  let launches = 0;
+  const login = new DouyinBrowserLogin({
+    dataDir: dir,
+    browser: {path: 'C:/fake/chrome.exe', name: 'Chrome'},
+    platform: 'win32',
+    launchImpl: async (options) => {
+      launches += 1;
+      return fakeLaunch()(options);
+    },
+    WebSocketImpl: FakeCdpSocket,
+    fetchImpl: fakeTargetsFetch(),
+    login: {saveBrowserCookie: async () => ({ok: true, verified: true})},
+    options: {pollIntervalMs: 100, qrWaitMs: 1000, timeoutMs: 10000}
+  });
+  await login.start();
+  const before = login.status();
+  const again = await login.start();
+  assert.equal(launches, 1);
+  assert.equal(again.state, before.state);
+  assert.equal(login.focusCount, 1);
+  await login.cancel();
+  rmSync(dir, {recursive: true, force: true});
+});
+
+test('a new start after cancel launches one fresh browser, not two', async () => {
+  const dir = tempDir();
+  let launches = 0;
+  const login = new DouyinBrowserLogin({
+    dataDir: dir,
+    browser: {path: 'C:/fake/chrome.exe', name: 'Chrome'},
+    platform: 'win32',
+    launchImpl: async (options) => {
+      launches += 1;
+      return fakeLaunch()(options);
+    },
+    WebSocketImpl: FakeCdpSocket,
+    fetchImpl: fakeTargetsFetch(),
+    login: {saveBrowserCookie: async () => ({ok: true, verified: true})},
+    options: {pollIntervalMs: 50, qrWaitMs: 1000, timeoutMs: 10000}
+  });
+  await login.start();
+  await login.cancel();
+  const restarted = await login.start();
+  assert.equal(launches, 2);
+  assert.notEqual(restarted.state, BROWSER_LOGIN_STATES.ERROR);
+  await login.cancel();
+  rmSync(dir, {recursive: true, force: true});
+});
