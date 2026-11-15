@@ -1,13 +1,75 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · TWITCH-M1：Twitch 正式接入、自动化测试、真实直播验证与 Windows EXE · **等待人工验收**
+本轮：2026-11-15 · DOUYIN-M2M3：抖音匿名单播采集、登录框架、礼物解析、自动化测试与 Windows EXE · **等待人工验收**
+
+> 本轮先把已验收的 `feature/twitch` 合并到 `main`（`d5e9a7c`），再从最新 `main` 创建 `feature/douyin`，
+> 在该分支完成抖音接入。**未合并抖音到 main、未 Push、未创建 Tag、未发布 Release。**
+> 完整交付说明：`docs/STATUS.md` §0.35；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3B；
+> 许可证：`docs/LICENSE_AGPL_DOUYIN.md`；日志：`log/2026-11-15-douyin-m2m3.md`。
+
+## 0. 本轮（DOUYIN-M2M3）
+
+### 0.1 做了什么
+
+1. **Twitch 合并**：在 `main` 上创建合并提交 `d5e9a7c`（父 `21a5bf5` + `5bb0ad0`），无冲突；
+   合并后全量 875 passed；未 Push/Tag/Release。
+2. **分支**：从 `main`（`d5e9a7c`）创建 `feature/douyin`；所有抖音代码、测试、文档都在该分支。
+3. **匿名采集**：公开页解析（`web_rid`/内部 `room_id`/`status` 2/4/标题/主播 id/secUid/昵称/在线数）、
+   自研 protobuf、签名 WSS、gzip、心跳/ack、消息去重。
+4. **身份与原文**：`user.id` → `douyin:<id>`；昵称只显示；`msgId` → `external_id`；Unicode/Emoji 原文保留。
+5. **礼物**：`WebcastGiftMessage` 仅在 `repeatEnd=1` 写一条；连送按 groupId 合并；无金额礼物不记 0 元；
+   钻石只写 `amount_display`，`amount_minor=null`、`value_kind=unknown`。
+6. **登录**：受控扫码流程 + 本地 AES-GCM Cookie + 状态检查/过期提示/退出；平台风控阻止自动扫码时
+   明确报 `DOUYIN_LOGIN_BLOCKED`，并提供显式本地 Cookie 备用入口（不上传）。
+7. **监控/多房间**：`DouyinRoomDetector`；自动开播、两次离线确认、断线退避重连、独立 adapter/session。
+8. **UI**：直播页抖音 Tab、房间检查、自动监听、登录/保留；64 个 `douyin` 键 × 三语。
+9. **测试**：新增 48 项；全量结果见 §0.2。
+10. **EXE**：buildId `0f848c77c2d6` / SHA-256 `ebdcd40d…` / requireAdministrator；
+    `verify-douyin-exe` **17/17**（1 条礼物 NOT-OBSERVED），既有 EXE 矩阵见 §0.2。
+11. **许可证**：vendored AGPL-3.0 签名组件独立目录 + 完整许可证 + 哈希核对；**主项目 MIT 未改**。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| Twitch 合并 | `main` = `d5e9a7c`；合并后全量 875 passed |
+| 分支 | `feature/douyin`（从 `d5e9a7c`） |
+| 真实抖音聊天 | 源码路径 7 条（7/7 UID/昵称/消息 ID/CJK，0 重复）；正式 EXE 2 条（2/2 同上） |
+| 真实礼物 | **0 条（匿名）**；真实事件未观测到 |
+| 登录 | 风控阻止；未完成真实扫码；无伪造 |
+| 全量测试 | 见 `docs/STATUS.md` §0.35.6（本轮新增 48 项） |
+| 正式 EXE | `0f848c77c2d6` / `ebdcd40d…` / `requireAdministrator` / 93.0 MB |
+| EXE Douyin | **17/17**（含真实连接、入库、停止、自动监听、重启、AI 读取、三平台状态） |
+| main | **未合并抖音、未 Push、未 Tag、未 Release** |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **先等待开发者人工验收**：按 `docs/STATUS.md` §0.35.5 的路径启动 EXE，确认抖音 Tab、输入
+   `live.douyin.com/708764876300`、检查直播间、开始记录、查看弹幕/昵称/稳定 UID、停止、重启后数据仍在。
+2. **未获明确授权前不要合并 `feature/douyin` 到 main、不要 Push/Tag/Release、不要删除分支。**
+3. 若验收失败：在 `feature/douyin` 修复 → 重跑专项/全量 → **重新构建 EXE** → 再交付；不要用旧 EXE。
+4. **不要把礼物写成“已真实验证”**：匿名 0 条；真实礼物、连送、付费留言均未观测到。
+5. **不要把登录写成“已完成”**：扫码被风控阻止；不要绕过验证码/风控；不要声称登录后礼物已验证。
+6. **不要改回 MIT-only 描述**：EXE 含 AGPL-3.0 组件，分发必须履行 AGPL 源码义务；主项目 `LICENSE` 未改。
+7. 若要继续做登录/礼物，优先评估合规的浏览器授权或用户显式 Cookie 体验；必须先解决平台风控，
+   并重新做真实事件验证。
+
+### 0.4 边界与提交
+
+- 真实抖音只读公开直播间；未登录、未付费、未保存/展示正文；测试均用 `tests/.tmp` 隔离目录。
+- 真实礼物/连送、真实扫码登录、真实断网、真实“直播中→下播”、干净 Windows 账户仍未验证。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（TWITCH-M1）
 
 > 本轮在 `feature/twitch` 完成 Twitch 匿名 IRC + 公开元数据接入，构建正式 EXE 并用真实公开频道验证。
-> **未合并 main、未 Push、未创建 Tag、未发布 Release。** 完整交付说明：`docs/STATUS.md` §0.34；
-> 验收报告：`docs/ACCEPTANCE_TWITCH_M1.md`；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3A；
-> 日志：`log/2026-11-15-twitch-m1.md`。
+> **已按开发者授权合并到 main（`d5e9a7c`）；未 Push、未创建 Tag、未发布 Release。** 完整交付说明：
+> `docs/STATUS.md` §0.34；验收报告：`docs/ACCEPTANCE_TWITCH_M1.md`；平台细节：
+> `docs/PLATFORM_INTEGRATIONS.md` §3A；日志：`log/2026-11-15-twitch-m1.md`。
 
-## 0. 本轮（TWITCH-M1）
+## 0-B 上一轮（TWITCH-M1 原始交接）
+
+### TWITCH-M1 原始交接内容
 
 ### 0.1 做了什么
 

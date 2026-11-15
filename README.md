@@ -1,8 +1,10 @@
 # LiveMemory 直播记忆
 
-本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live** 与 **Twitch Live**（均已接入真实直播；Twitch 为 M1 匿名 IRC + 公开元数据）。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live** 与 **抖音 Live**（抖音为 `feature/douyin` 阶段交付：匿名弹幕/稳定 UID/自动监听已真实接入；礼物需登录，真实礼物与扫码登录尚未验证）。
 
-Local-first livestream memory for Bilibili Live, YouTube Live and Twitch Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
+Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live and Douyin Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
+
+> **License notice**: LiveMemory's own source is MIT. The Windows EXE also embeds an **AGPL-3.0** Douyin signature component under `src/platforms/douyin/vendor/`; binary distributions that include it must provide the corresponding source under AGPL-3.0. See `THIRD_PARTY_NOTICES.md` and `docs/LICENSE_AGPL_DOUYIN.md`. The project `LICENSE` was not changed.
 
 ---
 
@@ -85,6 +87,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **Bilibili 直播**：真实 WebSocket 弹幕、礼物、醒目留言、大航海、平台表情；扫码登录可选
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
 - **Twitch 直播（M1）**：匿名 IRC 公开聊天 + 公开频道元数据，无需 Twitch 登录、OAuth、API Key 或 Cookie；粘贴频道链接/账号即可，支持多频道并发与自动开播监听。真实公开频道已实测稳定 User ID、消息 ID、Unicode、平台表情 ID 与订阅/续订；**Bits 与赠订已解析但尚未观测到真实事件**。Bits/Tier/月数不换算收入，金额保持未知
+- **抖音直播（M2/M3，`feature/douyin`）**：公开直播间网页 + 签名的匿名 WebSocket；昵称、稳定 UID `douyin:<user.id>`、弹幕原文、Unicode/Emoji、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播。礼物需登录：连送只在 `repeatEnd=1` 写一条，钻石只作展示价值，`amount_minor=null`，不冒充收入；匿名连接真实观测到 0 礼物。扫码登录被平台风控阻止时明确提示，并提供仅存本机的加密 Cookie 备用入口。**真实礼物、真实连送与真实扫码登录尚未验证**。签名组件为 AGPL-3.0，见许可证说明
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
 - **M6：AI 文件协议（历史）**：v0.13.1 已删除用户可见的“导出 ZIP / 复制提示词 / 粘贴 JSON”流程；内部包格式、严格 Schema、证据/身份/批次校验、事务导入与历史结果读取保留。
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用

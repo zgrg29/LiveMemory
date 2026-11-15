@@ -10,6 +10,7 @@ import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {TwitchService} from '../platforms/twitch/service.mjs';
+import {DouyinService} from '../platforms/douyin/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -85,6 +86,11 @@ export async function startServer({
   twitchClient = null,
   twitchAdapterOptions = null,
   twitchWebSocketImpl = null,
+  douyinClient = null,
+  douyinLogin = null,
+  douyinAdapterOptions = null,
+  douyinWebSocketImpl = null,
+  douyinFetchImpl = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -160,12 +166,26 @@ export async function startServer({
       ...(twitchWebSocketImpl ? {WebSocketImpl: twitchWebSocketImpl} : {}),
       ...(twitchAdapterOptions ? {adapterOptions: twitchAdapterOptions} : {})
     });
+    const douyin = new DouyinService({
+      sessionManager,
+      secretsDir: paths.secrets,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      ...(douyinFetchImpl ? {fetchImpl: douyinFetchImpl} : {}),
+      ...(douyinClient ? {client: douyinClient} : {}),
+      ...(douyinLogin ? {login: douyinLogin} : {}),
+      ...(douyinWebSocketImpl ? {WebSocketImpl: douyinWebSocketImpl} : {}),
+      ...(douyinAdapterOptions ? {adapterOptions: douyinAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
       bilibili,
       youtube,
       twitch,
+      douyin,
       logger,
       now,
       onChange: () => {
@@ -188,6 +208,14 @@ export async function startServer({
       now: now(),
       days: 30,
       platforms: ['twitch'],
+      logger
+    });
+    // Douyin public chat follows the same 30-day raw-content policy, scoped to
+    // Douyin only so Twitch/YouTube/Bilibili data is never touched.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['douyin'],
       logger
     });
     const providerConfigStore = new ProviderConfigStore({
@@ -219,6 +247,7 @@ export async function startServer({
       bilibili,
       youtube,
       twitch,
+      douyin,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -277,6 +306,7 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
+    get douyin() { return runtime.douyin; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -436,6 +466,7 @@ export async function startServer({
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
+    get douyin() { return runtime.douyin; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

@@ -26,6 +26,50 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
+## 2.0 本轮结果（2026-11-15，DOUYIN-M2M3 + Twitch 合并）
+
+### 2.0.1 Twitch 合并后回归
+
+- 合并提交 `d5e9a7c`（`main`）；合并后全量 **875 passed / 0 failed / 0 skipped（215,586.9 ms）**。
+- 合并前工作区干净；无冲突；`feature/twitch` 保留。
+
+### 2.0.2 抖音专项（新增 48 项）
+
+| 文件 | 数量 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/douyin-link.test.mjs` | 4 | URL/房间号、share 形式、拒绝用户/视频/搜索/短链 |
+| `tests/unit/douyin-messages.test.mjs` | 10 | protobuf 编解码/截断/未知字段、gzip、昵称/UID/原文/Unicode、礼物、连送、无金额、TTL |
+| `tests/unit/douyin-client.test.mjs` | 7 | 公开页解析（status 2/4）、匿名 cookie、签名 URL、429/403/404、风控页 |
+| `tests/unit/douyin-adapter.test.mjs` | 5 | 连接、去重、心跳、连送最终态、重连、两次离线、停止 |
+| `tests/unit/douyin-login.test.mjs` | 9 | 匿名状态、风控阻止、QR JSON、轮询成功/过期、过期检查、Cookie 白名单 |
+| `tests/unit/douyin-ui.test.mjs` | 6 | 三语键集/占位符、UI/路由/监控/构建接线、无 innerHTML |
+| `tests/integration/douyin-session.test.mjs` | 3 | 真实 SessionManager/EventIngest/SQLite/AI 包、多房间、非付费事件不写库 |
+| `tests/integration/douyin-monitoring.test.mjs` | 4 | 自动开播、离线不出场、not-found、双目标独立 session |
+
+### 2.0.3 全量
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`：
+  **923 passed / 0 failed / 0 skipped（283,515.6 ms，2026-11-15）**。
+
+### 2.0.4 正式 EXE
+
+| 脚本 | 结果 |
+| --- | --- |
+| `verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI + 三平台状态） | **17/17**；礼物 1 条 NOT-OBSERVED |
+| `verify-exe.mjs` | **10/10** |
+| `verify-p0-5-exe.mjs` | **12/12** |
+| `verify-p0-2-exe.mjs` | **13/13** |
+| `verify-help-exe.mjs` | **14/14** |
+| `verify-ai-token-exe.mjs` | **16/16** |
+
+### 2.0.5 真实平台
+
+- 抖音 `708764876300`：公开页 `status=2`；源码路径 20 秒 7 条 chat（7/7 UID/昵称/消息 ID/CJK、0 重复）；
+  正式 EXE 2 条 chat（2/2 同上）；0 gift。
+- Bilibili 房间 `6`（真实 `7734200`）20 秒：6 条消息 / 6 个可识别观众 / 0 付费 / 6 个 viewer profile，停止 `ended`。
+- YouTube `4t4AQ15yj1M` 12 秒：75 条消息 / 12 位活跃观众 / 0 付费，停止 `ended`。
+- Twitch 正式 EXE `verify-twitch-exe` **20/20**（真实频道、自动监听、重启、AI、三平台状态）。
+
 ## 2.1 本轮结果（2026-11-14，RC0-MEMORY-QUALITY）
 
 - 全量：**814 passed / 0 failed / 0 skipped（248,833 ms）**。

@@ -35,6 +35,7 @@ import {RequestPacer} from './pacer.mjs';
 import {BilibiliRoomDetector} from './detectors/bilibili.mjs';
 import {YouTubeChannelDetector} from './detectors/youtube.mjs';
 import {TwitchChannelDetector} from './detectors/twitch.mjs';
+import {DouyinRoomDetector} from './detectors/douyin.mjs';
 
 /**
  * Unified automatic-monitoring scheduler.
@@ -60,6 +61,7 @@ export class MonitoringManager {
     bilibili = null,
     youtube = null,
     twitch = null,
+    douyin = null,
     logger = null,
     now = Date.now,
     detectors = null,
@@ -72,6 +74,7 @@ export class MonitoringManager {
     this.bilibili = bilibili;
     this.youtube = youtube;
     this.twitch = twitch;
+    this.douyin = douyin;
     this.logger = logger;
     this.now = now;
     this.onChange = onChange;
@@ -118,6 +121,15 @@ export class MonitoringManager {
         now: this.now,
         pacer: this.pacer,
         policy: MONITOR_POLICY.twitch
+      });
+    }
+    if (this.douyin?.client) {
+      detectors.douyin = new DouyinRoomDetector({
+        client: this.douyin.client,
+        logger: this.logger,
+        now: this.now,
+        pacer: this.pacer,
+        policy: MONITOR_POLICY.douyin
       });
     }
     return detectors;
@@ -217,7 +229,8 @@ export class MonitoringManager {
       policy: {
         bilibili: {checkIntervalMs: MONITOR_POLICY.bilibili.baseMs},
         youtube: {checkIntervalMs: MONITOR_POLICY.youtube.baseMs},
-        twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs}
+        twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs},
+        douyin: {checkIntervalMs: MONITOR_POLICY.douyin.baseMs}
       },
       summary: summarizeTargets(targets),
       targets
@@ -770,6 +783,17 @@ export class MonitoringManager {
         login: observation?.login ?? row.target_key,
         channelId: observation?.channelId ?? row.platform_uid,
         channelTitle: observation?.channelTitle ?? row.display_name ?? null
+      }, {monitorTargetId: row.id, input: row.input});
+    }
+    if (row.platform === 'douyin') {
+      if (!this.douyin?.connectDetected) throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
+      return this.douyin.connectDetected({
+        ...observation,
+        status: 'live',
+        webRid: observation?.webRid ?? row.target_key,
+        roomId: observation?.roomId,
+        anchorUid: observation?.anchorUid ?? row.platform_uid,
+        anchorName: observation?.anchorName ?? observation?.channelTitle ?? row.display_name ?? null
       }, {monitorTargetId: row.id, input: row.input});
     }
     throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);

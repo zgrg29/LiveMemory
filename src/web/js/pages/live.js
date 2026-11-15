@@ -143,15 +143,19 @@ export const livePage = {
     let checkedRoom = null;
     let checkedVideo = null;
     let checkedTwitch = null;
+    let checkedDouyin = null;
     let biliStatus = null;
     let youtubeStatus = null;
     let twitchStatus = null;
+    let douyinStatus = null;
     let biliAutoMonitor = false;
     let youtubeAutoMonitor = false;
     let twitchAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: '', twitch: ''};
+    let douyinAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
+    let douyinLoginTimer = null;
     let loginExpiresAt = 0;
     let loginHintText = '';
     let qrState = null;
@@ -159,6 +163,9 @@ export const livePage = {
     let qrWrapRef = null;
     let sourceHost = null;
     let loginHintHost = null;
+    let douyinQr = null;
+    let douyinHintText = '';
+    let douyinBlocked = false;
 
     const summaryCache = new Map();
     const feedCache = new Map();
@@ -353,14 +360,24 @@ export const livePage = {
     /* ---------------------------------------------------------- data sync */
 
     async function loadSourceStatuses() {
-      const [bili, youtube, twitch] = await Promise.all([
+      const [bili, youtube, twitch, douyin] = await Promise.all([
         api.get('/api/bilibili/status').catch(() => null),
         api.get('/api/youtube/status').catch(() => null),
-        api.get('/api/twitch/status').catch(() => null)
+        api.get('/api/twitch/status').catch(() => null),
+        api.get('/api/douyin/status').catch(() => null)
       ]);
       biliStatus = bili;
       youtubeStatus = youtube;
       twitchStatus = twitch;
+      douyinStatus = douyin;
+    }
+
+    async function refreshDouyinStatus() {
+      try {
+        douyinStatus = await api.get('/api/douyin/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
     }
 
     async function refreshYoutubeStatus() {
@@ -1419,6 +1436,7 @@ export const livePage = {
           checkedRoom = null;
           checkedVideo = null;
           checkedTwitch = null;
+          checkedDouyin = null;
           onSelect?.();
           renderSource();
           if (mode === 'youtube') {
@@ -1429,6 +1447,11 @@ export const livePage = {
           if (mode === 'twitch') {
             refreshTwitchStatus().then(() => {
               if (!destroyed && sourceMode === 'twitch') renderSource();
+            }).catch(() => {});
+          }
+          if (mode === 'douyin') {
+            refreshDouyinStatus().then(() => {
+              if (!destroyed && sourceMode === 'douyin') renderSource();
             }).catch(() => {});
           }
         }
@@ -1450,12 +1473,14 @@ export const livePage = {
         tabButton(t('live.source.mockTab'), 'mock'),
         tabButton(t('live.source.biliTab'), 'bilibili'),
         tabButton(t('live.source.youtubeTab'), 'youtube'),
-        tabButton(t('live.source.twitchTab'), 'twitch'));
+        tabButton(t('live.source.twitchTab'), 'twitch'),
+        tabButton(t('live.source.douyinTab'), 'douyin'));
 
       const body = el('div', {className: 'card-body'}, tabs);
       if (sourceMode === 'mock') body.append(buildMockPanel());
       else if (sourceMode === 'bilibili') body.append(buildBiliPanel());
       else if (sourceMode === 'twitch') body.append(buildTwitchPanel());
+      else if (sourceMode === 'douyin') body.append(buildDouyinPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
@@ -1873,6 +1898,338 @@ export const livePage = {
       }
     }
 
+    function douyinLoginText(login) {
+      if (login?.loggedIn) return t('live.source.douyinLoginSignedIn');
+      return t('live.source.douyinLoginAnonymous');
+    }
+
+    function buildDouyinPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinIntro')}));
+
+      const status = douyinStatus;
+      if (!status) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.douyinUnavailable')));
+        return panel;
+      }
+
+      /* ---- optional login (needed for gifts) ---- */
+      const login = status.login ?? {loggedIn: false};
+      const loginStatus = el('div', {className: 'source-status', text: douyinLoginText(login)});
+      const loginButton = el('button', {
+        className: 'button button--secondary button--small',
+        type: 'button',
+        text: t('live.source.douyinLoginButton'),
+        onClick: (event) => startDouyinQr(event.currentTarget)
+      });
+      const logoutButton = login.loggedIn
+        ? el('button', {
+          className: 'button button--ghost button--small',
+          type: 'button',
+          text: t('live.source.douyinLogout'),
+          onClick: (event) => logoutDouyin(event.currentTarget)
+        })
+        : null;
+      panel.append(el('div', {className: 'source-row'},
+        el('div', {className: 'field', style: {flex: '1 1 240px'}},
+          el('span', {className: 'label', text: t('live.source.douyinLoginTitle')}),
+          loginStatus),
+        el('div', {className: 'source-row-actions'}, loginButton, logoutButton)));
+
+      const hint = el('div', {className: 'source-status', text: douyinHintText || ''});
+      panel.append(hint);
+
+      const qrWrap = el('div', {className: 'login-qr'});
+      let drawn = false;
+      if (douyinQr?.url && Date.now() < douyinQr.expiresAt) {
+        const canvas = el('canvas', {
+          className: 'login-qr-canvas',
+          attrs: {role: 'img', 'aria-label': t('live.source.douyinLoginTitle')}
+        });
+        qrWrap.append(canvas);
+        drawn = paintQr(canvas, douyinQr.url);
+      } else if (douyinQr?.image && Date.now() < douyinQr.expiresAt) {
+        qrWrap.append(el('img', {
+          className: 'login-qr-canvas',
+          attrs: {
+            src: `data:image/png;base64,${douyinQr.image}`,
+            alt: t('live.source.douyinLoginTitle')
+          }
+        }));
+        drawn = true;
+      }
+      qrWrap.hidden = !drawn;
+      panel.append(qrWrap);
+      if (drawn) panel.append(el('p', {className: 'source-note', text: t('live.source.douyinLoginScanHint')}));
+
+      if (douyinBlocked || login.blocked) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.douyinLoginBlocked')));
+      }
+
+      /* ---- explicit local cookie fallback ---- */
+      const cookieInput = el('textarea', {
+        className: 'input',
+        style: {width: '100%', minHeight: '64px'},
+        attrs: {
+          rows: '3',
+          spellcheck: 'false',
+          placeholder: t('live.source.douyinCookiePlaceholder'),
+          'aria-label': t('live.source.douyinCookiePlaceholder')
+        }
+      });
+      panel.append(el('details', {className: 'source-note'},
+        el('summary', {text: t('live.source.douyinCookieNote')}),
+        el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('label', {className: 'field', style: {flex: '1 1 320px'}}, cookieInput),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.douyinCookieApply'),
+            onClick: (event) => applyDouyinCookie(event.currentTarget, cookieInput)
+          }))));
+
+      panel.append(autoMonitorToggle('douyin', douyinAutoMonitor, (checked) => {
+        douyinAutoMonitor = checked;
+        checkedDouyin = null;
+        renderSource();
+      }));
+      if (douyinAutoMonitor) {
+        panel.append(buildAutoMonitorSection('douyin'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.douyinAnonymousNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.douyinIdentityNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.douyinGiftNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.douyinMoneyNote')}));
+        return panel;
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.douyinLinkPlaceholder'),
+          'aria-label': t('live.source.douyinLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedDouyin?.input ?? '';
+      refs.douyinInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.douyinLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.douyinCheck'),
+          onClick: (event) => checkDouyin(event.currentTarget)
+        })));
+
+      if (checkedDouyin) panel.append(buildDouyinRoomMeta(checkedDouyin));
+
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinAnonymousNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinIdentityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinGiftNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinComboNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinMoneyNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.douyinCapabilityNote')}));
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.douyinPolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.douyinPolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.douyinApplyRetention'),
+            onClick: (event) => applyDouyinRetention(event.currentTarget)
+          })));
+      }
+
+      return panel;
+    }
+
+    function buildDouyinRoomMeta(room) {
+      const meta = el('div', {className: 'source-meta'});
+      meta.append(el('div', {className: 'source-status'},
+        chip(t('live.source.douyinRoomReady'), 'accent'),
+        room.isLive
+          ? chip(t('live.source.douyinLiveNow'), 'live', {dot: true})
+          : chip(room.reason === 'DOUYIN_ROOM_ENDED' ? t('live.source.douyinEnded') : t('live.source.douyinOffline'), 'neutral'),
+        room.title ? el('span', {className: 'row-title-text', text: room.title}) : null));
+      const details = [];
+      if (room.anchorName) details.push(`${t('live.source.douyinAnchor')}: ${room.anchorName}`);
+      if (room.roomId) details.push(`${t('live.source.douyinRoomId')}: ${room.roomId}`);
+      if (room.userCount) details.push(`${t('live.source.douyinOnline')}: ${room.userCount}`);
+      if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+      const canStart = Boolean(room.isLive);
+      meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: canStart ? t('live.source.douyinStart') : t('live.source.waitForLive'),
+          attrs: canStart ? {} : {disabled: ''},
+          onClick: (event) => {
+            if (!canStart) return;
+            connectDouyin(event.currentTarget);
+          }
+        })));
+      if (!canStart) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+      return meta;
+    }
+
+    async function checkDouyin(button) {
+      const url = String(refs.douyinInput?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.douyinLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.douyinChecking');
+      try {
+        const result = await api.post('/api/douyin/room', {url});
+        checkedDouyin = {...result.room, input: url};
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function connectDouyin(button) {
+      if (!checkedDouyin) return;
+      button.disabled = true;
+      button.textContent = t('live.source.douyinStarting');
+      try {
+        const payload = await api.post('/api/douyin/connect', {url: checkedDouyin.input});
+        checkedDouyin = null;
+        await refreshDouyinStatus();
+        await refreshRecordings();
+        await openSession(payload.session.id, {force: true});
+        await ctx.refreshStatus();
+        ctx.toast(t('live.source.douyinStarted', {name: payload.room?.anchorName ?? payload.room?.webRid ?? ''}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = t('live.source.douyinStart');
+      }
+    }
+
+    async function applyDouyinRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/douyin/retention/apply', {});
+        await refreshDouyinStatus();
+        renderSource();
+        ctx.toast(t('live.source.douyinRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    async function startDouyinQr(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/douyin/login/qrcode', {});
+        douyinQr = {
+          url: result.url ?? null,
+          image: result.image ?? null,
+          expiresAt: result.expiresAt ?? Date.now() + 240000
+        };
+        douyinHintText = t('live.source.douyinLoginWaiting');
+        douyinBlocked = false;
+        renderSource();
+        startDouyinPolling();
+      } catch (error) {
+        douyinQr = null;
+        douyinBlocked = true;
+        douyinHintText = ctx.describeError(error);
+        renderSource();
+      }
+    }
+
+    function startDouyinPolling() {
+      clearInterval(douyinLoginTimer);
+      douyinLoginTimer = window.setInterval(async () => {
+        if (destroyed) {
+          clearInterval(douyinLoginTimer);
+          return;
+        }
+        if (!douyinQr || Date.now() > douyinQr.expiresAt) {
+          clearInterval(douyinLoginTimer);
+          douyinQr = null;
+          douyinHintText = t('live.source.douyinLoginExpired');
+          renderSource();
+          return;
+        }
+        try {
+          const result = await api.post('/api/douyin/login/poll', {});
+          if (result.state === 'success') {
+            clearInterval(douyinLoginTimer);
+            douyinQr = null;
+            douyinHintText = t('live.source.douyinLoginSuccess');
+            await refreshDouyinStatus();
+            renderSource();
+            ctx.toast(t('live.source.douyinLoginSuccess'));
+          } else if (result.state === 'scanned') {
+            douyinHintText = t('live.source.douyinLoginScanned');
+            renderSource();
+          } else if (result.state === 'expired') {
+            clearInterval(douyinLoginTimer);
+            douyinQr = null;
+            douyinHintText = t('live.source.douyinLoginExpired');
+            renderSource();
+          } else {
+            douyinHintText = t('live.source.douyinLoginWaiting');
+          }
+        } catch (error) {
+          clearInterval(douyinLoginTimer);
+          douyinQr = null;
+          douyinBlocked = true;
+          douyinHintText = ctx.describeError(error);
+          renderSource();
+        }
+      }, 2000);
+    }
+
+    async function applyDouyinCookie(button, input) {
+      const cookie = String(input?.value ?? '').trim();
+      if (!cookie) return;
+      button.disabled = true;
+      try {
+        await api.post('/api/douyin/login/cookie', {cookie});
+        input.value = '';
+        douyinBlocked = false;
+        douyinHintText = t('live.source.douyinCookieApplied');
+        await refreshDouyinStatus();
+        renderSource();
+        ctx.toast(t('live.source.douyinCookieApplied'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    async function logoutDouyin(button) {
+      button.disabled = true;
+      try {
+        await api.post('/api/douyin/login/logout', {});
+        douyinHintText = '';
+        douyinQr = null;
+        douyinBlocked = false;
+        await refreshDouyinStatus();
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
     function videoReasonText(reason) {
       const key = {
         YOUTUBE_NOT_LIVE_UPCOMING: 'errors.youtubeUpcoming',
@@ -1984,6 +2341,13 @@ export const livePage = {
     function drawQr(url) {
       const canvas = qrCanvasRef;
       if (!canvas || !url) return false;
+      if (!paintQr(canvas, url)) return false;
+      if (qrWrapRef) qrWrapRef.hidden = false;
+      return true;
+    }
+
+    /** Draw any QR payload into a canvas. Text is encoded locally, never fetched. */
+    function paintQr(canvas, url) {
       const factory = globalThis.qrcode;
       if (typeof factory !== 'function') {
         setLoginHint(t('live.source.loginQrUnavailable'));
@@ -2014,7 +2378,6 @@ export const livePage = {
             }
           }
         }
-        if (qrWrapRef) qrWrapRef.hidden = false;
         return true;
       } catch {
         setLoginHint(t('live.source.loginQrUnavailable'));

@@ -408,6 +408,124 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 
 **未验证 / 不得宣称**：真实 Bits 事件、真实赠订事件、EventSub OAuth 端到端、真实长时间断网/下播、千条每秒压力、Twitch 官方稳定性承诺。
 
+## 3B. 抖音 Douyin Live（M2/M3，2026-11-15，`feature/douyin`）
+
+### 3B.1 接入边界与代码结构
+
+- 唯一路径：**公开直播间网页 + 签名的匿名 WebSocket**。弹幕、昵称、稳定 UID、进场/点赞/关注不需要登录；
+  礼物自 2026 年起只推给登录会话。
+- 公开网页与 `webcast` WebSocket 都**不是抖音官方承诺的稳定 API**；界面与文档不得描述为“官方授权”或“合规接口”。
+- 不绕过验证码、风控、登录或访问控制；失败显示真实原因。浏览器授权/扫码流程被风控阻止时如实报告。
+- 只附加正在直播的公开直播间；用户页、视频、搜索、短链一律拒绝。
+- 签名组件为 **AGPL-3.0**，单独目录分发；主项目 `LICENSE` 仍为 MIT。见 `docs/LICENSE_AGPL_DOUYIN.md`。
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/platforms/douyin/link.mjs` | `live.douyin.com/<rid>`、裸房间号、`/root/live/<rid>`；拒绝用户/视频/搜索/短链 |
+| `src/platforms/douyin/client.mjs` | 公开页解析、匿名 cookie、签名 WSS URL |
+| `src/platforms/douyin/protobuf.mjs` | 自研 protobuf wire 编解码（零依赖、BigInt 保精度） |
+| `src/platforms/douyin/messages.mjs` | PushFrame/Response/消息体解码、gzip、canonical 映射、连送合并 |
+| `src/platforms/douyin/sign.mjs` | `node:vm` 沙箱执行 vendored 签名脚本 |
+| `src/platforms/douyin/adapter.mjs` | WSS 生命周期、心跳/ack/看门狗/重连/去重/下播确认 |
+| `src/platforms/douyin/login.mjs` | 受控扫码流程、状态/过期/退出、显式本地 Cookie 备用入口 |
+| `src/platforms/douyin/cookie-store.mjs` | AES-256-GCM 本地 Cookie（白名单、备份排除） |
+| `src/platforms/douyin/service.mjs` | 路由/监控与 `SessionManager` 粘合、30 天保留 |
+| `src/monitoring/detectors/douyin.mjs` | 公开页直播状态检测与稳定 target |
+| `src/platforms/douyin/vendor/` | AGPL-3.0 `sign.js` + 完整许可证与来源（未分发 `a_bogus.js`） |
+
+### 3B.2 连接流程
+
+```text
+用户输入链接/房间号
+  → parseDouyinInput()
+  → GET https://live.douyin.com/<web_rid>（公开页）
+      → room_id（19 位内部 ID）、status=2/4、标题、主播 id/secUid/昵称、在线数
+      → Set-Cookie ttwid（匿名）
+  → get_sign(md5(<协议参数串>)) → signature
+  → wss://webcast100-ws-web-lq.douyin.com/webcast/im/push/v2/?…&signature=…
+      → 5 秒心跳（PushFrame payload_type=hb）、needAck 时回 ack
+      → gzip PushFrame → Response → Message[]
+      → Chat/Gift/Member/Like/Social/RoomUserSeq
+      → mapper / 连送合并 → EventIngest（去重/观众/金额/计数）
+      → SSE → 控制台
+```
+
+### 3B.3 观众身份与聊天
+
+- `user.id` → `viewer_uid` → 长期身份 `douyin:<user.id>`；`nickname` 只作展示，`secUid` 解析但不作为身份。
+  缺失/为零时 `viewer_uid=null`，绝不用昵称建档案或把不同观众合并。
+- 消息 `msgId` → `external_id`；适配器另保留最近 10,000 个消息 ID 作为连接内快速去重，数据库仍以
+  `UNIQUE(session_id, dedupe_key)` 兜底。
+- `common.createTime`（秒）→ `occurred_at`（毫秒）；偏离接收窗口过大的时间回退到本地接收时间。
+- 正文 `content` 原样保存（中文/日文/Emoji/`[比心]` 等平台表情代码），不替换、不猜情绪；`rtfContent`
+  仅在有可靠文本时才使用，缺失时不伪造。
+- Member/Like/Social 只计数，不写普通聊天，更不写付费事件。
+
+### 3B.4 礼物、连送与价值
+
+| 事件 | 映射 | 金额语义 | 证据等级 |
+| --- | --- | --- | --- |
+| `WebcastGiftMessage`（`repeatEnd=1`） | `gift`，`gift_id`、`gift_name`、`gift_quantity`=连送最终数量 | `amount_minor=null`、`currency=null`、`value_kind=unknown`；`amount_display="<钻石合计> 抖音币"` 仅展示 | **已解析，真实礼物未观测到** |
+| 连送中间消息 | 只更新合并状态，不写库 | — | 防止重复计数 |
+| 未收到 `repeatEnd` 的连送 | TTL 后丢弃，不猜成礼物 | — | 不把未知当已支付 |
+| 无 `diamondCount` 的礼物 | `amount_display=null` | 不写 0 元 | 不得把“没有金额”记成零收入 |
+
+- 钻石/抖音币是平台展示价值，**不是人民币，也不是主播实际收入**；不得换算。
+- 礼物发送者使用 `user.id`（付款者）；`toUser` 不是付款者，不据此增加付费人数。
+- 礼物事件 ID 使用最终消息 `msgId`；重连 replay 命中唯一约束后不会再入库。
+- 进场、点赞、关注、房间统计永远不会被映射成 `gift`。
+
+### 3B.5 登录（礼物所需）
+
+- 目标体验与 Bilibili 一致：扫码。实现的受控流程：
+  `sso.douyin.com/get_qrcode/` → `check_qrconnect/` → 跟随 `redirect_url` → 取得 `sessionid` → 加密保存。
+- **2026-11-15 实测**：`get_qrcode` 返回风控 HTML；`www.douyin.com/passport/web/get_qrcode` 返回
+  `error_code 4031`（访问被阻止）。平台登录还涉及设备指纹 challenge、ticket-guard 密钥交换与
+  `a_bogus`，纯 HTTP 无法稳定完成。
+- 因此程序：不伪造二维码/登录态；返回 `DOUYIN_LOGIN_BLOCKED` 并明确提示“匿名弹幕仍可用”；
+  提供**显式**的本地 Cookie 备用入口（用户自行选择、加密保存、可退出、不会上传）。
+- `GET /api/douyin/login/check` 用公开页 `user_is_login` 标志检查过期；过期时明确提示重新登录。
+- 未绕过验证码、风控或访问控制；**真实扫码登录未验证成功**。
+
+### 3B.6 直播状态、结束与重连
+
+- 连接成功不等于仍在直播。适配器每 60 秒读一次公开页；**连续 2 次有效离线**才确认
+  `platform_ended`。网络错误、429、风控页只退避，绝不结束。
+- 90 秒无帧看门狗、连接关闭、服务端断流：进入 `reconnecting`，1→30 秒指数退避，保留同一 session；
+  连续 15 次失败进入可恢复 `failed`，之后每 5 分钟低速探测。
+- 多直播间各自独立 adapter/session；同一 `platform + room` 双重拒绝重复启动。
+- 平台状态写入 `sessions.platform_status` / `platform_ended_at` / `platform_end_quality`。
+
+### 3B.7 自动开播监听
+
+- `MonitoringManager` 新增 `douyin` detector：等待时每 90 秒（60–150 秒抖动）读取一次公开页；
+  每平台一个 pacer（抖音 ≥2 秒），最多 2 个并发检查。
+- 目标 key 为 `web_rid`，`platform_uid` 为主播 id；公开页没有可靠的“本场开始 id”，因此
+  `liveCycleKey('douyin')` 返回 `null`：手动停止后保持抑制，直到页面确认下播，避免把同一场重复开播。
+- 发现开播后调用 `DouyinService.connectDetected`，复用普通适配器/`EventIngest`；关播后目标保留。
+
+### 3B.8 数据保留
+
+- 抖音原文、展示标签与过期昵称按 **30 天**清理（Douyin-only scope）；保留事件行、计数、稳定 UID。
+- 清理在启动、抖音场次结束与 `POST /api/douyin/retention/apply` 时执行。
+- 这不等于完全删除个人数据；文档与界面不得声称“已彻底删除”。
+
+### 3B.9 验证状态（2026-11-15，Asia/Shanghai）
+
+真实公开直播间 `708764876300`（未登录、未付费、未保存/展示正文）：
+
+| 验证 | 结果 |
+| --- | --- |
+| 源码路径 20 秒 | 7 条 chat，7/7 有 `user.id`、昵称、消息 ID、CJK；7 个唯一身份；0 重复；144 member / 4 like / 2 follow / 3 stats；0 gift |
+| 正式 EXE | 连接成功，2 条真实 chat 入库；2/2 有 `douyin:<id>`、昵称、消息 ID、原文；停止 `ended`；重启后数据仍在 |
+| 正式 EXE 自动监听 | 创建目标 → check → `recording` + 正常 session → 停止 → 删除目标 |
+| 登录 | 风控阻止，未完成真实扫码；无伪造登录 |
+| 礼物/连送 | 匿名 0；真实事件未观测到；自动化覆盖解析/合并/去重/金额未知 |
+| 断线/下播/多房间 | 自动化覆盖；真实拔网与“直播中→下播”未捕获 |
+
+**未验证 / 不得宣称**：真实礼物、真实连送、真实付费留言、登录后的礼物推送、真实扫码登录、
+真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：

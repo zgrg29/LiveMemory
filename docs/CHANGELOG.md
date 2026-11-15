@@ -1,5 +1,32 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r22 — 2026-11-15（DOUYIN-M2M3：抖音接入、登录框架与礼物解析）
+
+### 新增
+
+- **Twitch 合并**：`feature/twitch` 合并到 `main`（`d5e9a7c`），合并后全量 875 passed；未 Push/Tag/Release。
+- **Douyin Live（M2/M3）**：公开直播间 + 签名的匿名 WebSocket；昵称、稳定 UID `douyin:<user.id>`、
+  弹幕原文、Unicode/Emoji、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播、SQLite、
+  AI 读取与长期画像。
+- **自研 protobuf**（零依赖、BigInt 保精度）与 gzip 帧解码；5 秒心跳、ack、90 秒看门狗。
+- **礼物**：`repeatEnd=1` 才写一条；连送按 groupId 合并；`amount_minor=null`、`currency=null`、
+  `value_kind=unknown`；钻石只写 `amount_display`；无金额不记 0 元；进场/点赞/关注不写付费。
+- **登录框架**：受控扫码流程、AES-256-GCM 本地 Cookie、状态检查/过期提示/退出登录；
+  平台风控阻止时明确 `DOUYIN_LOGIN_BLOCKED`，并提供显式本地 Cookie 备用入口。
+- **UI**：直播页抖音 Tab、房间检查、自动监听、登录/保留与能力边界说明；64 个 `douyin` 键 × 三语。
+- **许可证**：vendored AGPL-3.0 签名组件独立目录 + 完整许可证 + 哈希核对；主项目 MIT 未改；
+  EXE 分发须履行 AGPL 源码义务（`THIRD_PARTY_NOTICES.md`、`docs/LICENSE_AGPL_DOUYIN.md`）。
+
+### 验证
+
+- 新增 48 项自动化（URL、protobuf、消息、礼物/连送、登录、重连、自动开播、多房间、SQLite、AI 包、UI）；
+  全量结果见 `docs/STATUS.md` §0.35.6。
+- 真实抖音 `708764876300`：源码路径 20 秒 7 条 chat，7/7 有 `user.id`、昵称、消息 ID、CJK，0 重复；
+  正式 EXE 2 条 chat，2/2 有 `douyin:<id>`、昵称、消息 ID、原文；重启后仍在。
+- 真实礼物 **0 条（匿名）**；真实扫码登录被风控阻止；两者均如实标注未验证。
+- 正式 EXE `0f848c77c2d6` / `requireAdministrator` / commit（构建时）`d5e9a7c`；
+  `verify-douyin-exe` **17/17**（1 条礼物 NOT-OBSERVED）。
+
 ## 0.13.2-r21 — 2026-11-15（TWITCH-M1：Twitch 正式接入与 Windows EXE）
 
 ### 新增
