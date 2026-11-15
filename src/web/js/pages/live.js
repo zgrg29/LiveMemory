@@ -144,15 +144,18 @@ export const livePage = {
     let checkedVideo = null;
     let checkedTwitch = null;
     let checkedDouyin = null;
+    let checkedTikTok = null;
     let biliStatus = null;
     let youtubeStatus = null;
     let twitchStatus = null;
     let douyinStatus = null;
+    let tiktokStatus = null;
     let biliAutoMonitor = false;
     let youtubeAutoMonitor = false;
     let twitchAutoMonitor = false;
     let douyinAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: ''};
+    let tiktokAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
@@ -364,16 +367,26 @@ export const livePage = {
     /* ---------------------------------------------------------- data sync */
 
     async function loadSourceStatuses() {
-      const [bili, youtube, twitch, douyin] = await Promise.all([
+      const [bili, youtube, twitch, douyin, tiktok] = await Promise.all([
         api.get('/api/bilibili/status').catch(() => null),
         api.get('/api/youtube/status').catch(() => null),
         api.get('/api/twitch/status').catch(() => null),
-        api.get('/api/douyin/status').catch(() => null)
+        api.get('/api/douyin/status').catch(() => null),
+        api.get('/api/tiktok/status').catch(() => null)
       ]);
       biliStatus = bili;
       youtubeStatus = youtube;
       twitchStatus = twitch;
       douyinStatus = douyin;
+      tiktokStatus = tiktok;
+    }
+
+    async function refreshTikTokStatus() {
+      try {
+        tiktokStatus = await api.get('/api/tiktok/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
     }
 
     async function refreshDouyinStatus() {
@@ -1441,6 +1454,7 @@ export const livePage = {
           checkedVideo = null;
           checkedTwitch = null;
           checkedDouyin = null;
+          checkedTikTok = null;
           onSelect?.();
           renderSource();
           if (mode === 'youtube') {
@@ -1456,6 +1470,11 @@ export const livePage = {
           if (mode === 'douyin') {
             refreshDouyinStatus().then(() => {
               if (!destroyed && sourceMode === 'douyin') renderSource();
+            }).catch(() => {});
+          }
+          if (mode === 'tiktok') {
+            refreshTikTokStatus().then(() => {
+              if (!destroyed && sourceMode === 'tiktok') renderSource();
             }).catch(() => {});
           }
         }
@@ -1478,13 +1497,15 @@ export const livePage = {
         tabButton(t('live.source.biliTab'), 'bilibili'),
         tabButton(t('live.source.youtubeTab'), 'youtube'),
         tabButton(t('live.source.twitchTab'), 'twitch'),
-        tabButton(t('live.source.douyinTab'), 'douyin'));
+        tabButton(t('live.source.douyinTab'), 'douyin'),
+        tabButton(t('live.source.tiktokTab'), 'tiktok'));
 
       const body = el('div', {className: 'card-body'}, tabs);
       if (sourceMode === 'mock') body.append(buildMockPanel());
       else if (sourceMode === 'bilibili') body.append(buildBiliPanel());
       else if (sourceMode === 'twitch') body.append(buildTwitchPanel());
       else if (sourceMode === 'douyin') body.append(buildDouyinPanel());
+      else if (sourceMode === 'tiktok') body.append(buildTikTokPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
@@ -1896,6 +1917,207 @@ export const livePage = {
         await refreshTwitchStatus();
         renderSource();
         ctx.toast(t('live.source.twitchRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    function tiktokTransportLabel(value) {
+      if (value === 'signer') return t('live.source.tiktokTransportSigner');
+      if (value === 'browser') return t('live.source.tiktokTransportBrowser');
+      return t('live.source.tiktokTransportAuto');
+    }
+
+    function buildTikTokPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIntro')}));
+
+      const status = tiktokStatus;
+      if (!status) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.tiktokUnavailable')));
+        return panel;
+      }
+
+      const transportRow = el('div', {className: 'source-row', style: {marginTop: '12px'}},
+        el('label', {className: 'field', style: {flex: '1 1 280px'}},
+          el('span', {className: 'label', text: t('live.source.tiktokTransportTitle')}),
+          tiktokTransportSelect(status)),
+        el('div', {className: 'source-status'},
+          chip(tiktokTransportLabel(status.transport?.active ?? 'auto'), 'neutral')));
+
+      panel.append(transportRow);
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokTransportHint')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokSignerNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokBrowserNote')}));
+
+      panel.append(autoMonitorToggle('tiktok', tiktokAutoMonitor, (checked) => {
+        tiktokAutoMonitor = checked;
+        checkedTikTok = null;
+        renderSource();
+      }));
+      if (tiktokAutoMonitor) {
+        panel.append(buildAutoMonitorSection('tiktok'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIdentityNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokGiftNote')}));
+        return panel;
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.tiktokLinkPlaceholder'),
+          'aria-label': t('live.source.tiktokLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedTikTok?.input ?? '';
+      refs.tiktokInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.tiktokLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.tiktokCheck'),
+          onClick: (event) => checkTikTok(event.currentTarget)
+        })));
+
+      if (checkedTikTok) panel.append(buildTikTokRoomMeta(checkedTikTok));
+
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokIdentityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokGiftNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokCapabilityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokNoPaidPlan')}));
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.tiktokPolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.tiktokPolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.tiktokApplyRetention'),
+            onClick: (event) => applyTikTokRetention(event.currentTarget)
+          })));
+      }
+
+      return panel;
+    }
+
+    function tiktokTransportSelect(status) {
+      const select = el('select', {className: 'input'});
+      const options = [
+        ['auto', t('live.source.tiktokTransportAuto')],
+        ['signer', t('live.source.tiktokTransportSigner')],
+        ['browser', t('live.source.tiktokTransportBrowser')]
+      ];
+      for (const [value, label] of options) {
+        const option = el('option', {attrs: {value}, text: label});
+        select.append(option);
+      }
+      select.value = status.transport?.requested ?? 'auto';
+      select.addEventListener('change', () => saveTikTokTransport(select.value));
+      return select;
+    }
+
+    async function saveTikTokTransport(transport) {
+      try {
+        const payload = await api.post('/api/tiktok/transport', {transport});
+        tiktokStatus = payload.tiktok ?? tiktokStatus;
+        renderSource();
+        ctx.toast(t('live.source.tiktokTransportSaved'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      }
+    }
+
+    function buildTikTokRoomMeta(room) {
+      const meta = el('div', {className: 'source-meta'});
+      meta.append(el('div', {className: 'source-status'},
+        chip(t('live.source.tiktokRoomReady'), 'accent'),
+        room.isLive
+          ? chip(t('live.source.tiktokLiveNow'), 'live', {dot: true})
+          : chip(t('live.source.tiktokOffline'), 'neutral'),
+        room.title ? el('span', {className: 'row-title-text', text: room.title}) : null));
+      const details = [];
+      if (room.anchorName) details.push(`${t('live.source.tiktokCreator')}: ${room.anchorName}`);
+      if (room.anchorUid) details.push(`${t('live.source.tiktokCreatorId')}: ${room.anchorUid}`);
+      if (room.uniqueId) details.push(`${t('live.source.tiktokHandle')}: @${room.uniqueId}`);
+      if (room.roomId) details.push(`${t('live.source.tiktokRoom')}: ${room.roomId}`);
+      if (room.totalViewers !== null && room.totalViewers !== undefined) {
+        details.push(`${t('live.source.tiktokTotalViewers')}: ${formatInteger(room.totalViewers, ctx.locale)}`);
+      }
+      if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+      const canStart = Boolean(room.isLive);
+      meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: canStart ? t('live.source.tiktokStart') : t('live.source.waitForLive'),
+          attrs: canStart ? {} : {disabled: ''},
+          onClick: (event) => {
+            if (!canStart) return;
+            connectTikTok(event.currentTarget);
+          }
+        })));
+      if (!canStart) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+      return meta;
+    }
+
+    async function checkTikTok(button) {
+      const url = String(refs.tiktokInput?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.tiktokLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokChecking');
+      try {
+        const result = await api.post('/api/tiktok/room', {url});
+        checkedTikTok = {...result.room, input: url};
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function connectTikTok(button) {
+      if (!checkedTikTok) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokStarting');
+      try {
+        const payload = await api.post('/api/tiktok/connect', {url: checkedTikTok.input});
+        checkedTikTok = null;
+        await refreshTikTokStatus();
+        await refreshRecordings();
+        await openSession(payload.session.id, {force: true});
+        await ctx.refreshStatus();
+        ctx.toast(t('live.source.tiktokStarted', {name: payload.room?.anchorName ?? payload.room?.uniqueId ?? ''}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function applyTikTokRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/tiktok/retention/apply', {});
+        await refreshTikTokStatus();
+        renderSource();
+        ctx.toast(t('live.source.tiktokRetentionApplied', {count: result?.summary?.purged ?? 0}));
       } catch (error) {
         ctx.toast(ctx.describeError(error), {tone: 'error'});
         button.disabled = false;

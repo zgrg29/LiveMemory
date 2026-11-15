@@ -1,15 +1,70 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · DOUYIN-SINGLE-WINDOW：修复扫码登录重复浏览器窗口 · **等待人工验收**
+本轮：2026-11-15 · TIKTOK-M1：抖音合并 + TikTok 双传输接入 · **等待人工验收**
 
-> 只修复「一次点击打开两个独立浏览器窗口」。**未改扫码、官方验证、Cookie 加密、礼物采集与三语 UI；
-> 未合并 main、未 Push、未创建 Tag、未发布 Release。**
-> 验收：`docs/ACCEPTANCE_DOUYIN_SINGLE_WINDOW.md`；状态：`docs/STATUS.md` §0.37；
-> 日志：`log/2026-11-15-douyin-single-window.md`。
+> 已按开发者授权把 `feature/douyin` 本地合并到 `main`（`410bfc3`）；从最新 `main` 创建 `feature/tiktok`，
+> 完成 TikTok 房间/聊天/礼物解析、统一入库、监控、三语 UI 与 Windows EXE。
+> **未合并 `feature/tiktok` 到 main、未 Push、未 Tag、未 Release。**
+> 可行性：`docs/TIKTOK_FEASIBILITY_2026-11.md`；状态：`docs/STATUS.md` §0.38；日志：`log/2026-11-15-tiktok-live.md`。
 
-## 0. 本轮（DOUYIN-SINGLE-WINDOW）
+## 0. 本轮（TIKTOK-M1）
 
 ### 0.1 做了什么
+
+1. **抖音合并**：本地合并 `feature/douyin` → `main`，合并提交 **`410bfc3`**（父 `d5e9a7c` + `e3cf6e7`）；
+   工作区干净；合并后全量 **947 passed**；四平台真实回归（Bilibili 3/3、YouTube 55/55、Twitch 13/13、抖音 3/3）。
+2. **分支**：从 `410bfc3` 创建 `feature/tiktok`；所有 TikTok 开发都在该分支。
+3. **可行性**：读 TTLC 2.5.0 / TikTokLive 6.x 源码、依赖、许可证与近期 Issue；真实只读探测确认：
+   房间信息/开播/主播稳定 ID/礼物目录可完全本地免费取得；官方网站在匿名状态 `room/enter` 返回 403；
+   未登录直连推送 WS 被拒；免费社区签名通道可取得真实聊天（6/6 带 `user.id` 与 `msgId`）。
+4. **传输 A（默认）**：`signer.mjs` 免费社区签名通道（无 Key、无付费、不要求 Business）；
+   15 秒轮询（平台突发上限 5 次/分钟）、cursor 续传、429 退避。
+5. **传输 B（实验）**：`browser-relay.mjs` 本机 Chrome/Edge 专用资料目录 + CDP + WS 帧解析；
+   匿名 `room/enter 403` → `TIKTOK_LOGIN_REQUIRED`，不伪造事件；**登录后未验证**。
+6. **统一管线**：chat/gift/membership → `EventIngest`；`tiktok:<user.id>` 稳定身份；
+   `msgId` 去重；连送最终态 + 超时冲刷；钻石只写 `amount_display`，`amount_minor=null`。
+7. **监控/多房间**：`TikTokRoomDetector`；周期键 `tiktok:<handle>:<roomId>`；两房间独立 session 测试。
+8. **UI**：直播页 TikTok Tab、房间检查、传输选择（auto/signer/browser）、自动监听、能力边界、30 天保留。
+9. **测试**：新增 56 项；全量 **1003 passed / 0 failed / 0 skipped（326,436 ms）**。
+10. **EXE**：Build ID `812c0d54f622` / SHA-256 `bb689de6…` / `97,718,784` B / `requireAdministrator`；
+    `verify-tiktok-exe` **20/20**（真实 TikTok + 自动监听 + 重启 + AI + 四平台状态）。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 抖音合并 | `main` = `410bfc3`；合并后全量 947 passed；四平台真实回归通过 |
+| 分支 | `feature/tiktok`（从 `410bfc3`） |
+| 房间信息 | 真实：room `7706695538414062349`、status 2、主播稳定 ID `7074562477175424046` |
+| 礼物目录 | 真实：809 个礼物（名称 + 钻石展示价值） |
+| 真实聊天 | 源码服务器 6 条 / EXE 6 条；6/6 `tiktok:<id>` + `msgId` + 原文 |
+| 礼物事件 | **真实未观测**；解析/连送/去重有自动化测试 |
+| 浏览器中继 | 实现完成；匿名 403 实测；**登录后未验证（无账号）** |
+| 全量测试 | **1003 passed / 0 failed / 0 skipped（326,436 ms）** |
+| 正式 EXE | `812c0d54f622` / `bb689de6…` / requireAdministrator / 226 assets / 50 modules |
+| EXE TikTok | **20/20** |
+| main | **未合并 TikTok、未 Push、未 Tag、未 Release** |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **人工验收**：双击 `D:\LiveMemory\dist\LiveMemory.exe`（UAC 允许），进入直播页 → TikTok Tab →
+   输入 `https://www.tiktok.com/@aljazeeraenglish/live` 或其它正在直播的频道 → 检查直播间 →
+   开始记录 → 确认弹幕、昵称、`tiktok:<id>`、停止、重启后数据仍在。
+2. **礼物验收**：找一个有送礼的直播间，确认礼物事件、连送只计一次、金额显示为钻石展示值而不是 0 元。
+3. **浏览器中继**：若要用纯本地方案，需要提供 TikTok 账号并在专用浏览器窗口登录；未登录时如实显示“需要登录”。
+4. **不要**把免费社区签名通道写成“官方 API”或“完全本地”；它是第三方云服务，无 Key、无付费、可能改版。
+5. **不要**把礼物的钻石展示价值换算成主播收入；不要用昵称当身份；不要绕过 `room/enter 403`。
+6. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.4 边界与提交
+
+- 真实 TikTok 只读公开直播间；未登录、未付费、未保存/展示正文到仓库；测试均用 `tests/.tmp` 隔离目录。
+- 真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间并发、干净 Windows 账户仍未验证。
+- 本轮代码与文档提交见 STATUS §0.38.9；提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（DOUYIN-SINGLE-WINDOW）
+
+### 0.1 做了什么（DOUYIN-SINGLE-WINDOW）
 
 1. **复现与定位**：真实 Chrome 154 + CDP `Browser.getWindowForTarget` 计数；真实 EXE 日志显示直接
    `spawn` 退出 0 无 DevTools，随后 PowerShell 回退再启动一次。

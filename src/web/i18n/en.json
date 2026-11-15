@@ -75,7 +75,8 @@
       "bilibili": "Bilibili Live",
       "youtube": "YouTube Live",
       "twitch": "Twitch Live",
-      "douyin": "Douyin Live"
+      "douyin": "Douyin Live",
+      "tiktok": "TikTok 直播"
     }
   },
   "format": {
@@ -400,7 +401,44 @@
       "douyinGiftObserved": "Observed {count}",
       "douyinGiftNotObserved": "No gift observed yet",
       "douyinGiftIngestGap": "Gift parsed but not stored (error)",
-      "douyinGiftUnknown": "Unknown (no recording yet)"
+      "douyinGiftUnknown": "Unknown (no recording yet)",
+      "tiktokTab": "TikTok",
+      "tiktokIntro": "TikTok LIVE: room metadata and the gift catalog are read locally for free. Chat and gift events come from a free community signing route or the browser relay; no paid plan is required.",
+      "tiktokUnavailable": "TikTok status is unavailable. Check that the local server is running.",
+      "tiktokLinkLabel": "TikTok live URL / @username",
+      "tiktokLinkPlaceholder": "https://www.tiktok.com/@creator/live",
+      "tiktokCheck": "Check room",
+      "tiktokChecking": "Checking…",
+      "tiktokRoomReady": "Room resolved",
+      "tiktokLiveNow": "Live now",
+      "tiktokOffline": "Offline",
+      "tiktokCreator": "Creator",
+      "tiktokCreatorId": "Stable creator ID",
+      "tiktokHandle": "Handle",
+      "tiktokRoom": "Room ID",
+      "tiktokTitle": "Title",
+      "tiktokStartedAt": "Started",
+      "tiktokTotalViewers": "Total viewers",
+      "tiktokStart": "Start recording",
+      "tiktokStarting": "Connecting…",
+      "tiktokStarted": "Recording {name}",
+      "tiktokTransportTitle": "Capture transport",
+      "tiktokTransportAuto": "Automatic (prefer free signing route)",
+      "tiktokTransportSigner": "Free community signing route",
+      "tiktokTransportBrowser": "Browser relay (experimental, login required)",
+      "tiktokTransportHint": "Automatic mode falls back to the browser relay when the free signing route is unavailable. Both transports feed the same ingest pipeline.",
+      "tiktokTransportSaved": "Capture transport saved",
+      "tiktokSignerNote": "The free community signing route needs no API key, no payment and no Business plan. It is a third-party cloud service; if it changes, the console shows an explicit error.",
+      "tiktokBrowserNote": "The browser relay opens the official live page in a dedicated Chrome/Edge profile and reads the data that page itself receives. TikTok's web player requires login to enter a room, so an anonymous session is reported as \"login required\" instead of inventing events.",
+      "tiktokMetadataNote": "Room metadata, live state, the stable creator ID and the gift catalog come straight from TikTok's public endpoints: no login and no third-party service.",
+      "tiktokIdentityNote": "Long-term identity is tiktok:<user.id>; the nickname is display only. Platform message IDs drive dedupe.",
+      "tiktokGiftNote": "Gifts are recorded as their diamond display value (amount_minor empty, value_kind=unknown) and never converted into income. A streak is counted once at its final state. Real gift events have not been observed yet.",
+      "tiktokCapabilityNote": "Capability boundary: room metadata and the gift catalog are verified; chat has real samples; gift, streak and subscription events are parsed but not yet observed in the wild.",
+      "tiktokNoPaidPlan": "No paid collection service is required, and there are no viewer, duration or message limits.",
+      "tiktokPolicyTitle": "Raw content retention",
+      "tiktokPolicyBody": "TikTok chat text and nicknames are purged at the 30-day ceiling (currently {days} days); stable IDs, counts and amount totals are kept.",
+      "tiktokApplyRetention": "Purge expired text now",
+      "tiktokRetentionApplied": "Purged {count} expired messages"
     }
   },
   "history": {
@@ -1924,7 +1962,23 @@
     "douyinLoginVerifyUnavailable": "The login state could not be confirmed (platform restriction or network error).",
     "douyinNotConfigured": "This build does not include Douyin support.",
     "douyinStopped": "The Douyin connection was stopped.",
-    "douyinError": "Douyin returned a response this software cannot handle. Try again later."
+    "douyinError": "Douyin returned a response this software cannot handle. Try again later.",
+    "tiktokLinkInvalid": "That is not a valid TikTok live URL or username.",
+    "tiktokRoomNotFound": "The TikTok user or room could not be found.",
+    "tiktokRoomOffline": "This TikTok room is not live right now.",
+    "tiktokRoomUnavailable": "TikTok temporarily refused access to this room.",
+    "tiktokLoginRequired": "TikTok requires a login before live chat can be received. Sign in in the opened browser.",
+    "tiktokRateLimit": "Too many TikTok requests. Try again later.",
+    "tiktokNetwork": "Could not reach TikTok. Check the network connection.",
+    "tiktokProtocol": "TikTok returned data that could not be parsed.",
+    "tiktokConnectTimeout": "Connecting to the TikTok room timed out.",
+    "tiktokSignerUnavailable": "The free community signing route is temporarily unavailable.",
+    "tiktokSignerPremiumRequired": "The signing route requires a paid plan. LiveMemory will not force a purchase; use the browser relay or a custom signing URL.",
+    "tiktokNotConfigured": "TikTok capture is not configured.",
+    "tiktokBrowserUnavailable": "No Chrome/Edge was found, so the browser relay is unavailable.",
+    "tiktokBrowserFailed": "The browser relay failed to start.",
+    "tiktokStopped": "TikTok capture has stopped.",
+    "tiktokError": "The TikTok operation failed."
   },
   "toast": {
     "saved": "Saved",
@@ -2257,7 +2311,9 @@
       "twitchPlaceholder": "Channel link or channel name",
       "twitchLabel": "Channel link or channel name",
       "douyinPlaceholder": "Live URL or room number",
-      "douyinLabel": "Live URL or room number"
+      "douyinLabel": "Live URL or room number",
+      "tiktokPlaceholder": "TikTok live URL or @username",
+      "tiktokLabel": "TikTok live URL or @username"
     },
     "hero": {
       "autoChip": "Auto-monitor",

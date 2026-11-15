@@ -117,6 +117,14 @@ export function liveCycleKey(platform, target, observation) {
     // confirms the room went offline.
     return null;
   }
+  if (platform === 'tiktok') {
+    // Every TikTok broadcast gets a fresh numeric room id, so it is a reliable
+    // cycle key even though the creator handle stays the same.
+    const uniqueId = String(observation?.uniqueId ?? target?.target_key ?? target?.targetKey ?? '');
+    const roomId = String(observation?.roomId ?? '');
+    if (uniqueId && roomId) return `tiktok:${uniqueId}:${roomId}`;
+    return null;
+  }
   return null;
 }
 

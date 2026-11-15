@@ -1968,3 +1968,42 @@ Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker �
 - **EXE 内实际窗口数量**：沙箱无法自动验证；需普通 Windows 桌面双击 EXE 人工确认。
 - 真实手机扫码复验；真实礼物仍为未观测。
 - 不要用模拟 DOM/假 CDP 结果冒充真实窗口计数；本轮计数来自真实 Chrome + `Browser.getWindowForTarget`。
+
+
+## 49. TIKTOK-M1：TikTok LIVE 接入（2026-11-15）
+
+### 49.1 新增自动化测试（56 项）
+
+| 文件 | 数量 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/tiktok-link.test.mjs` | 4 | URL/@handle/裸 handle；拒绝视频、短链、搜索、其它站点 |
+| `tests/unit/tiktok-messages.test.mjs` | 12 | protobuf 编解码/截断/未知字段；chat/gift/member/like/social/roomseq/control；Unicode/Emoji；钻石展示值；无 msgId 指纹去重；WS 封装 |
+| `tests/unit/tiktok-client.test.mjs` | 8 | api-live 参数（sourceType=54）；用户不存在；403/429；网络失败；room info；礼物目录缓存；room info 失败不翻转 live；status=4 |
+| `tests/unit/tiktok-signer.test.mjs` | 8 | connect URL/无 Key；cursor；可选 API Key；429；402/403 付费阻断；空响应/缺 cursor；非法 roomId；自定义 baseUrl |
+| `tests/unit/tiktok-adapter.test.mjs` | 8 | 连接/聊天/重复 msgId；连送最终态；超时冲刷；断线→重连；两次离线确认；控制消息单次；member/like/viewers；stop 后迟到批次 |
+| `tests/unit/tiktok-ui.test.mjs` | 8 | TikTok Tab/API 路由；能力声明；三语键一致；构建必需模块；浏览器启动参数；gzip 帧解码；浏览器路径校验；传输设置 |
+| `tests/integration/tiktok-session.test.mjs` | 3 | 真实 SessionManager/EventIngest/SQLite；稳定 ID；礼物展示值；AI 包；重复房间；多房间独立 |
+| `tests/integration/tiktok-monitoring.test.mjs` | 4 | 自动开播 → recording；离线不建 session；不存在 → MONITOR_NOT_FOUND；监控策略含 tiktok |
+| `tests/integration/api-auth.test.mjs` | +6 断言 | 6 个 TikTok 路由未认证 401 |
+
+### 49.2 全量
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`
+- **1003 passed / 0 failed / 0 skipped（326,436.09 ms，2026-11-15）**；上一轮 947，本轮 +56。
+
+### 49.3 真实平台验证
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-tiktok-exe.mjs`（真实 TikTok + 自动监听 + 重启 + AI + 四平台状态） | **20/20** |
+| `scripts/verify-exe.mjs`（启动/重启/硬杀/端口/单实例/不可写目录/CLI） | **10/10** |
+
+真实数据：源码服务器 6 条 chat（6/6 `tiktok:<id>`、5 个身份）；正式 EXE 6 条（3 个身份），
+SQLite 6/6 external_id；自动监听目标 check → recording → 真实 chat → 删除。
+
+### 49.4 未验证 / 不得宣称
+
+- 真实礼物、连送、订阅事件（本次直播无送礼）；礼物语义只到“解析 + 自动化测试”。
+- 浏览器中继登录后的聊天投递（无 TikTok 账号）；匿名 `room/enter 403` 已实测。
+- 真实断网、真实“直播中→下播”长跑、多房间并发（免费签名通道 5 次/分钟突发限制）。
+- 真实 Windows UAC 双击；干净 Windows 账户。

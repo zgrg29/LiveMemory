@@ -11,6 +11,8 @@ import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {TwitchService} from '../platforms/twitch/service.mjs';
 import {DouyinService} from '../platforms/douyin/service.mjs';
+import {TikTokService} from '../platforms/tiktok/service.mjs';
+import {TikTokBrowserRelay} from '../platforms/tiktok/browser-relay.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -93,6 +95,11 @@ export async function startServer({
   douyinAdapterOptions = null,
   douyinWebSocketImpl = null,
   douyinFetchImpl = null,
+  tiktokClient = null,
+  tiktokSigner = null,
+  tiktokBrowserRelay = null,
+  tiktokAdapterOptions = null,
+  tiktokFetchImpl = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -184,6 +191,27 @@ export async function startServer({
       ...(douyinWebSocketImpl ? {WebSocketImpl: douyinWebSocketImpl} : {}),
       ...(douyinAdapterOptions ? {adapterOptions: douyinAdapterOptions} : {})
     });
+    // TikTok has two transports: the free community signer (default) and an
+    // experimental browser relay over the official live page. Both go through
+    // the same SessionManager/EventIngest path; the relay keeps a dedicated
+    // Chrome profile under the user's data directory.
+    const tiktokRelay = tiktokBrowserRelay ?? new TikTokBrowserRelay({
+      dataDir: paths.root,
+      logger,
+      now
+    });
+    const tiktok = new TikTokService({
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      ...(tiktokFetchImpl ? {fetchImpl: tiktokFetchImpl} : {}),
+      ...(tiktokClient ? {client: tiktokClient} : {}),
+      ...(tiktokSigner ? {signer: tiktokSigner} : {}),
+      browserRelay: tiktokRelay,
+      ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
@@ -191,6 +219,7 @@ export async function startServer({
       youtube,
       twitch,
       douyin,
+      tiktok,
       logger,
       now,
       onChange: () => {
@@ -223,6 +252,13 @@ export async function startServer({
       platforms: ['douyin'],
       logger
     });
+    // TikTok events follow the same 30-day raw-content policy, scoped to TikTok.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['tiktok'],
+      logger
+    });
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
@@ -253,6 +289,7 @@ export async function startServer({
       youtube,
       twitch,
       douyin,
+      tiktok,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -292,6 +329,12 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.douyin.failed', code: error?.code ?? 'unknown'});
     }
+    // TikTok's browser transport keeps a dedicated Chrome/Edge window open.
+    try {
+      await instance.tiktok?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.tiktok.failed', code: error?.code ?? 'unknown'});
+    }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
@@ -319,6 +362,7 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
+    get tiktok() { return runtime.tiktok; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -479,6 +523,7 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
+    get tiktok() { return runtime.tiktok; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

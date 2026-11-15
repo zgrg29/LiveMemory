@@ -75,7 +75,8 @@
       "bilibili": "ビリビリライブ",
       "youtube": "YouTube ライブ",
       "twitch": "Twitch ライブ",
-      "douyin": "Douyin ライブ"
+      "douyin": "Douyin ライブ",
+      "tiktok": "TikTok 直播"
     }
   },
   "format": {
@@ -400,7 +401,44 @@
       "douyinGiftObserved": "{count} 件を観測しました",
       "douyinGiftNotObserved": "ギフトはまだ観測されていません",
       "douyinGiftIngestGap": "ギフトを解析したが保存されていません（異常）",
-      "douyinGiftUnknown": "不明（記録がまだ開始されていません）"
+      "douyinGiftUnknown": "不明（記録がまだ開始されていません）",
+      "tiktokTab": "TikTok",
+      "tiktokIntro": "TikTok LIVE 連携：ルーム情報とギフト一覧はローカルで無料取得できます。チャットとギフトイベントは無料のコミュニティ署名経路またはブラウザリレーで取得し、有料プランは不要です。",
+      "tiktokUnavailable": "TikTok の状態を取得できません。ローカルサーバーが起動しているか確認してください。",
+      "tiktokLinkLabel": "TikTok ライブ URL / @ユーザー名",
+      "tiktokLinkPlaceholder": "https://www.tiktok.com/@creator/live",
+      "tiktokCheck": "ルームを確認",
+      "tiktokChecking": "確認中…",
+      "tiktokRoomReady": "ルームを確認済み",
+      "tiktokLiveNow": "ライブ中",
+      "tiktokOffline": "オフライン",
+      "tiktokCreator": "配信者",
+      "tiktokCreatorId": "安定した配信者 ID",
+      "tiktokHandle": "ユーザー名",
+      "tiktokRoom": "ルーム ID",
+      "tiktokTitle": "タイトル",
+      "tiktokStartedAt": "開始時刻",
+      "tiktokTotalViewers": "累計視聴者",
+      "tiktokStart": "記録を開始",
+      "tiktokStarting": "接続中…",
+      "tiktokStarted": "{name} の記録を開始しました",
+      "tiktokTransportTitle": "取得経路",
+      "tiktokTransportAuto": "自動（無料署名経路を優先）",
+      "tiktokTransportSigner": "無料コミュニティ署名経路",
+      "tiktokTransportBrowser": "ブラウザリレー（実験的・ログインが必要）",
+      "tiktokTransportHint": "自動モードでは無料署名経路が使えない場合にブラウザリレーへ切り替えます。どちらも既存の取り込み経路だけを使用します。",
+      "tiktokTransportSaved": "取得経路を保存しました",
+      "tiktokSignerNote": "無料コミュニティ署名経路は API キーも支払いも Business プランも不要です。第三者クラウドサービスであり、仕様変更時は画面に明示的なエラーを表示します。",
+      "tiktokBrowserNote": "ブラウザリレーは専用プロファイルの Chrome/Edge で公式ライブページを開き、そのページ自身が受け取るデータを読み取ります。TikTok の Web はルーム入室にログインを要求するため、未ログイン時は「ログインが必要」と表示し、イベントを偽装しません。",
+      "tiktokMetadataNote": "ルーム情報・配信状態・配信者の安定 ID・ギフト一覧は TikTok の公開エンドポイントから直接取得し、ログインも第三者サービスも不要です。",
+      "tiktokIdentityNote": "長期 ID は tiktok:<user.id> を使用し、ニックネームは表示のみです。メッセージはプラットフォームのメッセージ ID で重複排除します。",
+      "tiktokGiftNote": "ギフトはダイヤの表示価値として記録し（amount_minor は空、value_kind=unknown）、収益には換算しません。連続ギフトは最終状態のみ 1 回計上します。実際のギフトイベントはまだ観測していません。",
+      "tiktokCapabilityNote": "対応範囲：ルーム情報とギフト一覧は検証済み、チャットは実サンプルあり、ギフト・連続ギフト・サブスクは解析済みですが実イベントは未観測です。",
+      "tiktokNoPaidPlan": "有料の収集サービスは不要です。視聴者数・配信時間・メッセージ数の制限はありません。",
+      "tiktokPolicyTitle": "原文の保持",
+      "tiktokPolicyBody": "TikTok のチャット原文とニックネームは 30 日上限で削除します（現在 {days} 日）。安定 ID・件数・金額合計は保持します。",
+      "tiktokApplyRetention": "期限切れ原文を今すぐ削除",
+      "tiktokRetentionApplied": "期限切れ原文を {count} 件削除しました"
     }
   },
   "history": {
@@ -1924,7 +1962,23 @@
     "douyinLoginVerifyUnavailable": "ログイン状態を確認できません（プラットフォーム制限またはネットワーク異常）。",
     "douyinNotConfigured": "このビルドは Douyin に対応していません。",
     "douyinStopped": "Douyin 接続は停止しました。",
-    "douyinError": "Douyin がこのソフトウェアで処理できない応答を返しました。後で再試行してください。"
+    "douyinError": "Douyin がこのソフトウェアで処理できない応答を返しました。後で再試行してください。",
+    "tiktokLinkInvalid": "有効な TikTok ライブ URL またはユーザー名ではありません。",
+    "tiktokRoomNotFound": "TikTok ユーザーまたはルームが見つかりません。",
+    "tiktokRoomOffline": "この TikTok ルームは現在ライブ配信していません。",
+    "tiktokRoomUnavailable": "TikTok がこのルームへのアクセスを一時的に拒否しました。",
+    "tiktokLoginRequired": "TikTok はチャット受信にログインを要求しています。開いたブラウザでログインしてください。",
+    "tiktokRateLimit": "TikTok へのリクエストが多すぎます。しばらくしてから再試行してください。",
+    "tiktokNetwork": "TikTok に接続できません。ネットワークを確認してください。",
+    "tiktokProtocol": "TikTok が解析できないデータを返しました。",
+    "tiktokConnectTimeout": "TikTok ルームへの接続がタイムアウトしました。",
+    "tiktokSignerUnavailable": "無料コミュニティ署名経路は一時的に利用できません。",
+    "tiktokSignerPremiumRequired": "署名経路が有料プランを要求しています。LiveMemory は購入を強制しません。ブラウザリレーか独自の署名 URL を使用してください。",
+    "tiktokNotConfigured": "TikTok の取得が設定されていません。",
+    "tiktokBrowserUnavailable": "利用可能な Chrome/Edge が見つからないため、ブラウザリレーを使用できません。",
+    "tiktokBrowserFailed": "ブラウザリレーの起動に失敗しました。",
+    "tiktokStopped": "TikTok の取得は停止しました。",
+    "tiktokError": "TikTok の操作に失敗しました。"
   },
   "toast": {
     "saved": "保存しました",
@@ -2257,7 +2311,9 @@
       "twitchPlaceholder": "チャンネルリンクまたはチャンネル名",
       "twitchLabel": "チャンネルリンクまたはチャンネル名",
       "douyinPlaceholder": "ライブ URL またはルーム番号",
-      "douyinLabel": "ライブ URL またはルーム番号"
+      "douyinLabel": "ライブ URL またはルーム番号",
+      "tiktokPlaceholder": "TikTok ライブ URL または @ユーザー名",
+      "tiktokLabel": "TikTok ライブ URL または @ユーザー名"
     },
     "hero": {
       "autoChip": "自動監視",
