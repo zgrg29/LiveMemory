@@ -99,18 +99,24 @@ export function purgeExpiredRawEvents(db, {
 }
 
 /**
- * Nicknames are API data too. Once a YouTube viewer has not been seen for the
- * whole retention window, remove their nickname history and current nickname.
- * The pseudonymous channel id, event counts and monetary totals stay as derived
- * aggregates so long-term statistics do not silently change.
+ * Nicknames are platform data too. Once a viewer of an enforced platform has
+ * not been seen for the whole retention window, remove their nickname history
+ * and current nickname. The pseudonymous stable id, event counts and monetary
+ * totals stay as derived aggregates so long-term statistics do not silently
+ * change.
  */
-export function purgeExpiredYouTubeNicknames(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS} = {}) {
+export function purgeExpiredPlatformNicknames(db, {
+  now = Date.now(),
+  days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS,
+  platforms = ['youtube']
+} = {}) {
   const cutoff = retentionCutoff(now, days);
+  const clause = platformClause(platforms);
   const stale = db.prepare(`
     SELECT id FROM viewers
-     WHERE platform = 'youtube'
+     WHERE ${clause.sql}
        AND last_seen_at < ?
-  `).all(cutoff).map((row) => row.id);
+  `).all(...clause.params, cutoff).map((row) => row.id);
   if (stale.length === 0) return {purgedNicknames: 0, clearedViewerNicknames: 0, cutoff};
   const placeholders = stale.map(() => '?').join(', ');
   const nicknames = db.prepare(`
@@ -127,6 +133,11 @@ export function purgeExpiredYouTubeNicknames(db, {now = Date.now(), days = DEFAU
   };
 }
 
+/** Backwards-compatible YouTube-only wrapper used by existing callers/tests. */
+export function purgeExpiredYouTubeNicknames(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS} = {}) {
+  return purgeExpiredPlatformNicknames(db, {now, days, platforms: ['youtube']});
+}
+
 function readMeta(db, key) {
   try {
     const row = db.prepare('SELECT value FROM app_meta WHERE key = ?').get(String(key));
@@ -135,6 +146,17 @@ function readMeta(db, key) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Keep YouTube's historical audit key and give each additional platform scope
+ * its own key, so a Twitch run cannot overwrite YouTube's last-run status.
+ */
+function retentionMetaKey(platforms) {
+  const list = Array.isArray(platforms) ? platforms.map(String).sort() : [];
+  if (list.length === 1 && list[0] === 'youtube') return 'retention.lastRun';
+  if (list.length === 1 && list[0] === 'twitch') return 'retention.lastRun.twitch';
+  return `retention.lastRun.${list.join('-') || 'all'}`;
 }
 
 function writeMeta(db, key, value, now) {
@@ -151,7 +173,7 @@ function writeMeta(db, key, value, now) {
 export function runRetention(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS, platforms = ['youtube'], logger = null} = {}) {
   try {
     const result = purgeExpiredRawEvents(db, {now, days, platforms});
-    const nicknameResult = purgeExpiredYouTubeNicknames(db, {now, days});
+    const nicknameResult = purgeExpiredPlatformNicknames(db, {now, days, platforms});
     // Long-term memory may cite messages that were just purged or events that
     // were deleted. The memory itself is kept; its evidence is downgraded so the
     // profile stops claiming that a now-unreadable chat line proves something.
@@ -172,7 +194,7 @@ export function runRetention(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_R
       memoryFactsRechecked: memoryEvidence,
       cutoff: result.cutoff
     };
-    writeMeta(db, 'retention.lastRun', summary, now);
+    writeMeta(db, retentionMetaKey(platforms), summary, now);
     if (result.purged > 0 || nicknameResult.purgedNicknames > 0) {
       logger?.info({
         event: 'retention.purged',
@@ -188,18 +210,24 @@ export function runRetention(db, {now = Date.now(), days = DEFAULT_YOUTUBE_RAW_R
   }
 }
 
-export function retentionStatus(db, {days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS, now = Date.now()} = {}) {
-  const last = readMeta(db, 'retention.lastRun');
+export function retentionStatus(db, {
+  days = DEFAULT_YOUTUBE_RAW_RETENTION_DAYS,
+  now = Date.now(),
+  platforms = ['youtube'],
+  policy = 'youtube-raw-content'
+} = {}) {
+  const last = readMeta(db, retentionMetaKey(platforms));
   const cutoff = retentionCutoff(now, days);
+  const clause = platformClause(platforms);
   const staleNicknames = db.prepare(`
     SELECT COUNT(*) AS count FROM viewers
-     WHERE platform = 'youtube' AND last_seen_at < ? AND nickname IS NOT NULL
-  `).get(cutoff);
+     WHERE ${clause.sql} AND last_seen_at < ? AND nickname IS NOT NULL
+  `).get(...clause.params, cutoff);
   return {
-    policy: 'youtube-raw-content',
+    policy,
     days: normalizeRetentionDays(days),
     maxDays: MAX_RETENTION_DAYS,
-    pendingPurge: countExpiredRawEvents(db, {now, days, platforms: ['youtube']}),
+    pendingPurge: countExpiredRawEvents(db, {now, days, platforms}),
     pendingNicknamePurge: Number(staleNicknames?.count ?? 0),
     lastRun: last
   };

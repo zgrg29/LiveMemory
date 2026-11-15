@@ -102,6 +102,14 @@ export function liveCycleKey(platform, target, observation) {
     const videoId = String(observation?.videoId ?? '');
     return videoId ? `youtube:${videoId}` : null;
   }
+  if (platform === 'twitch') {
+    // The channel login is stable within a check; the stream id changes for
+    // every new broadcast, so it is the reliable cycle key.
+    const login = String(observation?.login ?? target?.target_key ?? target?.targetKey ?? '');
+    const streamId = String(observation?.streamId ?? '');
+    if (login && streamId) return `twitch:${login}:${streamId}`;
+    return null;
+  }
   return null;
 }
 
@@ -209,16 +217,16 @@ export function classifyMonitorError(error) {
   if (Object.values(MONITOR_ERROR).includes(code)) {
     return {code, retryAfterMs: error?.details?.retryAfterMs ?? null};
   }
-  if (['YOUTUBE_WEB_NETWORK', 'NETWORK', 'CONNECT_TIMEOUT'].includes(code)) {
+  if (['YOUTUBE_WEB_NETWORK', 'NETWORK', 'CONNECT_TIMEOUT', 'TWITCH_NETWORK', 'TWITCH_CONNECT_TIMEOUT'].includes(code)) {
     return {code: MONITOR_ERROR.NETWORK, retryAfterMs: null};
   }
-  if (['YOUTUBE_RATE_LIMITED', 'RATE_LIMITED'].includes(code)) {
-    return {code: MONITOR_ERROR.RATE_LIMITED, retryAfterMs: error?.details?.retryAfterMs ?? null};
+  if (['YOUTUBE_RATE_LIMITED', 'RATE_LIMITED', 'TWITCH_RATE_LIMITED'].includes(code)) {
+    return {code: MONITOR_ERROR.RATE_LIMITED, retryAfterMs: error?.details?.retryAfterMs ?? error?.retryAfterMs ?? null};
   }
-  if (['YOUTUBE_WEB_BLOCKED', 'YOUTUBE_WEB_RESTRICTED', 'AUTH_REQUIRED', 'FORBIDDEN'].includes(code)) {
+  if (['YOUTUBE_WEB_BLOCKED', 'YOUTUBE_WEB_RESTRICTED', 'AUTH_REQUIRED', 'FORBIDDEN', 'TWITCH_CHANNEL_UNAVAILABLE'].includes(code)) {
     return {code: MONITOR_ERROR.BLOCKED, retryAfterMs: null};
   }
-  if (['YOUTUBE_WEB_PROTOCOL', 'YOUTUBE_WEB_STALE', 'BAD_RESPONSE', 'STATUS_INVALID'].includes(code)) {
+  if (['YOUTUBE_WEB_PROTOCOL', 'YOUTUBE_WEB_STALE', 'BAD_RESPONSE', 'STATUS_INVALID', 'TWITCH_PROTOCOL'].includes(code)) {
     return {code: MONITOR_ERROR.PROTOCOL, retryAfterMs: null};
   }
   if ([
@@ -226,14 +234,16 @@ export function classifyMonitorError(error) {
     'VIDEO_NOT_FOUND',
     'ROOM_NOT_FOUND',
     'YOUTUBE_CHANNEL_NOT_FOUND',
-    'UNKNOWN_CHANNEL'
+    'UNKNOWN_CHANNEL',
+    'TWITCH_CHANNEL_NOT_FOUND'
   ].includes(code)) {
     return {code: MONITOR_ERROR.NOT_FOUND, retryAfterMs: null};
   }
   if ([
     'YOUTUBE_CHAT_DISABLED',
     'YOUTUBE_CHAT_NOT_FOUND',
-    'YOUTUBE_CHAT_ENDED'
+    'YOUTUBE_CHAT_ENDED',
+    'TWITCH_CHAT_UNAVAILABLE'
   ].includes(code)) {
     // The broadcast may be live but its public chat cannot be opened. This is a
     // recording blocker, not evidence that the broadcast ended.

@@ -142,11 +142,14 @@ export const livePage = {
     let sourceMode = 'mock';
     let checkedRoom = null;
     let checkedVideo = null;
+    let checkedTwitch = null;
     let biliStatus = null;
     let youtubeStatus = null;
+    let twitchStatus = null;
     let biliAutoMonitor = false;
     let youtubeAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: ''};
+    let twitchAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
@@ -350,17 +353,27 @@ export const livePage = {
     /* ---------------------------------------------------------- data sync */
 
     async function loadSourceStatuses() {
-      const [bili, youtube] = await Promise.all([
+      const [bili, youtube, twitch] = await Promise.all([
         api.get('/api/bilibili/status').catch(() => null),
-        api.get('/api/youtube/status').catch(() => null)
+        api.get('/api/youtube/status').catch(() => null),
+        api.get('/api/twitch/status').catch(() => null)
       ]);
       biliStatus = bili;
       youtubeStatus = youtube;
+      twitchStatus = twitch;
     }
 
     async function refreshYoutubeStatus() {
       try {
         youtubeStatus = await api.get('/api/youtube/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
+    }
+
+    async function refreshTwitchStatus() {
+      try {
+        twitchStatus = await api.get('/api/twitch/status');
       } catch {
         /* keep the previous snapshot */
       }
@@ -769,23 +782,37 @@ export const livePage = {
           name: event.giftName ?? '',
           qty: event.giftQuantity ?? 1
         })}));
+        if (event.content) line.append(el('span', {className: 'feed-text', text: event.content}));
         if (event.isPaid && Number(event.amountMinor) > 0) {
           line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        } else if (event.amountDisplay) {
+          line.append(el('span', {className: 'feed-gift', text: event.amountDisplay}));
         }
       } else if (event.type === 'super_chat') {
         if (event.content) line.append(el('span', {className: 'feed-text feed-text--sc', text: event.content}));
-        line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        if (Number(event.amountMinor) > 0) {
+          line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        } else if (event.amountDisplay) {
+          // Bits Cheers carry a count, not a fiat amount. Never show it as 0.00.
+          line.append(el('span', {className: 'feed-gift', text: event.amountDisplay}));
+        } else {
+          line.append(el('span', {className: 'feed-gift', text: t('common.unknown')}));
+        }
       } else if (event.type === 'super_sticker') {
         const label = event.giftName ? `${t('live.feed.stickerLabel')} · ${event.giftName}` : t('live.feed.stickerLabel');
         line.append(el('span', {className: 'feed-text', text: label}));
         if (event.isPaid && Number(event.amountMinor) > 0) {
           line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        } else if (event.amountDisplay) {
+          line.append(el('span', {className: 'feed-gift', text: event.amountDisplay}));
         }
       } else if (event.type === 'guard' || event.type === 'membership') {
         line.append(el('span', {className: 'feed-text', text: event.giftName ?? t('live.feed.guardLabel')}));
         if (event.content) line.append(el('span', {className: 'feed-text', text: event.content}));
         if (event.isPaid && Number(event.amountMinor) > 0) {
           line.append(el('span', {className: 'feed-gift', text: formatMoney(event.amountMinor, event.currency, ctx.locale)}));
+        } else if (event.amountDisplay) {
+          line.append(el('span', {className: 'feed-gift', text: event.amountDisplay}));
         }
       } else {
         const emote = Array.isArray(event.emotes) ? event.emotes[0] : null;
@@ -1391,11 +1418,17 @@ export const livePage = {
           sourceMode = mode;
           checkedRoom = null;
           checkedVideo = null;
+          checkedTwitch = null;
           onSelect?.();
           renderSource();
           if (mode === 'youtube') {
             refreshYoutubeStatus().then(() => {
               if (!destroyed && sourceMode === 'youtube') renderSource();
+            }).catch(() => {});
+          }
+          if (mode === 'twitch') {
+            refreshTwitchStatus().then(() => {
+              if (!destroyed && sourceMode === 'twitch') renderSource();
             }).catch(() => {});
           }
         }
@@ -1416,11 +1449,13 @@ export const livePage = {
       const tabs = el('div', {className: 'source-tabs'},
         tabButton(t('live.source.mockTab'), 'mock'),
         tabButton(t('live.source.biliTab'), 'bilibili'),
-        tabButton(t('live.source.youtubeTab'), 'youtube'));
+        tabButton(t('live.source.youtubeTab'), 'youtube'),
+        tabButton(t('live.source.twitchTab'), 'twitch'));
 
       const body = el('div', {className: 'card-body'}, tabs);
       if (sourceMode === 'mock') body.append(buildMockPanel());
       else if (sourceMode === 'bilibili') body.append(buildBiliPanel());
+      else if (sourceMode === 'twitch') body.append(buildTwitchPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
@@ -1682,6 +1717,160 @@ export const livePage = {
       }
 
       return panel;
+    }
+
+    function buildTwitchPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.twitchIntro')}));
+
+      const status = twitchStatus;
+      if (!status) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.twitchUnavailable')));
+        return panel;
+      }
+
+      panel.append(autoMonitorToggle('twitch', twitchAutoMonitor, (checked) => {
+        twitchAutoMonitor = checked;
+        checkedTwitch = null;
+        renderSource();
+      }));
+      if (twitchAutoMonitor) {
+        panel.append(buildAutoMonitorSection('twitch'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.twitchAnonymousNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.twitchIdentityNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.twitchMoneyNote')}));
+        return panel;
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.twitchLinkPlaceholder'),
+          'aria-label': t('live.source.twitchLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedTwitch?.input ?? '';
+      refs.twitchInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.twitchLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.twitchCheck'),
+          onClick: (event) => checkTwitch(event.currentTarget)
+        })));
+
+      if (checkedTwitch) panel.append(buildTwitchChannelMeta(checkedTwitch));
+
+      panel.append(el('p', {className: 'source-note', text: t('live.source.twitchAnonymousNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.twitchIdentityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.twitchMoneyNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.twitchCapabilityNote')}));
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.twitchPolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.twitchPolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.twitchApplyRetention'),
+            onClick: (event) => applyTwitchRetention(event.currentTarget)
+          })));
+      }
+
+      return panel;
+    }
+
+    function buildTwitchChannelMeta(channel) {
+      const meta = el('div', {className: 'source-meta'});
+      meta.append(el('div', {className: 'source-status'},
+        chip(t('live.source.twitchChannelReady'), 'accent'),
+        channel.isLive
+          ? chip(t('live.source.twitchLiveNow'), 'live', {dot: true})
+          : chip(t('live.source.twitchOffline'), 'neutral'),
+        channel.title ? el('span', {className: 'row-title-text', text: channel.title}) : null));
+      const details = [];
+      if (channel.displayName) details.push(`${t('live.source.twitchChannel')}: ${channel.displayName}`);
+      if (channel.channelId) details.push(`${t('live.source.twitchChannelId')}: ${channel.channelId}`);
+      if (channel.login) details.push(`${t('live.source.twitchLogin')}: ${channel.login}`);
+      if (channel.viewers !== null && channel.viewers !== undefined) {
+        details.push(`${t('live.source.twitchViewers')}: ${formatInteger(channel.viewers, ctx.locale)}`);
+      }
+      if (details.length) meta.append(el('div', {text: details.join(' · ')}));
+      const canStart = Boolean(channel.isLive);
+      meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: canStart ? t('live.source.twitchStart') : t('live.source.waitForLive'),
+          attrs: canStart ? {} : {disabled: ''},
+          onClick: (event) => {
+            if (!canStart) return;
+            connectTwitch(event.currentTarget);
+          }
+        })));
+      if (!canStart) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+      return meta;
+    }
+
+    async function checkTwitch(button) {
+      const url = String(refs.twitchInput?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.twitchLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchChecking');
+      try {
+        const result = await api.post('/api/twitch/channel', {url});
+        checkedTwitch = {...result.channel, input: url};
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function connectTwitch(button) {
+      if (!checkedTwitch) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchStarting');
+      try {
+        const payload = await api.post('/api/twitch/connect', {url: checkedTwitch.input});
+        checkedTwitch = null;
+        await refreshTwitchStatus();
+        await refreshRecordings();
+        await openSession(payload.session.id, {force: true});
+        await ctx.refreshStatus();
+        ctx.toast(t('live.source.twitchStarted', {name: payload.channel?.displayName ?? payload.channel?.login ?? ''}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function applyTwitchRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/twitch/retention/apply', {});
+        await refreshTwitchStatus();
+        renderSource();
+        ctx.toast(t('live.source.twitchRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
     }
 
     function videoReasonText(reason) {

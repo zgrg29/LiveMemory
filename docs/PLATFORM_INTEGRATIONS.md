@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；v0.8.1 增加平台直播状态与下播检测（WebSocket `LIVE`/`PREPARING` + 定期 `live_status` 查询），已用真实房间验证状态查询与 4 房间 20 分钟并发，但真实“直播中→下播”端到端仍未捕获。礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；v0.8.1 增加平台直播状态与下播检测（WebSocket `LIVE`/`PREPARING` + 定期 `live_status` 查询），已用真实房间验证状态查询与 4 房间 20 分钟并发，但真实“直播中→下播”端到端仍未捕获。礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。Twitch M1（2026-11-15）已完成匿名 IRC + 公开元数据的正式接入：真实公开频道 6 场并发 60 秒 418 条事件，418/418 带稳定 User ID 与消息 ID，订阅/续订通知已实测；Bits 与赠订仅完成解析，尚未观测到真实事件。** 模拟平台（mock）保持可用。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -309,6 +309,105 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 - 长时间多场压力、内存增长与平台限流叠加尚未做 10+ 场数小时验证。
 
 
+## 3A. Twitch Live（M1，2026-11-15）
+
+### 3A.1 接入边界与代码结构
+
+- 唯一路径：**匿名 IRC 公开聊天 + 只读公开频道元数据**；不需要 Twitch 账号、OAuth Token、API Key、Cookie 或付费采集服务。
+- 匿名 IRC 与公开网页元数据都**不是 Twitch 官方承诺的稳定 API**；平台可能限流、改字段或关闭该行为。界面与文档不得描述为“官方授权”。
+- 不绕过登录、验证码、封禁、聊天限制或地区限制；失败显示真实原因，不静默切换。
+- 只附加正在直播的公开频道；视频、剪辑、目录、搜索链接一律拒绝。
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/platforms/twitch/link.mjs` | 解析 `twitch.tv/<login>`、m/player/popout 与裸账号；拒绝视频/剪辑/目录 |
+| `src/platforms/twitch/irc.mjs` | IRCv3 标签/转义/多行帧、`emotes` 范围、`badges`、`/me` ACTION 的纯解析 |
+| `src/platforms/twitch/mapper.mjs` | PRIVMSG / Cheer / USERNOTICE → canonical event；证据等级与忽略列表 |
+| `src/platforms/twitch/client.mjs` | 公开 GQL 元数据（频道 ID、昵称、标题、直播状态、观看数、开播时间、stream id） |
+| `src/platforms/twitch/adapter.mjs` | IRC WebSocket 生命周期、心跳/看门狗、重连、稳定 ID、消息去重、直播状态确认 |
+| `src/platforms/twitch/service.mjs` | 路由/监控与 `SessionManager` 之间的粘合层、30 天保留 |
+| `src/monitoring/detectors/twitch.mjs` | 开播检测与稳定 target 解析 |
+
+所有事件只经 `src/platforms/shared/ingest.mjs`；适配器不写数据库。
+
+### 3A.2 连接流程
+
+```text
+用户输入链接/账号
+  → parseTwitchInput()
+  → 公开 GQL user(login)：stable channel id / displayName / title / stream.id / viewers / startedAt
+  → 拒绝未开播、频道不存在、非频道链接
+  → SessionManager.startPlatform({platform:'twitch', platformRoomId: channelId})
+  → TwitchIrcAdapter
+      → wss://irc-ws.chat.twitch.tv:443（CAP tags/commands，匿名 NICK justinfan…，JOIN #login）
+      → ROOMSTATE 校验 room-id == channel id
+      → PRIVMSG / USERNOTICE → mapper → EventIngest（去重/观众/金额/计数）
+      → SSE → 控制台
+```
+
+### 3A.3 观众身份与聊天
+
+- `user-id` → `viewer_uid` → 长期身份 `twitch:<user-id>`；`display-name`/`login` 只作展示。缺失 `user-id` 时 `viewer_uid=null`、`identity_complete=false`，绝不用昵称建档案或合并。
+- `id` → `external_id` → `UNIQUE(session_id, dedupe_key)`；适配器另保留最近 10,000 个消息 ID 作为连接内快速去重。
+- `tmi-sent-ts` → `occurred_at`（epoch 毫秒）；`room-id` → 主播稳定 ID。
+- 正文保留完整 UTF-8（中文/日文/英文/Emoji）；`/me` 只去掉 `\u0001ACTION …\u0001` 包装，不改文字。
+- `emotes` 标签只提供 emote id 与字符范围，Twitch IRC 不提供表情名称；`content` 原文保留 emote 文本，`emotes` 只写 `{id, source}`，不下载图片、不猜情绪。
+- `badges` 映射为 owner/moderator/member/unknown 的最小集合；`CLEARCHAT`/`CLEARMSG` 等管理事件不当作聊天。
+
+### 3A.4 订阅、赠订与 Bits（证据分级）
+
+| 事件 | 映射 | 金额语义 | 证据等级 |
+| --- | --- | --- | --- |
+| `PRIVMSG` 普通聊天 | `chat` | 无 | **真实观测**（2026-11-15，418/418 有 user-id/id） |
+| `PRIVMSG` 带 `bits`（Cheer） | `super_chat`，`gift_name=Bits`，`gift_quantity=bits`，`amount_display="N Bits"` | `amount_minor=null`、`currency=null`、`value_kind=unknown` | **已解析，未观测到真实事件** |
+| `USERNOTICE msg-id=resub` | `membership`，`gift_name=Subscription · Tier N/Prime`，`amount_display=N months` | 同上，不换算收入 | **真实观测**（2026-11-15，Prime 续订） |
+| `USERNOTICE msg-id=sub` | 同上 | 同上 | 已解析，未观测到真实事件 |
+| `USERNOTICE msg-id=subgift` | `gift`，`viewer_uid` 是赠送者；接收者只写入 `amount_display`，`is_paid=false` 的接收者事件不生成 | 同上 | 已解析，未观测到真实事件 |
+| `USERNOTICE msg-id=submysterygift` | 跳过（随后每个接收者都有 `subgift`） | — | 防止重复计数 |
+| `viewermilestone` / `bitsbadgetier` / `announcement` / `raid` 等 | 跳过，不写入普通聊天 | — | 系统通知不得冒充观众弹幕 |
+
+- Twitch 不提供 Bits/订阅/赠订的本币金额；价格随国家、平台、税费、促销变化。**不得**把 Tier、Bits、月数换算成主播实际收入。
+- 赠订只把赠送者记为付款者；接收者不是付款者，不增加付费人数或金额。
+- 当前匿名 IRC 无法取得官方 EventSub 的完整事件能力。EventSub 需要 OAuth User Access Token、应用 Client ID 与相应 scope；本构建**未配置**，不会要求普通主播注册开发者应用。后续若要增强，必须先提供开发者侧公开 Client ID 方案并单独评审。
+
+### 3A.5 直播状态、结束与重连
+
+- IRC 连接成功不等于主播仍在直播。适配器每 60 秒读一次公开频道元数据；
+  **连续 2 次有效离线**才确认 `platform_ended`。网络错误、429、协议异常只退避，绝不结束。
+- `stream.id` 变化表示上一场已结束、新一场已开始：结束旧 session，不把两场混在一行；监听会为新场创建新 session。
+- 服务端 `RECONNECT`、连接关闭、90 秒静默看门狗：进入 `reconnecting`，指数退避（1→30 秒）重连，保留同一 session。
+- 连续 15 次失败进入可恢复 `failed`，之后每 5 分钟低速探测一次，不高速空转、不重复创建 session。
+- 用户主动停止后 `started=false`，不再重连；多直播间各自独立 adapter/session，互不影响。
+- 平台状态写入 `sessions.platform_status` / `platform_ended_at` / `platform_end_quality`，与本地采集状态分离。
+
+### 3A.6 自动开播监听
+
+- `MonitoringManager` 新增 `twitch` detector：等待开播时每 120 秒（90–180 秒抖动）读取一次公开频道元数据；每个平台一个 pacer（Twitch ≥1.5 秒），最多 2 个并发检查。
+- 目标 key 为 channel login，`platform_uid` 为稳定 channel id；`liveCycleKey` 使用 `twitch:<login>:<stream.id>`，避免把同一场重复创建 session。
+- 发现开播后调用 `TwitchService.connectDetected`，复用普通适配器/`EventIngest`；关播后目标保留并等待下一场。
+- 失败 4 次进入可见 `error`，30 分钟后低速重试；网络错误不会被当成“未开播”或“已结束”。
+
+### 3A.7 数据保留
+
+- Twitch 原文、emotes、badges、`amount_display` 与过期昵称按 **30 天**清理（Twitch-only scope）；保留事件行、计数、稳定 User ID 与金额合计。
+- 清理在启动、Twitch 场次结束与 `POST /api/twitch/retention/apply` 时执行。
+- 这不等于完全删除个人数据；文档与界面不得声称“已彻底删除”。
+
+### 3A.8 验证状态（2026-11-15，Asia/Shanghai）
+
+真实只读公开频道（未登录、未付费、未保存/展示聊天正文）：
+
+| 验证 | 结果 |
+| --- | --- |
+| 单频道 `xqc` 45 秒 | 138 条事件，138/138 有稳定 User ID + 消息 ID；108 个唯一身份；7 条带 `emotes`；7 条含非 ASCII |
+| 6 频道并发 60 秒（xqc/shroud/sodapoppin/moonmoon/ludwig/summit1g） | 418 条事件，418/418 有稳定 User ID + 消息 ID；304 个唯一身份；40 条带 `emotes`；10 条含非 ASCII；**1 条真实 resub（Prime）**；0 Bits、0 赠订 |
+| 断线重连 | 自动化覆盖连接关闭、`RECONNECT`、看门狗、退避与同 session 恢复；真实拔网未验证 |
+| 下播确认 | 自动化覆盖两次离线确认、stream id 变化、错误不结束；真实“直播中→下播”未捕获 |
+| 多直播间隔离 | 6 个真实频道并发连接、独立 session；自动化覆盖停止一场另一场继续 |
+| Windows EXE | 见 `docs/STATUS.md` 本轮构建与 EXE 实测记录 |
+
+**未验证 / 不得宣称**：真实 Bits 事件、真实赠订事件、EventSub OAuth 端到端、真实长时间断网/下播、千条每秒压力、Twitch 官方稳定性承诺。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：
@@ -325,7 +424,7 @@ is_paid, source_quality, dedupe_key
 适配器职责：
 
 1. 解析原生消息；
-2. 生成稳定 `external_id`（Bilibili 礼物 `tid`、SC `id`、大航海 `payflow_id` 或 `uid:level:time:count`；YouTube 一律使用 `message.id`；Bilibili 弹幕不设 external_id，由指纹去重）；
+2. 生成稳定 `external_id`（Bilibili 礼物 `tid`、SC `id`、大航海 `payflow_id` 或 `uid:level:time:count`；YouTube 一律使用 `message.id`；Twitch 使用 IRC `id`；Bilibili 弹幕不设 external_id，由指纹去重）；
 3. 确认金额单位与币种，否则 `amount_minor=null`、`value_kind=unknown`；
 4. 标注 `source_quality`（`verified` 仅用于字段实测确认后）；
 5. 提取平台表情元数据（有可靠依据时）并写入 `emotes`；没有依据时不要猜测；
@@ -336,6 +435,7 @@ is_paid, source_quality, dedupe_key
 - `mock` 平台永远 `source_quality=mock`，UI 显示「模拟」。
 - Bilibili 真实会话 `source_quality=estimated`（会话级）；单条事件：弹幕/礼物/SC 身份完整时为 `verified`，身份缺失为 `unknown`，大航海为 `estimated`。
 - YouTube 事件 `source_quality=estimated`：字段来自官方文档，但**尚未在真实直播中采样**；`verified` 只在真实样本后使用。
+- Twitch：普通聊天与 `resub` 为 `verified`（真实公开频道观测）；`sub`、`subgift`、Bits/Cheer 为 `estimated`（标签已解析、真实事件未观测）。不得因为 Mock 通过就升级证据等级。
 - 字段未逐项验证的平台事件标 `unknown` 或 `estimated`。
 - 不得把模拟测试通过描述为真实平台接入完成。
 - 真实直播间验收记录：`21144080`（2026-11-08，弹幕 142 条全部带 UID/昵称）、`7734200`、`5050`（72/77 条 UID=0 + 昵称打码；另有 21/32 条 `DANMU_MSG` 带 `info[0][13]` 表情元数据）。房间号、时间与结论已记入 `docs/TEST_PLAN.md`。
@@ -361,8 +461,9 @@ is_paid, source_quality, dedupe_key
 | 保留内容 | 行、计数、观众身份、昵称历史、币种合计、AI 包记录 |
 | 作用范围 | 仅 `platform='youtube'`（Bilibili 不受 Google 政策约束，未改动） |
 | 审计 | `app_meta['retention.lastRun']` 记录时间、天数、清理条数 |
-
 主播登录 Google **不代表**获得无限期保存其他观众数据的授权；统计与身份保留是对产品长期记忆价值的最小妥协，原始文本按窗口删除。
+
+Twitch 自 M1 起采用同样的 30 天原文保留（独立 `platform='twitch'` scope）：清理 `content`/`emotes`/`badges`/`amount_display` 与过期昵称，保留事件行、计数、稳定 User ID 与金额合计。清理触发：启动、Twitch 场次结束、`POST /api/twitch/retention/apply`；审计写入 `app_meta['retention.lastRun.twitch']`，不会覆盖 YouTube 的 `retention.lastRun`。该窗口在 M1 固定为 30 天，暂未提供用户配置项。
 
 ## 8. 自动开播监听（v0.10.0）
 
@@ -371,7 +472,7 @@ is_paid, source_quality, dedupe_key
 ```text
 monitor_targets（持久目标，schema 11）
   → MonitoringManager（状态机 / 调度 / 重试 / 会话创建）
-  → Platform Detector（Bilibili roomStatus / YouTube channel live page）
+  → Platform Detector（Bilibili roomStatus / YouTube channel live page / Twitch public channel metadata）
   → SessionManager.startPlatform（普通适配器 + 普通 events 写入）
   → sessions（每场一条，monitor_target_id 关联目标）
 ```
@@ -413,14 +514,23 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 - 发现后使用现有 `YouTubeService.connectDetected` 与匿名公开聊天适配器；不调用 Data API、
   OAuth、API Key，不发送 Cookie。
 
+### 8.3.1 Twitch
+
+- 目标为 channel login（URL/账号规范化），`platform_uid` 为稳定 channel id。
+- 等待开播时读取公开频道元数据：`stream.id` 存在才算 LIVE；`stream.id` 是同一场直播的稳定周期键。
+- 发现开播后调用 `TwitchService.connectDetected`，由普通 IRC 适配器再次用 `ROOMSTATE room-id`
+  校验频道；关播由适配器两次有效离线确认，不由监控器结束记录。
+- 失败、429、GQL 结构异常只退避，不创建 session、不结束记录。
+
 ### 8.4 频率、缓存与限流
 
 | 平台 | 等待时基准间隔 | 抖动 | 429/失败 |
 | --- | --- | --- | --- |
 | Bilibili | 60 秒 | ±12%（45–90 秒） | `Retry-After`；否则指数退避至 10 分钟 |
 | YouTube | 180 秒 | ±12%（120–240 秒） | `Retry-After`；否则指数退避至 30 分钟 |
+| Twitch | 120 秒 | ±12%（90–180 秒） | `Retry-After`；否则指数退避至 20 分钟 |
 
-- 每个平台一个 `RequestPacer`（Bilibili ≥1.2 秒、YouTube ≥2.5 秒请求间隔），最多 2 个并发检查。
+- 每个平台一个 `RequestPacer`（Bilibili ≥1.2 秒、YouTube ≥2.5 秒、Twitch ≥1.5 秒请求间隔），最多 2 个并发检查。
 - 启动/重启时目标错峰 0–45 秒检查；新增目标 0.5–3 秒后首次检查。
 - 正在记录的目标不参与监听轮询，避免与适配器自身状态查询重复。
 - 缓存：频道身份、显示名、上次观察结果保存在目标行；浏览器窗口只读 API，不自行轮询平台。
@@ -441,7 +551,7 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 
 - 新增目标状态 `live_stopped`：主播仍 LIVE，但本场采集由用户停止；Tab 保留，显示「直播中 · 本场已停止采集」。
 - `monitor_targets.meta_json.manualStop` 持久保存 `{sessionId, liveKey, stoppedAt, awaitingOffline}`，跨进程重启有效。
-- `liveKey` 优先使用 Bilibili `live_time`（epoch 秒或平台时间字符串）或 YouTube `videoId`；没有可靠 key 时不解除抑制。
+- `liveKey` 优先使用 Bilibili `live_time`（epoch 秒或平台时间字符串）、YouTube `videoId` 或 Twitch `stream.id`；没有可靠 key 时不解除抑制。
 - 同周期 LIVE + 错误/超时/未知：继续抑制；只有 `detect` 返回 offline/upcoming 才清除；下一次 LIVE 若 key 不同（新 `live_time` / 新 videoId）才创建新 session。
 - 用户明确点击「开始接收弹幕」（`action:resume_capture`）清除抑制并创建新的本地 session；不会重新打开已结束的旧记录。
 - 暂停整个监听（`paused`）与停止当前采集（`live_stopped`）是不同状态；暂停不会删除抑制。
@@ -449,15 +559,15 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 
 ## 10. 2026-11-15 多平台调研结论（TikTok / Twitch / 抖音）
 
-完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。**本节只是结论索引；没有新增平台代码，也没有改变 Bilibili/YouTube 行为。**
+完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。**本节保留调研结论索引；Twitch 的 M1 实现与证据见 §3A，抖音/TikTok 尚未开发。**
 
 | 平台 | 推荐 | 已验证 | 主要阻碍 |
 | --- | --- | --- | --- |
-| **Twitch** | **第一个正式开发** | 匿名 IRC 5 频道 45 秒 644 条 PRIVMSG，644/644 有 `user-id`/`display-name`/消息 `id`；USERNOTICE 有 resub/viewermilestone；`ROOMSTATE room-id`；EventSub 无 Token 订阅 401；公开页 `isLiveBroadcast` 可判定开播 | 匿名 IRC 未在官方文档承诺；Bits 未观测；OAuth/EventSub、真实断网/下播未验证 |
+| **Twitch** | **M1 已接入（`feature/twitch`）** | 调研：匿名 IRC 5 频道 45 秒 644 条 PRIVMSG，644/644 有 `user-id`/`display-name`/消息 `id`；USERNOTICE 有 resub/viewermilestone；`ROOMSTATE room-id`；EventSub 无 Token 订阅 401。M1 真实验证：6 频道并发 60 秒 418 条事件，418/418 有稳定 User ID + 消息 ID，304 身份，1 条真实 resub；单频道 45 秒 138/138 | 匿名 IRC/公开 GQL 未在官方文档承诺；Bits/赠订未观测到真实事件；EventSub OAuth 未配置；等待人工验收 |
 | **抖音** | **第二个，先决策** | 匿名 WSS 连接真实房间；约 7 秒 175 条消息；45 秒 16 chat / 192 member / 25 like / 3 follow / 8 room / **0 gift**；13/13 chat 有 UID/昵称/secUid/消息 ID/CJK；公开页 `status=2/4` | **2026 年起礼物只推登录会话**；本地签名脚本 AGPL-3.0；逆向协议风控/条款风险；官方“直播小玩法”不是通用采集 |
 | **TikTok** | **暂缓** | TTLC 2.5.0/2.4.4 均被 Euler 签名端点拒绝（Business plan）；1.2.3 本地签名超时；页面 WAF；**无真实事件** | 官方无公开 LIVE API；Euler Business $50/月起；AGPL + 约 60 包；Issue #280 报告漏消息 |
 
-**接入原则（下一轮 Twitch 必须遵守）：**
+**接入原则（M2+ 平台必须遵守）：**
 
 1. 所有事件只经 `src/platforms/shared/ingest.mjs`；不改 Bilibili/YouTube。
 2. 稳定身份：Twitch `user-id`、抖音 `user.id`、TikTok `userId`；昵称只作展示。

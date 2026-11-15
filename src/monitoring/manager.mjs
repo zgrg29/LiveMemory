@@ -34,6 +34,7 @@ import {monitorError} from './errors.mjs';
 import {RequestPacer} from './pacer.mjs';
 import {BilibiliRoomDetector} from './detectors/bilibili.mjs';
 import {YouTubeChannelDetector} from './detectors/youtube.mjs';
+import {TwitchChannelDetector} from './detectors/twitch.mjs';
 
 /**
  * Unified automatic-monitoring scheduler.
@@ -58,6 +59,7 @@ export class MonitoringManager {
     sessionManager,
     bilibili = null,
     youtube = null,
+    twitch = null,
     logger = null,
     now = Date.now,
     detectors = null,
@@ -69,6 +71,7 @@ export class MonitoringManager {
     this.sessionManager = sessionManager;
     this.bilibili = bilibili;
     this.youtube = youtube;
+    this.twitch = twitch;
     this.logger = logger;
     this.now = now;
     this.onChange = onChange;
@@ -106,6 +109,15 @@ export class MonitoringManager {
         now: this.now,
         pacer: this.pacer,
         policy: MONITOR_POLICY.youtube
+      });
+    }
+    if (this.twitch?.client) {
+      detectors.twitch = new TwitchChannelDetector({
+        client: this.twitch.client,
+        logger: this.logger,
+        now: this.now,
+        pacer: this.pacer,
+        policy: MONITOR_POLICY.twitch
       });
     }
     return detectors;
@@ -204,7 +216,8 @@ export class MonitoringManager {
       enabled: true,
       policy: {
         bilibili: {checkIntervalMs: MONITOR_POLICY.bilibili.baseMs},
-        youtube: {checkIntervalMs: MONITOR_POLICY.youtube.baseMs}
+        youtube: {checkIntervalMs: MONITOR_POLICY.youtube.baseMs},
+        twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs}
       },
       summary: summarizeTargets(targets),
       targets
@@ -577,9 +590,7 @@ export class MonitoringManager {
       kind: 'offline',
       random: this.random
     });
-    const displayName = observation?.anchorName
-      || observation?.channelTitle
-      || row.display_name;
+    const displayName = displayNameFor(row, observation);
     const meta = mergeMeta(row.meta_json, {
       manualStop: suppression,
       lastCheck: {
@@ -640,11 +651,7 @@ export class MonitoringManager {
       observedAt: now
     });
     applyMetadataMeta(meta, observation);
-    const displayName = row.platform === 'youtube' && observation?.channelTitle
-      ? observation.channelTitle
-      : (row.platform === 'bilibili' && observation?.anchorName
-        ? observation.anchorName
-        : row.display_name);
+    const displayName = displayNameFor(row, observation);
     updateMonitorTarget(this.db, row.id, {
       state: MONITOR_STATE.WAITING,
       next_check_at: now + delay,
@@ -700,11 +707,7 @@ export class MonitoringManager {
         }
       });
       applyMetadataMeta(meta, observation);
-      const displayName = row.platform === 'youtube' && observation?.channelTitle
-        ? observation.channelTitle
-        : (row.platform === 'bilibili' && observation?.anchorName
-          ? observation.anchorName
-          : row.display_name);
+      const displayName = displayNameFor(row, observation);
       updateMonitorTarget(this.db, row.id, {
         state: MONITOR_STATE.RECORDING,
         active_session_id: sessionId,
@@ -757,6 +760,16 @@ export class MonitoringManager {
         isUpcoming: false,
         actualStartTime: observation?.startedAt ?? null,
         concurrentViewers: observation?.concurrentViewers ?? null
+      }, {monitorTargetId: row.id, input: row.input});
+    }
+    if (row.platform === 'twitch') {
+      if (!this.twitch?.connectDetected) throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
+      return this.twitch.connectDetected({
+        ...observation,
+        status: 'live',
+        login: observation?.login ?? row.target_key,
+        channelId: observation?.channelId ?? row.platform_uid,
+        channelTitle: observation?.channelTitle ?? row.display_name ?? null
       }, {monitorTargetId: row.id, input: row.input});
     }
     throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
@@ -818,6 +831,14 @@ export class MonitoringManager {
     });
     this.#emit();
   }
+}
+
+function displayNameFor(row, observation) {
+  return observation?.anchorName
+    || observation?.channelTitle
+    || observation?.displayName
+    || row?.display_name
+    || null;
 }
 
 function applyMetadataMeta(meta, observation) {

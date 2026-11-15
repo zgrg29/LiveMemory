@@ -106,7 +106,8 @@ async function renderList(container, ctx) {
   },
     el('option', {value: 'all', text: t('common.all')}),
     el('option', {value: 'bilibili', text: t('common.platform.bilibili')}),
-    el('option', {value: 'youtube', text: t('common.platform.youtube')}));
+    el('option', {value: 'youtube', text: t('common.platform.youtube')}),
+    el('option', {value: 'twitch', text: t('common.platform.twitch')}));
   const statusSelect = el('select', {
     className: 'select select--compact',
     attrs: {'aria-label': t('history.filters.status')}

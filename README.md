@@ -1,8 +1,8 @@
 # LiveMemory 直播记忆
 
-本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live** 与 **YouTube Live**（两者均已接入真实直播）。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live** 与 **Twitch Live**（均已接入真实直播；Twitch 为 M1 匿名 IRC + 公开元数据）。
 
-Local-first livestream memory for Bilibili Live and YouTube Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
+Local-first livestream memory for Bilibili Live, YouTube Live and Twitch Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
 
 ---
 
@@ -84,6 +84,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - 直播记录、直播历史（含单场详情与热度曲线）、观众档案、AI 分析中心、设置五个页面
 - **Bilibili 直播**：真实 WebSocket 弹幕、礼物、醒目留言、大航海、平台表情；扫码登录可选
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
+- **Twitch 直播（M1）**：匿名 IRC 公开聊天 + 公开频道元数据，无需 Twitch 登录、OAuth、API Key 或 Cookie；粘贴频道链接/账号即可，支持多频道并发与自动开播监听。真实公开频道已实测稳定 User ID、消息 ID、Unicode、平台表情 ID 与订阅/续订；**Bits 与赠订已解析但尚未观测到真实事件**。Bits/Tier/月数不换算收入，金额保持未知
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
 - **M6：AI 文件协议（历史）**：v0.13.1 已删除用户可见的“导出 ZIP / 复制提示词 / 粘贴 JSON”流程；内部包格式、严格 Schema、证据/身份/批次校验、事务导入与历史结果读取保留。
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用
@@ -125,7 +126,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 ### 尚未完成
 
-真实付费 API 端到端样本（本机没有 Key，阻塞）、真实浏览器 UI 截图（含本轮使用说明页；本机沙箱禁止 Chromium）、真实 Windows 文件对话框点击（备份/恢复代码级与正式 EXE 级已完成，见 `docs/STATUS.md` §0.25）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。统一长期记忆已用 300 位低活跃观众与 1,000 观众 Mock 规模验证覆盖，但真实千人大场与真实 Provider 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
+真实付费 API 端到端样本（本机没有 Key，阻塞）、真实浏览器 UI 截图（含本轮使用说明页；本机沙箱禁止 Chromium）、真实 Windows 文件对话框点击（备份/恢复代码级与正式 EXE 级已完成，见 `docs/STATUS.md` §0.25）、运行中标签的“隐藏但继续记录”交互、10+ 场长时间压力测试、正式发布版 EXE 的干净环境验收仍未完成。自动监听的真实双平台长跑尚未执行（Bilibili 真实「直播中→下播→再开播」样本仍未捕获；YouTube 真实频道检测只做了少量只读请求，页面结构长期稳定性未验证）。Twitch 的真实 Bits、赠订、真实断网/下播与 EventSub OAuth 仍未验证；订阅/续订与聊天已用真实公开频道验证。统一长期记忆已用 300 位低活跃观众与 1,000 观众 Mock 规模验证覆盖，但真实千人大场与真实 Provider 返回的 `viewer_memory_updates` 仍需样本验证。YouTube 公开网页路径不是官方稳定 API，条款合规性仍未确认。请以 [docs/STATUS.md](docs/STATUS.md) 与 [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md) 为准。
 
 ### YouTube 接入说明
 
@@ -135,6 +136,16 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - 该机制不是 YouTube 官方提供的稳定 API，未来可能失效；LiveMemory 不声称获得 YouTube 授权，也不保证永久可用。
 - 不绕过登录、验证码、年龄墙或地区限制；失败时显示真实原因。
 - YouTube 数据默认 30 天后清理聊天原文、emote/badge 元数据、金额显示文本与过期昵称；保留统计、稳定 Channel ID 与金额合计，但这不等同于完全删除个人数据（上限 30 天）。
+
+### Twitch 接入说明（M1）
+
+- **不需要** Twitch 账号、OAuth Token、API Key、Cookie 或付费采集服务；粘贴 `twitch.tv/<channel>` 或主播账号即可，或添加频道开启自动监听。
+- 聊天通过匿名 IRC（`wss://irc-ws.chat.twitch.tv:443`）读取公开频道；频道 ID、标题、直播状态、观看数与开播时间来自 Twitch 公开网页使用的只读元数据接口。两者都不是官方承诺的稳定 API，未来可能失效。
+- 稳定身份使用 IRC `user-id`；昵称只展示。跨场次不会按昵称合并；缺失 ID 的消息不建长期档案。
+- 订阅/续订通知已在真实公开频道观测到；**Bits（Cheer）与赠送订阅目前只有解析与自动化测试，尚未观测到真实事件**。官方 EventSub 需要 OAuth、应用 Client ID 与 scope，本构建未配置，也不会要求普通主播注册开发者应用。
+- Bits、订阅 Tier、月数与赠订都没有本币金额：`amount_minor=null`、`value_kind=unknown`，只保存数量/档位/展示文本，不换算成主播收入。
+- 关播由连续两次公开状态确认；网络错误/429 只重连，不结束。自动监听默认约 2 分钟检查一次（带抖动与退避）。
+- Twitch 聊天原文、表情、徽章与展示标签默认 30 天后清理；保留消息计数、稳定 User ID 与金额合计。该窗口在 M1 固定为 30 天，暂未提供设置项。
 
 ### 开发运行
 
@@ -210,9 +221,10 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 - **配信履歴の検索・絞り込み**: 配信者（名前/安定 ID）、タイトル（中・日・英・混在）、視聴者（安定 ID/ニックネーム/過去のニックネーム）。同名でもプラットフォーム/ID が違えば別身份のまま。プラットフォーム・状態・日付・アーカイブ条件を組み合わせ可能。一致理由を表示し、その視聴者のこの配信での発言も確認できます
 - **完全削除**: トランザクションでメッセージ・イベント・支援・統計・視聴者参加・AI パッケージ/ファイルを削除し、他の配信にも参加する視聴者/配信者の集計を再計算。その配信だけの視聴者は削除。失敗時はロールバックし、検索や視聴者プロフィールに残りません
 - テーマ: システムに従う / ライト / ダーク（個別設計・再起動後も維持）
-- 対応: 起動・設定・模擬配信の記録・履歴・視聴者一覧・AI 分析パッケージ出力・Bilibili 実配信（チャット/絵文字）・YouTube 実配信（Super Chat / Super Sticker / メンバー / 多通貨）
+- 対応: 起動・設定・模擬配信の記録・履歴・視聴者一覧・AI 分析パッケージ出力・Bilibili 実配信（チャット/絵文字）・YouTube 実配信（Super Chat / Super Sticker / メンバー / 多通貨）・Twitch 実配信（匿名 IRC チャット、安定 User ID、サブスク/再サブスク）
 - YouTube は公開ライブページの Web チャットのみを使用します。Google ログイン、API キー、OAuth、Cookie は不要です。この仕組みは YouTube の公式で安定した API ではなく、プラットフォームの変更により利用できなくなる可能性があります。設定/プライバシー説明にのみ短く記載し、接続のたびにモード警告を出しません
 - チャット本文・絵文字/バッジ・金額表示・古いニックネームは YouTube のポリシーに合わせて既定 30 日で削除し、統計・安定した Channel ID・金額合計は保持します（完全な個人データ削除ではありません）
+- **Twitch（M1）**: 匿名 IRC の公開チャットと公開メタデータを使用し、Twitch ログイン、OAuth、API キー、Cookie、有料収集サービスは不要です。実際の公開チャンネルで安定した User ID・メッセージ ID・Unicode・絵文字 ID・サブスク/再サブスク通知を確認済みです。**Bits とギフトサブスクは解析済みですが、実イベントは未確認**です。Bits/Tier/月数は実際の金額ではないため換算しません。公式 EventSub（OAuth）は本ビルドでは未設定です
 - AI 分析は「パッケージ出力 → 任意の AI に手動で渡す → JSON を取り込む」方式です。M6 で **メッセージ境界の自動分割、三言語プロンプト（バージョン記録）、JSON ファイル/貼り付け取り込み、厳格な Schema・場面・配信者・視聴者・時刻・メッセージ参照検証、重複取り込み防止、結果バージョン、第 2 段階の統合パッケージ、分析レポート**を実装しました。手動フローは AI API を呼びません。v0.12.0 の自動フローは、ユーザーが同意した場合にだけ検証済みの匿名サービスを呼びます。
 - **分析レポート**: 配信要約、話題タイムライン、感情の変化、論争、見返し候補、視聴者プロフィール、プロンプト/結果バージョンと出所。根拠は実際のメッセージに解決され、原文が保持期間で消えている場合は「利用不可」と明示します。映像・音声は分析していないことも明記します
 - AI 結果は外部入力として扱い、HTML/スクリプトを実行せず、金額・件数・設定を変更できません。同一結果の再取り込みは重複として扱い、異なる結果は明示的に新しいバージョンとして追加します
@@ -246,6 +258,8 @@ Current build (v0.13.1) delivers the Windows administrator-manifest launcher, tr
 **v0.12.1 fixes the real first-use failures**: automatic batches now ask the model only for a local `ref` plus semantic content; the app maps each ref to the exact stable viewer id, so the model never copies, invents or merges identities. Requests use JSON Schema structured output, record `finish_reason`, and report truncation or repetition separately. Missing viewers trigger one bounded targeted supplement; if they are still missing the run fails instead of pretending they had no information. A real 52-viewer / 99-message / 6-batch run completed with 52/52 coverage. Manual imports now expose `missing` / `unknown` / `duplicate` viewer gaps with nicknames and a copyable repair instruction; ids are never silently rewritten. The manual prompt also lost a self-contradictory "do not output viewer identity" rule that was present in all three languages.
 
 Streamers never create an API key, OAuth client or Google Cloud project. The public-web path was re-validated in v0.6.0 with real concurrent captures (two YouTube broadcasts, YouTube + Bilibili, three streams, and the built EXE attached to the same three streams). Its terms compliance remains unconfirmed (see [docs/STATUS.md](docs/STATUS.md) and [docs/YOUTUBE_ANONYMOUS_RESEARCH.md](docs/YOUTUBE_ANONYMOUS_RESEARCH.md)).
+
+**M1 adds Twitch Live through anonymous IRC plus read-only public channel metadata**: no Twitch account, OAuth token, API key, cookie or paid collection service. Real public channels confirmed stable user IDs, message IDs, Unicode, emote IDs and subscription/resub notices. Bits and gifted subscriptions are parsed and unit-tested but have not yet been observed as real events; EventSub (official OAuth) is not configured. Bits, tiers and gifted months are never converted into income. Twitch raw chat text is purged after 30 days; counts and stable IDs are kept. See [docs/PLATFORM_INTEGRATIONS.md](docs/PLATFORM_INTEGRATIONS.md) §3A and [docs/STATUS.md](docs/STATUS.md).
 
 **v0.10.0 adds automatic live monitoring**: add a Bilibili room or a YouTube channel once and LiveMemory detects the next broadcast, records it, detects the end, saves it, and waits for the next one. **The monitoring tab belongs to the room/channel, not to a single broadcast**, so it stays after a stream ends and the next broadcast becomes a new, independent recording in the same tab. Bilibili uses its fixed room id plus a low-frequency public status check; YouTube uses the public channel `/live` page (with an RSS fallback) and still needs no Google Data API, OAuth, API key or cookie. Checks run only while a target is not recording (about 1 minute for Bilibili, 3 minutes for YouTube, with jitter and exponential backoff), and a network failure is never treated as the end of a broadcast. Targets can be paused, resumed, checked on demand or deleted without deleting the broadcasts they produced. The research and licence comparison behind this route are in [docs/YOUTUBE_AUTO_DISCOVERY.md](docs/YOUTUBE_AUTO_DISCOVERY.md).
 

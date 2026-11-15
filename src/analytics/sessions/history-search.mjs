@@ -127,7 +127,7 @@ function normalizeScope(scope) {
 function normalizeFilters({platform = null, status = null, from = null, to = null} = {}) {
   const clauses = [];
   const params = [];
-  const normalizedPlatform = ['bilibili', 'youtube', 'mock'].includes(platform) ? platform : null;
+  const normalizedPlatform = ['bilibili', 'youtube', 'twitch', 'mock'].includes(platform) ? platform : null;
   if (normalizedPlatform) {
     clauses.push('s.platform = ?');
     params.push(normalizedPlatform);

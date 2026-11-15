@@ -9,6 +9,7 @@ import {EventStream} from './sse.mjs';
 import {SessionManager} from '../platforms/shared/session-manager.mjs';
 import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
+import {TwitchService} from '../platforms/twitch/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -81,6 +82,9 @@ export async function startServer({
   systemLocale = null,
   youtubeWebBase = null,
   youtubeAdapterOptions = null,
+  twitchClient = null,
+  twitchAdapterOptions = null,
+  twitchWebSocketImpl = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -146,11 +150,22 @@ export async function startServer({
       webBase: resolveYouTubeWebBase(youtubeWebBase, env),
       ...(youtubeAdapterOptions ? {adapterOptions: youtubeAdapterOptions} : {})
     });
+    const twitch = new TwitchService({
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      ...(twitchClient ? {client: twitchClient} : {}),
+      ...(twitchWebSocketImpl ? {WebSocketImpl: twitchWebSocketImpl} : {}),
+      ...(twitchAdapterOptions ? {adapterOptions: twitchAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
       bilibili,
       youtube,
+      twitch,
       logger,
       now,
       onChange: () => {
@@ -164,6 +179,15 @@ export async function startServer({
     runRetention(db, {
       now: now(),
       days: settingsStore.get().youtubeRawRetentionDays,
+      logger
+    });
+    // Twitch public chat follows the same conservative 30-day raw-content
+    // policy. It is a separate platform scope so no YouTube/Bilibili data is
+    // touched by Twitch retention runs.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['twitch'],
       logger
     });
     const providerConfigStore = new ProviderConfigStore({
@@ -194,6 +218,7 @@ export async function startServer({
       sessionManager,
       bilibili,
       youtube,
+      twitch,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -251,6 +276,7 @@ export async function startServer({
     get sessionManager() { return runtime.sessionManager; },
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
+    get twitch() { return runtime.twitch; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -409,6 +435,7 @@ export async function startServer({
     get sessionManager() { return runtime.sessionManager; },
     get bilibili() { return runtime.bilibili; },
     get youtube() { return runtime.youtube; },
+    get twitch() { return runtime.twitch; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

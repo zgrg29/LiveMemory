@@ -494,6 +494,16 @@ function bilibiliError(error) {
   return new AppError('BILIBILI_ERROR', {messageKey: 'errors.bilibiliError', httpStatus: 502, cause: error});
 }
 
+/** Twitch failures are already mapped by TwitchService; keep the cause visible. */
+function twitchError(error) {
+  if (error instanceof AppError) return error;
+  return new AppError('TWITCH_ERROR', {
+    messageKey: 'errors.twitchError',
+    httpStatus: 502,
+    cause: error
+  });
+}
+
 export function createRouter(routes, deps) {
   const compiled = routes.map((route) => {
     const names = [];
@@ -2411,6 +2421,68 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
         const result = deps.youtube.applyRetention();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/twitch/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.twitch.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/twitch/channel',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const channel = await deps.twitch.checkChannel(body.url ?? body.login ?? body.input);
+          sendJson(res, 200, {channel});
+        } catch (error) {
+          throw twitchError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/twitch/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.twitch.connect(body.url ?? body.login ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            channel: result.channel,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw twitchError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/twitch/disconnect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.twitch.disconnect({sessionId: body.sessionId ?? null});
+          sendJson(res, 200, {
+            stopped: Boolean(result?.stopped),
+            session: serializeSessionRow(result?.session ?? null)
+          });
+        } catch (error) {
+          throw twitchError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/twitch/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.twitch.applyRetention();
         sendJson(res, 200, result);
       }
     },
