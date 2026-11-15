@@ -11,17 +11,16 @@
 
 ### 0.1 做了什么
 
-1. **复现与定位**：真实 Chrome 154 + CDP `Browser.getWindowForTarget` 计数；并发
-   `Promise.all([start(), start()])` 可产生两个独立窗口。
-2. **主因**：`start()` 只用 `this.running` 防重入，而 `running` 在 CDP 握手后才赋值；`opening` 期间
-   第二次调用再次启动浏览器。
-3. **次因**：直接 spawn 慢启动 12 秒后 PowerShell 回退会开第二个；直接 spawn 未写 `browser.pid`，
-   重启后无法复用专用窗口。
-4. **修复**：同步 `startPromise` 锁 + `Page.bringToFront` 聚焦；直接进程存活时绝不回退；写 PID 并复用同
-   Profile 窗口；关闭串行化并清理 runtime 文件；前端 `douyinBrowserStarting` 防重复请求。
-5. **验证**：真实 Chrome 12/12（单次 1 窗口、再次点击只聚焦、并发双击 1 窗口、已有窗口 reuse 同 port 1 窗口）。
-6. **测试**：新增 3 项并发/复用测试；全量 **947 passed / 0 failed / 0 skipped（253,845 ms）**。
-7. **EXE**：Build ID `6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / `97,589,760` B /
+1. **复现与定位**：真实 Chrome 154 + CDP `Browser.getWindowForTarget` 计数；真实 EXE 日志显示直接
+   `spawn` 退出 0 无 DevTools，随后 PowerShell 回退再启动一次。
+2. **主因**：Windows 上直接 `child_process.spawn` 从提权 SEA 启动 Chrome 会退出 0 且不写 DevTools 端口，
+   但可能已开窗；PowerShell 回退又开一个。另有 `start()` 在 `running` 赋值前无并发锁、孤儿进程无法清理。
+3. **修复**：**Windows 只走一次 PowerShell `Start-Process`**；启动前只清理专用 Profile 的孤儿 Chrome；
+   同步 `startPromise` 锁 + `Page.bringToFront`；启动后立即写 PID 并复用同 Profile 窗口；关闭串行化；
+   移除 `--new-window`；前端 `douyinBrowserStarting` 防重复请求。
+4. **验证**：真实 Chrome 12/12（单次 1 窗口、再次点击只聚焦、并发双击 1 窗口、已有窗口 reuse 同 port 1 窗口）。
+5. **测试**：新增 3 项并发/复用测试；全量 **947 passed / 0 failed / 0 skipped（292,737 ms）**。
+6. **EXE**：Build ID `d37c8f262dc4` / commit `75c574c` / SHA-256 `c3b1fa8b…` / `97,591,296` B /
    requireAdministrator；`verify-exe` **10/10**；`verify-douyin-exe` **25/27**。
 
 ### 0.2 结果
@@ -33,7 +32,7 @@
 | 已打开时再次点击 | 0 次新 launch / focus +1 / 1 window |
 | 已有专用窗口 | `kind=reuse` / 同 port / 1 window |
 | 全量测试 | 947 passed / 0 failed / 0 skipped |
-| EXE | `6a65b07dbf08` / `db0dcb1` / `a67163e3…` / requireAdministrator |
+| EXE | `d37c8f262dc4` / `75c574c` / `c3b1fa8b…` / requireAdministrator |
 | EXE 内窗口数量 | **沙箱无法自动验证**；需普通桌面人工双击 |
 | main | **未合并、未 Push、未 Tag、未 Release** |
 
@@ -49,7 +48,7 @@
 
 ### 0.4 边界与提交
 
-- 代码提交：`db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c`（`fix: prevent duplicate Douyin login browser windows`）。
+- 代码提交：`75c574c0ec1824603559de88b37669466abd33ff`（`fix: prevent duplicate Douyin login browser windows`）。
 - 真实 Chrome 窗口计数 12/12；EXE 内窗口数量待普通桌面人工验收；真实手机扫码需复验。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 

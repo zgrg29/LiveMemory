@@ -11,12 +11,13 @@
 
 ### 0.37.1 根因与证据
 
-- **主因**：`DouyinBrowserLogin.start()` 只用 `ACTIVE_STATES.has(state) && this.running` 防重入，
-  而 `this.running` 在 CDP 握手后才赋值。`opening` 期间的第二次调用看到 `running=null`，重新初始化并再次
-  `#launchBrowser()` → 两个独立 Chrome 窗口。真实复现：并发 `Promise.all([start(), start()])`。
-- **次因 1**：直接 `spawn` Chrome 后只等 12 秒；若进程仍活着但 `DevToolsActivePort` 未写出，代码会 kill 后
-  再用 PowerShell 启动第二次 → 第二个窗口。
-- **次因 2**：直接 spawn 未写 `browser.pid`，`#findExistingBrowser()` 无法复用重启前的专用窗口。
+- **决定性证据（真实 EXE 单次点击日志，16:05:34）**：`directExit=0`、`portFile=false`，紧接着
+  `kind:powershell` 启动成功。直接 `child_process.spawn` Chrome 从提权 SEA 进程启动后立即退出、未写
+  `DevToolsActivePort`，但可能已开出一个不受 CDP 管理的窗口；PowerShell 回退再开一个 → 两个独立窗口。
+  现场 Profile 无 `DevToolsActivePort`/`browser.pid`，Chrome 父进程是已退出的 PowerShell。
+- **并发风险**：`start()` 只用 `state && this.running` 防重入，而 `this.running` 在 CDP 握手后赋值；
+  `opening` 期间并发 `start()` 会重复启动。真实复现 `Promise.all([start(), start()])`。
+- **孤儿/复用缺口**：直接 spawn 未写 PID，失败/取消时可能无法 taskkill；下次无法复用专用窗口。
 - **排除**：干净 Profile 的 `--new-window`/URL/仅 new-window 都是 1 窗口；同一 Profile 连续启动仍各 1 窗口；
   未同时启动 Chrome/Edge；未复现 Profile 恢复旧窗口。真实 Chrome 154 + `Browser.getWindowForTarget` 计数。
 
@@ -24,10 +25,12 @@
 
 | 位置 | 修复 |
 | --- | --- |
+| `browser-login.mjs#launchBrowser` | **Windows 只走一次 PowerShell `Start-Process`**；不再先直接 spawn 再回退 |
+| `browser-login.mjs` | 启动前按专用 Profile 命令行清理孤儿 Chrome（只匹配 LiveMemory Profile，绝不动日常浏览器） |
 | `browser-login.mjs#start` | 同步 `startPromise` 锁；初始化期间第二次点击返回当前状态并 `Page.bringToFront`，不新建 |
-| `browser-login.mjs#launchBrowser` | 直接进程存活时继续等同一进程（12s+20s），绝不并行 PowerShell 回退；仅进程退出后回退 |
-| `browser-login.mjs` | 直接 spawn 写 `browser.pid`；`#findExistingBrowser()` 复用同 Profile 专用窗口（同 port/PID） |
-| `browser-login.mjs#closeBrowser` | 串行化关闭，清理 `DevToolsActivePort`/`browser.pid`；只管理 `.livememory-owned` Profile |
+| `browser-login.mjs` | 启动后立即记录 `browser.pid`；`#findExistingBrowser()` 复用同 Profile 专用窗口（同 port/PID） |
+| `browser-login.mjs#closeBrowser` | 串行化关闭；PID 缺失/仍存活时再按 Profile 清理；清理 `DevToolsActivePort`/`browser.pid` |
+| `buildBrowserArgs` | 移除 `--new-window`（官方 URL 本身 1 个窗口），降低 handoff 多开风险 |
 | `live.js` | `douyinBrowserStarting` 防止重复请求；活动窗口按钮保持禁用 |
 | 日志 | 只记录 event/浏览器/PID/target ID；不含 Cookie/sessionid/token |
 
@@ -47,7 +50,7 @@
 ### 0.37.4 测试与 EXE
 
 - 新增 3 项浏览器测试：并发 start 只 1 次 launch、活动窗口只 focus、取消后重新 start 1 次。
-- 全量：**947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**。
+- 全量：**947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**。
 - `verify-exe`：**10/10**。
 - `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止
   （Chrome 子进程 `0x80000003`、PowerShell 无端口），与本轮修复无关。
@@ -56,12 +59,12 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| 大小 | `97,589,760` bytes |
-| SHA-256 | `a67163e3d3f2e116173ee067949b73adae34bd57a8bdd0409aec27cb9d372cc4` |
-| Build ID | `6a65b07dbf08` |
-| source hash | `6a65b07dbf0898b2d9b2fc74ea788abebd8c18c398fe27f8e8bd89ea97365923` |
-| commit | `db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c` |
-| builtAt | `2026-11-15T08:00:17.430Z` |
+| 大小 | `97,591,296` bytes |
+| SHA-256 | `c3b1fa8b95603826ebcd98e0ecf8fa92fcccdcc9626e0483ddb06b04f67b6315` |
+| Build ID | `d37c8f262dc4` |
+| source hash | `d37c8f262dc4ed6dd9d678c50ca051f811ac0bfecc2ba1a5add440c267253f36` |
+| commit | `75c574c0ec1824603559de88b37669466abd33ff` |
+| builtAt | `2026-11-15T09:45:00.851Z` |
 | RT_MANIFEST | `requireAdministrator` |
 
 **EXE 内窗口数量无法在 DSH 沙箱自动验证**：EXE 子进程中的 Chrome 被作业对象终止。真实窗口计数来自同一模块 +

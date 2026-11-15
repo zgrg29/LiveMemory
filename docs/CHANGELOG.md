@@ -5,12 +5,12 @@
 ### 修复
 
 - 修复点击一次「扫码登录（浏览器）」打开两个独立浏览器窗口：
-  - `start()` 增加同步 `startPromise` 锁；初始化期间的第二次调用不再启动浏览器，只返回当前状态并
-    `Page.bringToFront` 聚焦已有窗口。
-  - 直接 Chrome 进程仍存活时继续等待同一进程，不再 kill 后启动 PowerShell 回退；只有确认进程退出或
-    spawn 失败才回退。
-  - 直接 spawn 写入 `browser.pid`；应用重启后可复用同一专用 Profile 的已有窗口（同 port/PID）。
-  - 关闭串行化并清理 `DevToolsActivePort`/`browser.pid`；只管理带 `.livememory-owned` 的 Profile。
+  - **Windows 只走一次 PowerShell `Start-Process`**：真实 EXE 日志显示直接 `spawn` 的 Chrome 退出 0、
+    未写 DevTools 端口，随后 PowerShell 回退又启动一次；不再先直接 spawn 再回退。
+  - 启动前只清理命令行匹配 LiveMemory 专用 Profile 的孤儿 Chrome，绝不动日常 Chrome/Edge。
+  - `start()` 增加同步 `startPromise` 锁；初始化期间第二次调用返回当前状态并 `Page.bringToFront`。
+  - 启动后立即记录 `browser.pid`；应用重启后可复用同一专用 Profile 的已有窗口（同 port/PID）。
+  - 关闭串行化；PID 缺失/仍存活时按 Profile 清理；移除 `--new-window`。
   - 前端 `douyinBrowserStarting` 防止重复请求。
 - 未修改：扫码 URL、官方身份验证、`sessionid` 捕获/验证、AES-256-GCM 保存、Cookie 备用、礼物采集、
   三语 UI。
@@ -19,8 +19,8 @@
 
 - 真实 Chrome 154 + CDP 窗口计数 **12/12**：单次 1 窗口、再次点击 0 launch、并发双击 1 window、
   已有窗口 `kind=reuse` 同 port/1 window。
-- 全量 **947 passed / 0 failed / 0 skipped（253,845 ms）**；新增 3 项并发/复用测试。
-- EXE `6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / `97,589,760` B / requireAdministrator；
+- 全量 **947 passed / 0 failed / 0 skipped（292,737 ms）**；新增 3 项并发/复用测试。
+- EXE `d37c8f262dc4` / commit `75c574c` / SHA-256 `c3b1fa8b…` / `97,591,296` B / requireAdministrator；
   `verify-exe` **10/10**；`verify-douyin-exe` **25/27**（2 项沙箱浏览器启动限制）。
 - **未验证**：EXE 内实际窗口数量（需普通桌面人工验收）、真实手机扫码复验、真实礼物。
 - 未合并 main、未 Push、未 Tag、未 Release。

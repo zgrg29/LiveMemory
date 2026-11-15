@@ -2,7 +2,7 @@
 
 日期：2026-11-15（Asia/Shanghai）
 分支：`feature/douyin`
-代码提交：`db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c`
+代码提交：`75c574c0ec1824603559de88b37669466abd33ff`
 状态：**等待开发者人工验收；未合并 main、未 Push、未 Tag、未 Release。**
 
 ## 1. 现象
@@ -14,7 +14,26 @@
 
 ## 2. 根因
 
-### 2.1 主因：`start()` 的并发锁设置得太晚
+### 2.1 决定性证据：真实 EXE 单次点击日志
+
+2026-11-15 16:05:34（本机时间）真实 EXE（上一构建 `6a65b07dbf08`）的日志：
+
+```text
+douyin.login.browser.direct_failed {"direct":"spawned","directExit":"0/null"} portFile=false
+douyin.login.browser.launch {"browser":"Chrome","kind":"powershell"}
+douyin.login.browser.target {"targetId":"7D1D58BB...","url":"https://www.douyin.com/login_page?..."}
+douyin.login.browser.state {"from":"opening","to":"waiting"}
+douyin.login.browser.qr {"hasImage":true,"hasUrl":true,"frontier":true}
+```
+
+结论：**直接 `child_process.spawn` Chrome 立即以 0 退出、没有写 `DevToolsActivePort`；随后 PowerShell
+`Start-Process` 又启动了一次。** 直接启动的 Chrome 已可能开出一个不受 CDP 管理的窗口，PowerShell 再开一个，
+形成两个独立窗口。进程树也显示 Chrome 的父进程是已退出的 PowerShell（不是 LiveMemory 直接子进程），
+专用 Profile 中 `DevToolsActivePort` / `browser.pid` 均缺失。
+
+这是单次点击出现双窗口的实际原因，也是本轮修复的重点。
+
+### 2.2 并发 `start()` 锁设置得太晚（已真实复现）
 
 修复前代码：
 
@@ -30,31 +49,18 @@ async start() {
 }
 ```
 
-`this.running` 只在 CDP 握手完成后赋值。在 `opening` 期间（可能持续数秒），第二次 `start()` 看到
-`this.running === null`，于是重新 `#resetState()` 并再次 `#launchBrowser()`。两次调用各自启动一个
-Chrome 进程/窗口，两个窗口都指向官方登录页。
+`this.running` 只在 CDP 握手完成后赋值。`opening` 期间第二次 `start()` 看到 `running === null`，
+会重新初始化并再次启动浏览器。真实复现：`Promise.all([flow.start(), flow.start()])` 在修复前产生两个
+独立窗口；修复后只产生 1 个 target / 1 个 window。
 
-真实复现：`Promise.all([flow.start(), flow.start()])`（等价于快速双击或两个并发登录请求）
-在修复前产生两个独立窗口；修复后同一调用只产生 **1 个 target / 1 个 window**。
+### 2.3 孤儿与复用缺口
 
-前端虽然会 `button.disabled = true`，但浏览器双击事件、重复请求或页面重渲染都可能让两个请求到达后端；
-后端必须有同步的并发锁，不能依赖按钮状态。
+直接 `spawn` 路径没有写 `browser.pid`；失败/取消时若拿不到 PID，`#closeBrowser()` 无法 `taskkill`，
+Chrome 会作为孤儿继续运行。下次启动时没有 `DevToolsActivePort`/`browser.pid`，`#findExistingBrowser()`
+无法复用，直接启动又会 handoff/开窗，PowerShell 再开一个。
 
-### 2.2 次因：Chrome 慢启动时的 PowerShell 回退
-
-修复前 `#launchBrowser()` 直接 `spawn` Chrome 后只等 12 秒。若 Chrome 进程仍活着、但
-`DevToolsActivePort` 因冷启动/杀毒扫描尚未写出，代码会 `kill` 它并再用 PowerShell `Start-Process`
-启动第二次；用户会看到两个窗口。
-
-现在：直接子进程仍存活时再等 20 秒；**绝不在直接进程存活时启动第二个浏览器**；只有确认直接进程已退出
-（或 spawn 失败）才使用 PowerShell 回退。若 32 秒仍无 DevTools，报 `browser_no_devtools` 并关闭该实例，
-不启动第二个。
-
-### 2.3 复用缺口：直接 spawn 未写 PID 文件
-
-`#findExistingBrowser()` 需要 `DevToolsActivePort` + `browser.pid` 才能确认窗口属于 LiveMemory。
-直接 `spawn` 路径只把 PID 放在内存、没有写文件，所以应用重启/崩溃后无法复用旧窗口，可能再开一个。
-现在直接 spawn 也写 `browser.pid`；已有窗口通过同一端口/PID 复用，并 `Page.bringToFront` 聚焦。
+现场检查：专用 Profile 中确实没有 `DevToolsActivePort`/`browser.pid`，而 Chrome 主进程仍在运行，
+父进程是已退出的 PowerShell。这解释了为什么关闭窗口后仍可能残留进程并影响下一次启动。
 
 ### 2.4 已排除的原因
 
@@ -62,24 +68,29 @@ Chrome 进程/窗口，两个窗口都指向官方登录页。
 
 | 场景 | 结果 |
 | --- | --- |
-| 干净 Profile，当前参数（含 `--new-window` + URL） | 1 target / 1 window |
+| 干净 Profile，旧参数（`--new-window` + URL） | 1 target / 1 window |
 | 干净 Profile，仅 URL | 1 target / 1 window |
 | 干净 Profile，仅 `--new-window` | 1 target / 1 window |
 | 同一 Profile 连续启动两次 | 每次 1 target / 1 window |
 | Chrome + Edge 同时启动 | 未发生；只选择一个浏览器 |
 | Profile 恢复旧窗口 | 未复现；同一 Profile 两次启动仍各 1 窗口 |
 
-因此 `--new-window`、Profile 恢复、双浏览器不是本问题的主因；主因是并发 `start()` 与慢启动回退。
+因此单一启动参数、Profile 恢复、双浏览器不是唯一原因；真实原因是**直接 spawn 退出 0 + PowerShell 回退**
+以及并发/孤儿问题。修复中仍移除了不必要的 `--new-window`，降低再次 handoff 时多开窗口的风险。
 
 ## 3. 修复
 
+- **Windows 只启动一次**：不再先直接 `spawn` 再回退；Windows 上直接使用一次 PowerShell `Start-Process`
+  启动官方登录页。非 Windows 开发路径保留直接 spawn。
+- **启动前清理专用 Profile 的孤儿 Chrome**：只匹配命令行中包含 LiveMemory 专用 Profile 路径的
+  `chrome.exe`，绝不匹配用户日常 Chrome/Edge。
 - `start()` 增加同步 `this.startPromise` 锁：初始化期间的第二次调用立即返回当前状态，并调用
   `Page.bringToFront` 聚焦已有窗口；不会重新初始化或启动浏览器。
-- `#startOnce()` 保留原扫码流程；`this.running` 仍按原逻辑启动轮询。
-- `#launchBrowser()`：直接进程存活时等待同一进程，绝不并行启动 PowerShell 回退。
-- 直接 spawn 写 `browser.pid`；`#findExistingBrowser()` 复用专用 Profile 的现有窗口（同端口/PID）。
-- `#closeBrowser()` 统一串行化，清理 `DevToolsActivePort`、`browser.pid` 与启动错误文件；只管理
-  带 `.livememory-owned` 标记的专用 Profile。
+- `#launchBrowser()` 启动后立即记录 `browser.pid`；即使等待端口失败，`#closeBrowser()` 也能关闭该实例。
+- 直接/失败路径统一写 `browser.pid`；`#findExistingBrowser()` 复用专用 Profile 的现有窗口（同端口/PID）。
+- `#closeBrowser()` 串行化；若 PID 缺失或进程仍存活，再按专用 Profile 命令行清理；清理
+  `DevToolsActivePort`/`browser.pid`/启动错误文件。
+- 移除 `--new-window`：官方 URL 在干净 Profile 中本身就是 1 个窗口。
 - 前端增加 `douyinBrowserStarting`，防止同一页面重复发请求。
 - 日志只记录 `event`、浏览器名称、PID、target ID、窗口状态；**不记录 Cookie、sessionid 或 token**。
 
@@ -112,19 +123,19 @@ douyin.login.browser.reuse {"port":54824,"pid":13528}
 ### 4.2 自动化
 
 - 新增 3 项浏览器登录测试：并发 `start()` 只启动 1 次、活动窗口只聚焦不新建、取消后重新启动 1 次。
-- 全量：**947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**。
+- 全量：**947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**。
 
 ### 4.3 Windows EXE
 
 | 项目 | 值 |
 | --- | --- |
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| 大小 | `97,589,760` bytes |
-| SHA-256 | `a67163e3d3f2e116173ee067949b73adae34bd57a8bdd0409aec27cb9d372cc4` |
-| Build ID | `6a65b07dbf08` |
-| source hash | `6a65b07dbf0898b2d9b2fc74ea788abebd8c18c398fe27f8e8bd89ea97365923` |
-| commit | `db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c` |
-| builtAt | `2026-11-15T08:00:17.430Z` |
+| 大小 | `97,591,296` bytes |
+| SHA-256 | `c3b1fa8b95603826ebcd98e0ecf8fa92fcccdcc9626e0483ddb06b04f67b6315` |
+| Build ID | `d37c8f262dc4` |
+| source hash | `d37c8f262dc4ed6dd9d678c50ca051f811ac0bfecc2ba1a5add440c267253f36` |
+| commit | `75c574c0ec1824603559de88b37669466abd33ff` |
+| builtAt | `2026-11-15T09:45:00.851Z` |
 | RT_MANIFEST | `requireAdministrator` |
 
 - `verify-exe`：**10/10**（启动/重启/硬杀恢复/端口顺延/单实例/不可写目录/异目录/解压复用/CLI）。

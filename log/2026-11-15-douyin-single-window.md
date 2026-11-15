@@ -13,6 +13,23 @@
 → `#startOnce()` → `#prepareProfile()` → `#findExistingBrowser()` / `#launchBrowser()` → `#connectCdp()`
 → `#run()`。
 
+### 决定性证据（真实 EXE 单次点击）
+
+2026-11-15 16:05:34 的真实 EXE 日志：
+
+```text
+douyin.login.browser.direct_failed {"direct":"spawned","directExit":"0/null"} portFile=false
+douyin.login.browser.launch {"browser":"Chrome","kind":"powershell"}
+douyin.login.browser.target {"targetId":"7D1D58BB...","url":"https://www.douyin.com/login_page?..."}
+```
+
+直接 `child_process.spawn` 从提权 SEA 进程启动 Chrome 后立即退出（code 0）、没有写 `DevToolsActivePort`；
+随后 PowerShell `Start-Process` 又启动一次。直接启动可能已经开出一个不受 CDP 管理的窗口，PowerShell
+再开一个 → 两个独立窗口。进程树显示 Chrome 父进程是已退出的 PowerShell，专用 Profile 中
+`DevToolsActivePort`/`browser.pid` 均缺失，也解释了为什么失败后无法 kill/复用。
+
+### 并发风险（已复现）
+
 修复前 `start()` 的并发判断是：
 
 ```js
@@ -20,34 +37,37 @@ if (ACTIVE_STATES.has(this.state) && this.running) return this.status();
 ```
 
 但 `this.running` 在 `#connectCdp()` 之后才赋值。`opening` 期间第二次调用看到 `running === null`，
-于是再次 `#resetState()` 并再次 `#launchBrowser()`。真实复现：并发 `Promise.all([flow.start(), flow.start()])`
-会启动两个浏览器窗口；这正是用户看到的两个独立窗口。
+会再次 `#resetState()` 并再次 `#launchBrowser()`。真实复现：`Promise.all([flow.start(), flow.start()])`
+在修复前产生两个窗口；修复后 1 个。
 
-### 次因
+### 孤儿与复用缺口
 
-1. `#launchBrowser()` 直接 spawn 后仅等 12 秒；若 Chrome 仍活着但 `DevToolsActivePort` 未写出，
-   代码 kill 后启动 PowerShell 回退 → 第二个窗口。
-2. 直接 spawn 路径没有写 `browser.pid`；`#findExistingBrowser()` 无法复用上次专用窗口，应用重启后
-   再次启动可能多开一个。
-3. 前端没有 in-flight 标志，依赖按钮 disabled；双击/重渲染仍可能发两次请求。
+直接 spawn 路径不写 `browser.pid`；失败/取消拿不到 PID 时无法 `taskkill`，Chrome 成为孤儿。下次启动
+没有 `DevToolsActivePort`/`browser.pid`，无法复用，直接启动 handoff/开窗，PowerShell 再开一个。
 
 ### 排除项
 
 用真实 Chrome 154 + CDP `Browser.getWindowForTarget` 测量：
 
-- 干净 Profile：当前参数（`--new-window` + URL）、仅 URL、仅 `--new-window` 都是 1 target / 1 window。
+- 干净 Profile：旧参数（`--new-window` + URL）、仅 URL、仅 `--new-window` 都是 1 target / 1 window。
 - 同一 Profile 连续启动两次：每次 1 target / 1 window。
 - 未同时启动 Chrome 与 Edge；未复现 Profile 恢复旧窗口导致双窗口。
 
-因此不是启动参数、Profile 恢复或双浏览器；是应用层并发启动与慢启动回退。
+因此单一参数/Profile 恢复/双浏览器不是唯一原因；实际原因是**直接 spawn 退出 0 + PowerShell 回退**，
+并发与孤儿问题会放大它。
 
 ## 修复
 
+- **Windows 只启动一次**：不再先直接 spawn 再回退；Windows 直接使用一次 PowerShell `Start-Process`
+  打开官方登录页。非 Windows 开发路径保留直接 spawn。
+- **启动前清理专用 Profile 的孤儿 Chrome**：只匹配命令行中包含 LiveMemory 专用 Profile 的进程，
+  绝不动用户日常 Chrome/Edge。
 - `start()` 使用同步 `this.startPromise`：初始化期间第二次调用直接返回当前状态并 `Page.bringToFront`
   聚焦已有窗口，不重新启动。
-- `#launchBrowser()`：直接子进程存活时继续等待同一进程（12s + 20s），绝不启动 PowerShell 回退；
-  只有直接进程确认退出或 spawn 失败才回退。若仍无 DevTools，报 `browser_no_devtools` 并关闭，不开第二个。
-- 直接 spawn 写 `browser.pid`；`#findExistingBrowser()` 复用同一专用 Profile 的窗口（同 port/PID）。
+- 启动后立即记录 `browser.pid`；即使等待端口失败，`#closeBrowser()` 也能关闭该实例；PID 缺失时按
+  Profile 命令行清理。
+- `#findExistingBrowser()` 复用同一专用 Profile 的窗口（同 port/PID）。
+- 移除 `--new-window`：官方 URL 在干净 Profile 中本身只有 1 个窗口。
 - `#closeBrowser()` 串行化并清理 `DevToolsActivePort`/`browser.pid`；只管理带 `.livememory-owned` 的 Profile。
 - 前端新增 `douyinBrowserStarting` 防止重复请求。
 - 日志只含 event/浏览器/PID/target ID，不含 Cookie/sessionid/token。
@@ -70,11 +90,11 @@ if (ACTIVE_STATES.has(this.state) && this.running) return this.status();
 ### 自动化
 
 - `douyin-browser-login` 新增：并发 start 只 1 次 launch、活动窗口只 focus、取消后重新 start 1 次。
-- 全量 **947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**。
+- 全量 **947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**。
 
 ### EXE
 
-- Build ID `6a65b07dbf08`；commit `db0dcb1`；SHA-256 `a67163e3…`；`97,589,760` B；requireAdministrator。
+- Build ID `d37c8f262dc4`；commit `75c574c`；SHA-256 `c3b1fa8b…`；`97,591,296` B；requireAdministrator。
 - `verify-exe` **10/10**；`verify-douyin-exe` **25/27**。
 - 2 项失败仍是 EXE 内浏览器启动被 DSH 作业对象终止（Chrome `0x80000003`、PowerShell 无端口），
   与本轮修复无关；EXE 内窗口数量需普通 Windows 桌面人工验收。
@@ -88,5 +108,5 @@ if (ACTIVE_STATES.has(this.state) && this.running) return this.status();
 
 ## 提交
 
-- `db0dcb1f79fc60590a7ea3ceb4340ca1c502be7c`（`fix: prevent duplicate Douyin login browser windows`）。
+- `75c574c0ec1824603559de88b37669466abd33ff`（`fix: prevent duplicate Douyin login browser windows`）。
 - 未 Push、未合并 main、未 Tag、未 Release。

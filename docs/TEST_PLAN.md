@@ -1930,11 +1930,13 @@ Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker �
 
 ### 48.1 根因与复现
 
-- `DouyinBrowserLogin.start()` 修复前仅用 `state && this.running` 防重入，而 `running` 在 CDP 握手后才赋值。
-  `opening` 期间并发 `start()` 会各自 `#launchBrowser()` → 两个独立窗口。
-- 真实复现：`Promise.all([flow.start(), flow.start()])`；修复后真实 Chrome 1 target / 1 window。
-- 次因：直接 Chrome 慢启动 12 秒后 PowerShell 回退；直接 spawn 未写 `browser.pid` 导致重启后无法复用。
-- 排除：干净/复用 Profile 下 `--new-window`、仅 URL、仅 new-window 都是 1 窗口；未同时启动 Chrome/Edge。
+- **真实 EXE 日志（单次点击）**：`directExit=0`、`portFile=false`，随后 `kind:powershell` 启动成功。
+  直接 `spawn` 的 Chrome 未写 DevTools 端口却可能已开窗，PowerShell 回退再开一个 → 两个窗口。
+- **并发**：`start()` 修复前仅用 `state && this.running` 防重入，而 `running` 在 CDP 握手后才赋值；
+  `opening` 期间并发 `start()` 会各自 `#launchBrowser()`。真实复现 `Promise.all([start(), start()])`。
+- **孤儿/复用**：直接 spawn 未写 `browser.pid`；失败/取消时无法 taskkill，下次无法复用。
+- **排除**：干净/复用 Profile 下 `--new-window`、仅 URL、仅 new-window 都是 1 窗口；未同时启动 Chrome/Edge。
+- **修复**：Windows 只走一次 PowerShell；启动前清理专用 Profile 孤儿；同步并发锁；PID 复用；移除 `--new-window`。
 
 ### 48.2 新增测试
 
@@ -1956,10 +1958,10 @@ Manifest `requireAdministrator`。功能场景使用同一二进制 asInvoker �
 
 ### 48.4 全量与 EXE
 
-- 全量：**947 passed / 0 failed / 0 skipped（253,845 ms，2026-11-15）**；上一轮 944，本轮 +3。
+- 全量：**947 passed / 0 failed / 0 skipped（292,737 ms，2026-11-15）**；上一轮 944，本轮 +3。
 - `verify-exe`：**10/10**。
 - `verify-douyin-exe`：**25/27**；2 项仍是 EXE 内浏览器启动被 DSH 作业对象阻止，与本轮修复无关。
-- 新 EXE：`6a65b07dbf08` / commit `db0dcb1` / SHA-256 `a67163e3…` / `97,589,760` B / requireAdministrator。
+- 新 EXE：`d37c8f262dc4` / commit `75c574c` / SHA-256 `c3b1fa8b…` / `97,591,296` B / requireAdministrator。
 
 ### 48.5 未验证 / 不得宣称
 
