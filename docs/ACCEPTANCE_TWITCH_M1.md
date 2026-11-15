@@ -17,7 +17,7 @@
 | 报告生成时 HEAD | `27bd69069b7e0cfa8b50e7d8358b26768a863ede`（验收报告首次提交；后续仅文档修订） |
 | 代码提交 | `7da0e0d1905a4f16d1a844f98102fb04c211a7d2`（`feat: add Twitch live integration`） |
 | 基线 | `main` / `21a5bf5d67d0741ae68d21b0e1e7a371bb1607ef`（多平台调研提交） |
-| 与 main 差异 | 42 files changed, **+5,115 / −76** |
+| 与 main 差异 | 42 files changed（代码 + 平台/验收文档；精确数字以 `git diff --stat main...HEAD` 为准） |
 | 本轮提交 | `7da0e0d` 代码与平台文档；`627eb57` 验收/构建记录；`27bd690` 完整验收报告 |
 | 工作区 | 干净（`git status --porcelain=v2` 无未提交项） |
 | 提交身份 | `zgrg29 <10182596+zgrg29@users.noreply.github.com>` |
