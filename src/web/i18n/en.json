@@ -73,7 +73,8 @@
     "platform": {
       "mock": "Simulation",
       "bilibili": "Bilibili Live",
-      "youtube": "YouTube Live"
+      "youtube": "YouTube Live",
+      "twitch": "Twitch Live"
     }
   },
   "format": {
@@ -262,7 +263,32 @@
       "youtubeAutoEnded": "The broadcast ended. The recording is saved",
       "youtubeIdentityNote": "The public web chat normally provides a real Channel ID. If a message lacks one, LiveMemory never invents identity from a nickname.",
       "youtubeMoneyNote": "Super Chat only exposes a formatted amount string (for example HK$2,000.00). LiveMemory converts it only when the currency is confirmable; otherwise the amount stays unknown and the raw display text is kept.",
-      "youtubePossibleGaps": "Possible message gaps: {n}"
+      "youtubePossibleGaps": "Possible message gaps: {n}",
+      "twitchTab": "Twitch",
+      "twitchIntro": "Attach to a public Twitch channel through anonymous read-only chat. No Twitch account, OAuth token, API key or cookie is required.",
+      "twitchUnavailable": "Twitch support is unavailable in this build.",
+      "twitchLinkPlaceholder": "Channel link or channel name (for example twitch.tv/example)",
+      "twitchLinkLabel": "Twitch channel link or channel name",
+      "twitchCheck": "Check channel",
+      "twitchChecking": "Checking…",
+      "twitchChannelReady": "Channel found",
+      "twitchLiveNow": "Live now",
+      "twitchOffline": "Offline",
+      "twitchChannel": "Channel",
+      "twitchChannelId": "Stable channel ID",
+      "twitchLogin": "Login",
+      "twitchViewers": "Viewers",
+      "twitchStart": "Start recording",
+      "twitchStarting": "Starting…",
+      "twitchStarted": "Recording {name}",
+      "twitchAnonymousNote": "Reads public chat anonymously over Twitch IRC. No login, cookie or API key is used, and nothing is sent to a LiveMemory server.",
+      "twitchIdentityNote": "The display name is shown only for display. Cross-session identity uses the stable Twitch user ID; a missing ID is never replaced by a nickname.",
+      "twitchMoneyNote": "Bits, subscription tiers and gifted subscriptions are not fiat money. LiveMemory stores the count or tier as display text and leaves the amount unknown; it never converts them into income.",
+      "twitchCapabilityNote": "Subscription and resub notifications were observed in real public channels. Gifted subscriptions and Bits are parsed from IRC tags but have not yet been observed as real events. Official EventSub (OAuth) is not configured in this build.",
+      "twitchPolicyTitle": "Chat text retention",
+      "twitchPolicyBody": "Raw Twitch chat text, badges and display labels older than {days} days are purged. Counts and stable IDs are kept.",
+      "twitchApplyRetention": "Purge expired text now",
+      "twitchRetentionApplied": "Purged {count} expired messages"
     }
   },
   "history": {
@@ -1624,6 +1650,18 @@
     "youtubeWebResponseInvalid": "YouTube returned an incomplete chat data structure. LiveMemory will back off and retry.",
     "youtubeWebStale": "The chat continuation expired; reconnecting.",
     "youtubeWebRestricted": "YouTube requires a sign-in or restricts web access to this broadcast. LiveMemory does not bypass login.",
+    "twitchLinkInvalid": "Enter a Twitch channel link or channel name (for example twitch.tv/example). Video, clip and directory links are not live channels.",
+    "twitchChannelNotFound": "That Twitch channel was not found. Check the channel name.",
+    "twitchChannelOffline": "This Twitch channel is offline. LiveMemory only records broadcasts that are currently live.",
+    "twitchChatUnavailable": "Twitch chat for this channel is unavailable right now. LiveMemory does not bypass restrictions or moderation.",
+    "twitchRateLimit": "Twitch is limiting requests. LiveMemory will slow down and retry later; it never bypasses rate limits.",
+    "twitchNetwork": "Could not reach Twitch. Check the network and try again.",
+    "twitchProtocol": "Twitch returned data this version cannot parse. Try again later or update LiveMemory.",
+    "twitchConnectTimeout": "Twitch chat did not answer in time. Check the network and try again.",
+    "twitchWebSocketUnavailable": "This runtime has no WebSocket support, so Twitch chat cannot be opened.",
+    "twitchNotConfigured": "Twitch support is not configured in this build.",
+    "twitchStopped": "The Twitch connection was stopped.",
+    "twitchError": "Twitch returned a response this app cannot handle. Try again later.",
     "maintenance": "Data is being processed. Please wait…",
     "relocationInvalid": "The target folder is invalid.",
     "relocationPathRelative": "Enter a complete absolute path (for example D:\\LiveMemoryData).",
@@ -2077,7 +2115,9 @@
       "bilibiliPlaceholder": "Live room link or room id",
       "bilibiliLabel": "Live room link or room id",
       "youtubePlaceholder": "Channel link, @handle, channel ID or live link",
-      "youtubeLabel": "Channel link, @handle, channel ID or live link"
+      "youtubeLabel": "Channel link, @handle, channel ID or live link",
+      "twitchPlaceholder": "Channel link or channel name",
+      "twitchLabel": "Channel link or channel name"
     },
     "hero": {
       "autoChip": "Auto-monitor",

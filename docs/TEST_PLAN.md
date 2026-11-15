@@ -1744,3 +1744,82 @@ SHA-256 `8aa08f0e1e908e80880b578b8cf6d6eb24f560f968d338824ff5684bf5598a2f`。
 
 Twitch 具备进入正式开发的条件；抖音需要先决策登录 Cookie 与 AGPL；TikTok 暂缓。
 完整报告与引用见 `docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。
+
+## 46. TWITCH-M1：Twitch 正式接入、真实直播与 Windows EXE（v0.13.2，2026-11-15）
+
+### 46.1 范围与性质
+
+本轮在 `feature/twitch` 实现 Twitch 匿名 IRC 公开聊天 + 只读公开频道元数据，接入统一
+`EventIngest`/`SessionManager`/`MonitoringManager`/SQLite/AI 读模型；构建正式 Windows EXE 并用真实
+公开频道运行验证。**未改数据库 schema（16）、结果 Schema 1.3.0、提示词 v13.2、默认 10 人/批、
+Bilibili/YouTube 适配器、AI Provider/调度/提示词规则；未新增运行时依赖。**
+
+### 46.2 新增自动化测试（47 项）
+
+| 文件 | 数量 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/twitch-link.test.mjs` | 5 | 裸账号、twitch.tv/www/m/go、player/popout、视频/剪辑/目录/外站拒绝、`extractTwitchLogin` |
+| `tests/unit/twitch-irc.test.mjs` | 8 | 标签转义、转义往返、带前缀 PRIVMSG、多行帧、emotes 范围、badges/月数、`/me` ACTION |
+| `tests/unit/twitch-mapper.test.mjs` | 10 | 稳定 ID/昵称/消息 ID/时间/Unicode/emotes、缺失 ID、Bits、sub/resub、Prime/未知 Tier、subgift、submysterygift 跳过、viewermilestone 跳过、ROOMSTATE |
+| `tests/unit/twitch-adapter.test.mjs` | 6 | 匿名 JOIN/CAP、PING/PONG、重复消息 ID、订阅通知、断线同 session 重连、两次离线确认、错误不结束、频道暂停拒绝 |
+| `tests/unit/twitch-service.test.mjs` | 6 | checkChannel 直播/离线、connect 稳定 channel id、离线拒绝、重复房间、能力边界 |
+| `tests/unit/monitoring-twitch-detector.test.mjs` | 4 | resolve 身份、live/offline 观察、`stream.id` 周期键、监控错误分类 |
+| `tests/integration/twitch-session.test.mjs` | 2 | 真实 SQLite + SessionManager + TwitchService：聊天/订阅/Bits 入库、去重、观众身份、AI 包、停止；两频道隔离 |
+| `tests/integration/twitch-monitoring.test.mjs` | 1 | 真实监控器 + detector + service + SQLite：离线目标 → 开播 → 自动创建 session → 真实事件 → 停止后目标保留 |
+| `tests/unit/twitch-ui.test.mjs` | 5 | Twitch Tab/API 接线、未知金额不显示 0.00、三语键一致、历史筛选、HTTP 路由与构建必需模块 |
+
+关键断言：
+
+- 同一 `id` 重复投递只入库一次；跨频道事件不串场；`viewer_id = twitch:<user-id>`。
+- Bits/订阅/赠订 `amount_minor=null`、`currency=null`、`value_kind=unknown`；Bits 数量写入 `gift_quantity`，
+  `amount_display` 保留 `N Bits`；赠订接收者不是付款者。
+- 网络错误/429/状态读取失败不结束；两次有效离线或 stream id 变化才结束。
+- 三语 `common.platform.twitch`、`live.source.twitch*`、`errors.twitch*`、`monitoring.add.twitch*` 键集一致。
+- 构建脚本包含 Twitch adapter/client/irc/link/mapper/service 与监控 detector；缺少任一模块构建失败。
+
+### 46.3 真实 Twitch 只读验证
+
+未登录、未付费、未保存或展示聊天正文；临时数据目录为 `tests/.tmp`：
+
+| 验证 | 结果 |
+| --- | --- |
+| `xqc` 45 秒（源码服务） | 138 条事件；138/138 有 `user-id` + 消息 `id`；108 个唯一身份；7 条 `emotes`；7 条非 ASCII |
+| 6 频道并发 60 秒（`xqc`/`shroud`/`sodapoppin`/`moonmoon`/`ludwig`/`summit1g`） | 418 条事件；418/418 有 User ID + 消息 ID；304 个唯一身份；40 条 `emotes`；10 条非 ASCII；1 条真实 resub（Prime）；0 Bits、0 赠订 |
+| 正式 EXE + `xqc` | 连接/入库成功；4 条聊天；4/4 有 `twitch:<id>` 与消息 ID；停止后数据保留；重启后仍在 |
+| 正式 EXE + 自动监听 | 添加目标 → `check` → `state=recording` → 3 条真实聊天 → 停止 → 删除目标 |
+
+### 46.4 全量回归
+
+```bat
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+```
+
+- **875 passed / 0 failed / 0 skipped（253,002 ms，2026-11-15）**；上一轮 828，本轮 +47。
+- Bilibili/YouTube 既有测试全部通过；真实 Bilibili 房间 `6`（真实 `7734200`）20 秒：
+  7 条聊天 / 7 个可识别观众 / 0 付费 / `ended`。
+- 真实 Bilibili 房间 `5050` 当时未开播，`BILIBILI_ROOM_OFFLINE` 是正确行为，不作为失败。
+
+### 46.5 正式 EXE 矩阵
+
+正式 EXE：`D:\LiveMemory\dist\LiveMemory.exe`，buildId `a4bf602de264`，SHA-256
+`6a90f564b0fd31adabd67b68a764bfe1800d402fd35fcabe3b601ec9d15e6d2d`，96,828,416 bytes，
+commit `7da0e0d`，Manifest `requireAdministrator`。功能场景使用同一二进制的 asInvoker 测试副本。
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-twitch-exe.mjs` | **20/20**（Manifest、启动/buildId、Twitch status、真实频道、连接、聊天、稳定 ID、停止、自动监听目标/check/session/入库/删除、SQLite ID、重启、会话持久化、AI 报告 200、观众读模型 200、Bilibili/YouTube 状态 200、Twitch 保留策略） |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-p0-5-exe.mjs` | **12/12** |
+| `scripts/verify-p0-2-exe.mjs` | **13/13** |
+| `scripts/verify-help-exe.mjs` | **14/14** |
+| `scripts/verify-ai-token-exe.mjs` | **16/16** |
+| `scripts/verify-youtube-lifecycle-exe.mjs` | **PASS**（180,524 ms 断网 → 同 session 恢复 → 去重 → `platform_ended`） |
+
+### 46.6 未验证 / 不得宣称
+
+- **Bits 真实事件、赠订真实事件**：仅解析与 Mock 测试；真实公开频道样本中未观测到。
+- **EventSub OAuth**：未实现；需要 User Token、应用 Client ID 与 scope，本构建不要求普通主播注册应用。
+- **真实拔网/真实“直播中→下播”**：协议与状态机由自动化覆盖，真实网络演练未完成。
+- **真实 UAC 双击/点击**：自动化不能点击 UAC；只断言 Manifest 与同一二进制功能副本。
+- **长时间 10+ 频道、千条/秒、限流叠加**：未验证。
+- 不得把匿名 IRC / 公开 GQL 描述为 Twitch 官方稳定 API；不得把 Bits/Tier/月数换算成收入。

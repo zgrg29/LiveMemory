@@ -73,7 +73,8 @@
     "platform": {
       "mock": "シミュレーション",
       "bilibili": "ビリビリライブ",
-      "youtube": "YouTube ライブ"
+      "youtube": "YouTube ライブ",
+      "twitch": "Twitch ライブ"
     }
   },
   "format": {
@@ -262,7 +263,32 @@
       "youtubeAutoEnded": "配信が終了しました。記録は保存されています",
       "youtubeIdentityNote": "公開 Web チャットは通常、実際の Channel ID を返します。欠落している場合、LiveMemory はニックネームで身元を捏造しません。",
       "youtubeMoneyNote": "Super Chat は書式付き金額文字列（例: HK$2,000.00）のみを提供します。LiveMemory は通貨を確認できる場合だけ換算し、不明な場合は金額を未知として元の表示文字列を保存します。",
-      "youtubePossibleGaps": "消息欠落の可能性 {n} 回"
+      "youtubePossibleGaps": "消息欠落の可能性 {n} 回",
+      "twitchTab": "Twitch",
+      "twitchIntro": "公開 Twitch チャンネルに匿名の読み取り専用チャットで接続します。Twitch アカウント、OAuth トークン、API キー、Cookie は不要です。",
+      "twitchUnavailable": "このビルドでは Twitch 対応を利用できません。",
+      "twitchLinkPlaceholder": "チャンネルリンクまたはチャンネル名（例: twitch.tv/example）",
+      "twitchLinkLabel": "Twitch チャンネルリンクまたはチャンネル名",
+      "twitchCheck": "チャンネルを確認",
+      "twitchChecking": "確認中…",
+      "twitchChannelReady": "チャンネルを確認しました",
+      "twitchLiveNow": "配信中",
+      "twitchOffline": "オフライン",
+      "twitchChannel": "チャンネル",
+      "twitchChannelId": "安定したチャンネルID",
+      "twitchLogin": "ログイン名",
+      "twitchViewers": "視聴者",
+      "twitchStart": "記録を開始",
+      "twitchStarting": "開始中…",
+      "twitchStarted": "{name} を記録しています",
+      "twitchAnonymousNote": "Twitch IRC で公開チャットを匿名で読み取ります。ログイン、Cookie、API キーは使用せず、LiveMemory のサーバーへ何も送信しません。",
+      "twitchIdentityNote": "表示名は表示専用です。場をまたぐ身元には安定した Twitch ユーザーIDを使用し、ID がない場合もニックネームで代用しません。",
+      "twitchMoneyNote": "Bits、サブスクリプションのティア、ギフトサブスクは実際の通貨金額ではありません。LiveMemory は回数やティアを表示テキストとして保存し、金額は未知のままにします。収入へ換算しません。",
+      "twitchCapabilityNote": "サブスクリプション／再サブスク通知は実際の公開チャンネルで確認済みです。ギフトサブスクと Bits は IRC タグから解析しますが、実イベントはまだ確認していません。公式 EventSub（OAuth）はこのビルドでは未設定です。",
+      "twitchPolicyTitle": "チャット本文の保持",
+      "twitchPolicyBody": "{days} 日を超えた Twitch の生チャット本文、バッジ、表示ラベルは削除されます。件数と安定IDは保持されます。",
+      "twitchApplyRetention": "期限切れ本文を今すぐ削除",
+      "twitchRetentionApplied": "期限切れメッセージを {count} 件削除しました"
     }
   },
   "history": {
@@ -1624,6 +1650,18 @@
     "youtubeWebResponseInvalid": "YouTube のチャットデータ構造が不完全です。LiveMemory は待機して再試行します。",
     "youtubeWebStale": "チャットの続きが無効になりました。再接続を試みています。",
     "youtubeWebRestricted": "YouTube がログインを要求したか、この配信の Web アクセスを制限しています。LiveMemory はログインを回避しません。",
+    "twitchLinkInvalid": "Twitch のチャンネルリンクまたはチャンネル名（例: twitch.tv/example）を入力してください。動画・クリップ・ディレクトリのリンクは配信チャンネルではありません。",
+    "twitchChannelNotFound": "その Twitch チャンネルは見つかりません。チャンネル名を確認してください。",
+    "twitchChannelOffline": "この Twitch チャンネルはオフラインです。LiveMemory は現在配信中のものだけを記録します。",
+    "twitchChatUnavailable": "このチャンネルの Twitch チャットを現在利用できません。LiveMemory は制限やモデレーションを回避しません。",
+    "twitchRateLimit": "Twitch がリクエストを制限しています。LiveMemory は速度を落として後で再試行し、制限を回避しません。",
+    "twitchNetwork": "Twitch に接続できません。ネットワークを確認して再試行してください。",
+    "twitchProtocol": "Twitch がこのバージョンで解析できないデータを返しました。後で再試行するか、LiveMemory を更新してください。",
+    "twitchConnectTimeout": "Twitch チャットが時間内に応答しませんでした。ネットワークを確認して再試行してください。",
+    "twitchWebSocketUnavailable": "この実行環境には WebSocket サポートがないため、Twitch チャットを開けません。",
+    "twitchNotConfigured": "このビルドでは Twitch 対応が設定されていません。",
+    "twitchStopped": "Twitch 接続は停止されました。",
+    "twitchError": "Twitch がこのアプリで処理できない応答を返しました。後で再試行してください。",
     "maintenance": "データを処理しています。しばらくお待ちください…",
     "relocationInvalid": "対象フォルダーが無効です。",
     "relocationPathRelative": "完全な絶対パスを入力してください（例: D:\\LiveMemoryData）。",
@@ -2077,7 +2115,9 @@
       "bilibiliPlaceholder": "配信ルームのリンクまたはルームID",
       "bilibiliLabel": "配信ルームのリンクまたはルームID",
       "youtubePlaceholder": "チャンネルリンク、@handle、チャンネルID、配信リンク",
-      "youtubeLabel": "チャンネルリンク、@handle、チャンネルID、配信リンク"
+      "youtubeLabel": "チャンネルリンク、@handle、チャンネルID、配信リンク",
+      "twitchPlaceholder": "チャンネルリンクまたはチャンネル名",
+      "twitchLabel": "チャンネルリンクまたはチャンネル名"
     },
     "hero": {
       "autoChip": "自動監視",

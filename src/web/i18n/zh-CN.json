@@ -73,7 +73,8 @@
     "platform": {
       "mock": "模拟直播",
       "bilibili": "哔哩哔哩直播",
-      "youtube": "YouTube 直播"
+      "youtube": "YouTube 直播",
+      "twitch": "Twitch 直播"
     }
   },
   "format": {
@@ -262,7 +263,32 @@
       "youtubeAutoEnded": "直播已结束，记录已保存",
       "youtubeIdentityNote": "公开网页聊天通常提供真实 Channel ID；若某条消息缺失，LiveMemory 不会用昵称伪造身份。",
       "youtubeMoneyNote": "Super Chat 只提供格式化金额文本（例如 HK$2,000.00）。LiveMemory 仅在币种可确认时换算；否则金额记为未知，并保留原始显示文本。",
-      "youtubePossibleGaps": "可能漏消息 {n} 次"
+      "youtubePossibleGaps": "可能漏消息 {n} 次",
+      "twitchTab": "Twitch",
+      "twitchIntro": "通过匿名只读聊天连接公开 Twitch 直播间。不需要 Twitch 账号、OAuth Token、API Key 或 Cookie。",
+      "twitchUnavailable": "当前构建不支持 Twitch。",
+      "twitchLinkPlaceholder": "直播间链接或主播账号（例如 twitch.tv/example）",
+      "twitchLinkLabel": "Twitch 直播间链接或主播账号",
+      "twitchCheck": "检查直播间",
+      "twitchChecking": "检查中…",
+      "twitchChannelReady": "已找到频道",
+      "twitchLiveNow": "正在直播",
+      "twitchOffline": "未开播",
+      "twitchChannel": "频道",
+      "twitchChannelId": "稳定频道 ID",
+      "twitchLogin": "账号名",
+      "twitchViewers": "观众",
+      "twitchStart": "开始记录",
+      "twitchStarting": "正在开始…",
+      "twitchStarted": "正在记录 {name}",
+      "twitchAnonymousNote": "通过 Twitch IRC 匿名读取公开聊天。不使用登录、Cookie 或 API Key，也不会向 LiveMemory 开发者服务器发送任何数据。",
+      "twitchIdentityNote": "昵称只用于显示；跨场次身份使用稳定的 Twitch User ID。缺失 ID 时绝不用昵称代替，也不会把不同观众合并。",
+      "twitchMoneyNote": "Bits、订阅 Tier 与赠送订阅都不是本币金额。LiveMemory 只把数量或档位保存为展示文本，金额保持未知，绝不换算成主播收入。",
+      "twitchCapabilityNote": "订阅/续订通知已在真实公开频道观测到。赠送订阅与 Bits 已按 IRC 标签解析，但尚未观测到真实事件。本构建未配置官方 EventSub（OAuth）。",
+      "twitchPolicyTitle": "聊天原文保留",
+      "twitchPolicyBody": "超过 {days} 天的 Twitch 聊天原文、徽章与展示标签会被清理；消息计数与稳定 ID 保留。",
+      "twitchApplyRetention": "立即清理过期原文",
+      "twitchRetentionApplied": "已清理 {count} 条过期消息"
     }
   },
   "history": {
@@ -1624,6 +1650,18 @@
     "youtubeWebResponseInvalid": "YouTube 返回的聊天数据结构不完整，LiveMemory 会退避并重试。",
     "youtubeWebStale": "聊天续页已失效，正在尝试重新连接。",
     "youtubeWebRestricted": "YouTube 要求登录或限制了该直播的网页访问。LiveMemory 不会绕过登录。",
+    "twitchLinkInvalid": "请输入 Twitch 直播间链接或主播账号（例如 twitch.tv/example）。视频、剪辑和目录链接都不是直播频道。",
+    "twitchChannelNotFound": "未找到该 Twitch 频道，请检查账号名。",
+    "twitchChannelOffline": "该 Twitch 频道当前未开播。LiveMemory 只记录正在进行的直播。",
+    "twitchChatUnavailable": "该频道的 Twitch 聊天当前不可用。LiveMemory 不会绕过平台限制或聊天管理。",
+    "twitchRateLimit": "Twitch 正在限制请求。LiveMemory 会降低频率并在稍后重试，不会绕过限流。",
+    "twitchNetwork": "无法连接 Twitch，请检查网络后重试。",
+    "twitchProtocol": "Twitch 返回了当前版本无法解析的数据。请稍后重试或更新 LiveMemory。",
+    "twitchConnectTimeout": "Twitch 聊天未在限定时间内响应，请检查网络后重试。",
+    "twitchWebSocketUnavailable": "当前运行环境没有 WebSocket 支持，无法打开 Twitch 聊天。",
+    "twitchNotConfigured": "当前构建未配置 Twitch 支持。",
+    "twitchStopped": "Twitch 连接已停止。",
+    "twitchError": "Twitch 返回了本软件无法处理的响应，请稍后重试。",
     "maintenance": "正在处理数据，请稍候…",
     "relocationInvalid": "目标文件夹无效。",
     "relocationPathRelative": "请输入完整的绝对路径（例如 D:\\LiveMemoryData）。",
@@ -2077,7 +2115,9 @@
       "bilibiliPlaceholder": "直播间链接或房间号",
       "bilibiliLabel": "直播间链接或房间号",
       "youtubePlaceholder": "频道链接、@handle、Channel ID 或直播链接",
-      "youtubeLabel": "频道链接、@handle、Channel ID 或直播链接"
+      "youtubeLabel": "频道链接、@handle、Channel ID 或直播链接",
+      "twitchPlaceholder": "直播间链接或主播账号",
+      "twitchLabel": "直播间链接或主播账号"
     },
     "hero": {
       "autoChip": "自动监听",

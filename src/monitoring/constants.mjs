@@ -7,7 +7,7 @@
  * request storm is not.
  */
 
-export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube']);
+export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch']);
 
 export const MONITOR_STATE = Object.freeze({
   /** Enabled, not live, waiting for the next scheduled check. */
@@ -67,6 +67,18 @@ export const MONITOR_POLICY = Object.freeze({
     endCooldownMs: 20000,
     maxConsecutiveFailures: 4,
     requestGapMs: 2500
+  }),
+  twitch: Object.freeze({
+    platform: 'twitch',
+    /** 1 read-only public channel metadata request every 2 minutes. */
+    baseMs: 120000,
+    minMs: 90000,
+    maxMs: 180000,
+    errorBaseMs: 120000,
+    errorMaxMs: 1200000,
+    endCooldownMs: 15000,
+    maxConsecutiveFailures: 4,
+    requestGapMs: 1500
   })
 });
 

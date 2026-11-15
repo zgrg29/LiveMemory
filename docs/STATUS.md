@@ -1,8 +1,123 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查；只读实测；未改业务代码）
+最后更新：2026-11-15（TWITCH-M1：Twitch 正式接入、自动化测试、真实直播验证与 Windows EXE；等待人工验收）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.34 TWITCH-M1：Twitch 正式接入、测试与 Windows EXE（2026-11-15）🟡（等待人工验收）
+
+范围：在独立分支 `feature/twitch` 完成 Twitch 匿名 IRC 公开聊天 + 只读公开频道元数据接入，接入统一
+`EventIngest`、`SessionManager`、`MonitoringManager`、数据库、读模型与 AI 读取链路；构建 Windows EXE
+并用真实公开频道运行验证。完整验收报告：`docs/ACCEPTANCE_TWITCH_M1.md`。
+**未改数据库 schema（仍 16）、结果 Schema 1.3.0、提示词 v13.2、默认 10 人/批、
+Bilibili 适配器、YouTube 适配器、AI Provider/调度/提示词规则；未新增运行时依赖；未合并 main、未 Push、
+未创建 Tag、未发布 Release。**
+
+### 0.34.1 实现内容
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/platforms/twitch/link.mjs` | `twitch.tv/<login>`、m/player/popout、裸账号解析；拒绝视频/剪辑/目录/搜索 |
+| `src/platforms/twitch/irc.mjs` | IRCv3 标签与转义、多行帧、`emotes` 范围、`badges`、`/me` ACTION |
+| `src/platforms/twitch/mapper.mjs` | PRIVMSG/Cheer/USERNOTICE → canonical event；明确的证据等级与忽略列表 |
+| `src/platforms/twitch/client.mjs` | 公开 GQL 只读元数据：channel id、昵称、标题、直播状态、观看数、开播时间、stream id |
+| `src/platforms/twitch/adapter.mjs` | IRC WebSocket、PING/PONG、90s 看门狗、1→30s 退避、15 次后 5 分钟低速探测、连接内 10,000 消息 ID 去重、两次离线确认下播、stream id 变化结束旧场 |
+| `src/platforms/twitch/service.mjs` | HTTP/监控与 `SessionManager` 粘合、重复房间、Twitch-only 30 天保留 |
+| `src/monitoring/detectors/twitch.mjs` | 自动开播检测、`stream.id` 周期键、错误分类 |
+| `src/server/{index,routes}.mjs` | `/api/twitch/status|channel|connect|disconnect|retention/apply`；启动时 Twitch 保留清理 |
+| `src/web/js/pages/live.js` + 三语 i18n | Twitch 来源 Tab、频道检查/开播判断/自动监听/错误提示/保留按钮；Bits 未知金额显示 `amount_display`，不再显示 0.00 |
+| `src/storage/retention.mjs` | 平台化昵称清理；Twitch 使用独立审计键 `retention.lastRun.twitch`，不覆盖 YouTube |
+
+事件映射：聊天 `PRIVMSG` → `chat`；Bits/Cheer → `super_chat`（`gift_name=Bits`、`gift_quantity=bits`、
+`amount_display="N Bits"`、`amount_minor=null`、`value_kind=unknown`）；`sub`/`resub` → `membership`；
+`subgift` → `gift`（赠送者为付款者，接收者只写入展示字段）；`submysterygift` 跳过以避免与每个 `subgift`
+重复计数；`viewermilestone`/`bitsbadgetier`/`announcement`/`raid` 等不写入普通聊天。
+
+### 0.34.2 真实 Twitch 只读验证（未登录、未付费、未保存/展示正文）
+
+| 验证 | 结果 |
+| --- | --- |
+| 单频道 `xqc` 45 秒 | **138 条事件**；138/138 有稳定 `user-id` + 消息 `id`；108 个唯一身份；7 条带 `emotes`；7 条含非 ASCII |
+| 6 频道并发 60 秒（`xqc`、`shroud`、`sodapoppin`、`moonmoon`、`ludwig`、`summit1g`） | **418 条事件**；418/418 有稳定 User ID + 消息 ID；304 个唯一身份；40 条带 `emotes`；10 条含非 ASCII；**1 条真实 resub（Prime）**；0 Bits、0 赠订 |
+| 正式 EXE + `xqc` | 连接成功；4 条聊天入库，4/4 有 `twitch:<id>` 与消息 ID；停止后数据库保留；重启后仍在 |
+| 正式 EXE + Twitch 自动监听 | 添加目标 → `check` 创建正常 session（`state=recording`）→ 3 条真实聊天入库 → 停止 → 删除目标 |
+
+### 0.34.3 自动化测试
+
+- 新增 **47** 项：`twitch-link` 5、`twitch-irc` 8、`twitch-mapper` 10、`twitch-adapter` 6、
+  `twitch-service` 6、`monitoring-twitch-detector` 4、`twitch-session` 2、`twitch-monitoring` 1、
+  `twitch-ui` 5。
+- 全量：**875 passed / 0 failed / 0 skipped（253,002 ms，2026-11-15）**；
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`。
+- 覆盖：URL 解析、IRC 标签/转义/多行帧、Unicode、稳定 User ID、消息 ID、昵称、订阅/续订/赠订解析、
+  Bits 解析、消息去重、断线重连、两次离线确认、多频道隔离、数据库写入、AI 分析包读取、自动开播、
+  Twitch-only 保留、三语 UI 键一致、Windows 构建必需模块。
+- Bilibili/YouTube 回归：全量既有测试通过；真实 Bilibili 房间 `6`（真实 `7734200`）20 秒
+  **7 条聊天 / 7 个可识别观众 / 0 付费**，停止后 `ended`；正式 EXE 的 YouTube 生命周期回放通过。
+
+### 0.34.4 Windows EXE（本轮交付物）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件名 | `LiveMemory.exe`（另保留 `LiveMemory-twitch-a4bf602de264.exe` 同哈希副本） |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| 大小 | `96,828,416` bytes（92.3 MB） |
+| SHA-256 | `6a90f564b0fd31adabd67b68a764bfe1800d402fd35fcabe3b601ec9d15e6d2d` |
+| Build ID | `a4bf602de264` |
+| source hash | `a4bf602de264d4b57203cbfc4b83319c701f1884101901a0bbbef11aae53ed12` |
+| commit | `7da0e0d1905a4f16d1a844f98102fb04c211a7d2` |
+| builtAt | `2026-11-15T03:27:03.011Z` |
+| 资源 | `200` files；28 个必需模块 |
+| RT_MANIFEST | **`requireAdministrator`** |
+| Node | `v24.21.0` |
+
+EXE 验证矩阵（全部针对该二进制；功能场景使用 `tests/.tmp/` 的 asInvoker 测试副本，正式 EXE 的 Manifest
+单独断言；自动化无法点击真实 UAC）：
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-twitch-exe.mjs`（真实 Twitch + 自动监听 + 重启 + AI 读取 + Bilibili/YouTube 状态） | **20/20** |
+| `scripts/verify-exe.mjs`（启动/重启/硬杀恢复/端口/单实例/不可写目录/CLI） | **10/10** |
+| `scripts/verify-p0-5-exe.mjs`（认证/Origin/Host/SSE/重启） | **12/12** |
+| `scripts/verify-p0-2-exe.mjs`（备份 → 全新目录恢复 → 重启 → 再备份） | **13/13** |
+| `scripts/verify-help-exe.mjs`（三语说明页） | **14/14** |
+| `scripts/verify-ai-token-exe.mjs`（Mock Provider、Token/Resume/备份） | **16/16** |
+| `scripts/verify-youtube-lifecycle-exe.mjs`（180s 断网 → 同 session 恢复 → 去重 → ended） | **PASS** |
+
+### 0.34.5 功能完成状态（必须按此口径验收）
+
+| 功能 | 状态 |
+| --- | --- |
+| 观众昵称 | **已实现且真实直播实测通过**（418/418 有 `display-name`） |
+| 稳定 User ID | **已实现且真实直播实测通过**（418/418 有 `user-id` → `twitch:<id>`） |
+| 实时弹幕/聊天原文 | **已实现且真实直播实测通过**（含 Unicode；消息 `id` 去重） |
+| 订阅 / 续订 | **已实现且真实直播实测通过**（真实 resub/Prime；内容与 Tier/月数） |
+| Bits / Cheer | **已实现，仅模拟/解析测试**；真实事件尚未观测到，不宣称完整支持 |
+| 赠送订阅 | **已实现，仅模拟/解析测试**；真实事件尚未观测到；`subgift` 为赠订事件，`submysterygift` 跳过避免重复计数 |
+| 付费附带留言 | **部分实现**：resub/订阅留言已支持；Bits Cheer 留言已解析但真实事件未观测；赠订通常无留言 |
+| 自动开播监听 | **已实现**：集成测试 + 正式 EXE 真实 `check` 创建 session 并入库；真实“等待开播→开播→下播”长跑未捕获 |
+| 断线重连 | **已实现**：自动化覆盖 close/RECONNECT/看门狗/退避/同 session；真实拔网未验证 |
+| 多直播间 | **已实现且真实 6 频道并发实测通过**；正式 EXE 自动监听独立 session |
+| AI 分析读取 | **已实现**：正式 EXE 的 `GET /api/ai/sessions/:id/report` 返回 200；未用真实付费 Provider 重跑语义分析 |
+| 长期观众画像 | **已实现**：稳定 `twitch:<user-id>` 进入现有画像/观众读模型；正式 EXE 观众读取 200；真实 AI 语义画像未重跑 |
+| 官方 EventSub 增强 | **未配置**：需要 OAuth User Token、应用 Client ID 与 scope；本轮不要求普通主播注册开发者应用 |
+
+### 0.34.6 边界与未验证
+
+- **Bits、赠订真实事件未观测到**；只能写“已解析/仅模拟测试”，不得写“完整支持”。
+- **真实断网、真实“直播中→下播”样本未捕获**；自动化覆盖了协议与状态机，但不能替代真实网络演练。
+- **EventSub OAuth 未实现**；匿名 IRC 与公开 GQL 都不是官方承诺的稳定 API，未来可能失效。
+- **真实 UAC 双击/点击未自动化验收**；本轮只断言正式 Manifest 与同一二进制功能副本。
+- **未在另一台干净 Windows 电脑验收**；未验证长时间 10+ 频道、千条/秒、平台限流叠加。
+- Twitch 保留窗口在 M1 固定 30 天，暂未提供设置项。
+
+### 0.34.7 Git 与等待验收
+
+- 分支：`feature/twitch`；代码提交：`7da0e0d1905a4f16d1a844f98102fb04c211a7d2`
+  （`feat: add Twitch live integration`，34 files，+4,411/−69）。
+- 本文件的构建/验收记录为后续文档提交；EXE 的 `build-info.commit` 仍是 `7da0e0d`。
+- **未合并 main、未 Push、未创建 Tag、未发布 Release、未删除分支。**
+- **状态：EXE 已生成并完成真实 Twitch/自动监听/重启验证；等待开发者人工验收。**
 
 ## 0.33 PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查与可行性验证（2026-11-15）🟡
 

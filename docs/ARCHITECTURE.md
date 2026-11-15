@@ -26,8 +26,9 @@ LiveMemory.exe (Node SEA)
          ├─ src/platforms/bilibili/     真实直播适配器（WebSocket，可多房间）
          ├─ src/platforms/youtube/      公开网页聊天（唯一路径；可多直播）
          ├─ src/platforms/youtube/anonymous/  公开页面 parser/client/adapter
-         ├─ src/monitoring/             自动监听：目标状态机、调度/退避、平台检测器（Bilibili roomStatus、YouTube /live + RSS 回退）
-         ├─ src/storage/retention.mjs   YouTube 原文/badge/过期昵称保留策略
+         ├─ src/platforms/twitch/       匿名 IRC 公开聊天 + 公开元数据（M1；可多频道）
+         ├─ src/monitoring/             自动监听：目标状态机、调度/退避、平台检测器（Bilibili roomStatus、YouTube /live + RSS 回退、Twitch 公开频道元数据）
+         ├─ src/storage/retention.mjs   YouTube/Twitch 原文/badge/过期昵称保留策略
          ├─ src/analytics/              只读读模型（时间线/汇总/画像/历史搜索/AI 报告）
          ├─ src/ai/export/              分析包生成（整场/批次/汇总、表情字典、版本）
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
@@ -270,9 +271,45 @@ parseYouTubeInput(link) → YouTubeService.checkVideo()
 - 连续失败只改变连接状态和 UI 提示，不写 `sessions.end_reason`，不生成新场次，不重置计数。
 - 结束确认失败（网络/无法读取观看页）时保持采集与重试，不猜测平台已结束。
 
+## 3.1.2 Twitch 匿名 IRC + 公开元数据（M1，2026-11-15）
+
+```text
+parseTwitchInput(link/login)
+  → TwitchMetadataClient.getChannel(login)     公开 GQL：channelId/displayName/title/stream.id/viewers/startedAt
+  → 未开播/频道不存在/非频道链接 → 明确错误码（三语）
+  → SessionManager.startPlatform({platform:'twitch', platformRoomId: channelId})
+       → TwitchIrcAdapter.start()
+           ├─ wss://irc-ws.chat.twitch.tv:443
+           ├─ CAP tags/commands → 匿名 NICK justinfan… → JOIN #login
+           ├─ ROOMSTATE room-id 校验 channelId
+           ├─ PRIVMSG / USERNOTICE → mapper.mjs → canonical draft
+           ├─ EventIngest（UNIQUE(session_id,dedupe_key) + 观众/金额/计数）
+           └─ SSE → 控制台
+
+直播状态（与 IRC 连接分离）
+  ├─ 每 60s 读一次公开频道元数据
+  ├─ 连续 2 次有效 offline → platform_ended（结束当前 session）
+  ├─ stream.id 变化 → 结束旧 session，不合并两场
+  ├─ 网络/429/协议异常 → 只退避，不结束
+  └─ 用户停止 → 立即结束，不再重连
+
+重连
+  ├─ close / RECONNECT / 90s 无数据 → reconnecting
+  ├─ 指数退避 1→30s，同一 session，适配器内 10,000 条消息 ID 去重
+  ├─ 15 次失败 → failed（可恢复）→ 每 5 分钟低速探测
+  └─ 多频道各自独立 adapter/session，互不影响
+```
+
+- 身份：`user-id` → `twitch:<user-id>`；昵称只展示，缺失 `user-id` 不建长期档案。
+- 正文：IRC `PRIVMSG` 原文；Unicode/Emoji 原样；`/me` 只去 ACTION 包装。
+- 金额：Bits/订阅 Tier/月数/赠订均无本币金额，`amount_minor=null`、`currency=null`、`value_kind=unknown`，只写 `amount_display`。
+- 证据：普通聊天与 `resub` 为 `verified`；`sub`/`subgift`/Bits 为 `estimated`（解析完成、真实事件未观测）。
+- 自动监听：`TwitchChannelDetector` 每 120 秒（90–180s 抖动）读公开元数据；`stream.id` 作为周期键。
+- 保留：Twitch-only 30 天清理原文/表情/徽章/展示标签与过期昵称，保留计数与稳定 ID。
+
 ## 3.2 保留策略
 
-`src/storage/retention.mjs` 在启动、YouTube 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的 YouTube 聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定 Channel ID 与金额合计。目的与局限见 `PRIVACY_SECURITY.md` §14。
+`src/storage/retention.mjs` 在启动、YouTube/Twitch 场次结束与手动调用时清理超过窗口（默认/上限 30 天）的对应平台聊天原文、emote/badge 元数据、金额显示文本和过期昵称；保留事件行、计数、稳定平台 ID 与金额合计。两个平台使用独立 scope（`platform='youtube'` / `'twitch'`），互不清理对方数据。目的与局限见 `PRIVACY_SECURITY.md` §14。
 
 ## 3.3 多场并发记录（v0.6.0）
 
@@ -436,6 +473,11 @@ WebSocket: LIVE / PREPARING / STOP_LIVE（仅当前 roomid、当前 generation�
 | POST | `/api/youtube/connect` | 开始记录 YouTube 直播（无 mode 参数，可多场并存） |
 | POST | `/api/youtube/disconnect` | 停止指定 `sessionId`；多场且缺 ID 时返回 409 |
 | POST | `/api/youtube/retention/apply` | 立即执行 YouTube 原文保留清理 |
+| GET | `/api/twitch/status` | Twitch 匿名 IRC 连接、运行任务、能力边界与保留策略 |
+| POST | `/api/twitch/channel` | 解析频道链接/账号并返回直播状态与可记录性 |
+| POST | `/api/twitch/connect` | 开始记录 Twitch 直播（可与其他场次并存） |
+| POST | `/api/twitch/disconnect` | 停止指定 `sessionId`；多场且缺 ID 时返回 409 |
+| POST | `/api/twitch/retention/apply` | 立即执行 Twitch-only 原文保留清理 |
 | GET | `/api/events` | 场次事件（倒序、分页） |
 | GET | `/api/events/stream` | SSE（`event`、`status`） |
 | GET | `/api/storage` | 数据目录、占用、计数 |
