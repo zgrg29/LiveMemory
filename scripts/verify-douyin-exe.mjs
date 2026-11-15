@@ -208,7 +208,7 @@ const shippedLevel = manifestLevel(shipped);
 record('shipped EXE requests administrator rights (requireAdministrator, UAC prompt)', shippedLevel === 'requireAdministrator', [
   `manifest level: ${shippedLevel}`,
   `size: ${statSync(distExe).size} bytes`,
-  `sha256: ${buildRecord.buildId}`
+  `build id: ${buildRecord.buildId}`
 ]);
 const exe = prepareTestExe({source: distExe, target: join(root, 'LiveMemory-asInvoker.exe')});
 record('functional scenarios use a test-only asInvoker copy of the same binary', true, [exe]);

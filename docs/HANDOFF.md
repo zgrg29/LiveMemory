@@ -24,7 +24,7 @@
 7. **监控/多房间**：`DouyinRoomDetector`；自动开播、两次离线确认、断线退避重连、独立 adapter/session。
 8. **UI**：直播页抖音 Tab、房间检查、自动监听、登录/保留；64 个 `douyin` 键 × 三语。
 9. **测试**：新增 48 项；全量结果见 §0.2。
-10. **EXE**：buildId `0f848c77c2d6` / SHA-256 `ebdcd40d…` / requireAdministrator；
+10. **EXE**：buildId `0f848c77c2d6` / SHA-256 `cccfc6a6…` / requireAdministrator；
     `verify-douyin-exe` **17/17**（1 条礼物 NOT-OBSERVED），既有 EXE 矩阵见 §0.2。
 11. **许可证**：vendored AGPL-3.0 签名组件独立目录 + 完整许可证 + 哈希核对；**主项目 MIT 未改**。
 
@@ -38,7 +38,7 @@
 | 真实礼物 | **0 条（匿名）**；真实事件未观测到 |
 | 登录 | 风控阻止；未完成真实扫码；无伪造 |
 | 全量测试 | 见 `docs/STATUS.md` §0.35.6（本轮新增 48 项） |
-| 正式 EXE | `0f848c77c2d6` / `ebdcd40d…` / `requireAdministrator` / 93.0 MB |
+| 正式 EXE | `0f848c77c2d6` / `cccfc6a6…` / `requireAdministrator` / 93.0 MB |
 | EXE Douyin | **17/17**（含真实连接、入库、停止、自动监听、重启、AI 读取、三平台状态） |
 | main | **未合并抖音、未 Push、未 Tag、未 Release** |
 

@@ -72,9 +72,9 @@
 | 文件名 | `LiveMemory.exe` |
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
 | Build ID | `0f848c77c2d6` |
-| source hash | `0f848c77c2d691ac2d68c307944d0327232f44324110c8f9907a062c99922c39` |
-| commit（构建时 HEAD） | `d5e9a7c5b58bb8127ddf72c46918ce51c557f312` |
-| builtAt | `2026-11-15T04:30:41.642Z` |
+| source hash | `0f848c77c2d6cff5882856f27af375060fdcc9811b99529480119c87d5c11fee` |
+| commit（构建时 HEAD） | `1f73bed49c35e386ada1e5ca67768bc2e9f916d3`（包含抖音代码提交 `c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`） |
+| builtAt | `2026-11-15T04:33:52.697Z` |
 | 资源 | `214` files；39 个必需模块 |
 | RT_MANIFEST | **`requireAdministrator`** |
 | Node | `v24.21.0` |
@@ -83,7 +83,7 @@ EXE 验证（正式二进制断言 Manifest；功能场景使用同一二进制�
 
 | 脚本 | 结果 |
 | --- | --- |
-| `scripts/verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI 读取 + 三平台状态 + 登录状态） | **17/17**，1 条礼物 NOT-OBSERVED |
+| `scripts/verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI 读取 + 三平台状态 + 登录状态） | **17/17**，1 条礼物 NOT-OBSERVED（与矩阵并行时曾启动超时一次，单独重跑通过） |
 | `scripts/verify-exe.mjs` | **10/10** |
 | `scripts/verify-p0-5-exe.mjs` | **12/12** |
 | `scripts/verify-p0-2-exe.mjs` | **13/13** |

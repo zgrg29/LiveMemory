@@ -32,20 +32,21 @@
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
 | Build ID | `0f848c77c2d6` |
 | 文件大小 | `97,488,896` bytes（93.0 MB） |
-| SHA-256 | `ebdcd40d52500ca2bb4062328cf834a4d46102a0ee18de2531e99e641ea00820` |
-| source hash | `0f848c77c2d691ac2d68c307944d0327232f44324110c8f9907a062c99922c39` |
-| 构建时间 | `2026-11-15T04:30:41.642Z`（Asia/Shanghai 12:20:36） |
-| 对应 Commit | `d5e9a7c5b58bb8127ddf72c46918ce51c557f312`（构建时 HEAD；抖音代码提交在其后，详见 §B.1） |
+| SHA-256 | `cccfc6a6d1197fb953336dc2d3d7ba4dca0a4f12f2e3ac421cfd36240fd073e8` |
+| source hash | `0f848c77c2d6cff5882856f27af375060fdcc9811b99529480119c87d5c11fee` |
+| 构建时间 | `2026-11-15T04:33:52.697Z`（Asia/Shanghai 12:33:52） |
+| 对应 Commit | `1f73bed49c35e386ada1e5ca67768bc2e9f916d3`（构建时 HEAD；包含抖音代码提交 `c08cf6c3115b750c0108b54b9d0a19b6bdbae3ce`，详见 §B.1） |
 | 资源 | `214` files；39 个必需模块 |
 | RT_MANIFEST | **`requireAdministrator`**（双击由 Windows 显示标准 UAC；不绕过 UAC） |
 | 构建结果 | 成功；build marker、必需模块与 Manifest 均验证 |
-| 实际启动结果 | 成功；`/api/health` 返回 `0f848c77c2d6` / commit `d5e9a7c`；重启后 buildId 不变 |
+| 实际启动结果 | 成功；`/api/health` 返回 `0f848c77c2d6` / commit `1f73bed`；重启后 buildId 不变 |
 
 ### B.1 关于 Build ID 与 Commit
 
-`buildId` 是**源码内容哈希**，不是 commit 前缀。EXE 在抖音代码提交之前构建，因此
-`build-info.commit` 记录的是构建时 HEAD `d5e9a7c`；用同一源码重新构建会得到同一个
-`0f848c77c2d6`。人工验收以 buildId + SHA-256 为准，不要只看 commit 前缀。
+`buildId` 是**源码内容哈希**，不是 commit 前缀。EXE 在抖音代码提交
+`c08cf6c` 之后、文档记录提交之前构建，因此 `build-info.commit` 记录的是构建时 HEAD
+`1f73bed`；用同一源码重新构建会得到同一个 `0f848c77c2d6`。人工验收以
+buildId + SHA-256 为准，不要只看 commit 前缀。
 
 构建命令：
 
@@ -106,6 +107,10 @@ node scripts/verify-douyin-exe.mjs 708764876300
 | 脚本 | 结果 |
 | --- | --- |
 | `verify-douyin-exe.mjs`（真实抖音 + 自动监听 + 重启 + AI + 三平台状态） | **17/17**，1 条礼物 NOT-OBSERVED |
+
+> 备注：最终二进制第一次与其余 EXE 矩阵**并行**运行 `verify-douyin-exe` 时，服务在 30 秒内未就绪而超时失败；
+> 单独重跑同一二进制 **17/17 通过**。失败原因是并发启动/解压争用，不是功能失败；该次失败记录在此，
+> 没有被静默忽略。
 | `verify-exe.mjs`（启动/重启/硬杀/端口/单实例/权限/CLI） | **10/10** |
 | `verify-p0-5-exe.mjs`（认证/Origin/Host/SSE/重启） | **12/12** |
 | `verify-p0-2-exe.mjs`（备份 → 新目录恢复 → 重启 → 再备份） | **13/13** |

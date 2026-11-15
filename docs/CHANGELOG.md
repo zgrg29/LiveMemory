@@ -24,7 +24,7 @@
 - 真实抖音 `708764876300`：源码路径 20 秒 7 条 chat，7/7 有 `user.id`、昵称、消息 ID、CJK，0 重复；
   正式 EXE 2 条 chat，2/2 有 `douyin:<id>`、昵称、消息 ID、原文；重启后仍在。
 - 真实礼物 **0 条（匿名）**；真实扫码登录被风控阻止；两者均如实标注未验证。
-- 正式 EXE `0f848c77c2d6` / `requireAdministrator` / commit（构建时）`d5e9a7c`；
+- 正式 EXE `0f848c77c2d6` / `requireAdministrator` / commit（构建时）`1f73bed`；
   `verify-douyin-exe` **17/17**（1 条礼物 NOT-OBSERVED）。
 
 ## 0.13.2-r21 — 2026-11-15（TWITCH-M1：Twitch 正式接入与 Windows EXE）
