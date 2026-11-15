@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DouyinLogin, QR_STATE} from '../../src/platforms/douyin/login.mjs';
+import {DouyinLogin, LOGIN_STATES, diagnoseCookie} from '../../src/platforms/douyin/login.mjs';
 import {DouyinCookieStore, hasDouyinSession, sanitizeDouyinCookie} from '../../src/platforms/douyin/cookie-store.mjs';
 
-function response(body, {status = 200, contentType = 'application/json', setCookies = [], location = null} = {}) {
+const VALID_COOKIE = 'sessionid=abcdefgh12345678; sessionid_ss=abcdefgh12345678; ttwid=t; sid_tt=s; uid_tt=u';
+
+function response(body, {status = 200, contentType = 'application/json'} = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -11,135 +13,207 @@ function response(body, {status = 200, contentType = 'application/json', setCook
       get: (name) => {
         const key = name.toLowerCase();
         if (key === 'content-type') return contentType;
-        if (key === 'location') return location;
         return null;
-      },
-      getSetCookie: () => setCookies
+      }
     },
-    text: async () => body
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body))
   };
 }
 
-function memoryStore() {
-  let saved = null;
+function memoryStore(seed = null) {
+  let saved = seed;
   return {
     load: () => saved,
-    save: ({cookie, user}) => {
-      saved = {cookie, user, savedAt: 1};
+    save: ({cookie, user, verified = null, verifiedAt = null, reason = null}) => {
+      saved = {cookie, user, verified, verifiedAt, reason, savedAt: 1};
       return {savedAt: 1};
     },
-    status: () => ({stored: Boolean(saved), user: saved?.user ?? null, savedAt: saved?.savedAt ?? null}),
-    clear: () => { saved = null; }
+    status: () => ({
+      stored: Boolean(saved),
+      user: saved?.user ?? null,
+      savedAt: saved?.savedAt ?? null,
+      verified: saved?.verified ?? null,
+      verifiedAt: saved?.verifiedAt ?? null
+    }),
+    clear: () => { saved = null; },
+    raw: () => saved
   };
 }
 
-test('anonymous status is honest: not logged in and no cookie is exposed', () => {
+function validPayload(name = '测试账号') {
+  return {status_code: 0, user: {nickname: name, uid: '1234567890'}};
+}
+
+test('diagnoseCookie separates format, incomplete and expired values', () => {
+  assert.equal(diagnoseCookie('').code, 'DOUYIN_COOKIE_FORMAT');
+  assert.equal(diagnoseCookie('not a cookie').code, 'DOUYIN_COOKIE_FORMAT');
+  assert.equal(diagnoseCookie('ttwid=abc').code, 'DOUYIN_COOKIE_INCOMPLETE');
+  assert.equal(diagnoseCookie('sessionid=short; ttwid=t').code, 'DOUYIN_COOKIE_INCOMPLETE');
+  const expired = diagnoseCookie('sessionid=abcdefgh12345678; ttwid=t; sid_guard=x|1000000000|y', {
+    now: Date.UTC(2026, 0, 1)
+  });
+  assert.equal(expired.code, 'DOUYIN_LOGIN_EXPIRED');
+  const ok = diagnoseCookie(`Cookie: ${VALID_COOKIE}`);
+  assert.equal(ok.ok, true);
+  assert.match(ok.cookie, /sessionid=abcdefgh12345678/);
+  assert.doesNotMatch(ok.cookie, /^Cookie:/);
+});
+
+test('anonymous status is honest and never exposes a cookie', () => {
   const login = new DouyinLogin({store: memoryStore()});
   const status = login.status();
   assert.equal(status.loggedIn, false);
-  assert.equal(status.qr, null);
+  assert.equal(status.state, LOGIN_STATES.ANONYMOUS);
+  assert.equal(status.cookiePresent, false);
   assert.equal(JSON.stringify(status).includes('sessionid'), false);
-  assert.equal(login.loginState, 'anonymous');
+  assert.equal(JSON.stringify(status).includes('abcdefgh'), false);
 });
 
-test('a risk-control HTML answer to the QR request is reported as blocked, never as a QR code', async () => {
-  const login = new DouyinLogin({
-    store: memoryStore(),
-    fetchImpl: async () => response('<html>安全验证</html>', {contentType: 'text/html'})
-  });
-  await assert.rejects(login.startQr(), (error) => (
-    error.code === 'DOUYIN_LOGIN_BLOCKED' && error.details?.reason === 'risk_control'
-  ));
-  assert.equal(login.status().blocked.reason, 'risk_control');
-  assert.equal(login.loginState, 'blocked');
-});
-
-test('a JSON QR answer exposes only the scannable payload and an expiry', async () => {
-  const login = new DouyinLogin({
-    store: memoryStore(),
-    now: () => 1000,
-    fetchImpl: async () => response(JSON.stringify({
-      data: {token: 'tok-1', qrcode_index_url: 'https://www.douyin.com/login?token=tok-1'}
-    }))
-  });
-  const qr = await login.startQr();
-  assert.equal(qr.token, 'tok-1');
-  assert.equal(qr.url, 'https://www.douyin.com/login?token=tok-1');
-  assert.equal(qr.state, QR_STATE.WAITING);
-  assert.ok(qr.expiresAt > 1000);
-});
-
-test('a confirmed QR login follows the redirect chain, keeps sessionid and stores it locally', async () => {
+test('a valid cookie is saved only after Douyin confirms the session', async () => {
   const store = memoryStore();
-  let clock = 1000;
-  const calls = [];
+  let calls = 0;
   const login = new DouyinLogin({
     store,
-    now: () => clock,
-    fetchImpl: async (url) => {
-      calls.push(url);
-      if (url.includes('/get_qrcode/')) {
-        return response(JSON.stringify({data: {token: 'tok-2', qrcode_index_url: 'https://www.douyin.com/login?token=tok-2'}}));
-      }
-      if (url.includes('/check_qrconnect/')) {
-        return response(JSON.stringify({data: {status: 2, redirect_url: 'https://www.douyin.com/passport/sso/callback?ticket=x'}}));
-      }
-      if (url.includes('/passport/sso/callback')) {
-        return response('', {
-          contentType: 'text/html',
-          setCookies: ['sessionid=abcdefgh12345678; Path=/; Domain=.douyin.com', 'ttwid=tt-1; Path=/'],
-          location: 'https://www.douyin.com/'
-        });
-      }
-      return response('', {contentType: 'text/html', setCookies: ['sessionid_ss=abcdefgh12345678; Path=/']});
+    fetchImpl: async () => {
+      calls += 1;
+      return response(validPayload());
     }
   });
-  await login.startQr();
-  clock = 3000;
-  const result = await login.pollQr();
-  assert.equal(result.state, QR_STATE.SUCCESS);
+  const result = await login.applyCookie(VALID_COOKIE);
+  assert.equal(calls, 1);
+  assert.equal(result.verified, true);
+  assert.equal(result.state, LOGIN_STATES.LOGGED_IN);
   assert.equal(login.loggedIn, true);
-  assert.match(store.load().cookie, /sessionid=abcdefgh12345678/);
-  assert.match(store.load().cookie, /ttwid=tt-1/);
-  assert.ok(calls.some((url) => url.includes('/passport/sso/callback')));
+  assert.equal(store.raw().verified, true);
+  assert.equal(store.raw().user.name, '测试账号');
+  assert.equal(JSON.stringify(login.status()).includes('sessionid'), false);
 });
 
-test('an expired QR is reported as expired and cannot be used for a success', async () => {
-  let clock = 1000;
-  const login = new DouyinLogin({
-    store: memoryStore(),
-    now: () => clock,
-    fetchImpl: async () => response(JSON.stringify({data: {token: 'tok-3', qrcode_index_url: 'https://x'}}))
-  });
-  await login.startQr();
-  clock = 1000 + 5 * 60 * 1000;
-  const result = await login.pollQr();
-  assert.equal(result.state, QR_STATE.EXPIRED);
-  assert.equal(login.loggedIn, false);
-});
-
-test('a stored session is checked against the public page and expiry is explicit', async () => {
+test('a definitive not-logged-in answer is a failure, not a saved login', async () => {
   const store = memoryStore();
-  store.save({cookie: 'sessionid=abcdefgh12345678; ttwid=t', user: null});
   const login = new DouyinLogin({
     store,
-    fetchImpl: async () => response('{"user_is_login":0}', {contentType: 'text/html'})
+    fetchImpl: async () => response({status_code: 8, status_msg: '用户未登录'})
   });
-  const result = await login.verify();
-  assert.equal(result.valid, false);
-  assert.equal(result.reason, 'expired');
+  await assert.rejects(login.applyCookie(VALID_COOKIE), (error) => error.code === 'DOUYIN_AUTH');
+  assert.equal(login.loggedIn, false);
+  assert.equal(store.raw(), null);
 });
 
-test('the explicit cookie fallback requires a session id and keeps only known names', async () => {
+test('a missing companion cookie on an invalid session is reported as incomplete', async () => {
+  const login = new DouyinLogin({
+    store: memoryStore(),
+    fetchImpl: async () => response({status_code: 8, status_msg: '用户未登录'})
+  });
+  await assert.rejects(
+    login.applyCookie('sessionid=abcdefgh12345678'),
+    (error) => error.code === 'DOUYIN_COOKIE_INCOMPLETE'
+  );
+});
+
+test('an expired sid_guard is rejected before any network request', async () => {
+  let calls = 0;
+  const login = new DouyinLogin({
+    store: memoryStore(),
+    now: () => Date.UTC(2026, 10, 15),
+    fetchImpl: async () => {
+      calls += 1;
+      return response(validPayload());
+    }
+  });
+  await assert.rejects(
+    login.applyCookie('sessionid=abcdefgh12345678; ttwid=t; sid_guard=x|1000000000|y'),
+    (error) => error.code === 'DOUYIN_LOGIN_EXPIRED'
+  );
+  assert.equal(calls, 0);
+});
+
+test('a platform refusal saves the cookie as unverified instead of claiming success', async () => {
   const store = memoryStore();
+  const login = new DouyinLogin({
+    store,
+    fetchImpl: async () => response({data: {error_code: 4031, description: '安全风险'}})
+  });
+  const result = await login.applyCookie(VALID_COOKIE);
+  assert.equal(result.verified, false);
+  assert.equal(result.savedUnverified, true);
+  assert.equal(result.state, LOGIN_STATES.SAVED_UNVERIFIED);
+  assert.equal(login.loggedIn, false);
+  assert.equal(login.sessionAvailable, true);
+  assert.equal(store.raw().verified, null);
+});
+
+test('a network error saves the cookie as unverified and can be re-checked later', async () => {
+  const store = memoryStore();
+  let offline = true;
+  const login = new DouyinLogin({
+    store,
+    fetchImpl: async () => {
+      if (offline) throw new Error('offline');
+      return response(validPayload());
+    }
+  });
+  const result = await login.applyCookie(VALID_COOKIE);
+  assert.equal(result.savedUnverified, true);
+  assert.equal(result.warningKey, 'errors.douyinCookieNetwork');
+  offline = false;
+  const checked = await login.checkStored();
+  assert.equal(checked.state, LOGIN_STATES.LOGGED_IN);
+  assert.equal(store.raw().verified, true);
+});
+
+test('checking a stored invalid session marks it expired and keeps that state visible', async () => {
+  const store = memoryStore({
+    cookie: VALID_COOKIE,
+    user: null,
+    verified: null,
+    verifiedAt: null,
+    savedAt: 1
+  });
+  const login = new DouyinLogin({
+    store,
+    fetchImpl: async () => response({status_code: 8, status_msg: '用户未登录'})
+  });
+  const checked = await login.checkStored();
+  assert.equal(checked.state, LOGIN_STATES.INVALID);
+  assert.equal(login.loggedIn, false);
+  assert.equal(login.sessionAvailable, false);
+  assert.equal(store.raw().verified, false);
+});
+
+test('an inconclusive re-check keeps the previous verified state and says so', async () => {
+  const store = memoryStore({
+    cookie: VALID_COOKIE,
+    user: {name: 'A'},
+    verified: true,
+    verifiedAt: 1,
+    savedAt: 1
+  });
+  const login = new DouyinLogin({
+    store,
+    fetchImpl: async () => response('<html>安全验证</html>', {contentType: 'text/html'})
+  });
+  const checked = await login.checkStored();
+  assert.equal(checked.inconclusive, true);
+  assert.equal(checked.state, LOGIN_STATES.LOGGED_IN);
+  assert.equal(login.loggedIn, true);
+  assert.equal(login.sessionAvailable, true);
+});
+
+test('logout clears the encrypted store and returns to anonymous', async () => {
+  const store = memoryStore({
+    cookie: VALID_COOKIE,
+    user: {name: 'A'},
+    verified: true,
+    verifiedAt: 1,
+    savedAt: 1
+  });
   const login = new DouyinLogin({store});
-  await assert.rejects(login.applyCookie('ttwid=abc'), (error) => error.code === 'DOUYIN_AUTH');
-  const ok = await login.applyCookie('sessionid=abcdefgh12345678; sessionid_ss=abcdefgh12345678; evil=<script>; ttwid=t');
-  assert.equal(ok.loggedIn, true);
-  const saved = store.load().cookie;
-  assert.match(saved, /sessionid=/);
-  assert.equal(saved.includes('evil'), false);
-  assert.equal(saved.includes('<script>'), false);
+  assert.equal(login.loggedIn, true);
+  await login.logout();
+  assert.equal(login.loggedIn, false);
+  assert.equal(login.state, LOGIN_STATES.ANONYMOUS);
+  assert.equal(store.raw(), null);
 });
 
 test('cookie helpers never accept a short or absent session id', () => {
@@ -152,4 +226,14 @@ test('cookie helpers never accept a short or absent session id', () => {
 test('the encrypted cookie store refuses to save a cookie without a session', () => {
   const store = new DouyinCookieStore({store: memoryStore()});
   assert.throws(() => store.save({cookie: 'ttwid=abc'}), /session/);
+});
+
+test('the cookie store keeps the verified flag but never returns the cookie', () => {
+  const inner = memoryStore();
+  const store = new DouyinCookieStore({store: inner});
+  store.save({cookie: VALID_COOKIE, user: {name: 'A'}, verified: true, verifiedAt: 5, now: 5});
+  assert.equal(inner.raw().verified, true);
+  const status = store.status();
+  assert.equal(status.verified, true);
+  assert.equal(JSON.stringify(status).includes('sessionid'), false);
 });

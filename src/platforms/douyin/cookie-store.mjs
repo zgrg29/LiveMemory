@@ -23,6 +23,11 @@ const ALLOWED = new Set([
   'sso_uid_tt_ss',
   'passport_csrf_token',
   'passport_csrf_token_default',
+  'passport_auth_status',
+  'passport_auth_status_ss',
+  'passport_auth_mix_state',
+  'sid_ucp_v1',
+  'ssid_ucp_v1',
   'ttwid',
   'odin_tt',
   'UIFID',
@@ -31,13 +36,16 @@ const ALLOWED = new Set([
   '__ac_nonce',
   '__ac_signature',
   's_v_web_id',
+  'sdk_source_info',
+  'bit_env',
+  'gulu_source_res',
   'd_ticket',
   'store-region',
   'is_dash_user',
-  'passport_auth_mix_state',
   'bd_ticket_guard_client_data',
   'bd_ticket_guard_client_data_v2',
   'bd_ticket_guard_client_web_domain',
+  'bd_ticket_guard_regenerate_keys_time',
   'x-web-secsdk-uid',
   '__security_mc_1_s_sdk_crypt_sdk'
 ]);
@@ -86,19 +94,42 @@ export class DouyinCookieStore {
     this.cache = {
       cookie: saved.data.cookie,
       user: saved.data.user ?? null,
+      verified: saved.data.verified === true ? true : saved.data.verified === false ? false : null,
+      verifiedAt: saved.data.verifiedAt ?? null,
+      reason: saved.data.reason ?? null,
       savedAt: saved.savedAt ?? null
     };
     return {...this.cache};
   }
 
-  save({cookie, user = null, now = Date.now()}) {
+  save({
+    cookie,
+    user = null,
+    verified = null,
+    verifiedAt = null,
+    reason = null,
+    now = Date.now()
+  }) {
     const clean = sanitizeDouyinCookie(cookie);
     if (!hasDouyinSession(clean)) {
       throw new Error('refusing to save a Douyin cookie without a session id');
     }
-    const result = this.store.save({cookie: clean, user}, {now});
-    this.cache = {cookie: clean, user, savedAt: result.savedAt};
-    return {user, savedAt: result.savedAt};
+    const result = this.store.save({
+      cookie: clean,
+      user,
+      verified: verified === true ? true : verified === false ? false : null,
+      verifiedAt: verifiedAt ?? null,
+      reason: reason ? String(reason).slice(0, 40) : null
+    }, {now});
+    this.cache = {
+      cookie: clean,
+      user,
+      verified: verified === true ? true : verified === false ? false : null,
+      verifiedAt: verifiedAt ?? null,
+      reason: reason ? String(reason).slice(0, 40) : null,
+      savedAt: result.savedAt
+    };
+    return {user, verified: this.cache.verified, savedAt: result.savedAt};
   }
 
   clear() {
@@ -113,7 +144,9 @@ export class DouyinCookieStore {
     return {
       stored: Boolean(value?.cookie),
       user: value?.user ?? null,
-      savedAt: value?.savedAt ?? null
+      savedAt: value?.savedAt ?? null,
+      verified: value?.verified ?? null,
+      verifiedAt: value?.verifiedAt ?? null
     };
   }
 

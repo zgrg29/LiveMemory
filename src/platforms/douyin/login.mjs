@@ -1,51 +1,234 @@
 import {DOUYIN_UA} from './sign.mjs';
 import {DOUYIN_ERRORS, DouyinError} from './errors.mjs';
-import {hasDouyinSession, sanitizeDouyinCookie} from './cookie-store.mjs';
+import {hasDouyinSession, parseCookiePairs, sanitizeDouyinCookie} from './cookie-store.mjs';
 
 /**
  * Douyin account login for gift events.
  *
- * The desired experience is the same as Bilibili: show a QR code, scan it with
- * the phone app, done. The public web login flow is:
- *   GET  sso.douyin.com/get_qrcode/     -> {token, qrcode/qrcode_index_url}
- *   GET  sso.douyin.com/check_qrconnect/ -> status + redirect_url
- *   follow the redirect chain            -> sessionid cookie
+ * There are two supported ways to obtain a session, both explicit and local:
  *
- * As of 2026 the SSO endpoints are protected by a device-fingerprint challenge
- * (fpk1 / ticket-guard / a_bogus) that requires a real browser runtime. This
- * module therefore behaves conservatively:
- *   - it sends a normal, signed-as-far-as-possible request;
- *   - if the platform answers with a risk-control page instead of JSON, it
- *     reports DOUYIN_LOGIN_BLOCKED with a translatable explanation;
- *   - it never invents a QR code, a login state or a cookie;
- *   - it offers an explicit, local-only cookie import as a fallback that the
- *     user can choose, and stores it encrypted.
+ *   - Browser QR login (`browser-login.mjs`): the user scans the official QR in
+ *     a real Chrome/Edge window. That module only calls the small API below.
+ *   - Manual Cookie import: the user copies the Cookie value from their own
+ *     browser. This module validates the shape and then asks Douyin whether the
+ *     session is really accepted.
  *
- * Anonymous chat does not need any of this.
+ * A saved Cookie is not a successful login by itself. The states are distinct:
+ * anonymous / saved_unverified / logged_in / expired / invalid. Verification
+ * failures are classified instead of being collapsed into "login failed".
+ *
+ * The Cookie is never logged, never returned over HTTP and never written to a
+ * backup. Only the encrypted per-user store holds it.
  */
 
-export const QR_STATE = Object.freeze({
-  IDLE: 'idle',
-  WAITING: 'waiting',
-  SCANNED: 'scanned',
-  SUCCESS: 'success',
+export const LOGIN_STATES = Object.freeze({
+  ANONYMOUS: 'anonymous',
+  SAVED_UNVERIFIED: 'saved_unverified',
+  LOGGED_IN: 'logged_in',
   EXPIRED: 'expired',
-  ERROR: 'error'
+  INVALID: 'invalid'
 });
 
-const QR_TTL_MS = 4 * 60 * 1000;
-const POLL_INTERVAL_MS = 1500;
+export const VERIFY_URL = 'https://www.douyin.com/aweme/v1/web/user/profile/self/?device_platform=webapp&aid=6383';
+export const ACCOUNT_INFO_URL = 'https://www.douyin.com/passport/web/account/info/?aid=6383';
 
-function statusFromData(data) {
-  const raw = data?.status ?? data?.status_code ?? data?.error_code;
-  const number = Number(raw);
-  if (number === 2) return QR_STATE.SUCCESS;
-  if (number === 1) return QR_STATE.SCANNED;
-  if (number === 3) return QR_STATE.EXPIRED;
-  if (number === 0) return QR_STATE.WAITING;
-  // Some responses only carry an explicit redirect_url on success.
-  if (data?.redirect_url) return QR_STATE.SUCCESS;
-  return QR_STATE.WAITING;
+const VERIFY_TIMEOUT_MS = 15000;
+const MAX_COOKIE_LENGTH = 32768;
+const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+
+function expiryFromCookie(pairs, now) {
+  const raw = pairs.get('sid_guard');
+  if (!raw) return null;
+  const parts = String(raw).split('|');
+  const candidate = Number(parts[1]);
+  if (!Number.isFinite(candidate) || candidate <= 0) return null;
+  const ms = candidate > 1e12 ? candidate : candidate * 1000;
+  if (ms < 1e12 || ms > 1e14) return null;
+  return {expiresAt: ms, expired: ms <= now};
+}
+
+function hasCompanionCookies(pairs) {
+  for (const name of ['ttwid', 'sid_tt', 'uid_tt', 'uid_tt_ss', 'odin_tt', 'sessionid_ss']) {
+    if (pairs.has(name)) return true;
+  }
+  return false;
+}
+
+/**
+ * Classify the pasted header before any network request.
+ *
+ * This is deliberately forgiving about the surrounding text (`Cookie:` prefix,
+ * quotes) because ordinary users copy from DevTools, but it never invents a
+ * session id or stores unknown cookie names.
+ */
+export function diagnoseCookie(header, {now = Date.now()} = {}) {
+  let raw = String(header ?? '').trim();
+  if (raw.toLowerCase().startsWith('cookie:')) raw = raw.slice(7).trim();
+  raw = raw.replace(/^["']|["']$/g, '').trim();
+  if (!raw) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_FORMAT,
+      reason: 'empty',
+      messageKey: 'errors.douyinCookieFormat'
+    };
+  }
+  if (raw.length > MAX_COOKIE_LENGTH) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_FORMAT,
+      reason: 'too_long',
+      messageKey: 'errors.douyinCookieFormat'
+    };
+  }
+  if (CONTROL_CHARS.test(raw)) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_FORMAT,
+      reason: 'control_characters',
+      messageKey: 'errors.douyinCookieFormat'
+    };
+  }
+  const pairs = parseCookiePairs(raw);
+  if (pairs.size === 0) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_FORMAT,
+      reason: 'no_pairs',
+      messageKey: 'errors.douyinCookieFormat'
+    };
+  }
+  const cookie = sanitizeDouyinCookie(raw);
+  if (!cookie) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_FORMAT,
+      reason: 'no_supported_fields',
+      messageKey: 'errors.douyinCookieFormat'
+    };
+  }
+  const cleanPairs = parseCookiePairs(cookie);
+  if (!hasDouyinSession(cookie)) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_INCOMPLETE,
+      reason: 'missing_sessionid',
+      messageKey: 'errors.douyinCookieIncomplete'
+    };
+  }
+  const session = cleanPairs.get('sessionid') ?? cleanPairs.get('sessionid_ss') ?? '';
+  if (session.length < 8) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.COOKIE_INCOMPLETE,
+      reason: 'short_sessionid',
+      messageKey: 'errors.douyinCookieIncomplete'
+    };
+  }
+  const expiry = expiryFromCookie(cleanPairs, now);
+  const warnings = [];
+  if (!hasCompanionCookies(cleanPairs)) warnings.push('missing_companion_cookies');
+  if (expiry?.expired) {
+    return {
+      ok: false,
+      code: DOUYIN_ERRORS.LOGIN_EXPIRED,
+      reason: 'cookie_expired',
+      messageKey: 'errors.douyinLoginExpired',
+      expiresAt: expiry.expiresAt
+    };
+  }
+  return {
+    ok: true,
+    cookie,
+    pairs: cleanPairs,
+    warnings,
+    expiresAt: expiry?.expiresAt ?? null
+  };
+}
+
+function parseUser(payload) {
+  const data = payload && typeof payload === 'object' ? payload : {};
+  const user = data.user && typeof data.user === 'object' ? data.user : null;
+  if (!user) return null;
+  const name = String(user.nickname ?? '').trim().slice(0, 64);
+  const uid = String(user.uid ?? user.user_id_str ?? '').trim().slice(0, 40);
+  if (!name && !uid) return null;
+  return {name: name || null, uid: uid || null};
+}
+
+/**
+ * Ask Douyin whether a Cookie is currently accepted.
+ *
+ * `valid` / `invalid` are definitive answers from Douyin. `blocked`, `network`
+ * and `unknown` mean the check could not be completed; the UI must not present
+ * those as a successful login.
+ */
+export async function verifyCookie(header, {
+  fetchImpl = globalThis.fetch,
+  now = Date.now,
+  timeoutMs = VERIFY_TIMEOUT_MS,
+  url = VERIFY_URL
+} = {}) {
+  const cookie = sanitizeDouyinCookie(header);
+  if (!hasDouyinSession(cookie)) {
+    return {status: 'invalid', reason: 'missing_session', user: null};
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  try {
+    const response = await fetchImpl(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent': DOUYIN_UA,
+        'accept-language': 'zh-CN,zh;q=0.9',
+        accept: 'application/json, text/plain, */*',
+        referer: 'https://www.douyin.com/',
+        cookie
+      }
+    });
+    const text = await response.text();
+    const contentType = String(response.headers.get?.('content-type') ?? '');
+    if (response.status === 401 || response.status === 403 || response.status === 429) {
+      return {status: 'blocked', reason: `http_${response.status}`, user: null};
+    }
+    if (!response.ok) {
+      return {status: response.status >= 500 ? 'network' : 'blocked', reason: `http_${response.status}`, user: null};
+    }
+    if (/html/i.test(contentType) || /^\s*</.test(text) || /安全风险|验证码|verify/i.test(text.slice(0, 400))) {
+      return {status: 'blocked', reason: 'risk_control', user: null};
+    }
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return {status: 'unknown', reason: 'invalid_json', user: null};
+    }
+    const statusCode = Number(payload?.status_code);
+    const errorCode = Number(payload?.error_code ?? payload?.data?.error_code);
+    if (errorCode === 4031) return {status: 'blocked', reason: 'platform_denied', user: null};
+    if (statusCode === 0) {
+      const user = parseUser(payload);
+      if (user) return {status: 'valid', reason: 'ok', user, checkedAt: now()};
+      return {status: 'unknown', reason: 'no_user_payload', user: null};
+    }
+    if (statusCode === 8 || /未登录|请登录|not\s*login/i.test(String(payload?.status_msg ?? ''))) {
+      return {status: 'invalid', reason: 'not_logged_in', user: null, checkedAt: now()};
+    }
+    if (Number.isFinite(errorCode) && errorCode !== 0) {
+      return {status: 'blocked', reason: 'platform_denied', user: null};
+    }
+    return {status: 'unknown', reason: 'unexpected_payload', user: null};
+  } catch (error) {
+    return {
+      status: 'network',
+      reason: error?.name === 'AbortError' ? 'timeout' : 'network_error',
+      user: null
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export class DouyinLogin {
@@ -54,279 +237,306 @@ export class DouyinLogin {
     fetchImpl = globalThis.fetch,
     logger = null,
     now = Date.now,
-    ssoBase = 'https://sso.douyin.com',
-    homeUrl = 'https://www.douyin.com',
-    timeoutMs = 12000
+    timeoutMs = VERIFY_TIMEOUT_MS,
+    verifyUrl = VERIFY_URL
   } = {}) {
     this.store = store;
     this.fetchImpl = fetchImpl;
     this.logger = logger;
     this.now = now;
-    this.ssoBase = String(ssoBase).replace(/\/+$/, '');
-    this.homeUrl = String(homeUrl).replace(/\/+$/, '');
     this.timeoutMs = timeoutMs;
-    this.qr = null;
-    this.lastBlocked = null;
+    this.verifyUrl = verifyUrl;
     const saved = store?.load();
     this.cookie = saved?.cookie ?? '';
     this.user = saved?.user ?? null;
+    this.verified = saved?.verified ?? null;
+    this.verifiedAt = saved?.verifiedAt ?? null;
+    this.lastCheckedAt = null;
+    this.lastVerifyReason = saved?.verified === false ? (saved.reason ?? 'invalid') : null;
+    this.lastError = null;
+  }
+
+  get hasCookie() {
+    return Boolean(this.cookie) && hasDouyinSession(this.cookie);
+  }
+
+  /** A cookie that is not known to be invalid may still be used for the WSS. */
+  get sessionAvailable() {
+    return this.hasCookie && this.verified !== false;
   }
 
   get loggedIn() {
-    return hasDouyinSession(this.cookie);
+    return this.hasCookie && this.verified === true;
+  }
+
+  get state() {
+    if (!this.hasCookie) return LOGIN_STATES.ANONYMOUS;
+    if (this.verified === true) return LOGIN_STATES.LOGGED_IN;
+    if (this.verified === false) {
+      return this.lastVerifyReason === 'expired' || this.lastVerifyReason === 'cookie_expired'
+        ? LOGIN_STATES.EXPIRED
+        : LOGIN_STATES.INVALID;
+    }
+    return LOGIN_STATES.SAVED_UNVERIFIED;
+  }
+
+  get loginState() {
+    return this.state;
   }
 
   /** Safe to serialize. Never contains the cookie. */
   status() {
     return {
       loggedIn: this.loggedIn,
+      state: this.state,
+      verified: this.verified,
+      sessionAvailable: this.sessionAvailable,
       user: this.user,
-      qr: this.qr
-        ? {state: this.qr.state, expiresAt: this.qr.expiresAt, blocked: this.qr.blocked ?? null}
-        : null,
-      blocked: this.lastBlocked,
-      stored: this.store ? this.store.status() : {stored: false, user: null, savedAt: null}
+      cookiePresent: this.hasCookie,
+      lastCheckedAt: this.lastCheckedAt,
+      lastVerifyReason: this.lastVerifyReason,
+      stored: this.store
+        ? this.store.status()
+        : {stored: false, user: null, savedAt: null, verified: null, verifiedAt: null}
     };
   }
 
-  async #request(url, {headers = {}} = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    timer.unref?.();
-    try {
-      return await this.fetchImpl(url, {
-        redirect: 'follow',
-        signal: controller.signal,
-        headers: {
-          'user-agent': DOUYIN_UA,
-          'accept-language': 'zh-CN,zh;q=0.9',
-          accept: 'application/json, text/plain, */*',
-          referer: 'https://live.douyin.com/',
-          ...(this.cookie ? {cookie: this.cookie} : {}),
-          ...headers
-        }
-      });
-    } catch (error) {
-      throw new DouyinError(DOUYIN_ERRORS.NETWORK, {messageKey: 'errors.douyinNetwork', cause: error});
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  #blocked(reason, details = null) {
-    this.lastBlocked = {reason, at: this.now()};
-    return new DouyinError(DOUYIN_ERRORS.LOGIN_BLOCKED, {
-      messageKey: 'errors.douyinLoginBlocked',
-      httpStatus: 409,
-      details: {reason, ...(details ?? {})}
+  async #check(header) {
+    return verifyCookie(header, {
+      fetchImpl: this.fetchImpl,
+      now: this.now,
+      timeoutMs: this.timeoutMs,
+      url: this.verifyUrl
     });
   }
 
-  /**
-   * Ask Douyin for a login QR code.
-   * @returns {{url:string, token:string|null, image:string|null, expiresAt:number, state:string}}
-   */
-  async startQr() {
-    const query = [
-      'aid=6383',
-      'service=https%3A%2F%2Flive.douyin.com',
-      'need_logo=false',
-      'need_short_url=false'
-    ].join('&');
-    const response = await this.#request(`${this.ssoBase}/get_qrcode/?${query}`);
-    const contentType = String(response.headers.get?.('content-type') ?? '');
-    const text = await response.text();
-    if (!response.ok || /^\s*</.test(text) || !/json/i.test(contentType)) {
-      // A risk-control/verification page is not a QR code. Say so plainly
-      // instead of rendering an HTML page as if the user could scan it.
-      throw this.#blocked(/验证|安全风险|verify|captcha/i.test(text) ? 'risk_control' : 'unexpected_response', {
-        status: response.status
+  #saveVerified(cookie, user) {
+    const checkedAt = this.now();
+    this.cookie = cookie;
+    this.user = user ?? null;
+    this.verified = true;
+    this.verifiedAt = checkedAt;
+    this.lastCheckedAt = checkedAt;
+    this.lastVerifyReason = null;
+    this.lastError = null;
+    if (this.store) {
+      this.store.save({
+        cookie,
+        user: this.user,
+        verified: true,
+        verifiedAt: checkedAt,
+        reason: null,
+        now: checkedAt
       });
     }
-    let payload;
-    try {
-      payload = JSON.parse(text);
-    } catch (error) {
-      throw this.#blocked('invalid_json', {status: response.status});
-    }
-    const data = payload?.data ?? payload ?? {};
-    const token = data.token ?? data.qrcode_token ?? null;
-    const url = data.qrcode_index_url ?? data.qrcode_url ?? data.url ?? null;
-    const image = data.qrcode ?? data.qrcode_base64 ?? null;
-    if (!token && !url && !image) {
-      throw this.#blocked('no_qrcode', {message: String(payload?.message ?? '').slice(0, 120)});
-    }
-    this.lastBlocked = null;
-    this.qr = {
-      token: token ? String(token) : null,
-      url: url ? String(url) : null,
-      image: image ? String(image) : null,
-      createdAt: this.now(),
-      expiresAt: this.now() + QR_TTL_MS,
-      state: QR_STATE.WAITING
-    };
-    this.logger?.info({event: 'douyin.login.qr', hasToken: Boolean(token), hasUrl: Boolean(url)});
-    return {
-      url: this.qr.url ?? (token ? `https://www.douyin.com/login/?token=${encodeURIComponent(token)}` : null),
-      token: this.qr.token,
-      image: this.qr.image,
-      expiresAt: this.qr.expiresAt,
-      state: this.qr.state
-    };
+    this.logger?.info({event: 'douyin.login.verified', remembered: Boolean(this.store)});
   }
 
-  async pollQr() {
-    if (!this.qr) {
-      throw new DouyinError(DOUYIN_ERRORS.QR_MISSING, {
-        messageKey: 'errors.douyinQrMissing',
-        httpStatus: 400
-      });
-    }
-    if (this.now() > this.qr.expiresAt) {
-      this.qr.state = QR_STATE.EXPIRED;
-      return {state: QR_STATE.EXPIRED, user: null};
-    }
-    if (!this.qr.token) {
-      throw new DouyinError(DOUYIN_ERRORS.LOGIN_BLOCKED, {
-        messageKey: 'errors.douyinLoginBlocked',
-        httpStatus: 409,
-        details: {reason: 'missing_token'}
-      });
-    }
-    const query = [
-      'aid=6383',
-      `token=${encodeURIComponent(this.qr.token)}`,
-      'service=https%3A%2F%2Flive.douyin.com'
-    ].join('&');
-    const response = await this.#request(`${this.ssoBase}/check_qrconnect/?${query}`);
-    const contentType = String(response.headers.get?.('content-type') ?? '');
-    const text = await response.text();
-    if (!response.ok || /^\s*</.test(text) || !/json/i.test(contentType)) {
-      throw this.#blocked('risk_control', {status: response.status, phase: 'poll'});
-    }
-    let payload;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      throw this.#blocked('invalid_json', {phase: 'poll'});
-    }
-    const data = payload?.data ?? payload ?? {};
-    const state = statusFromData(data);
-    this.qr.state = state;
-    if (state !== QR_STATE.SUCCESS) {
-      if (state === QR_STATE.EXPIRED) this.qr.state = QR_STATE.EXPIRED;
-      return {state, user: null, expiresAt: this.qr.expiresAt};
-    }
-    const redirectUrl = data.redirect_url ?? data.redirectUrl ?? null;
-    if (!redirectUrl) {
-      throw this.#blocked('missing_redirect', {phase: 'confirm'});
-    }
-    const cookie = await this.#followLoginRedirect(redirectUrl);
-    if (!hasDouyinSession(cookie)) {
-      throw new DouyinError(DOUYIN_ERRORS.AUTH, {
-        messageKey: 'errors.douyinAuth',
-        httpStatus: 502,
-        details: {reason: 'no_session_cookie'}
-      });
-    }
+  #saveUnverified(cookie, reason) {
+    const checkedAt = this.now();
     this.cookie = cookie;
     this.user = null;
-    this.qr = null;
-    if (this.store) this.store.save({cookie, user: null, now: this.now()});
-    this.logger?.info({event: 'douyin.login.success', remembered: Boolean(this.store)});
-    return {state: QR_STATE.SUCCESS, user: this.user};
-  }
-
-  /**
-   * Follow the redirect chain and collect the session cookie. Only the Douyin
-   * host is followed; an off-site location is ignored instead of being fetched.
-   */
-  async #followLoginRedirect(redirectUrl) {
-    let current = String(redirectUrl);
-    const jar = new Map();
-    for (const part of this.cookie.split(';')) {
-      const index = part.indexOf('=');
-      if (index > 0) jar.set(part.slice(0, index).trim(), part.slice(index + 1).trim());
-    }
-    for (let hop = 0; hop < 5; hop += 1) {
-      let parsed;
-      try {
-        parsed = new URL(current);
-      } catch {
-        break;
-      }
-      if (parsed.protocol !== 'https:' || !/(^|\.)douyin\.com$/i.test(parsed.hostname)) break;
-      const cookieHeader = [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
-      const response = await this.#request(current, {
-        headers: cookieHeader ? {cookie: cookieHeader} : {}
+    this.verified = null;
+    this.verifiedAt = null;
+    this.lastCheckedAt = checkedAt;
+    this.lastVerifyReason = String(reason ?? 'inconclusive');
+    this.lastError = {reason: this.lastVerifyReason, at: checkedAt};
+    if (this.store) {
+      this.store.save({
+        cookie,
+        user: null,
+        verified: null,
+        verifiedAt: null,
+        reason: this.lastVerifyReason,
+        now: checkedAt
       });
-      const lines = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
-      for (const line of lines) {
-        const pair = String(line ?? '').split(';')[0];
-        const index = pair.indexOf('=');
-        if (index <= 0) continue;
-        jar.set(pair.slice(0, index).trim(), pair.slice(index + 1).trim());
-      }
-      const location = response.headers.get?.('location');
-      if (!location) break;
-      current = new URL(location, current).toString();
     }
-    return sanitizeDouyinCookie([...jar].map(([name, value]) => `${name}=${value}`).join('; '));
+    this.logger?.warn({event: 'douyin.login.saved_unverified', reason: this.lastVerifyReason});
+  }
+
+  #markInvalid(reason) {
+    const checkedAt = this.now();
+    this.verified = false;
+    this.verifiedAt = null;
+    this.lastCheckedAt = checkedAt;
+    this.lastVerifyReason = String(reason ?? 'invalid');
+    this.lastError = {reason: this.lastVerifyReason, at: checkedAt};
+    if (this.store && this.cookie) {
+      this.store.save({
+        cookie: this.cookie,
+        user: this.user,
+        verified: false,
+        verifiedAt: null,
+        reason: this.lastVerifyReason,
+        now: checkedAt
+      });
+    }
   }
 
   /**
-   * Optional, explicit fallback for users who already have a web session.
-   * This is not required for anonymous chat and is never automatic.
+   * Manual Cookie import. A valid session is saved only after Douyin confirms
+   * it. An inconclusive check stores the Cookie as explicitly unverified; a
+   * definitive "not logged in" answer is never presented as success.
    */
   async applyCookie(header) {
-    const cookie = sanitizeDouyinCookie(header);
-    if (!hasDouyinSession(cookie)) {
-      throw new DouyinError(DOUYIN_ERRORS.AUTH, {
-        messageKey: 'errors.douyinAuth',
-        httpStatus: 400,
-        details: {reason: 'missing_session'}
+    const diagnosis = diagnoseCookie(header, {now: this.now()});
+    if (!diagnosis.ok) {
+      throw new DouyinError(diagnosis.code, {
+        messageKey: diagnosis.messageKey,
+        httpStatus: diagnosis.code === DOUYIN_ERRORS.LOGIN_EXPIRED ? 401 : 400,
+        details: {reason: diagnosis.reason}
       });
     }
-    this.cookie = cookie;
-    this.user = null;
-    this.qr = null;
-    if (this.store) this.store.save({cookie, user: null, now: this.now()});
-    return {loggedIn: true};
+    const outcome = await this.#check(diagnosis.cookie);
+    if (outcome.status === 'valid') {
+      this.#saveVerified(diagnosis.cookie, outcome.user);
+      return {
+        ok: true,
+        verified: true,
+        savedUnverified: false,
+        state: LOGIN_STATES.LOGGED_IN,
+        reason: 'ok',
+        status: this.status()
+      };
+    }
+    if (outcome.status === 'invalid' || outcome.status === 'expired') {
+      const reason = outcome.status === 'expired' ? 'expired' : 'not_logged_in';
+      if (outcome.status === 'invalid' && diagnosis.warnings.includes('missing_companion_cookies')) {
+        throw new DouyinError(DOUYIN_ERRORS.COOKIE_INCOMPLETE, {
+          messageKey: 'errors.douyinCookieIncomplete',
+          httpStatus: 400,
+          details: {reason: 'missing_companion_cookies'}
+        });
+      }
+      throw new DouyinError(
+        outcome.status === 'expired' ? DOUYIN_ERRORS.LOGIN_EXPIRED : DOUYIN_ERRORS.AUTH,
+        {
+          messageKey: outcome.status === 'expired' ? 'errors.douyinLoginExpired' : 'errors.douyinAuth',
+          httpStatus: 401,
+          details: {reason}
+        }
+      );
+    }
+    this.#saveUnverified(diagnosis.cookie, outcome.status);
+    return {
+      ok: true,
+      verified: false,
+      savedUnverified: true,
+      state: LOGIN_STATES.SAVED_UNVERIFIED,
+      reason: outcome.status,
+      warningKey: outcome.status === 'network'
+        ? 'errors.douyinCookieNetwork'
+        : outcome.status === 'blocked'
+          ? 'errors.douyinCookiePlatformBlocked'
+          : 'errors.douyinCookieUnverified',
+      status: this.status()
+    };
   }
 
   /**
-   * Verify that a stored session is still accepted by the public site.
-   * Only called on explicit request; never on every status poll.
+   * Called by the browser login after Chrome has written the official session.
+   * It follows the same verification policy as a manual import.
    */
-  async verify() {
-    if (!this.loggedIn) return {valid: false, reason: 'no_session'};
-    const response = await this.#request(`${this.homeUrl}/`);
-    const text = await response.text();
-    const loginFlag = text.match(/"user_is_login":\s*(\d+)/)?.[1]
-      ?? text.match(/"isLogin":\s*(true|false)/)?.[1]
-      ?? null;
-    if (loginFlag === '1' || loginFlag === 'true') return {valid: true};
-    if (loginFlag === '0' || loginFlag === 'false') {
-      return {valid: false, reason: 'expired'};
+  async saveBrowserCookie(header, {verifiedUser = null} = {}) {
+    const diagnosis = diagnoseCookie(header, {now: this.now()});
+    if (!diagnosis.ok) {
+      return {ok: false, verified: false, savedUnverified: false, reason: diagnosis.reason};
     }
-    return {valid: null, reason: 'unknown'};
+    if (verifiedUser?.name || verifiedUser?.uid) {
+      this.#saveVerified(diagnosis.cookie, verifiedUser);
+      return {ok: true, verified: true, savedUnverified: false, reason: 'ok', user: verifiedUser};
+    }
+    const outcome = await this.#check(diagnosis.cookie);
+    if (outcome.status === 'valid') {
+      this.#saveVerified(diagnosis.cookie, outcome.user);
+      return {ok: true, verified: true, savedUnverified: false, reason: 'ok', user: outcome.user};
+    }
+    if (outcome.status === 'invalid' || outcome.status === 'expired') {
+      return {
+        ok: false,
+        verified: false,
+        savedUnverified: false,
+        reason: outcome.status === 'expired' ? 'expired' : 'invalid'
+      };
+    }
+    this.#saveUnverified(diagnosis.cookie, outcome.status);
+    return {
+      ok: true,
+      verified: false,
+      savedUnverified: true,
+      reason: outcome.status
+    };
+  }
+
+  /**
+   * Re-check the stored session. Only an explicit user action triggers this;
+   * status polling never performs network requests.
+   */
+  async checkStored() {
+    if (!this.hasCookie) {
+      return {state: LOGIN_STATES.ANONYMOUS, loggedIn: false, verified: null, reason: 'no_cookie'};
+    }
+    const outcome = await this.#check(this.cookie);
+    if (outcome.status === 'valid') {
+      this.#saveVerified(this.cookie, outcome.user);
+      return {
+        state: LOGIN_STATES.LOGGED_IN,
+        loggedIn: true,
+        verified: true,
+        reason: 'ok',
+        user: this.user,
+        status: this.status()
+      };
+    }
+    if (outcome.status === 'invalid' || outcome.status === 'expired') {
+      this.#markInvalid(outcome.status === 'expired' ? 'expired' : 'not_logged_in');
+      return {
+        state: this.state,
+        loggedIn: false,
+        verified: false,
+        reason: this.lastVerifyReason,
+        status: this.status()
+      };
+    }
+    this.lastCheckedAt = this.now();
+    this.lastVerifyReason = outcome.status;
+    return {
+      state: this.state,
+      loggedIn: this.loggedIn,
+      verified: this.verified,
+      reason: outcome.status,
+      inconclusive: true,
+      status: this.status()
+    };
+  }
+
+  /** Backwards-friendly summary used by old callers/tests. */
+  async verify() {
+    const result = await this.checkStored();
+    return {
+      valid: result.state === LOGIN_STATES.LOGGED_IN ? true : result.inconclusive ? null : false,
+      reason: result.reason,
+      user: this.user,
+      state: result.state
+    };
+  }
+
+  sessionCookie() {
+    return this.sessionAvailable ? this.cookie : '';
   }
 
   async logout() {
     this.cookie = '';
     this.user = null;
-    this.qr = null;
-    this.lastBlocked = null;
+    this.verified = null;
+    this.verifiedAt = null;
+    this.lastCheckedAt = null;
+    this.lastVerifyReason = null;
+    this.lastError = null;
     if (this.store) this.store.clear();
     this.logger?.info({event: 'douyin.login.logout'});
-    return {loggedIn: false};
-  }
-
-  get loginState() {
-    if (this.loggedIn) return 'logged_in';
-    if (this.lastBlocked) return 'blocked';
-    return 'anonymous';
+    return {loggedIn: false, state: LOGIN_STATES.ANONYMOUS};
   }
 }
 
-export const __internal = {QR_TTL_MS, POLL_INTERVAL_MS, statusFromData};
+export const __internal = {expiryFromCookie, hasCompanionCookies, parseUser, MAX_COOKIE_LENGTH};

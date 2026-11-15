@@ -3,10 +3,12 @@ import {duplicateRoomError} from '../../shared/recording.mjs';
 import {SOURCE_QUALITY} from '../../shared/events.mjs';
 import {resolveBroadcasterIdentity} from '../../shared/broadcaster.mjs';
 import {retentionStatus, runRetention} from '../../storage/retention.mjs';
+import {getSession, listSessions} from '../../storage/repositories/sessions.mjs';
 import {DouyinWebClient} from './client.mjs';
 import {DouyinLiveAdapter} from './adapter.mjs';
 import {DouyinCookieStore} from './cookie-store.mjs';
 import {DouyinLogin} from './login.mjs';
+import {DouyinBrowserLogin, BROWSER_LOGIN_STATES} from './browser-login.mjs';
 import {parseDouyinInput} from './link.mjs';
 import {DOUYIN_ERRORS, DouyinError} from './errors.mjs';
 
@@ -35,8 +37,14 @@ const HTTP_BY_CODE = new Map([
   [DOUYIN_ERRORS.WEBSOCKET_UNAVAILABLE, [503, 'errors.douyinWebSocketUnavailable']],
   [DOUYIN_ERRORS.LOGIN_BLOCKED, [409, 'errors.douyinLoginBlocked']],
   [DOUYIN_ERRORS.LOGIN_EXPIRED, [401, 'errors.douyinLoginExpired']],
+  [DOUYIN_ERRORS.LOGIN_INVALID, [401, 'errors.douyinAuth']],
   [DOUYIN_ERRORS.QR_MISSING, [400, 'errors.douyinQrMissing']],
   [DOUYIN_ERRORS.AUTH, [401, 'errors.douyinAuth']],
+  [DOUYIN_ERRORS.COOKIE_FORMAT, [400, 'errors.douyinCookieFormat']],
+  [DOUYIN_ERRORS.COOKIE_INCOMPLETE, [400, 'errors.douyinCookieIncomplete']],
+  [DOUYIN_ERRORS.BROWSER_UNAVAILABLE, [503, 'errors.douyinBrowserUnavailable']],
+  [DOUYIN_ERRORS.BROWSER_LAUNCH_FAILED, [502, 'errors.douyinBrowserLaunchFailed']],
+  [DOUYIN_ERRORS.LOGIN_VERIFY_UNAVAILABLE, [503, 'errors.douyinLoginVerifyUnavailable']],
   [DOUYIN_ERRORS.NOT_CONFIGURED, [503, 'errors.douyinNotConfigured']]
 ]);
 
@@ -81,6 +89,7 @@ export class DouyinService {
   constructor({
     sessionManager,
     secretsDir = null,
+    dataDir = null,
     db = null,
     settings = null,
     logger = null,
@@ -90,6 +99,8 @@ export class DouyinService {
     client = null,
     store = null,
     login = null,
+    browserLogin = null,
+    browserLoginOptions = null,
     adapterOptions = null
   } = {}) {
     this.sessionManager = sessionManager;
@@ -101,7 +112,21 @@ export class DouyinService {
     this.client = client ?? new DouyinWebClient({fetchImpl, now, logger});
     this.store = store ?? (secretsDir ? new DouyinCookieStore({dir: secretsDir}) : null);
     this.login = login ?? new DouyinLogin({store: this.store, fetchImpl, logger, now});
+    this.dataDir = dataDir;
+    this.browserLogin = browserLogin ?? (dataDir
+      ? new DouyinBrowserLogin({
+        dataDir,
+        login: this.login,
+        logger,
+        now,
+        fetchImpl,
+        WebSocketImpl,
+        ...(browserLoginOptions ?? {})
+      })
+      : null);
     this.adapterOptions = adapterOptions;
+    this.adapters = new Map();
+    this.lastGiftObservation = null;
     this.lastEnd = null;
   }
 
@@ -109,14 +134,94 @@ export class DouyinService {
     return this.sessionManager.status().recordings.filter((recording) => recording.platform === 'douyin');
   }
 
+  #giftCounts(sessionId) {
+    if (!this.db || !sessionId) return {stored: 0, lastGiftAt: null};
+    let stored = 0;
+    let lastGiftAt = null;
+    try {
+      const row = getSession(this.db, sessionId);
+      stored = Number(row?.gift_event_count ?? 0);
+      const aggregate = this.db.prepare(
+        `SELECT COUNT(*) AS count, MAX(occurred_at) AS at
+           FROM events WHERE session_id = ? AND event_type = 'gift'`
+      ).get(String(sessionId));
+      stored = Math.max(stored, Number(aggregate?.count ?? 0));
+      lastGiftAt = Number.isFinite(Number(aggregate?.at)) ? Number(aggregate.at) : null;
+    } catch {
+      /* the database may be closing during shutdown */
+    }
+    return {stored, lastGiftAt};
+  }
+
+  #observeGifts(sessionId, adapter = null) {
+    const counts = this.#giftCounts(sessionId);
+    const decoded = Number.isFinite(Number(adapter?.counters?.giftFinal))
+      ? Number(adapter.counters.giftFinal)
+      : null;
+    const state = counts.stored > 0
+      ? 'observed'
+      : decoded !== null && decoded > 0
+        ? 'ingest_gap'
+        : 'not_observed';
+    this.lastGiftObservation = {
+      state,
+      sessionId: sessionId ?? null,
+      decoded,
+      stored: counts.stored,
+      lastGiftAt: counts.lastGiftAt,
+      checkedAt: this.now()
+    };
+    return this.lastGiftObservation;
+  }
+
+  #giftObservation(latest) {
+    if (latest?.sessionId) {
+      return this.#observeGifts(latest.sessionId, this.adapters.get(latest.sessionId) ?? null);
+    }
+    if (this.lastGiftObservation?.sessionId) {
+      return this.#observeGifts(this.lastGiftObservation.sessionId, null);
+    }
+    const row = this.db
+      ? listSessions(this.db, {platform: 'douyin', limit: 1})[0] ?? null
+      : null;
+    if (row) return this.#observeGifts(row.id, null);
+    return {
+      state: 'unknown',
+      sessionId: null,
+      decoded: null,
+      stored: 0,
+      lastGiftAt: null,
+      checkedAt: this.now()
+    };
+  }
+
   status() {
     const recordings = this.#recordings();
     const latest = recordings.at(-1) ?? null;
-    const loggedIn = Boolean(this.login?.loggedIn);
+    const login = this.login?.status() ?? {
+      loggedIn: false,
+      state: 'anonymous',
+      verified: null,
+      sessionAvailable: false,
+      user: null,
+      cookiePresent: false
+    };
+    const browser = this.browserLogin?.status() ?? {
+      supported: false,
+      browser: null,
+      state: BROWSER_LOGIN_STATES.UNAVAILABLE,
+      messageKey: 'live.source.douyinBrowserUnavailable',
+      qr: null,
+      error: {code: 'DOUYIN_BROWSER_UNAVAILABLE', reason: 'not_configured'},
+      active: false
+    };
+    const gifts = this.#giftObservation(latest);
+    const captureState = latest?.connection?.state ?? 'idle';
     return {
       available: true,
-      mode: loggedIn ? 'web-session' : 'anonymous',
-      login: this.login?.status() ?? {loggedIn: false},
+      mode: login.sessionAvailable ? 'web-session' : 'anonymous',
+      login,
+      browserLogin: browser,
       connection: latest
         ? {
           state: latest.connection.state,
@@ -139,6 +244,13 @@ export class DouyinService {
           roomTitle: latest.roomTitle
         }
         : null,
+      giftVerification: {
+        scan: browser.state,
+        session: login.state,
+        capture: captureState,
+        gifts: gifts.state
+      },
+      gifts,
       policy: this.db
         ? retentionStatus(this.db, {
           days: DOUYIN_RAW_RETENTION_DAYS,
@@ -157,10 +269,15 @@ export class DouyinService {
         messageId: true,
         secUid: true,
         chat: 'verified',
-        gifts: loggedIn ? 'login-configured-not-live-verified' : 'requires-login',
+        gifts: !login.sessionAvailable
+          ? 'requires-login'
+          : gifts.state === 'observed'
+            ? 'observed'
+            : 'session-valid-gift-not-observed',
         combo: 'parsed-not-live-verified',
         giftValue: 'display-only',
-        qrLogin: this.login?.loginState ?? 'anonymous'
+        browserQrLogin: browser.state,
+        login: login.state
       }
     };
   }
@@ -187,7 +304,7 @@ export class DouyinService {
       WebSocketImpl: this.WebSocketImpl,
       logger: this.logger,
       now: this.now,
-      cookie: this.login?.loggedIn ? this.login.cookie : '',
+      cookie: this.login?.sessionCookie?.() ?? '',
       ...(this.adapterOptions ? this.adapterOptions : {})
     });
     const anchorUid = room.anchorUid ?? room.anchorId ?? room.roomId ?? null;
@@ -211,12 +328,14 @@ export class DouyinService {
       meta: {
         room: {...room},
         webRid: room.webRid,
-        mode: this.login?.loggedIn ? 'web-session' : 'anonymous',
+        mode: this.login?.sessionAvailable ? 'web-session' : 'anonymous',
         broadcasterIdentity: identity.identity,
         input: input ?? null
       },
       onEnded: ({reason}) => {
-        this.lastEnd = {reason, at: this.now(), mode: this.login?.loggedIn ? 'web-session' : 'anonymous'};
+        this.#observeGifts(result.session.id, adapter);
+        this.adapters.delete(result.session.id);
+        this.lastEnd = {reason, at: this.now(), mode: this.login?.sessionAvailable ? 'web-session' : 'anonymous'};
         this.#applyRetention();
       }
     });
@@ -228,6 +347,8 @@ export class DouyinService {
       }
       throw duplicateRoomError(result.duplicate);
     }
+    this.adapters.set(result.session.id, adapter);
+    this.#observeGifts(result.session.id, adapter);
     this.logger?.info({
       event: 'douyin.session.started',
       sessionId: result.session.id,
@@ -279,46 +400,89 @@ export class DouyinService {
   }
 
   async disconnect({sessionId = null} = {}) {
+    const recordings = this.#recordings();
+    const targetSessionId = sessionId
+      ? String(sessionId)
+      : recordings.length === 1
+        ? recordings[0].sessionId
+        : null;
+    const target = targetSessionId ? this.adapters.get(targetSessionId) ?? null : null;
     const result = await this.sessionManager.stopPlatform('douyin', {
       sessionId,
       status: 'ended',
       reason: 'user'
     });
+    const stoppedId = result?.session?.id ?? targetSessionId ?? null;
+    if (stoppedId) {
+      this.#observeGifts(stoppedId, target);
+      this.adapters.delete(String(stoppedId));
+    }
     if (result.stopped) this.#applyRetention();
     return result;
   }
 
   /* --------------------------------------------------------------- login */
 
-  async loginWithQr() {
-    return this.login.startQr();
+  async startBrowserLogin() {
+    if (!this.browserLogin) {
+      throw new DouyinError(DOUYIN_ERRORS.BROWSER_UNAVAILABLE, {
+        messageKey: 'errors.douyinBrowserUnavailable',
+        httpStatus: 503,
+        details: {reason: 'not_configured'}
+      });
+    }
+    return this.browserLogin.start();
   }
 
-  async pollLogin() {
-    return this.login.pollQr();
+  browserLoginStatus() {
+    return this.browserLogin?.status() ?? {
+      supported: false,
+      state: BROWSER_LOGIN_STATES.UNAVAILABLE,
+      messageKey: 'live.source.douyinBrowserUnavailable',
+      error: {code: 'DOUYIN_BROWSER_UNAVAILABLE', reason: 'not_configured'}
+    };
+  }
+
+  async cancelBrowserLogin() {
+    if (!this.browserLogin) {
+      return {
+        supported: false,
+        state: BROWSER_LOGIN_STATES.UNAVAILABLE,
+        error: {code: 'DOUYIN_BROWSER_UNAVAILABLE', reason: 'not_configured'}
+      };
+    }
+    return this.browserLogin.cancel();
   }
 
   async logout() {
+    try {
+      await this.browserLogin?.shutdown();
+    } catch {
+      /* the browser may already be closed */
+    }
+    const profile = this.browserLogin?.clearProfile?.() ?? {removed: false, reason: 'not_configured'};
+    this.browserLogin?.reset?.();
     await this.login.logout();
-    return this.status();
+    return {profile, ...this.status()};
   }
 
   async checkLogin() {
-    const result = await this.login.verify();
-    if (result.valid === false) {
-      return {
-        loggedIn: false,
-        expired: result.reason === 'expired',
-        reason: result.reason,
-        status: this.login.status()
-      };
-    }
-    return {loggedIn: this.login.loggedIn, expired: false, reason: result.reason ?? null, status: this.login.status()};
+    const result = await this.login.checkStored();
+    return {...result, status: this.login.status()};
   }
 
   async applyCookie(cookie) {
     const result = await this.login.applyCookie(cookie);
     return {...result, status: this.login.status()};
+  }
+
+  async shutdown() {
+    try {
+      await this.browserLogin?.shutdown();
+    } catch {
+      /* best effort */
+    }
+    this.adapters.clear();
   }
 
   /* ------------------------------------------------------------ retention */

@@ -250,3 +250,36 @@ test('member and like frames never create events or payment rows', async () => {
     await sessionManager.shutdown().catch(() => {});
   }
 });
+
+test('the gift ladder separates connection, observed gifts and login state', async () => {
+  FakeSocket.instances = [];
+  const {db, sessionManager, service} = harness();
+  try {
+    const {result, socket} = await connect(service, 'https://live.douyin.com/708764876300');
+    const sessionId = result.session.id;
+    const before = service.status();
+    assert.equal(before.giftVerification.capture, 'connected');
+    assert.equal(before.giftVerification.session, 'anonymous');
+    assert.equal(before.giftVerification.scan, 'unavailable');
+    assert.equal(before.gifts.state, 'not_observed');
+    assert.equal(before.gifts.stored, 0);
+
+    socket.emit('message', {data: pushFrame([giftMessage('700000000000000041', {repeatEnd: 1, repeatCount: 2, groupId: '900000000000000041'})])});
+    await waitFor(() => getSession(db, sessionId).gift_event_count === 1);
+    const after = service.status();
+    assert.equal(after.giftVerification.gifts, 'observed');
+    assert.equal(after.gifts.state, 'observed');
+    assert.equal(after.gifts.stored, 1);
+    assert.equal(after.gifts.decoded, 1);
+    assert.equal(after.gifts.sessionId, sessionId);
+    assert.equal(typeof after.gifts.checkedAt, 'number');
+
+    await service.disconnect({sessionId});
+    const stopped = service.status();
+    assert.equal(stopped.giftVerification.capture, 'idle');
+    assert.equal(stopped.gifts.state, 'observed');
+    assert.equal(stopped.gifts.stored, 1);
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+  }
+});

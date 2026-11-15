@@ -88,6 +88,8 @@ export async function startServer({
   twitchWebSocketImpl = null,
   douyinClient = null,
   douyinLogin = null,
+  douyinBrowserLogin = null,
+  douyinBrowserLoginOptions = null,
   douyinAdapterOptions = null,
   douyinWebSocketImpl = null,
   douyinFetchImpl = null,
@@ -169,6 +171,7 @@ export async function startServer({
     const douyin = new DouyinService({
       sessionManager,
       secretsDir: paths.secrets,
+      dataDir: paths.root,
       db,
       settings: settingsStore,
       logger,
@@ -176,6 +179,8 @@ export async function startServer({
       ...(douyinFetchImpl ? {fetchImpl: douyinFetchImpl} : {}),
       ...(douyinClient ? {client: douyinClient} : {}),
       ...(douyinLogin ? {login: douyinLogin} : {}),
+      ...(douyinBrowserLogin ? {browserLogin: douyinBrowserLogin} : {}),
+      ...(douyinBrowserLoginOptions ? {browserLoginOptions: douyinBrowserLoginOptions} : {}),
       ...(douyinWebSocketImpl ? {WebSocketImpl: douyinWebSocketImpl} : {}),
       ...(douyinAdapterOptions ? {adapterOptions: douyinAdapterOptions} : {})
     });
@@ -279,6 +284,13 @@ export async function startServer({
       await instance.translationService?.shutdown();
     } catch (error) {
       logger?.error({event: 'shutdown.translation.failed', code: error?.code ?? 'unknown'});
+    }
+    // A browser-assisted Douyin login keeps a dedicated Chrome/Edge window
+    // open. Close it before the process exits so it never outlives LiveMemory.
+    try {
+      await instance.douyin?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.douyin.failed', code: error?.code ?? 'unknown'});
     }
     // SessionManager owns every adapter, including their per-stream timers.
     try {

@@ -90,6 +90,7 @@ const REQUIRED_MODULES = [
   'src/platforms/twitch/mapper.mjs',
   'src/platforms/twitch/service.mjs',
   'src/platforms/douyin/adapter.mjs',
+  'src/platforms/douyin/browser-login.mjs',
   'src/platforms/douyin/client.mjs',
   'src/platforms/douyin/cookie-store.mjs',
   'src/platforms/douyin/link.mjs',

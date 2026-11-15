@@ -427,8 +427,9 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | `src/platforms/douyin/messages.mjs` | PushFrame/Response/消息体解码、gzip、canonical 映射、连送合并 |
 | `src/platforms/douyin/sign.mjs` | `node:vm` 沙箱执行 vendored 签名脚本 |
 | `src/platforms/douyin/adapter.mjs` | WSS 生命周期、心跳/ack/看门狗/重连/去重/下播确认 |
-| `src/platforms/douyin/login.mjs` | 受控扫码流程、状态/过期/退出、显式本地 Cookie 备用入口 |
-| `src/platforms/douyin/cookie-store.mjs` | AES-256-GCM 本地 Cookie（白名单、备份排除） |
+| `src/platforms/douyin/login.mjs` | Cookie 诊断（格式/不完整/过期）、平台有效性复查、已验证/未验证状态、退出 |
+| `src/platforms/douyin/browser-login.mjs` | 本机 Chrome/Edge + CDP：打开官方登录页、捕获官方二维码、等待 `sessionid`、专用资料目录、取消/清理 |
+| `src/platforms/douyin/cookie-store.mjs` | AES-256-GCM 本地 Cookie（白名单、验证标记、备份排除） |
 | `src/platforms/douyin/service.mjs` | 路由/监控与 `SessionManager` 粘合、30 天保留 |
 | `src/monitoring/detectors/douyin.mjs` | 公开页直播状态检测与稳定 target |
 | `src/platforms/douyin/vendor/` | AGPL-3.0 `sign.js` + 完整许可证与来源（未分发 `a_bogus.js`） |
@@ -477,15 +478,27 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 
 ### 3B.5 登录（礼物所需）
 
-- 目标体验与 Bilibili 一致：扫码。实现的受控流程：
-  `sso.douyin.com/get_qrcode/` → `check_qrconnect/` → 跟随 `redirect_url` → 取得 `sessionid` → 加密保存。
-- **2026-11-15 实测**：`get_qrcode` 返回风控 HTML；`www.douyin.com/passport/web/get_qrcode` 返回
-  `error_code 4031`（访问被阻止）。平台登录还涉及设备指纹 challenge、ticket-guard 密钥交换与
-  `a_bogus`，纯 HTTP 无法稳定完成。
-- 因此程序：不伪造二维码/登录态；返回 `DOUYIN_LOGIN_BLOCKED` 并明确提示“匿名弹幕仍可用”；
-  提供**显式**的本地 Cookie 备用入口（用户自行选择、加密保存、可退出、不会上传）。
-- `GET /api/douyin/login/check` 用公开页 `user_is_login` 标志检查过期；过期时明确提示重新登录。
-- 未绕过验证码、风控或访问控制；**真实扫码登录未验证成功**。
+目标体验：普通用户点击「扫码登录」，在浏览器官方页面/应用内二维码完成扫码，不需要自己找 Cookie。
+技术调查与证据见 `docs/DOUYIN_LOGIN_RESEARCH.md`。
+
+- **纯 HTTP 直连不可用（2026-11-15 复测）**：`sso.douyin.com/get_qrcode` 返回 `text/html` 设备指纹挑战页；
+  `www.douyin.com/passport/web/get_qrcode` 返回 `error_code 4031`「安全风险，已阻止此次访问」。
+  这不是「抖音禁止扫码」，而是平台拒绝非浏览器客户端。LiveMemory 不伪造指纹/`a_bogus`/challenge。
+- **浏览器扫码（本轮实现）**：`browser-login.mjs` 启动本机 Chrome/Edge 的**专用资料目录**
+  （`<数据目录>/runtime/douyin-browser-profile`，带 `.livememory-owned` 标记），打开官方
+  `https://www.douyin.com/login_page?service=https%3A%2F%2Fwww.douyin.com`，通过 CDP 读取官网自己的
+  `get_qrcode` JSON，把同一张二维码显示在应用内。用户用抖音 App 扫码；若平台要求 `is_frontier`
+  身份验证/验证码，用户必须在**官方浏览器页面**完成，程序只等待结果。
+- 官网写入 `sessionid` 后，LiveMemory 用
+  `GET https://www.douyin.com/aweme/v1/web/user/profile/self/?device_platform=webapp&aid=6383`
+  实际验证；只有 `status_code=0` 且有用户信息才记为「已登录（已验证）」。
+- **状态分离**：未登录 / Cookie 已保存但未验证 / 已登录（已验证）/ 登录失效 / 登录无效或被平台限制。
+  验证被网络或平台拒绝阻断时保存为 `saved_unverified`，不显示为登录成功。
+- **手动 Cookie 备用**：界面临近输入框提供完整中文/日文/英文 12 步教程（F12 → Network → 刷新 →
+  `live.douyin.com` 请求 → Headers → Request Headers → Cookie → 复制 → 保存并验证）。
+- Cookie 只保存到 `secrets/douyin-login.json`（AES-256-GCM），不进入日志、错误、备份、HTTP 响应或 Git；
+  「删除 Cookie / 退出登录」同时清除加密存储并尝试删除专用浏览器资料目录。
+- 仍未绕过验证码、风控或访问控制；**真实手机扫码本轮未执行**（无账号），二维码捕获用真实 Chrome 验证。
 
 ### 3B.6 直播状态、结束与重连
 
@@ -519,11 +532,14 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 源码路径 20 秒 | 7 条 chat，7/7 有 `user.id`、昵称、消息 ID、CJK；7 个唯一身份；0 重复；144 member / 4 like / 2 follow / 3 stats；0 gift |
 | 正式 EXE | 连接成功，2 条真实 chat 入库；2/2 有 `douyin:<id>`、昵称、消息 ID、原文；停止 `ended`；重启后数据仍在 |
 | 正式 EXE 自动监听 | 创建目标 → check → `recording` + 正常 session → 停止 → 删除目标 |
-| 登录 | 风控阻止，未完成真实扫码；无伪造登录 |
+| 浏览器扫码（真实 Chrome/Edge、未扫码） | 官方登录页打开；捕获官方 `get_qrcode` 二维码（PNG base64，`is_frontier=true`，约 60 秒）；取消后资料目录可删除；`verify-douyin-browser-login` **8/8** |
+| 真实手机扫码 | **未执行（无账号）**；不得写成成功或失败 |
+| Cookie 负向验证 | 格式错误/不完整/假 session 分别被 400/400/401 拒绝；不保存为登录 |
+| Cookie 正向验证 | **未验证**（需要真实账号 Cookie） |
 | 礼物/连送 | 匿名 0；真实事件未观测到；自动化覆盖解析/合并/去重/金额未知 |
 | 断线/下播/多房间 | 自动化覆盖；真实拔网与“直播中→下播”未捕获 |
 
-**未验证 / 不得宣称**：真实礼物、真实连送、真实付费留言、登录后的礼物推送、真实扫码登录、
+**未验证 / 不得宣称**：真实手机扫码成功、登录后的礼物推送、真实礼物、真实连送、真实付费留言、
 真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
 
 ## 4. 统一事件模型

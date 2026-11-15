@@ -2563,24 +2563,31 @@ export function buildRoutes() {
     },
     {
       method: 'POST',
-      path: '/api/douyin/login/qrcode',
+      path: '/api/douyin/login/browser/start',
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
         try {
-          const qr = await deps.douyin.loginWithQr();
-          sendJson(res, 201, qr);
+          const result = await deps.douyin.startBrowserLogin();
+          sendJson(res, 200, result);
         } catch (error) {
           throw douyinError(error);
         }
       }
     },
     {
+      method: 'GET',
+      path: '/api/douyin/login/browser/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.douyin.browserLoginStatus());
+      }
+    },
+    {
       method: 'POST',
-      path: '/api/douyin/login/poll',
+      path: '/api/douyin/login/browser/cancel',
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
         try {
-          const result = await deps.douyin.pollLogin();
+          const result = await deps.douyin.cancelBrowserLogin();
           sendJson(res, 200, result);
         } catch (error) {
           throw douyinError(error);

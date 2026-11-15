@@ -88,11 +88,67 @@ function launch({dataDir, port}) {
   const stdoutFile = join(root, `stdout-${childCounter}.log`);
   const stderrFile = join(root, `stderr-${childCounter}.log`);
   const bootstrapFile = join(root, `bootstrap-${childCounter}.url`);
+  const env = {
+    ...process.env,
+    // The packaged SEA bootstrap extracts its assets before the launcher parses
+    // --data-dir. Point it at the same isolated folder so an automated run
+    // never depends on a writable %LOCALAPPDATA%.
+    LIVE_MEMORY_DATA_DIR: dataDir,
+    LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile
+  };
+  if (process.env.LIVE_MEMORY_TEST_SPAWN_VIA_POWERSHELL === '1' && process.platform === 'win32') {
+    const pidFile = join(root, `pid-${childCounter}.txt`);
+    const encode = (value) => Buffer.from(String(value), 'utf8').toString('base64');
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      `$env:LIVE_MEMORY_DATA_DIR=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(dataDir)}'))`,
+      `$env:LIVE_MEMORY_TEST_BOOTSTRAP_FILE=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(bootstrapFile)}'))`,
+      `$p=Start-Process -FilePath '${exe.replace(/'/g, "''")}' -ArgumentList @('--no-open','--data-dir',[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(dataDir)}')),'--port','${port}','--lang','en') -PassThru -RedirectStandardOutput '${stdoutFile.replace(/'/g, "''")}' -RedirectStandardError '${stderrFile.replace(/'/g, "''")}' -WindowStyle Hidden`,
+      `Set-Content -LiteralPath '${pidFile.replace(/'/g, "''")}' -Value $p.Id -Encoding ascii`
+    ].join('; ');
+    spawn('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      stdio: 'ignore',
+      windowsHide: true,
+      env
+    });
+    return {
+      child: null,
+      bootstrapFile,
+      stdoutFile,
+      stderrFile,
+      readStdout: () => (existsSync(stdoutFile) ? readFileSync(stdoutFile, 'utf8') : ''),
+      readStderr: () => (existsSync(stderrFile) ? readFileSync(stderrFile, 'utf8') : ''),
+      async stop() {
+        let pid = null;
+        if (existsSync(pidFile)) {
+          pid = Number(readFileSync(pidFile, 'utf8').trim()) || null;
+        }
+        if (pid) {
+          try {
+            spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {stdio: 'ignore', windowsHide: true});
+          } catch {
+            /* best effort */
+          }
+          const deadline = Date.now() + 5000;
+          while (Date.now() < deadline) {
+            try {
+              process.kill(pid, 0);
+            } catch {
+              break;
+            }
+            await sleep(200);
+          }
+        }
+        await sleep(500);
+        return true;
+      }
+    };
+  }
   const outFd = openSync(stdoutFile, 'w');
   const errFd = openSync(stderrFile, 'w');
   const child = spawn(exe, ['--no-open', '--data-dir', dataDir, '--port', String(port), '--lang', 'en'], {
     cwd: process.cwd(),
-    env: {...process.env, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile},
+    env,
     stdio: ['ignore', outFd, errFd],
     windowsHide: true
   });
@@ -238,6 +294,98 @@ try {
       && status.json?.capabilities?.giftValue === 'display-only', [
       `HTTP ${status.status}, mode ${status.json?.mode ?? 'missing'}`,
       `capabilities ${JSON.stringify(status.json?.capabilities ?? null)}`
+    ]);
+    record('the gift ladder reports scan/session/capture/gift separately', status.status === 200
+      && ['anonymous', 'saved_unverified', 'logged_in'].includes(status.json?.giftVerification?.session)
+      && ['idle', 'unavailable'].includes(status.json?.giftVerification?.scan)
+      && typeof status.json?.giftVerification?.capture === 'string'
+      && ['unknown', 'not_observed', 'observed'].includes(status.json?.gifts?.state), [
+      `giftVerification ${JSON.stringify(status.json?.giftVerification ?? null)}`,
+      `gifts ${JSON.stringify(status.json?.gifts ?? null)}`
+    ]);
+
+    const browserStart = await httpJson(new URL('/api/douyin/login/browser/start', info.url).href, {
+      method: 'POST',
+      body: {},
+      timeoutMs: 60000
+    });
+    const browserStartState = browserStart.json?.state;
+    record('the packaged EXE opens the official Douyin QR login in a real browser', browserStart.status === 200
+      && browserStart.json?.supported === true
+      && ['waiting', 'opening'].includes(browserStartState)
+      && Boolean(browserStart.json?.qr?.image), [
+      `HTTP ${browserStart.status}`,
+      `state ${browserStartState ?? 'missing'}`,
+      `browser ${browserStart.json?.browser ?? 'missing'}`,
+      `qr image bytes ${browserStart.json?.qr?.image?.length ?? 0}`,
+      `frontier ${browserStart.json?.qr?.frontier ?? false}`,
+      `error ${browserStart.json?.error?.code ?? 'none'}`
+    ]);
+    record('the browser login status never exposes a cookie value', !JSON.stringify(browserStart.json ?? {}).includes('sessionid'), [
+      `keys ${Object.keys(browserStart.json ?? {}).join(',')}`
+    ]);
+
+    const browserStatus = await httpJson(new URL('/api/douyin/login/browser/status', info.url).href);
+    record('the browser login status endpoint stays consistent', browserStatus.status === 200
+      && browserStatus.json?.state === browserStartState, [
+      `HTTP ${browserStatus.status}, state ${browserStatus.json?.state ?? 'missing'}`
+    ]);
+
+    const browserCancel = await httpJson(new URL('/api/douyin/login/browser/cancel', info.url).href, {
+      method: 'POST',
+      body: {},
+      timeoutMs: 15000
+    });
+    record('the browser login can be cancelled and the QR removed', browserCancel.status === 200
+      && browserCancel.json?.state === 'cancelled'
+      && browserCancel.json?.qr === null, [
+      `HTTP ${browserCancel.status}, state ${browserCancel.json?.state ?? 'missing'}`
+    ]);
+
+    const badFormat = await httpJson(new URL('/api/douyin/login/cookie', info.url).href, {
+      method: 'POST',
+      body: {cookie: 'not a cookie'},
+      timeoutMs: 15000
+    });
+    const badIncomplete = await httpJson(new URL('/api/douyin/login/cookie', info.url).href, {
+      method: 'POST',
+      body: {cookie: 'ttwid=abc'},
+      timeoutMs: 15000
+    });
+    record('invalid cookie shapes are rejected with distinct errors', badFormat.status === 400
+      && badFormat.json?.error?.code === 'DOUYIN_COOKIE_FORMAT'
+      && badIncomplete.status === 400
+      && badIncomplete.json?.error?.code === 'DOUYIN_COOKIE_INCOMPLETE', [
+      `format HTTP ${badFormat.status} ${badFormat.json?.error?.code ?? 'missing'}`,
+      `incomplete HTTP ${badIncomplete.status} ${badIncomplete.json?.error?.code ?? 'missing'}`
+    ]);
+
+    const fakeSession = await httpJson(new URL('/api/douyin/login/cookie', info.url).href, {
+      method: 'POST',
+      body: {cookie: 'sessionid=abcdefgh12345678; ttwid=t; sid_tt=s; uid_tt=u'},
+      timeoutMs: 30000
+    });
+    record('a well-shaped but invalid cookie is actually checked against Douyin', fakeSession.status === 401
+      && ['DOUYIN_AUTH', 'DOUYIN_LOGIN_EXPIRED'].includes(fakeSession.json?.error?.code), [
+      `HTTP ${fakeSession.status}, code ${fakeSession.json?.error?.code ?? 'missing'}`
+    ]);
+    const afterCookie = await httpJson(new URL('/api/douyin/status', info.url).href);
+    record('a failed cookie check is not shown as a login', afterCookie.status === 200
+      && afterCookie.json?.login?.loggedIn === false
+      && afterCookie.json?.login?.state === 'anonymous'
+      && afterCookie.json?.login?.cookiePresent === false, [
+      `login ${JSON.stringify(afterCookie.json?.login ?? null)}`
+    ]);
+
+    const logout = await httpJson(new URL('/api/douyin/login/logout', info.url).href, {
+      method: 'POST',
+      body: {},
+      timeoutMs: 15000
+    });
+    record('logout clears the local Douyin session and the dedicated browser profile', logout.status === 200
+      && logout.json?.login?.state === 'anonymous', [
+      `HTTP ${logout.status}, state ${logout.json?.login?.state ?? 'missing'}`,
+      `profile ${JSON.stringify(logout.json?.profile ?? null)}`
     ]);
 
     const checked = await httpJson(new URL('/api/douyin/room', info.url).href, {

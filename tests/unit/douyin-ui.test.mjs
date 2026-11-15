@@ -25,7 +25,7 @@ function placeholders(text) {
 }
 
 test('all three locales expose the same Douyin keys with no empty strings', () => {
-  assert.ok(douyinKeys.length >= 60, `expected the full Douyin key set, got ${douyinKeys.length}`);
+  assert.ok(douyinKeys.length >= 90, `expected the full Douyin key set, got ${douyinKeys.length}`);
   for (const locale of LOCALES) {
     const keys = Object.keys(flat[locale]).filter((key) => /douyin/i.test(key)).sort();
     assert.deepEqual(keys, douyinKeys, `${locale} has a different Douyin key set`);
@@ -45,15 +45,21 @@ test('Douyin placeholders are identical across locales', () => {
   }
 });
 
-test('the live page exposes a Douyin tab that calls only the Douyin endpoints', () => {
+test('the live page wires the browser login flow and never paints platform text as HTML', () => {
   const source = readFileSync('src/web/js/pages/live.js', 'utf8');
   assert.match(source, /live\.source\.douyinTab/);
   assert.match(source, /buildDouyinPanel/);
   assert.match(source, /'\/api\/douyin\/room'/);
   assert.match(source, /'\/api\/douyin\/connect'/);
-  assert.match(source, /'\/api\/douyin\/login\/qrcode'/);
-  assert.match(source, /'\/api\/douyin\/login\/poll'/);
-  assert.match(source, /'\/api\/douyin\/retention\/apply'/);
+  assert.match(source, /'\/api\/douyin\/login\/browser\/start'/);
+  assert.match(source, /'\/api\/douyin\/login\/browser\/status'/);
+  assert.match(source, /'\/api\/douyin\/login\/browser\/cancel'/);
+  assert.match(source, /'\/api\/douyin\/login\/check'/);
+  assert.match(source, /'\/api\/douyin\/login\/cookie'/);
+  assert.match(source, /'\/api\/douyin\/login\/logout'/);
+  assert.match(source, /douyinCookieStep\$\{index\}/);
+  assert.equal(source.includes('/api/douyin/login/qrcode'), false);
+  assert.equal(source.includes('/api/douyin/login/poll'), false);
   assert.equal(source.includes('innerHTML'), false, 'platform text must never be written as HTML');
 });
 
@@ -65,17 +71,54 @@ test('the server wires every Douyin route behind the authenticated API', () => {
     '/api/douyin/connect',
     '/api/douyin/disconnect',
     '/api/douyin/retention/apply',
-    '/api/douyin/login/qrcode',
-    '/api/douyin/login/poll',
+    '/api/douyin/login/browser/start',
+    '/api/douyin/login/browser/status',
+    '/api/douyin/login/browser/cancel',
     '/api/douyin/login/check',
     '/api/douyin/login/logout',
     '/api/douyin/login/cookie'
   ]) {
     assert.ok(routes.includes(path), `missing route ${path}`);
   }
+  assert.equal(routes.includes('/api/douyin/login/qrcode'), false);
+  assert.equal(routes.includes('/api/douyin/login/poll'), false);
   const index = readFileSync('src/server/index.mjs', 'utf8');
   assert.match(index, /new DouyinService/);
-  assert.match(index, /platforms: \['douyin'\]/);
+  assert.match(index, /dataDir: paths\.root/);
+  assert.match(index, /instance\.douyin\?\.shutdown\(\)/);
+});
+
+test('the Cookie help is a complete 12-step tutorial in all three languages', () => {
+  for (const locale of LOCALES) {
+    for (let index = 1; index <= 12; index += 1) {
+      const key = `live.source.douyinCookieStep${index}`;
+      const text = flat[locale][key];
+      assert.ok(typeof text === 'string' && text.trim().length > 10, `${locale} ${key}`);
+    }
+    assert.match(flat[locale]['live.source.douyinCookieHelpTitle'], /cookie/i);
+    assert.match(flat[locale]['live.source.douyinCookieStep2'], /live\.douyin\.com/);
+    assert.match(flat[locale]['live.source.douyinCookieStep4'], /F12/);
+    assert.match(flat[locale]['live.source.douyinCookieStep5'], /Network/i);
+    assert.match(flat[locale]['live.source.douyinCookieStep8'], /Headers/i);
+    assert.match(flat[locale]['live.source.douyinCookieStep9'], /Request Headers/i);
+    assert.match(flat[locale]['live.source.douyinCookieStep11'], /sessionid/);
+    assert.match(flat[locale]['live.source.douyinCookieHelpBrowserDiff'], /Firefox/);
+    assert.match(flat[locale]['live.source.douyinCookieHelpSecurity'], /AES-256-GCM|encrypted|暗号化|加密/);
+  }
+});
+
+test('login states and gift verification are distinct in the UI copy', () => {
+  for (const locale of LOCALES) {
+    assert.ok(flat[locale]['live.source.douyinLoginStateSavedUnverified']);
+    assert.ok(flat[locale]['live.source.douyinLoginStateExpired']);
+    assert.ok(flat[locale]['live.source.douyinLoginStateBlocked']);
+    assert.ok(flat[locale]['live.source.douyinGiftStep1']);
+    assert.ok(flat[locale]['live.source.douyinGiftStep4']);
+    assert.match(flat[locale]['live.source.douyinGiftLadderNote'], /未观测|未観測|not observed/i);
+    assert.ok(flat[locale]['errors.douyinCookieFormat']);
+    assert.ok(flat[locale]['errors.douyinCookieIncomplete']);
+    assert.ok(flat[locale]['errors.douyinBrowserUnavailable']);
+  }
 });
 
 test('monitoring knows Douyin as a first-class platform', () => {
@@ -87,10 +130,11 @@ test('monitoring knows Douyin as a first-class platform', () => {
   assert.match(manager, /row\.platform === 'douyin'/);
 });
 
-test('the Windows build requires the Douyin modules and the signature asset', () => {
+test('the Windows build requires the browser-login and Douyin modules', () => {
   const build = readFileSync('scripts/build-windows.mjs', 'utf8');
   for (const module of [
     'src/platforms/douyin/adapter.mjs',
+    'src/platforms/douyin/browser-login.mjs',
     'src/platforms/douyin/messages.mjs',
     'src/platforms/douyin/protobuf.mjs',
     'src/platforms/douyin/sign.mjs',
