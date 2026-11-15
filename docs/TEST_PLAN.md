@@ -1823,4 +1823,3 @@ commit `7da0e0d`，Manifest `requireAdministrator`。功能场景使用同一二
 - **真实 UAC 双击/点击**：自动化不能点击 UAC；只断言 Manifest 与同一二进制功能副本。
 - **长时间 10+ 频道、千条/秒、限流叠加**：未验证。
 - 不得把匿名 IRC / 公开 GQL 描述为 Twitch 官方稳定 API；不得把 Bits/Tier/月数换算成收入。
-
