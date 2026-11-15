@@ -26,7 +26,7 @@
 7. **监控/多房间**：`TikTokRoomDetector`；周期键 `tiktok:<handle>:<roomId>`；两房间独立 session 测试。
 8. **UI**：直播页 TikTok Tab、房间检查、传输选择（auto/signer/browser）、自动监听、能力边界、30 天保留。
 9. **测试**：新增 56 项；全量 **1003 passed / 0 failed / 0 skipped（326,436 ms）**。
-10. **EXE**：Build ID `812c0d54f622` / SHA-256 `bb689de6…` / `97,718,784` B / `requireAdministrator`；
+10. **EXE**：Build ID `812c0d54f622` / SHA-256 `3a3e7c59…` / `97,718,784` B / `requireAdministrator`；
     `verify-tiktok-exe` **20/20**（真实 TikTok + 自动监听 + 重启 + AI + 四平台状态）。
 
 ### 0.2 结果
@@ -41,7 +41,7 @@
 | 礼物事件 | **真实未观测**；解析/连送/去重有自动化测试 |
 | 浏览器中继 | 实现完成；匿名 403 实测；**登录后未验证（无账号）** |
 | 全量测试 | **1003 passed / 0 failed / 0 skipped（326,436 ms）** |
-| 正式 EXE | `812c0d54f622` / `bb689de6…` / requireAdministrator / 226 assets / 50 modules |
+| 正式 EXE | `812c0d54f622` / `3a3e7c59…` / requireAdministrator / 226 assets / 50 modules |
 | EXE TikTok | **20/20** |
 | main | **未合并 TikTok、未 Push、未 Tag、未 Release** |
 
@@ -60,7 +60,9 @@
 
 - 真实 TikTok 只读公开直播间；未登录、未付费、未保存/展示正文到仓库；测试均用 `tests/.tmp` 隔离目录。
 - 真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间并发、干净 Windows 账户仍未验证。
-- 本轮代码与文档提交见 STATUS §0.38.9；提交身份匿名；**未 Push / 未 Tag / 未发布**。
+- 本轮代码与文档提交：**`3e6e7d8e25b86084def581a2ba8c250b7124db36`**（`feat: add TikTok LIVE integration`，
+  39 files，+5,713/−29）；正式 EXE 在该提交后重建（`build-info.commit` = `3e6e7d8`），随后复验 20/20。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
 ## 0-A 上一轮（DOUYIN-SINGLE-WINDOW）
 

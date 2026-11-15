@@ -112,11 +112,11 @@ AI 读取链路、三语 UI），并构建 Windows EXE 完成真实 TikTok 直�
 | 文件 | `dist/LiveMemory.exe` |
 | 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
 | 大小 | `97,718,784` bytes（93.2 MB） |
-| SHA-256 | `bb689de62dbbb0444e951aa233ea0c89b908b1048c0bebebd9fba06978623b46` |
+| SHA-256 | `3a3e7c597cdb743a6e512a3c086a0a8c89929de57a458bb50fd93cb0f0fd134b` |
 | Build ID | `812c0d54f622` |
 | source hash | `812c0d54f622056a6fb2fed468c85960a0742ce47c8bada1a5caae34398557b9` |
-| commit（构建时 HEAD） | `410bfc3ffacc712b6fd56a9e63f4d5afcca4bcb7` |
-| builtAt | `2026-11-15T11:17:24.827Z` |
+| commit（构建时 HEAD） | `3e6e7d8e25b86084def581a2ba8c250b7124db36` |
+| builtAt | `2026-11-15T11:21:11.849Z` |
 | 资源 | `226` files；50 个必需模块 |
 | RT_MANIFEST | **`requireAdministrator`** |
 | Node | `v24.21.0` |
@@ -154,6 +154,11 @@ EXE 验证：`scripts/verify-tiktok-exe.mjs` **20/20**（真实 TikTok + 自动�
 ### 0.38.9 Git 与等待验收
 
 - 分支：`feature/tiktok`（从 `main` 的 `410bfc3` 创建）。
+- 代码与文档提交：**`3e6e7d8e25b86084def581a2ba8c250b7124db36`**
+  （`feat: add TikTok LIVE integration`，39 files，+5,713/−29）。
+- 正式 EXE 在该提交之后重建：`build-info.commit` = `3e6e7d8`，buildId `812c0d54f622` 不变
+  （buildId 只由 `src/` 内容决定）；随后再次运行 `verify-tiktok-exe` **20/20**。
+- 构建记录补充提交：本文件所在的后续提交（HEAD）。
 - **未合并 main、未 Push、未创建 Tag、未发布 Release、未删除 `feature/douyin` / `feature/tiktok`。**
 - **状态：真实 TikTok 聊天/稳定 ID 已在源码服务器与正式 EXE 验证；礼物/连送/登录后浏览器中继按实际限制标注；
   等待开发者人工验收。**

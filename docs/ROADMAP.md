@@ -2,7 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
-> v0.13.2（2026-11-15，TIKTOK-M1）：先把已验收的抖音合并到 `main`（`410bfc3`，合并后全量 947 passed，四平台真实回归通过），再从最新 main 创建 `feature/tiktok`。TikTok 接入采用双传输：默认**免费社区签名通道**（无 API Key、无付费、不要求 Business；15 秒轮询，平台突发上限 5 次/分钟），可选**浏览器中继**（专用 Chrome/EDGE 资料目录 + CDP，匿名 `room/enter 403` 如实报“需要登录”）。房间信息/开播/主播稳定 ID/礼物目录完全本地免费；真实聊天 6/6 带 `tiktok:<user.id>` 与 `msgId`；礼物/连送/订阅已解析但真实事件未观测。新增 56 测试，全量 **1003 passed**；正式 EXE `812c0d54f622`（requireAdministrator，97,718,784 B），`verify-tiktok-exe` **20/20**。**未合并 TikTok 到 main、未 Push/Tag/Release，等待人工验收。** 详见 `docs/STATUS.md` §0.38、`docs/TIKTOK_FEASIBILITY_2026-11.md`。
+> v0.13.2（2026-11-15，TIKTOK-M1）：先把已验收的抖音合并到 `main`（`410bfc3`，合并后全量 947 passed，四平台真实回归通过），再从最新 main 创建 `feature/tiktok`。TikTok 接入采用双传输：默认**免费社区签名通道**（无 API Key、无付费、不要求 Business；15 秒轮询，平台突发上限 5 次/分钟），可选**浏览器中继**（专用 Chrome/EDGE 资料目录 + CDP，匿名 `room/enter 403` 如实报“需要登录”）。房间信息/开播/主播稳定 ID/礼物目录完全本地免费；真实聊天 6/6 带 `tiktok:<user.id>` 与 `msgId`；礼物/连送/订阅已解析但真实事件未观测。新增 56 测试，全量 **1003 passed**；正式 EXE `812c0d54f622`（requireAdministrator，97,718,784 B，SHA-256 `3a3e7c59…`，commit `3e6e7d8`），`verify-tiktok-exe` **20/20**。**未合并 TikTok 到 main、未 Push/Tag/Release，等待人工验收。** 详见 `docs/STATUS.md` §0.38、`docs/TIKTOK_FEASIBILITY_2026-11.md`。
 > v0.13.2（2026-11-15，DOUYIN-LOGIN-FIX）：修复抖音登录验收问题。纯 HTTP 扫码确认不可行（SSO 返回 HTML 指纹页、passport 返回 `4031`）；改为本机 Chrome/Edge + 专用资料目录 + 官方登录页 + CDP，应用内显示官网二维码；真实 Chrome 捕获 **8/8**（未扫码）。区分 Cookie 格式/不完整/过期/平台拒绝/网络/无效；三语 12 步 Cookie 教程；扫码/会话/连接/礼物四级状态。全量 **944 passed / 0 failed**；EXE `a0bc7f9136df` / commit `6f7f0d6` / requireAdministrator；EXE 验收 **25/27**（2 项浏览器启动被 DSH 作业对象阻止）；`verify-exe` 10/10、`verify-twitch-exe` 20/20。**未合并 main、未 Push/Tag/Release；真实手机扫码与真实 Cookie 正向待人工验收。** 详见 `docs/STATUS.md` §0.36、`docs/DOUYIN_LOGIN_RESEARCH.md`。
 > v0.13.2（2026-11-15，DOUYIN-M2M3）：先合并已验收的 Twitch（`main` = `d5e9a7c`，合并后全量 875 passed），再从最新 main 创建 `feature/douyin`，完成抖音公开直播间匿名单播采集：昵称、稳定 UID（`douyin:<user.id>`）、弹幕原文、Unicode、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播、SQLite、AI 读取与长期画像；礼物解析（连送只在 `repeatEnd=1` 写一条、钻石只作展示价值、无金额不记 0）、登录框架（扫码被风控阻止时如实报错 + 本地加密 Cookie 备用）、三语 UI（64 键 × 3）。真实匿名采集 7 条 chat（7/7 UID/昵称/消息 ID/CJK）与正式 EXE 2 条；**真实礼物与真实扫码登录未验证**。新增 48 测试；正式 EXE `0f848c77c2d6`（requireAdministrator）；`verify-douyin-exe` **17/17**。**未合并抖音到 main、未 Push/Tag/Release，等待人工验收。** 详见 `docs/STATUS.md` §0.35、`docs/PLATFORM_INTEGRATIONS.md` §3B、`docs/LICENSE_AGPL_DOUYIN.md`。
 > v0.13.2（2026-11-15，TWITCH-M1）：Twitch 正式接入（匿名 IRC + 公开元数据），真实 6 频道并发 418 条事件、418/418 有稳定 User ID + 消息 ID、1 条真实 resub；Bits/赠订已解析但真实事件未观测；新增 47 测试，全量 875 passed；正式 EXE `a4bf602de264`（`requireAdministrator`，96,828,416 B）；EXE Twitch 验证 20/20，既有矩阵全部通过。**已按开发者授权合并到 main（`d5e9a7c`）；未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.34。
@@ -40,7 +40,7 @@
 - ✅ 三语 UI：TikTok Tab、传输选择、能力边界、30 天保留；39 个 `tiktok` 键 ×3 + 16 个错误键
 - ✅ 新增 56 测试；全量 **1003 passed / 0 failed / 0 skipped（326,436 ms）**
 - ✅ 真实端到端：源码服务器 6 条 chat / 5 身份；正式 EXE 6 条 / 3 身份，SQLite 6/6 external_id
-- ✅ 正式 EXE `812c0d54f622` / SHA-256 `bb689de6…` / `97,718,784` B / `requireAdministrator` / 226 assets / 50 modules
+- ✅ 正式 EXE `812c0d54f622` / SHA-256 `3a3e7c59…` / `97,718,784` B / `requireAdministrator` / 226 assets / 50 modules
 - ✅ `verify-tiktok-exe` **20/20**；`verify-exe` **10/10**
 - 🟡 **未验证**：真实礼物/连送/订阅事件、登录后浏览器中继、真实断网/下播、多房间并发、干净 Windows 账户、真实 UAC 双击
 - ⬜ 等待开发者人工验收；未合并 main、未 Push/Tag/Release

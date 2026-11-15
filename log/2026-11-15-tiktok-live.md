@@ -105,3 +105,39 @@ transport 200 signer
 - **浏览器中继**：实现完成；匿名 403 已实测；**登录后聊天未验证**（无账号）。
 - **免费签名通道**：第三方云服务；无 Key、无付费；可能限流/改版；不强制 Business 计划。
 - **未验证**：真实 Long-run 断网/下播、多房间并发（受 5 次/分钟限制）、干净 Windows 账户、真实 UAC 点击、TikTok 登录。
+
+## 7. Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 大小 | `97,718,784` bytes（93.2 MB） |
+| SHA-256 | `3a3e7c597cdb743a6e512a3c086a0a8c89929de57a458bb50fd93cb0f0fd134b` |
+| Build ID | `812c0d54f622` |
+| source hash | `812c0d54f622056a6fb2fed468c85960a0742ce47c8bada1a5caae34398557b9` |
+| commit | `3e6e7d8e25b86084def581a2ba8c250b7124db36` |
+| builtAt | `2026-11-15T11:21:11.849Z` |
+| 资源 | `226` files；50 个必需模块 |
+| RT_MANIFEST | `requireAdministrator` |
+
+验证：
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-tiktok-exe.mjs`（真实 TikTok + 自动监听 + 重启 + AI + 四平台状态） | **20/20** |
+| `scripts/verify-exe.mjs`（启动/重启/硬杀/端口/单实例/不可写目录/CLI） | **10/10** |
+
+## 8. 全量测试
+
+```bat
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+```
+
+- **1003 passed / 0 failed / 0 skipped（326,436.09 ms，2026-11-15）**（上一轮 947，本轮 +56）。
+
+## 9. Git
+
+- 分支 `feature/tiktok`；代码与文档提交 **`3e6e7d8e25b86084def581a2ba8c250b7124db36`**
+  （`feat: add TikTok LIVE integration`，39 files，+5,713/−29），提交身份匿名。
+- `main` 保持 `410bfc3`；**未合并 TikTok、未 Push、未 Tag、未 Release、未删除任何分支**。
+
