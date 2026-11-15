@@ -1,13 +1,69 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · DOUYIN-M2M3：抖音匿名单播采集、登录框架、礼物解析、自动化测试与 Windows EXE · **等待人工验收**
+本轮：2026-11-15 · DOUYIN-LOGIN-FIX：本机浏览器扫码登录、Cookie 验证、12 步三语教程与礼物四级状态 · **等待人工验收**
 
-> 本轮先把已验收的 `feature/twitch` 合并到 `main`（`d5e9a7c`），再从最新 `main` 创建 `feature/douyin`，
-> 在该分支完成抖音接入。**未合并抖音到 main、未 Push、未创建 Tag、未发布 Release。**
-> 完整交付说明：`docs/STATUS.md` §0.35；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3B；
-> 许可证：`docs/LICENSE_AGPL_DOUYIN.md`；日志：`log/2026-11-15-douyin-m2m3.md`。
+> 在 `feature/douyin` 修复人工验收问题。**未合并 main、未 Push、未创建 Tag、未发布 Release。**
+> 调查：`docs/DOUYIN_LOGIN_RESEARCH.md`；状态：`docs/STATUS.md` §0.36；
+> 平台：`docs/PLATFORM_INTEGRATIONS.md` §3B；验收：`docs/ACCEPTANCE_DOUYIN_M2M3_FIX.md`；
+> 日志：`log/2026-11-15-douyin-login-qr.md`。
 
-## 0. 本轮（DOUYIN-M2M3）
+## 0. 本轮（DOUYIN-LOGIN-FIX）
+
+### 0.1 做了什么
+
+1. **技术调查**：逐一阅读 5 个项目的实际登录源码（VideoNote-MCP、douyin-mcp、douyin-parse、dousub、bytedance-nomark），
+   确认纯 HTTP 扫码会被设备指纹/风控拒绝，真实浏览器官方页面可出码；记录许可证与可整合性。
+2. **浏览器扫码**：新增 `browser-login.mjs`，启动本机 Chrome/Edge 的专用资料目录，打开官方
+   `www.douyin.com/login_page`，通过 CDP 捕获官网 `get_qrcode` 二维码并在应用内显示；等待 `sessionid`；
+   用页面内 profile 请求验证会话；不启用 headless/no-sandbox/stealth，不伪造签名。
+3. **Cookie 验证**：区分格式错误/不完整/已过期/平台拒绝/网络异常/登录无效；只有平台确认才 `logged_in`，
+   不确定时 `saved_unverified`；保存 `verified/verifiedAt/reason`；退出清除。
+4. **教程**：Cookie 输入区下方新增中文/日文/英文 12 步教程（F12 → Network → 刷新 → 选请求 → Headers →
+   Request Headers → Cookie → 复制 → 保存并验证），含 Firefox 差异、排查与安全说明。
+5. **礼物分级**：UI 与 API 分开显示「扫码/浏览器登录」「登录会话有效」「直播采集连接」「真实礼物事件」；
+   未观测写「尚未观测到」，不写成成功或失败。
+6. **安全**：专用 profile 有 `.livememory-owned` 标记；不读取用户日常浏览器资料；Cookie 不进日志/备份/HTTP；
+   退出删除加密存储与资料目录；所有新路由仍要求本地会话认证。
+7. **测试**：全量 **944 passed / 0 failed / 0 skipped（308,251 ms，最终复跑）**；新增浏览器登录 10 项、服务 3 项、
+   礼物阶梯 1 项，更新登录/Cookie 14 项与三语 UI/API 认证断言。
+8. **EXE**：`aff3fbe6a2f1` / commit `91c2fb3` / SHA-256 `9e1940ca…` / `97,584,128` B / requireAdministrator。
+9. **验证**：真实 Chrome 二维码捕获 **8/8**（未扫码）；EXE 验收 **25/27**（2 项浏览器启动被 DSH 沙箱作业对象阻止，教程资源在包内通过）；
+   `verify-exe` **10/10**、`verify-twitch-exe` **20/20**。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 纯 HTTP 扫码 | 仍不可行：SSO 返回 HTML 指纹页，passport 返回 `4031` |
+| 真实浏览器扫码 | 官方页 `error_code=0`，二维码 PNG + `is_frontier=true`；应用内可显示 |
+| 真实手机扫码 | **0 次（无账号）**；不能给成功率 |
+| Cookie 负向验证 | 格式/不完整 400；假会话 401；不保存为登录 |
+| Cookie 正向验证 | **未验证**（需要账号） |
+| 礼物 | 匿名 0；真实事件未观测；解析/合并/去重有自动化覆盖 |
+| 全量测试 | 944 passed / 0 failed / 0 skipped |
+| EXE | `aff3fbe6a2f1` / `9e1940ca…` / 93.1 MB / requireAdministrator |
+| EXE 登录 | 入口/状态/Cookie/教程/退出可用；浏览器启动在沙箱内被作业对象阻止，需人工验收 |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **人工验收扫码**：在真实 Windows 桌面运行 `dist/LiveMemory.exe`，点击「扫码登录（浏览器）」，
+   用抖音 App 扫码；确认应用内二维码、浏览器官方页、验证码/身份验证、登录后状态。
+2. **人工验收 Cookie 正向**：若扫码不可用，按 12 步教程导入真实 Cookie，确认「登录有效」；
+   再连接真实直播间，观察是否收到礼物。没有真实礼物时只能写「未观测」。
+3. **不要把浏览器启动失败写成产品缺陷**：沙箱作业对象会终止 EXE 子进程中的 Chrome；用普通桌面重测。
+4. **不要合并 main / Push / Tag / Release**，除非开发者明确授权。
+5. **不要把「二维码捕获成功」写成「扫码登录成功」**；不要把「Cookie 已保存」写成「登录成功」。
+6. 若平台改版导致二维码捕获失败，更新选择器/接口，保留真实错误，不伪造二维码。
+
+### 0.4 边界与提交
+
+- 代码提交：`91c2fb35be184995e7433abec6ff67a034857eae`（`fix: add browser-assisted Douyin QR login and cookie verification`）；
+  提交身份匿名；**未 Push / 未 Tag / 未发布**。
+- 真实手机扫码、真实 Cookie 正向、登录后礼物、干净 Windows 账户仍待人工验收。
+- 临时数据目录均为 `tests/.tmp`；未读取用户日常浏览器配置。
+
+## 0-A 上一轮（DOUYIN-M2M3）
 
 ### 0.1 做了什么
 

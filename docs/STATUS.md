@@ -1,8 +1,94 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（DOUYIN-M2M3：抖音匿名采集、登录框架、礼物解析、自动化测试与 Windows EXE；feature/douyin 等待人工验收）
+最后更新：2026-11-15（DOUYIN-LOGIN-FIX：本机浏览器扫码登录、Cookie 验证分级、三语 12 步教程、礼物四级状态、Windows EXE；feature/douyin 等待人工验收）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.36 DOUYIN-LOGIN-FIX：浏览器扫码登录、Cookie 验证与礼物分级（2026-11-15）🟡（feature/douyin，等待人工验收）
+
+范围：只修复抖音 M2/M3 验收发现的登录问题。**未合并 main、未 Push、未 Tag、未 Release。**
+完整调查：`docs/DOUYIN_LOGIN_RESEARCH.md`；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3B；
+验收报告：`docs/ACCEPTANCE_DOUYIN_M2M3_FIX.md`；日志：`log/2026-11-15-douyin-login-qr.md`。
+
+### 0.36.1 结论：浏览器扫码可行，纯 HTTP 扫码不可行
+
+- 旧实现直接请求 `sso.douyin.com/get_qrcode` → HTTP 200 `text/html` 设备指纹挑战页；
+  `www.douyin.com/passport/web/get_qrcode` → `error_code 4031`「安全风险，已阻止此次访问」。
+  这是平台拒绝非浏览器客户端，不是「抖音禁止扫码」；LiveMemory 不伪造指纹/`a_bogus`/challenge。
+- 改用**本机 Chrome/Edge + 专用资料目录 + 官方登录页 + CDP**：官方页自身成功调用 `get_qrcode`
+  （`error_code=0`、二维码 PNG base64、`is_frontier=true`、约 60 秒有效），应用内显示同一二维码。
+- 真实手机扫码**未执行**（无账号）；不得写成成功或失败。二维码捕获/取消/目录清理用真实 Chrome 验证 **8/8**。
+
+### 0.36.2 实现
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/platforms/douyin/browser-login.mjs` | 查找 Chrome/Edge；专用 profile（`.livememory-owned`）；CDP 连接；捕获官方 `get_qrcode`；等待 `sessionid`；页面内 profile 校验；取消/关闭/清理；不用 headless/no-sandbox/stealth |
+| `src/platforms/douyin/login.mjs` | Cookie 诊断（格式/不完整/过期）、平台有效性复查（`/aweme/v1/web/user/profile/self/`）、已验证/未验证/失效/无效、退出 |
+| `src/platforms/douyin/cookie-store.mjs` | 加密保存 `verified/verifiedAt/reason`；状态永不返回 Cookie |
+| `src/platforms/douyin/service.mjs` | 浏览器登录生命周期；扫码/会话/连接/礼物四级状态；退出清理 |
+| `src/server/{index,routes}.mjs` | `/api/douyin/login/browser/start|status|cancel`；保留 `check|cookie|logout`；关闭时关闭浏览器 |
+| `src/web/js/pages/live.js` + 三语 i18n | 登录状态胶囊；扫码登录/取消/验证/删除；完整 12 步 Cookie 教程；四级礼物验证 |
+| `scripts/verify-douyin-browser-login.mjs` | 真实浏览器二维码捕获验证（不扫码） |
+
+### 0.36.3 登录状态与安全
+
+- 状态：`anonymous` / `saved_unverified` / `logged_in` / `expired` / `invalid`；
+  「浏览器登录完成」与「会话验证通过」分开，验证不确定时保存为 `saved_unverified`。
+- Cookie 仅 AES-256-GCM 保存在本机 `secrets/`；不进入日志、错误、备份、HTTP 响应、Git。
+- 「删除 Cookie / 退出登录」清除加密存储并尝试删除专用浏览器资料目录（锁定则返回 `locked`）。
+- 验证码/`is_frontier` 身份验证由用户在官方浏览器页面完成，程序不绕过。
+
+### 0.36.4 Cookie 帮助
+
+- 中文/日文/英文各 12 步：Chrome/Edge → `https://live.douyin.com/` → 登录 → F12 → Network → F5 →
+  选 `live.douyin.com` 请求 → Headers → Request Headers → Cookie → 复制值 → 粘贴 → 保存并验证。
+- 含 Firefox 差异、找不到 Cookie 的排查、AES-256-GCM 本地保护说明；错误直接显示在输入区下方。
+
+### 0.36.5 自动化测试
+
+- 新增/更新：浏览器登录 10 项、登录/Cookie 14 项、服务集成 3 项、礼物阶梯 1 项、UI/三语帮助断言更新；
+  API 认证新增 6 个抖音登录路由的未认证 401 断言。
+- 全量：**944 passed / 0 failed / 0 skipped（308,251 ms，2026-11-15 最终复跑）**；
+  `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"`。
+- `tests/integration/api-auth.test.mjs` 单独复跑 **14/14**。
+
+### 0.36.6 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 完整路径 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| 大小 | `97,584,128` bytes（93.1 MB） |
+| SHA-256 | `9e1940ca3174b264b4a63173d857734fa6eba813984a0184af0b91eafd5ce2ee` |
+| Build ID | `aff3fbe6a2f1` |
+| source hash | `aff3fbe6a2f1c5b61ed784a462bd4676040ccd879ecd5d28f539156bd8ae905f` |
+| commit | `91c2fb35be184995e7433abec6ff67a034857eae` |
+| builtAt | `2026-11-15T05:27:27.152Z` |
+| 资源 | `215` files；40 个必需模块 |
+| RT_MANIFEST | **`requireAdministrator`** |
+
+EXE 验证：
+
+| 脚本 | 结果 |
+| --- | --- |
+| `scripts/verify-douyin-browser-login.mjs`（真实 Chrome，未扫码） | **8/8** |
+| `scripts/verify-douyin-exe.mjs`（真实匿名抖音 + 登录状态/Cookie/教程/退出 + 重启/AI） | **25/27**；2 项浏览器启动在 DSH 沙箱内被作业对象阻止（Chrome 直接子进程 `0x80000003`，PowerShell 回退无端口），其余通过 |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-twitch-exe.mjs`（真实 Twitch 回归） | **20/20** |
+| Bilibili / YouTube / Twitch 状态 | 均 200（在上述 EXE 脚本中） |
+
+**EXE 浏览器启动未在沙箱内通过**：同一 `DouyinBrowserLogin` 在普通 Node 顶层进程中用真实 Chrome 捕获二维码 8/8，
+但 EXE 子进程中的 Chrome 被 DSH 作业对象终止；这不是普通 Windows 用户环境的结论，必须人工验收。
+**未执行真实手机扫码**。
+
+### 0.36.7 明确未验证
+
+- 真实手机扫码成功、扫码成功率（未扫码，不能给出比率）。
+- 真实 Cookie 正向验证（需要账号）。
+- 登录后的礼物推送、真实礼物/连送/付费留言（本轮匿名 0 条，标为未观测）。
+- 干净 Windows 电脑、无 Chrome/Edge 环境、非管理员账户、真实 UAC 点击。
+
 
 ## 0.35 DOUYIN-M2M3：抖音接入、登录与礼物解析（2026-11-15）🟡（feature/douyin，等待人工验收）
 

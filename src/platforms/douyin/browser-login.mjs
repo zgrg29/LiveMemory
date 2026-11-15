@@ -447,6 +447,7 @@ export class DouyinBrowserLogin {
     this.sessionSaved = false;
     this.pendingResponseTasks = new Set();
     this.launchDiagnostics = null;
+    this.reloadAttempts = 0;
   }
 
   status() {
@@ -483,6 +484,7 @@ export class DouyinBrowserLogin {
     this.sessionSaved = false;
     this.seenResponses.clear();
     this.browserExited = false;
+    this.reloadAttempts = 0;
     this.startedAt = this.now();
     this.updatedAt = this.startedAt;
     this.expiresAt = null;
@@ -968,6 +970,24 @@ export class DouyinBrowserLogin {
       await sleep(this.options.pollIntervalMs);
       if (this.cancelled || this.closed) break;
       if (this.state === BROWSER_LOGIN_STATES.SUCCESS || this.state === BROWSER_LOGIN_STATES.SUCCESS_UNVERIFIED) break;
+      if (!this.qr
+        && this.cdp
+        && this.scanState === 'waiting'
+        && this.state === BROWSER_LOGIN_STATES.WAITING
+        && this.reloadAttempts < 2
+        && this.startedAt
+        && this.now() - this.startedAt > 6000) {
+        // The official page occasionally starts before the CDP network domain
+        // is attached, so the first get_qrcode response can be missed. Reload
+        // the official page (never a synthetic URL) to request a fresh QR.
+        this.reloadAttempts += 1;
+        try {
+          await this.cdp.send('Page.reload', {ignoreCache: true}, {timeoutMs: 6000});
+          this.logger?.info({event: 'douyin.login.browser.reload', attempt: this.reloadAttempts});
+        } catch {
+          /* the polling loop and the visible browser remain available */
+        }
+      }
       try {
         await this.#pollCookies();
       } catch {

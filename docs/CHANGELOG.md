@@ -1,5 +1,34 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r23 — 2026-11-15（DOUYIN-LOGIN-FIX：浏览器扫码、Cookie 验证与礼物分级）
+
+### 新增 / 修复
+
+- **本机浏览器扫码登录**：`browser-login.mjs` 启动本机 Chrome/Edge 专用资料目录，打开官方
+  `www.douyin.com/login_page`，通过 CDP 捕获官网 `get_qrcode` 二维码并在应用内显示；等待 `sessionid` 后用页面内
+  profile 验证；不启用 headless/no-sandbox/stealth，不伪造指纹或签名。
+- **纯 HTTP 扫码结论**：SSO 返回 HTML 指纹页、passport 返回 `4031`；这不是「抖音禁止扫码」，
+  而是拒绝非浏览器客户端。调查 5 个开源项目的实际登录源码并记录许可证/可整合性（`docs/DOUYIN_LOGIN_RESEARCH.md`）。
+- **Cookie 验证分级**：格式错误 / 不完整 / 已过期 / 平台拒绝 / 网络异常 / 登录无效；只有平台确认才「已登录（已验证）」，
+  不确定时「已保存但未验证」；保存 `verified/verifiedAt/reason`。
+- **12 步三语 Cookie 教程**：F12 → Network → 刷新 → `live.douyin.com` 请求 → Headers → Request Headers → Cookie →
+  复制 → 保存并验证；含 Firefox 差异、排查与 AES-256-GCM 本地保护说明。
+- **礼物四级状态**：扫码/浏览器登录、登录会话有效、直播采集连接、真实礼物事件分开显示；未观测写「尚未观测到」。
+- **删除 / 退出**：清除加密 Cookie，并尝试删除专用浏览器资料目录；失败返回 `locked`，不静默。
+- **安全**：专用 profile 有 `.livememory-owned` 标记；不读取用户日常浏览器配置；新路由仍要求本地会话认证；
+  Cookie 不进入日志、错误、备份、HTTP 响应或 Git。
+
+### 验证
+
+- 全量 **944 passed / 0 failed / 0 skipped（308,251 ms，最终复跑）**；新增浏览器登录 10、服务 3、礼物阶梯 1，
+  更新登录/Cookie 14 与三语/认证断言。
+- 真实 Chrome 二维码捕获 **8/8**（未扫码；约 54 秒、`is_frontier=true`）。
+- 正式 EXE `aff3fbe6a2f1` / commit `91c2fb3` / SHA-256 `9e1940ca…` / `97,584,128` B / requireAdministrator；
+  `verify-douyin-exe` **25/27**（2 项浏览器启动被 DSH 作业对象阻止）；`verify-exe` **10/10**、
+  `verify-twitch-exe` **20/20**。
+- **未验证**：真实手机扫码成功与成功率、真实 Cookie 正向、登录后礼物推送、真实礼物/连送、干净 Windows 账户。
+- 未合并 main、未 Push、未 Tag、未 Release。
+
 ## 0.13.2-r22 — 2026-11-15（DOUYIN-M2M3：抖音接入、登录框架与礼物解析）
 
 ### 新增

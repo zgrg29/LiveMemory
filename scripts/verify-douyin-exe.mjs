@@ -388,6 +388,34 @@ try {
       `profile ${JSON.stringify(logout.json?.profile ?? null)}`
     ]);
 
+    const liveJs = await httpJson(new URL('/js/pages/live.js', info.url).href);
+    const zhI18n = await httpJson(new URL('/i18n/zh-CN.json', info.url).href);
+    const jaI18n = await httpJson(new URL('/i18n/ja.json', info.url).href);
+    const enI18n = await httpJson(new URL('/i18n/en.json', info.url).href);
+    const tutorialComplete = [zhI18n, jaI18n, enI18n].every((entry) => {
+      if (entry.status !== 200) return false;
+      let dict;
+      try {
+        dict = JSON.parse(entry.text);
+      } catch {
+        return false;
+      }
+      for (let index = 1; index <= 12; index += 1) {
+        const text = dict?.live?.source?.[`douyinCookieStep${index}`];
+        if (typeof text !== 'string' || text.trim().length < 10) return false;
+      }
+      return typeof dict?.live?.source?.douyinCookieHelpTitle === 'string';
+    });
+    record('the packaged console serves the browser login UI and the 12-step Cookie tutorial in all three languages',
+      liveJs.status === 200
+      && liveJs.text.includes('/api/douyin/login/browser/start')
+      && liveJs.text.includes('douyinCookieStep')
+      && tutorialComplete, [
+      `live.js HTTP ${liveJs.status}, has browser start ${liveJs.text.includes('/api/douyin/login/browser/start')}`,
+      `zh ${zhI18n.status}, ja ${jaI18n.status}, en ${enI18n.status}`,
+      `12 steps in all locales ${tutorialComplete}`
+    ]);
+
     const checked = await httpJson(new URL('/api/douyin/room', info.url).href, {
       method: 'POST',
       body: {url: `https://live.douyin.com/${webRid}`},
