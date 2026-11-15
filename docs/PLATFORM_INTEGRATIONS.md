@@ -542,6 +542,68 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 **未验证 / 不得宣称**：真实手机扫码成功、登录后的礼物推送、真实礼物、真实连送、真实付费留言、
 真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
 
+## 3C. TikTok Live（M1，2026-11-15，`feature/tiktok`）
+
+完整可行性报告：`docs/TIKTOK_FEASIBILITY_2026-11.md`。以下只记录工程事实。
+
+### 3C.1 传输
+
+| 传输 | 说明 | 默认 |
+| --- | --- | --- |
+| `signer` | 免费社区签名通道 `GET /webcast/rooms/<id>/connect`；无 API Key、无付费、不要求 Business；15 秒轮询；`baseUrl` 可换自建/兼容服务 | ✅ |
+| `browser` | 本机 Chrome/Edge 专用资料目录 + CDP，读取官方直播页自身的 WebSocket 帧；匿名 `room/enter 403` → `TIKTOK_LOGIN_REQUIRED` | 可选（实验性） |
+
+- 无 Key/无付费；**不得**把免费社区签发描述成官方 API。
+- 免费通道对匿名客户端的新连接突发上限为 **5 次/分钟**；适配器 15 秒轮询（4/分钟），429 按 `Retry-After` 退避。
+- 浏览器中继不启用 `--no-sandbox`、不关闭 Web 安全、不注入 stealth、不伪造签名。
+
+### 3C.2 本地免费公开接口
+
+| 端点 | 用途 |
+| --- | --- |
+| `www.tiktok.com/api-live/user/room/?...&uniqueId=<handle>&sourceType=54` | 房间 ID、开播状态、主播 `user.id`/昵称、标题 |
+| `webcast.tiktok.com/webcast/room/info/?room_id=<id>` | 标题、开播时间、主播 `id_str`/`sec_uid`、累计观看 |
+| `webcast.tiktok.com/webcast/gift/list/?room_id=<id>` | 礼物目录（名称 + 钻石数，809 个；10 分钟缓存） |
+
+不需要登录、Cookie、API Key 或签名服务。
+
+### 3C.3 事件映射
+
+| TikTok 消息 | canonical | 去重 | 说明 |
+| --- | --- | --- | --- |
+| `WebcastChatMessage` / `WebcastEmoteChatMessage` | `chat` | `common.msgId` | 原文保留 Unicode/Emoji；`viewer_uid = user.id` |
+| `WebcastGiftMessage`（`repeatEnd=1` 或超时冲刷） | `gift` | `common.msgId` | `amount_minor=null`、`currency=null`、`value_kind=unknown`；`amount_display="<钻石合计> TikTok Diamonds"`；`source_quality=estimated`（真实事件未观测） |
+| `WebcastSubNotifyMessage` | `membership` | `common.msgId` | 无金额；`source_quality=estimated` |
+| `WebcastMemberMessage` / `LikeMessage` / `SocialMessage` | 只计数 | — | 不写事件 |
+| `WebcastRoomUserSeqMessage` | 当前观众数 | — | 只更新 snapshot |
+| `WebcastControlMessage(action=3)` | 一次离线观测 | — | 需两次确认才结束 |
+
+- 稳定身份：`tiktok:<user.id>`；昵称只用于显示；`tiktok:<handle>` 只作监控目标键。
+- 连送：同一 `groupId` 仅最终态写一条；10 秒未收到最终态时按最后值冲刷一次。
+- 钻石是展示价值，**不是主播收入**；不得换算本币。
+
+### 3C.4 监控与保留
+
+- 检测器：`src/monitoring/detectors/tiktok.mjs`；周期键 `tiktok:<handle>:<roomId>`（每场新 roomId）。
+- 策略：90 秒基准、60–150 秒抖动、2 秒请求间隔、4 次连续失败进入错误态、30 分钟慢重试。
+- 保留：TikTok-only 30 天清理原文与过期昵称；保留事件行、计数、稳定 ID。
+
+### 3C.5 验证状态（2026-11-15，Asia/Shanghai）
+
+| 验证 | 结果 |
+| --- | --- |
+| 公开接口 | `aljazeeraenglish`：room `7706695538414062349`、status 2、主播 ID `7074562477175424046`、标题、累计观看 50,817,556；礼物目录 809 个 |
+| 官方网页匿名 | `room/enter` 403；聊天面板“正在加载”；移动端不可用 |
+| 未登录直连推送 WS | 被拒（HTTP 200 代替 101 / 1006）；未签名 `im/fetch` 0 字节 |
+| 免费社区签名通道 | 真实 `WebcastChatMessage`；6/6 有 `user.id` + `msgId` + Unicode 正文 |
+| 源码服务器 | 连接 201、6 条 chat / 5 个身份、停止 `ended` |
+| 正式 EXE（`verify-tiktok-exe`） | **20/20**：真实房间/连接/6 条 chat（3 身份）、SQLite 6/6 external_id、自动监听、重启、AI、四平台状态 |
+| 礼物/连送/订阅 | 已解析 + 自动化测试；**真实事件未观测** |
+| 浏览器中继 | 匿名 403 已实测；**登录后未验证（无账号）** |
+
+**未验证 / 不得宣称**：真实礼物/连送/订阅、登录后浏览器中继、真实断网/下播、多房间真实并发、
+TikTok 官方稳定性、干净 Windows 账户。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：
