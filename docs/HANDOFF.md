@@ -1,11 +1,66 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查与只读验证 · 未改正式业务代码
+本轮：2026-11-15 · TWITCH-M1：Twitch 正式接入、自动化测试、真实直播验证与 Windows EXE · **等待人工验收**
 
-> 本轮只做调查、源码静态核对与公开直播间只读探测；**未改产品代码/数据库/AI/备份、未新增运行时依赖、未 Push/Tag/Release**。
-> 完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`。
+> 本轮在 `feature/twitch` 完成 Twitch 匿名 IRC + 公开元数据接入，构建正式 EXE 并用真实公开频道验证。
+> **未合并 main、未 Push、未创建 Tag、未发布 Release。** 完整交付说明：`docs/STATUS.md` §0.34；
+> 平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3A；日志：`log/2026-11-15-twitch-m1.md`。
 
-## 0. 本轮（PLATFORM-RESEARCH）
+## 0. 本轮（TWITCH-M1）
+
+### 0.1 做了什么
+
+1. **分支**：从 `main`（`21a5bf5`，含已确认的多平台调研提交）创建 `feature/twitch`；所有开发与提交在该分支。
+2. **Twitch 接入**：`src/platforms/twitch/`（link/irc/mapper/client/adapter/service/errors）+
+   `src/monitoring/detectors/twitch.mjs`；无新增运行时依赖。
+3. **统一管线**：所有事件经 `EventIngest`；稳定身份 `twitch:<user-id>`；消息 ID 去重；两次离线确认下播；
+   断线指数退避、15 次后 5 分钟低速探测；多频道独立 adapter/session。
+4. **监控**：`MonitoringManager` 增加 Twitch detector（120 秒基准、90–180 秒抖动、`stream.id` 周期键）；
+   `SessionManager`/数据库/AI 读模型复用，不新建 Twitch 专用画像。
+5. **付费事件**：resub/订阅 → `membership`；赠订 `subgift` → `gift`（赠送者付款、接收者仅展示）；
+   `submysterygift` 跳过防重复；Bits Cheer → `super_chat`（数量 + `amount_display`，金额未知）。
+   **Bits/赠订真实事件未观测到**。
+6. **UI**：直播页新增 Twitch 来源 Tab、频道检查、直播判断、自动监听、三语错误与能力边界说明；
+   Bits 等未知金额显示 `amount_display`，不再显示 0.00。
+7. **保留**：Twitch-only 30 天原文/表情/徽章/展示标签与过期昵称清理；独立审计键，不影响 YouTube。
+8. **测试**：新增 47 项；全量 **875 passed / 0 failed / 0 skipped（253,002 ms）**。
+9. **EXE**：buildId `a4bf602de264` / commit `7da0e0d` / SHA-256 `6a90f564…` / `96,828,416` B /
+   `requireAdministrator`；`verify-twitch-exe` **20/20**，既有 EXE 矩阵全部通过。
+10. **文档**：README、ARCHITECTURE、PLATFORM_INTEGRATIONS、STATUS、HANDOFF、ROADMAP、TEST_PLAN、
+    CHANGELOG 与本日志。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 分支 / 代码提交 | `feature/twitch` / `7da0e0d1905a4f16d1a844f98102fb04c211a7d2` |
+| 真实 Twitch 聊天 | 单频道 138 条；6 频道并发 418 条；418/418 有 User ID + 消息 ID；304 身份；1 条真实 resub |
+| 真实 Bilibili 回归 | 房间 `6`（真实 `7734200`）20 秒 7 条聊天 / 7 个可识别观众 / 停止 `ended` |
+| YouTube 回归 | 正式 EXE 生命周期回放 PASS（180s 断网恢复、同 session、去重、`platform_ended`） |
+| 全量测试 | **875 passed / 0 failed / 0 skipped（253,002 ms）** |
+| 正式 EXE | `a4bf602de264` / `6a90f564b0fd31adabd67b68a764bfe1800d402fd35fcabe3b601ec9d15e6d2d` / 96,828,416 B / requireAdministrator |
+| EXE 矩阵 | Twitch 20/20、启动 10/10、认证 12/12、备份 13/13、说明 14/14、AI 16/16、YouTube 生命周期 PASS |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+### 0.3 下一轮必须先做 / 不要做
+
+1. **先等待开发者人工验收**：按 `docs/STATUS.md` §0.34.4 的 EXE 路径启动，或直接双击
+   `D:\LiveMemory\dist\LiveMemory.exe`，确认 UAC、Twitch Tab、输入直播间、查看昵称/ID/弹幕、
+   付费事件、停止、报告/画像。
+2. **未获明确授权前不要合并 main、不要 Push、不要 Tag/Release、不要删除 `feature/twitch`。**
+3. 若验收失败：在 `feature/twitch` 修复 → 重跑专项/全量 → **重新构建 EXE** → 再交付；不要用旧 EXE。
+4. **不要把 Bits/赠订写成真实已支持**；真实事件仍未观测到。不要把 EventSub 写成已配置。
+5. **不要为通过验收而放宽**金额/身份/去重规则；不要把 Tier/Bits/月数换算成收入。
+6. 验收通过并获授权后合并 main，再检查合并结果、重跑必要测试、汇报最终 Git 状态；本轮不要求 Release。
+
+### 0.4 边界与提交
+
+- 真实 Twitch 只读公开频道，未登录、未付费、未保存/展示正文；未写用户真实数据目录（测试均用
+  `tests/.tmp` 隔离目录）。
+- 真实 UAC 双击/点击、真实拔网、真实“直播中→下播”、Bits/赠订真实事件、EventSub OAuth 仍未验证。
+- 代码提交 `7da0e0d`；文档/构建记录为后续提交。提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A 上一轮（PLATFORM-RESEARCH）
 
 完整报告：`docs/PLATFORM_RESEARCH_TIKTOK_TWITCH_DOUYIN.md`；状态：`docs/STATUS.md` §0.33；日志：`log/2026-11-15-platform-research.md`。
 

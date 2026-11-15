@@ -404,7 +404,7 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 断线重连 | 自动化覆盖连接关闭、`RECONNECT`、看门狗、退避与同 session 恢复；真实拔网未验证 |
 | 下播确认 | 自动化覆盖两次离线确认、stream id 变化、错误不结束；真实“直播中→下播”未捕获 |
 | 多直播间隔离 | 6 个真实频道并发连接、独立 session；自动化覆盖停止一场另一场继续 |
-| Windows EXE | 见 `docs/STATUS.md` 本轮构建与 EXE 实测记录 |
+| Windows EXE | `scripts/verify-twitch-exe.mjs` **20/20**：真实 `xqc` 连接/入库/停止、自动监听目标→check→session→聊天→删除、重启持久化、AI 报告 200、观众读模型 200、Bilibili/YouTube 状态 200；buildId `a4bf602de264` / commit `7da0e0d` / `requireAdministrator` |
 
 **未验证 / 不得宣称**：真实 Bits 事件、真实赠订事件、EventSub OAuth 端到端、真实长时间断网/下播、千条每秒压力、Twitch 官方稳定性承诺。
 

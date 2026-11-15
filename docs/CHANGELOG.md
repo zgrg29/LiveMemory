@@ -1,5 +1,38 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.2-r21 — 2026-11-15（TWITCH-M1：Twitch 正式接入与 Windows EXE）
+
+### 新增
+
+- **Twitch Live（M1）**：匿名 IRC 公开聊天 + 只读公开频道元数据；无需 Twitch 登录、OAuth、API Key、
+  Cookie 或付费采集服务。粘贴频道链接/账号即可，支持多频道并发与自动开播监听。
+- 稳定身份 `twitch:<user-id>`；消息 `id` 去重；Unicode/Emoji 原样保留；`/me` 只去 ACTION 包装。
+- 订阅/续订 → `membership`；赠订 `subgift` → `gift`（赠送者付款、接收者仅展示）；
+  `submysterygift` 跳过以避免与每个 `subgift` 重复计数。
+- Bits/Cheer → `super_chat`，只记数量与 `amount_display`；`amount_minor=null`、`value_kind=unknown`，
+  不换算成主播收入。
+- 自动监听：120 秒基准（90–180 秒抖动），`stream.id` 周期键；两次离线确认下播；断线 1→30 秒退避，
+  15 次后 5 分钟低速探测；多频道独立 session。
+- 直播页新增 Twitch 来源 Tab、频道检查、自动监听、三语错误与能力边界说明；未知金额显示
+  `amount_display`，不再显示 0.00。
+- Twitch-only 30 天原文/表情/徽章/展示标签与过期昵称清理；独立审计键，不覆盖 YouTube。
+
+### 验证
+
+- 新增 47 项自动化；全量 **875 passed / 0 failed / 0 skipped（253,002 ms）**。
+- 真实公开频道：单频道 45 秒 138 条；6 频道并发 60 秒 418 条，418/418 有稳定 User ID + 消息 ID，
+  304 身份，1 条真实 resub；Bits/赠订未观测到。
+- 正式 EXE `a4bf602de264` / SHA-256 `6a90f564b0fd31adabd67b68a764bfe1800d402fd35fcabe3b601ec9d15e6d2d` /
+  `96,828,416` bytes / `requireAdministrator` / commit `7da0e0d`。
+- `verify-twitch-exe` **20/20**；`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、
+  `verify-help-exe` 14/14、`verify-ai-token-exe` 16/16、YouTube 生命周期 PASS。
+- 真实 Bilibili 房间 `6` 20 秒 7 条聊天 / 7 个可识别观众；停止 `ended`。
+
+### 边界
+
+- Bits、赠订真实事件、EventSub OAuth、真实拔网/下播、真实 UAC 双击、长时间 10+ 频道仍未验证。
+- 未合并 main、未 Push、未 Tag、未发布；分支 `feature/twitch` 保留，等待人工验收。
+
 ## 0.13.2-r20 — 2026-11-14（RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限）
 
 ### 变更

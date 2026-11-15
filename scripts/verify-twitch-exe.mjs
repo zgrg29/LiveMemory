@@ -289,6 +289,54 @@ try {
       record('user stop ends only the Twitch session', stopped.status === 200 && stopped.json?.stopped === true, [
         `HTTP ${stopped.status}, session ${stopped.json?.session?.status ?? 'missing'}`
       ]);
+
+      // Automatic monitoring through the packaged EXE: add the live channel as
+      // a persistent target, force one check, and verify the normal adapter and
+      // session are created. The target is deleted afterwards so the restart
+      // scenario stays deterministic.
+      const created = await httpJson(new URL('/api/monitoring', info.url).href, {
+        method: 'POST',
+        body: {platform: 'twitch', input: liveChannel.login}
+      });
+      const targetId = created.json?.target?.id ?? null;
+      record('the packaged EXE persists a Twitch auto-monitor target', created.status === 201 && targetId, [
+        `HTTP ${created.status}`,
+        `target ${targetId ?? 'missing'}`
+      ]);
+      if (targetId) {
+        const checked = await httpJson(new URL(`/api/monitoring/${encodeURIComponent(targetId)}/check`, info.url).href, {
+          method: 'POST',
+          timeoutMs: 20000
+        });
+        const autoSessionId = checked.json?.target?.activeSessionId ?? null;
+        record('a Twitch auto-monitor check starts a normal live session inside the EXE', checked.status === 200
+          && checked.json?.target?.state === 'recording'
+          && autoSessionId, [
+          `HTTP ${checked.status}`,
+          `state ${checked.json?.target?.state ?? 'missing'}`,
+          `session ${autoSessionId ?? 'missing'}`
+        ]);
+        if (autoSessionId) {
+          const auto = await waitFor(async () => {
+            const payload = await httpJson(new URL('/api/live/recordings', info.url).href);
+            const found = (payload.json?.recordings ?? []).find((item) => item.sessionId === autoSessionId);
+            return found && found.messageCount > 0 ? found : null;
+          }, {timeoutMs: 60000, intervalMs: 1000});
+          record('the auto-monitored Twitch session ingests real chat in the EXE', auto.messageCount > 0, [
+            `messages ${auto.messageCount}`,
+            `monitor target ${auto.monitorTargetId ?? 'missing'}`
+          ]);
+          await httpJson(new URL(`/api/live/recordings/${encodeURIComponent(autoSessionId)}/stop`, info.url).href, {
+            method: 'POST'
+          });
+        }
+        const deleted = await httpJson(new URL(`/api/monitoring/${encodeURIComponent(targetId)}`, info.url).href, {
+          method: 'DELETE',
+          body: {confirm: true}
+        });
+        record('the Twitch monitor target can be deleted after capture stops', deleted.status === 200
+          && deleted.json?.deleted === true, [`HTTP ${deleted.status}`]);
+      }
     }
   } finally {
     await app.stop();

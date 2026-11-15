@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.2（2026-11-15，TWITCH-M1）：Twitch 正式接入（匿名 IRC + 公开元数据），真实 6 频道并发 418 条事件、418/418 有稳定 User ID + 消息 ID、1 条真实 resub；Bits/赠订已解析但真实事件未观测；新增 47 测试，全量 875 passed；正式 EXE `a4bf602de264`（`requireAdministrator`，96,828,416 B）；EXE Twitch 验证 20/20，既有矩阵全部通过。**等待人工验收；未合并 main/Push/Tag/Release。** 详见 `docs/STATUS.md` §0.34。
 > v0.13.2（2026-11-14，RC0-ADMIN-MANIFEST）：恢复正式 EXE 双击自动请求管理员权限。RT_MANIFEST 从 `asInvoker` 改为 **`requireAdministrator`**：Windows 显示标准 UAC，同意后提权启动，拒绝即取消；不右键、不绕过 UAC。构建注入前后双重断言；自动化因无法接受 UAC，改用测试专用 asInvoker 副本运行功能场景，正式 EXE 单独断言 Manifest。未改 Bootstrap 目录选择与任何业务逻辑；API 认证、Origin/Host/SSE、凭据与备份恢复规则不变。全量 **828 passed / 0 failed**；`verify-exe` 10/10、`verify-help-exe` 14/14、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16；正式 EXE `e438e74803cb`。**真实 UAC 双击待用户验收；未 Push/Tag/Release。** 完整说明见 `docs/STATUS.md` §0.31 与 `docs/WINDOWS_RUNTIME.md` §13。
 > v0.13.2（2026-11-14，RC0-USAGE-GUIDE）：内置三语使用说明与 RC0 封版。侧栏新增「使用说明 / 使い方 / User guide」（`#/help`），覆盖首次启动、Bilibili/YouTube 连接、记录与历史、Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移、FAQ（8 条）；112 个 `help.*` 键三语一致；只读、无 API 调用、无新增使用限制、无强制审核。新增 9 项 UI 测试；全量 **828 passed / 0 failed**；正式 EXE `74ed76e88a51`（asInvoker，`96,733,184` B）`verify-help-exe` 14/14、`verify-exe` 10/10。真实浏览器截图因本机沙箱禁止 Chromium mojo 未执行，由 DOM 渲染与打包资源检查覆盖。**未 Push/Tag/Release，等待用户决定。** 完整说明见 `docs/STATUS.md` §0.30。
 > v0.13.2（2026-11-14，RC0-AI-EFFICIENCY）：Token 归因、重复输入、动态分批与成本口径。缓存/推理 Token 归因、逐尝试 token 账本、无 usage 请求不再消失；删除三处可证明的重复输入（structured-output Provider 的 schema、画像重复示例、契约逐观众数组）；画像观众上限从写死 10 改为"偏好 10、按预算最多 20"；三语界面显示重试开销占比与每百观众/每百事实 Token，无价格时明确「费用未知」。14 场景基线：请求 -30.6%、总 Token（按实测字节模拟）-10.1%、覆盖与事实完全不变；781 自动化测试。完整说明见 `docs/AI_TOKEN_EFFICIENCY.md`、`docs/STATUS.md` §0.26、`docs/HANDOFF.md` §0 与 `log/2026-11-14-ai-token-efficiency.md`。
@@ -18,6 +19,23 @@
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
+
+## P27 TWITCH-M1：Twitch 正式接入与 Windows EXE（v0.13.2，2026-11-15）🟡 等待人工验收
+
+- ✅ 独立分支 `feature/twitch`（从 `21a5bf5` 创建）；代码提交 `7da0e0d`；未合并 main/Push/Tag/Release
+- ✅ 匿名 IRC 公开聊天 + 公开频道元数据；无需 Twitch 登录、OAuth、API Key、Cookie 或付费采集服务
+- ✅ 稳定身份 `user-id` → `twitch:<id>`；消息 `id` 去重；Unicode/Emoji 原样；`/me` 只去 ACTION 包装
+- ✅ 订阅/续订 `USERNOTICE` → `membership`；赠订 `subgift` → `gift`（赠送者付款）；`submysterygift` 跳过防重复计数
+- ✅ Bits/Cheer → `super_chat`，只记数量与 `amount_display`；`amount_minor=null`、`value_kind=unknown`，不换算收入
+- ✅ 自动开播监听（120 秒基准、90–180 秒抖动、`stream.id` 周期键）；两次离线确认下播；断线 1→30 秒退避
+- ✅ 多频道独立 adapter/session；真实 6 频道并发 60 秒 418 条事件、418/418 有 User ID + 消息 ID、304 身份、1 条真实 resub
+- ✅ 新增 47 项测试；全量 **875 passed / 0 failed / 0 skipped（253,002 ms）**
+- ✅ 正式 EXE `a4bf602de264` / SHA-256 `6a90f564…` / `96,828,416` B / `requireAdministrator`
+- ✅ `verify-twitch-exe` **20/20**（真实 Twitch、自动监听、重启、AI 读取、Bilibili/YouTube 状态）
+- ✅ 既有 EXE 矩阵：`verify-exe` 10/10、`verify-p0-5-exe` 12/12、`verify-p0-2-exe` 13/13、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16、YouTube 生命周期 PASS
+- ✅ 真实 Bilibili 回归：房间 `6` 20 秒 7 条聊天 / 7 个可识别观众 / 停止 `ended`
+- 🟡 **未验证**：Bits 真实事件、赠订真实事件、EventSub OAuth、真实拔网/下播、真实 UAC 双击、长时间 10+ 频道
+- ⬜ 等待开发者人工验收；验收通过并授权后才合并 main
 
 ## P26 PLATFORM-RESEARCH：TikTok / Twitch / 抖音接入调查（v0.13.2，2026-11-15）🟡
 
