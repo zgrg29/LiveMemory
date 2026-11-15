@@ -94,8 +94,7 @@ PASS  switching back to the signing transport takes effect without a restart
 - 分支：`feature/tiktok`；本轮代码与测试提交：
   **`1b9a38bf69ddc56e308a5fab10e2bc931af9a732`**
   （`fix: start TikTok browser relay capture and report real login state`）。
-- 文档与构建记录：**`bd476c97a362eb469d4b363757e6268f8b67c904`**
-  （`docs: record TikTok M3 browser relay fix and EXE acceptance`）。
+- 文档与构建记录：本轮最终 HEAD（见 `git log -1`）。
 - **未合并 main、未 Push、未创建 Tag、未发布 Release。**
 
 ## 0.39 TIKTOK-M2：连接稳定性、浏览器登录与真实 EXE 验收（2026-11-15）🟡（feature/tiktok，等待人工验收）
