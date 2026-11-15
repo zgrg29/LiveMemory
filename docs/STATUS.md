@@ -53,6 +53,8 @@ M1 每 15 秒轮询（240 次/小时），约 7.5 分钟用尽 30 次；适配�
 | 3 分钟短测 | 24 条 chat / 11 位可识别观众 / 24 个不同 msgId / 24/24 稳定 UID / 11 条非 ASCII / 0 重连 / 0 限流 / 2 次请求（130 秒间隔） |
 | 30 分钟长测 | **146 条 chat / 49 位可识别观众 / 146 个不同 msgId / 146/146 稳定 UID / 63 条非 ASCII / 0 重连 / 0 限流 / 14 次请求（130 秒间隔）** |
 
+真实 30 分钟 session 的 AI 读取链路：用同一 SQLite 生成分析包，**146 条 message / 146 个 `tiktok:` 身份 / 63 条非 ASCII / 146 个 message_id**；EXE 内 `GET /api/ai/sessions/:id/report` 200、`/api/viewers?platform=tiktok` 200。
+
 ### 0.39.4 30 分钟长测
 
 `node scripts/verify-tiktok-live-30m.mjs aljazeeraenglish 30`：
