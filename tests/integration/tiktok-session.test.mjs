@@ -5,6 +5,8 @@ import {openDatabase} from '../../src/storage/database/connection.mjs';
 import {migrate} from '../../src/storage/database/migrations/index.mjs';
 import {SessionManager} from '../../src/platforms/shared/session-manager.mjs';
 import {TikTokService} from '../../src/platforms/tiktok/service.mjs';
+import {TikTokBrowserRelay} from '../../src/platforms/tiktok/browser-relay.mjs';
+import {TIKTOK_LOGIN_STATES} from '../../src/platforms/tiktok/browser-login.mjs';
 import {getSession} from '../../src/storage/repositories/sessions.mjs';
 import {listSessionViewers, viewerCurrencyTotals} from '../../src/storage/repositories/viewers.mjs';
 import {buildAnalysisPackage, inspectAnalysisPackage} from '../../src/ai/export/package.mjs';
@@ -60,7 +62,116 @@ class FakeSigner {
   }
 }
 
-function harness({queue, settings = {}, browserLogin = null, browserRelay = null} = {}) {
+/**
+ * A stand-in for the real BrowserSession. It emits already-decoded Webcast
+ * messages through `onFrame`, exactly like the real CDP page listener does.
+ */
+class FakeBrowserSession {
+  constructor({frames = [], ready = {}, launchError = null} = {}) {
+    this.frames = frames;
+    this.ready = ready;
+    this.launchError = launchError;
+    this.alive = false;
+    this.closed = false;
+    this.onFrame = () => {};
+    this.onClose = () => {};
+    this.navigations = [];
+    this.cookies = [{name: 'sessionid', value: 'x', expires: Math.floor(Date.now() / 1000) + 3600}];
+  }
+
+  async launch() {
+    if (this.launchError) throw this.launchError;
+    this.alive = true;
+    return this;
+  }
+
+  isAlive() {
+    return this.alive && !this.closed;
+  }
+
+  requiresLogin() {
+    return Boolean(this.ready.loginRequired);
+  }
+
+  async waitForReady() {
+    if (!this.alive || this.ready.loginRequired) {
+      return {closed: false, loginRequired: Boolean(this.ready.loginRequired), events: 0, roomEnterStatus: null, ...this.ready};
+    }
+    for (const message of this.frames) {
+      if (!this.alive) break;
+      this.onFrame(message);
+    }
+    return {closed: false, loginRequired: false, events: this.frames.length, roomEnterStatus: 200, ...this.ready};
+  }
+
+  async navigate(url) {
+    this.navigations.push(url);
+  }
+
+  async getCookies() {
+    return this.cookies;
+  }
+
+  async evaluate() {
+    return {hasProfileLink: true, hasLoginLink: false};
+  }
+
+  async close() {
+    this.closed = true;
+    this.alive = false;
+  }
+}
+
+function fakeBrowserLogin({state = TIKTOK_LOGIN_STATES.LOGGED_IN, profileOwned = true, marks = []} = {}) {
+  const login = {
+    state,
+    profileOwned,
+    setCaptureActiveProvider(fn) {
+      this.captureProvider = fn;
+    },
+    status() {
+      return {
+        state: this.state,
+        supported: true,
+        browserOpen: false,
+        profile: this.profileOwned ? {owned: true, path: 'C:\\tmp\\tiktok-profile'} : null,
+        verifiedAt: T0,
+        verifiedBy: 'live_room',
+        capture: null,
+        error: null,
+        revalidationRequired: false,
+        captureActive: Boolean(this.captureProvider?.())
+      };
+    },
+    markCaptureVerified(info) {
+      marks.push({type: 'verified', ...info});
+      this.state = TIKTOK_LOGIN_STATES.LOGGED_IN;
+      return this.status();
+    },
+    markCaptureLoginRequired(info) {
+      marks.push({type: 'login_required', ...info});
+      this.state = TIKTOK_LOGIN_STATES.REFUSED;
+      return this.status();
+    },
+    markCaptureFailed(info) {
+      marks.push({type: 'failed', ...info});
+      return this.status();
+    },
+    async verify() {
+      return this.status();
+    },
+    async cancel() {
+      return this.status();
+    },
+    async logout() {
+      return this.status();
+    },
+    async shutdown() {}
+  };
+  return login;
+}
+
+function harness({queue, settings = {}, browserLogin = null, browserRelay = null, signerOverride = null} = {}) {
   const db = openDatabase({memory: true});
   migrate(db, {now: T0});
   let clock = T0;
@@ -98,7 +209,7 @@ function harness({queue, settings = {}, browserLogin = null, browserRelay = null
       return new Map([['56560', {id: '56560', name: 'My First Rose', diamondCount: 1}]]);
     }
   };
-  const signer = new FakeSigner(queue ?? [frame([{method: 'WebcastChatMessage', payload: chatMessage({msgId: 'chat-1', content: 'Hello 世界 😂'})}])]);
+  const signer = signerOverride ?? new FakeSigner(queue ?? [frame([{method: 'WebcastChatMessage', payload: chatMessage({msgId: 'chat-1', content: 'Hello 世界 😂'})}])]);
   const service = new TikTokService({
     sessionManager,
     db,
@@ -320,5 +431,201 @@ test('browser transport requires a verified login before a session can start', a
   } finally {
     await sessionManager.shutdown().catch(() => {});
     db.close();
+  }
+});
+
+test('a selected browser relay is actually available and its events reach SQLite', async () => {
+  const dir = createTempDir('tiktok-browser-capture-');
+  const frames = [
+    {
+      method: 'WebcastChatMessage',
+      payload: chatMessage({msgId: 'browser-chat-1', userId: '777', nickname: 'Browser Alice', content: '来自浏览器 😀'})
+    },
+    {
+      method: 'WebcastGiftMessage',
+      payload: giftMessage({
+        msgId: 'browser-gift-1',
+        userId: '777',
+        nickname: 'Browser Alice',
+        giftName: 'Rose',
+        diamonds: 2,
+        repeatCount: 2,
+        repeatEnd: 1
+      })
+    }
+  ];
+  const relay = new TikTokBrowserRelay({
+    dataDir: dir.dir,
+    sessionFactory: () => new FakeBrowserSession({frames, ready: {events: frames.length, roomEnterStatus: 200}})
+  });
+  const marks = [];
+  const login = fakeBrowserLogin({marks});
+  const {db, sessionManager, service} = harness({
+    settings: {tiktokTransport: 'browser'},
+    browserRelay: relay,
+    browserLogin: login
+  });
+  try {
+    const status = service.status();
+    assert.equal(status.transport.requested, 'browser');
+    assert.equal(status.transport.active, 'browser', 'the relay exposes createAdapter, not start');
+    assert.equal(status.transport.browserAvailable, true);
+
+    const result = await service.connect('creator');
+    assert.equal(result.session.platform, 'tiktok');
+    assert.equal(result.room.uniqueId, 'creator');
+    await waitFor(() => db.prepare('SELECT COUNT(*) AS c FROM events WHERE session_id = ?').get(result.session.id).c >= 2);
+
+    const rows = db.prepare('SELECT * FROM events WHERE session_id = ? ORDER BY id').all(result.session.id);
+    const chat = rows.find((row) => row.event_type === 'chat');
+    assert.equal(chat.viewer_uid, '777');
+    assert.equal(chat.viewer_id, 'tiktok:777');
+    assert.equal(chat.display_name, 'Browser Alice');
+    assert.equal(chat.content, '来自浏览器 😀');
+    assert.equal(chat.external_id, 'browser-chat-1');
+    assert.ok(chat.occurred_at > 0, 'event time is stored');
+
+    const gift = rows.find((row) => row.event_type === 'gift');
+    assert.equal(gift.viewer_id, 'tiktok:777');
+    assert.equal(gift.gift_name, 'Rose');
+    assert.equal(gift.gift_quantity, 2);
+    assert.equal(gift.amount_minor, null);
+    assert.equal(gift.value_kind, 'unknown');
+    assert.equal(gift.amount_display, '4 TikTok Diamonds');
+
+    assert.equal(marks.at(-1)?.type, 'verified', 'real relay success is written back to the login badge');
+    assert.equal(service.status().login.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+
+    const stopped = await service.disconnect({sessionId: result.session.id});
+    assert.equal(stopped.stopped, true);
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+    db.close();
+    dir.cleanup();
+  }
+});
+
+test('the browser relay merges a gift streak and keeps its final quantity', async () => {
+  const dir = createTempDir('tiktok-browser-streak-');
+  const frames = [
+    {
+      method: 'WebcastGiftMessage',
+      payload: giftMessage({
+        msgId: 'gift-step-1',
+        userId: '888',
+        nickname: 'Streaker',
+        giftName: 'Rose',
+        diamonds: 2,
+        repeatCount: 1,
+        repeatEnd: 0,
+        groupId: '8888'
+      })
+    },
+    {
+      method: 'WebcastGiftMessage',
+      payload: giftMessage({
+        msgId: 'gift-step-2',
+        userId: '888',
+        nickname: 'Streaker',
+        giftName: 'Rose',
+        diamonds: 2,
+        repeatCount: 3,
+        repeatEnd: 1,
+        groupId: '8888'
+      })
+    }
+  ];
+  const relay = new TikTokBrowserRelay({
+    dataDir: dir.dir,
+    sessionFactory: () => new FakeBrowserSession({frames, ready: {events: frames.length, roomEnterStatus: 200}})
+  });
+  const {db, sessionManager, service} = harness({
+    settings: {tiktokTransport: 'browser'},
+    browserRelay: relay,
+    browserLogin: fakeBrowserLogin({})
+  });
+  try {
+    const result = await service.connect('creator');
+    await waitFor(() => db.prepare('SELECT COUNT(*) AS c FROM events WHERE session_id = ?').get(result.session.id).c >= 1);
+    const gifts = db.prepare("SELECT * FROM events WHERE session_id = ? AND event_type = 'gift'").all(result.session.id);
+    assert.equal(gifts.length, 1, 'a streak is written once');
+    assert.equal(gifts[0].gift_quantity, 3, 'the final repeat count wins');
+    assert.equal(gifts[0].amount_display, '6 TikTok Diamonds');
+    assert.equal(gifts[0].viewer_id, 'tiktok:888');
+    await service.disconnect({sessionId: result.session.id});
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+    db.close();
+    dir.cleanup();
+  }
+});
+
+test('a stale logged-in marker plus a browser 403 becomes an actionable login error', async () => {
+  const dir = createTempDir('tiktok-browser-403-');
+  const relay = new TikTokBrowserRelay({
+    dataDir: dir.dir,
+    sessionFactory: () => new FakeBrowserSession({
+      ready: {loginRequired: true, events: 0, roomEnterStatus: 403}
+    })
+  });
+  const marks = [];
+  const login = fakeBrowserLogin({marks});
+  const {db, sessionManager, service} = harness({
+    settings: {tiktokTransport: 'browser'},
+    browserRelay: relay,
+    browserLogin: login
+  });
+  try {
+    assert.equal(service.transport().active, 'browser');
+    await assert.rejects(
+      () => service.connect('creator'),
+      (error) => error.code === 'TIKTOK_LOGIN_REQUIRED'
+        && error.details?.reason === 'room_enter_403'
+        && error.messageKey === 'errors.tiktokLoginRequired'
+    );
+    assert.equal(marks[0]?.type, 'login_required');
+    assert.equal(service.status().login.state, TIKTOK_LOGIN_STATES.REFUSED);
+    assert.equal(service.status().transport.active, 'browser', 'the relay stays available after a stale login');
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+    db.close();
+    dir.cleanup();
+  }
+});
+
+test('an explicit browser selection never depends on the signing channel', async () => {
+  const dir = createTempDir('tiktok-browser-no-signer-');
+  const relay = new TikTokBrowserRelay({
+    dataDir: dir.dir,
+    sessionFactory: () => new FakeBrowserSession({frames: [], ready: {events: 0, roomEnterStatus: 200}})
+  });
+  const login = fakeBrowserLogin({});
+  const settings = {tiktokTransport: 'auto'};
+  const {db, sessionManager, service} = harness({
+    settings,
+    browserRelay: relay,
+    browserLogin: login,
+    signerOverride: {}
+  });
+  try {
+    let transport = service.transport();
+    assert.equal(transport.signerAvailable, false);
+    assert.equal(transport.active, 'browser', 'auto falls back to the browser relay when the signer is missing');
+
+    settings.tiktokTransport = 'browser';
+    transport = service.transport();
+    assert.equal(transport.active, 'browser');
+
+    settings.tiktokTransport = 'signer';
+    transport = service.transport();
+    assert.equal(transport.active, null, 'an unavailable signer is reported, not silently replaced');
+    await assert.rejects(
+      () => service.connect('creator'),
+      (error) => error.code === 'TIKTOK_SIGNER_UNAVAILABLE'
+    );
+  } finally {
+    await sessionManager.shutdown().catch(() => {});
+    db.close();
+    dir.cleanup();
   }
 });

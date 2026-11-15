@@ -43,6 +43,10 @@ test('the live page exposes a TikTok tab and uses every TikTok API route', () =>
   assert.match(liveSource, /\/api\/tiktok\/retention\/apply/);
   assert.match(liveSource, /tiktokAutoMonitor/);
   assert.match(liveSource, /checkedTikTok/);
+  assert.match(liveSource, /tiktokVerificationSummary/);
+  assert.match(liveSource, /tiktokVerifyResultBlock/);
+  assert.match(liveSource, /tiktokErrorText/);
+  assert.match(liveSource, /tiktokLoginWindowClosedCapture/);
   assert.doesNotMatch(liveSource, /innerHTML/);
 });
 
@@ -84,6 +88,43 @@ test('all three locales carry the same TikTok UI and error keys', () => {
     'live.source.tiktokLoginStateExpired',
     'live.source.tiktokLoginStateRefused',
     'live.source.tiktokLoginStateUnavailable',
+    'live.source.tiktokLoginVerifyNeedsRoom',
+    'live.source.tiktokLoginVerifyResultTitle',
+    'live.source.tiktokLoginVerifyEvents',
+    'live.source.tiktokLoginVerifyRoomEnter',
+    'live.source.tiktokLoginVerifyCheckedAt',
+    'live.source.tiktokLoginVerifyReason',
+    'live.source.tiktokLoginCaptureNeedsRoom',
+    'live.source.tiktokLoginCaptureError',
+    'live.source.tiktokLoginRevalidation',
+    'live.source.tiktokLoginWindowClosedCapture',
+    'live.source.tiktokLoginLogoutBusy',
+    'live.source.tiktokVerificationTitle',
+    'live.source.tiktokVerificationAccount',
+    'live.source.tiktokVerificationRoom',
+    'live.source.tiktokVerificationConnection',
+    'live.source.tiktokVerificationEvents',
+    'live.source.tiktokVerificationRecording',
+    'live.source.tiktokVerificationNotChecked',
+    'live.source.tiktokVerificationNotConnected',
+    'live.source.tiktokVerificationNoEvents',
+    'live.source.tiktokVerificationEventsCount',
+    'live.source.tiktokVerificationNotRecording',
+    'live.source.tiktokVerificationRecordingActive',
+    'live.source.tiktokReasonRoomEnter403',
+    'live.source.tiktokReasonNoSessionCookie',
+    'live.source.tiktokReasonBrowserClosed',
+    'live.source.tiktokReasonUniqueIdRequired',
+    'live.source.tiktokReasonSessionExpired',
+    'live.source.tiktokReasonCaptureActive',
+    'live.source.tiktokReasonBrowserDidNotStart',
+    'live.source.tiktokReasonPageTarget',
+    'live.source.tiktokReasonPageClosed',
+    'live.source.tiktokReasonNavigateFailed',
+    'live.source.tiktokReasonProfileNotOwned',
+    'live.source.tiktokReasonLaunchFailed',
+    'live.source.tiktokReasonLoginInProgress',
+    'live.source.tiktokErrorReasonDetail',
     'live.source.tiktokCaptureTitle',
     'live.source.tiktokCaptureStateConnected',
     'live.source.tiktokCaptureStateRateLimited',

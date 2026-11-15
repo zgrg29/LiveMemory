@@ -520,6 +520,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     now = Date.now,
     sessionFactory = null,
     loginWaitMs = 20000,
+    streakFlushMs = 10000,
     env = process.env,
     ...options
   } = {}) {
@@ -534,9 +535,12 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.sessionFactory = sessionFactory ?? ((args) => new BrowserSession(args));
     this.options = options;
     this.loginWaitMs = loginWaitMs;
+    this.streakFlushMs = streakFlushMs;
     this.session = null;
     this.started = false;
+    this.onEvent = () => {};
     this.seen = new Set();
+    this.pendingGifts = new Map();
     this.counters = {frames: 0, messages: 0, chats: 0, gifts: 0, duplicates: 0, ignored: 0};
     this.loginRequired = false;
     this.lastEventAt = null;
@@ -548,6 +552,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.nextRetryAt = null;
     this.lastFailure = null;
     this.timer = null;
+    this.giftTimer = null;
     this.reconnecting = false;
   }
 
@@ -572,6 +577,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       lastFailure: this.lastFailure,
       loginRequired: this.loginRequired,
       counters: {...this.counters},
+      pendingGifts: this.pendingGifts.size,
       ...extra
     };
   }
@@ -636,6 +642,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       roomEnterStatus: this.roomEnterStatus
     });
     this.#startWatchdog();
+    this.#startGiftFlush();
   }
 
   #createSession() {
@@ -681,6 +688,39 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       }
     }, 15000);
     this.timer.unref?.();
+  }
+
+  #startGiftFlush() {
+    if (this.giftTimer) clearInterval(this.giftTimer);
+    this.giftTimer = setInterval(() => {
+      if (!this.started) return;
+      const cutoff = this.now() - this.streakFlushMs;
+      for (const [key, entry] of this.pendingGifts) {
+        if (entry.updatedAt > cutoff) continue;
+        this.pendingGifts.delete(key);
+        this.#emitGift(entry);
+      }
+    }, 2000);
+    this.giftTimer.unref?.();
+  }
+
+  #flushGifts() {
+    for (const entry of this.pendingGifts.values()) this.#emitGift(entry);
+    this.pendingGifts.clear();
+  }
+
+  #emitGift(entry) {
+    if (!entry?.event) return;
+    this.counters.messages += 1;
+    this.counters.gifts += 1;
+    this.lastEventAt = this.now();
+    this.lastEventType = 'gift';
+    this.eventsVerified = true;
+    try {
+      this.onEvent(entry.event);
+    } catch (error) {
+      this.logger?.warn({event: 'tiktok.browser.emit.failed', kind: 'gift', code: error?.code ?? 'unknown'});
+    }
   }
 
   async #reconnect() {
@@ -756,6 +796,25 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       this.counters.ignored += 1;
       return;
     }
+    if (mapped.kind === 'gift') {
+      // The page receives every repeat update of a gift streak. Keep only the
+      // final combined state (or flush a stale one) so a streak is counted
+      // once, matching the signer transport and the canonical ingest rules.
+      const key = mapped.groupKey;
+      const previous = this.pendingGifts.get(key);
+      if (previous) {
+        previous.event = mapped.event;
+        previous.updatedAt = this.now();
+      } else {
+        this.pendingGifts.set(key, {event: mapped.event, updatedAt: this.now()});
+      }
+      if (mapped.final) {
+        const entry = this.pendingGifts.get(key);
+        this.pendingGifts.delete(key);
+        if (entry) this.#emitGift(entry);
+      }
+      return;
+    }
     if (mapped.kind !== 'event') {
       this.counters.ignored += 1;
       return;
@@ -784,10 +843,17 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
   }
 
   async stop() {
+    // Flush any final gift streak before the session closes so a gift that was
+    // already observed is not lost.
+    this.#flushGifts();
     this.started = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.giftTimer) {
+      clearInterval(this.giftTimer);
+      this.giftTimer = null;
     }
     const session = this.session;
     this.session = null;

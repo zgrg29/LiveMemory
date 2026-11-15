@@ -70,6 +70,7 @@ export class TikTokBrowserLogin {
     browserPath = null,
     terminateBrowser = null,
     uniqueId = null,
+    isCaptureActive = null,
     pollIntervalMs = 2000,
     loggedInPollIntervalMs = 5000,
     verifyTimeoutMs = 25000,
@@ -85,6 +86,7 @@ export class TikTokBrowserLogin {
     this.env = env;
     this.browserPath = browserPath ?? null;
     this.terminateBrowser = terminateBrowser ?? terminateOwnedBrowsers;
+    this.isCaptureActive = typeof isCaptureActive === 'function' ? isCaptureActive : () => false;
     this.uniqueId = uniqueId ? String(uniqueId).replace(/^@/, '') : null;
     this.pollIntervalMs = pollIntervalMs;
     this.loggedInPollIntervalMs = loggedInPollIntervalMs;
@@ -105,6 +107,9 @@ export class TikTokBrowserLogin {
     this.verifiedBy = null;
     this.capture = null;
     this.room = null;
+    this.loginWindowClosedAt = null;
+    this.restoredFromDisk = false;
+    this.revalidationRequired = false;
     this.persisted = this.#loadPersisted();
     if (this.persisted?.state === TIKTOK_LOGIN_STATES.LOGGED_IN) {
       const profileReady = Boolean(this.profileDir && existsSync(join(this.profileDir, BROWSER_MARKER)));
@@ -112,9 +117,25 @@ export class TikTokBrowserLogin {
       this.verifiedAt = this.persisted.verifiedAt ?? null;
       this.verifiedBy = this.persisted.verifiedBy ?? null;
       this.updatedAt = this.persisted.at ?? null;
+      this.restoredFromDisk = this.state === TIKTOK_LOGIN_STATES.LOGGED_IN;
+      // The marker is not proof that the cookie still works. The next capture
+      // or explicit verification has to confirm it against TikTok.
+      this.revalidationRequired = this.restoredFromDisk;
     } else if (this.persisted?.state === TIKTOK_LOGIN_STATES.EXPIRED) {
       this.state = TIKTOK_LOGIN_STATES.EXPIRED;
       this.updatedAt = this.persisted.at ?? null;
+    }
+  }
+
+  setCaptureActiveProvider(fn) {
+    if (typeof fn === 'function') this.isCaptureActive = fn;
+  }
+
+  #captureActive() {
+    try {
+      return Boolean(this.isCaptureActive?.());
+    } catch {
+      return false;
     }
   }
 
@@ -199,7 +220,11 @@ export class TikTokBrowserLogin {
       cookieNames: [...this.cookieNames],
       error: this.lastError,
       capture: this.capture,
-      room: this.room
+      room: this.room,
+      loginWindowClosedAt: this.loginWindowClosedAt,
+      restoredFromDisk: this.restoredFromDisk,
+      revalidationRequired: this.revalidationRequired,
+      captureActive: this.#captureActive()
     };
   }
 
@@ -299,8 +324,12 @@ export class TikTokBrowserLogin {
     if (this.state === TIKTOK_LOGIN_STATES.OPENING) return;
     this.logger?.info({event: 'tiktok.login.browser_closed', state: this.state});
     this.#stopPolling();
+    this.loginWindowClosedAt = this.now();
     if (this.state === TIKTOK_LOGIN_STATES.WAITING || this.state === TIKTOK_LOGIN_STATES.VERIFYING) {
-      this.#setState(TIKTOK_LOGIN_STATES.IDLE, {reason: 'browser_closed'});
+      const profileReady = Boolean(this.profileDir && existsSync(join(this.profileDir, BROWSER_MARKER)));
+      const persistedLoggedIn = this.persisted?.state === TIKTOK_LOGIN_STATES.LOGGED_IN && profileReady && !this.persisted.stale;
+      this.#setState(persistedLoggedIn ? TIKTOK_LOGIN_STATES.LOGGED_IN : TIKTOK_LOGIN_STATES.IDLE, {reason: 'browser_closed'});
+      if (persistedLoggedIn) this.revalidationRequired = true;
     }
     // A persisted logged-in profile stays "logged in" without an open window;
     // the UI shows the status and can reopen the browser later.
@@ -382,21 +411,37 @@ export class TikTokBrowserLogin {
     }
     this.verifiedAt = this.now();
     this.verifiedBy = dom?.hasProfileLink ? 'page_profile' : 'session_cookie';
+    this.revalidationRequired = false;
     this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: this.verifiedBy});
   }
 
   async verify({uniqueId = null, timeoutMs = this.verifyTimeoutMs} = {}) {
     if (uniqueId) this.uniqueId = String(uniqueId).replace(/^@/, '');
+    this.capture = null;
     if (!this.session?.isAlive?.()) {
       const started = await this.start({uniqueId: this.uniqueId});
       if (!started || ![TIKTOK_LOGIN_STATES.WAITING, TIKTOK_LOGIN_STATES.LOGGED_IN, TIKTOK_LOGIN_STATES.VERIFYING].includes(this.state)) {
+        this.capture = {
+          state: 'error',
+          reason: started?.error?.reason ?? 'browser_launch_failed',
+          eventsReceived: 0,
+          uniqueId: this.uniqueId ?? null,
+          checkedAt: this.now()
+        };
         return this.status();
       }
     }
     if (!this.uniqueId) {
-      this.#setState(TIKTOK_LOGIN_STATES.ERROR, {
-        error: {code: 'TIKTOK_LOGIN_VERIFY_NO_ROOM', reason: 'unique_id_required'}
-      });
+      // A missing room is a missing input, not a broken login window. Do not
+      // poison the login state with `error`; report exactly what is missing.
+      this.capture = {
+        state: 'needs_room',
+        reason: 'unique_id_required',
+        eventsReceived: 0,
+        roomEnterStatus: null,
+        uniqueId: null,
+        checkedAt: this.now()
+      };
       return this.status();
     }
     this.#setState(TIKTOK_LOGIN_STATES.VERIFYING, {reason: 'verify_room'});
@@ -404,9 +449,18 @@ export class TikTokBrowserLogin {
     try {
       await this.session.navigate(liveUrl);
     } catch (error) {
-      this.#setState(TIKTOK_LOGIN_STATES.ERROR, {
-        error: {code: 'TIKTOK_BROWSER_FAILED', reason: error?.message ?? 'navigate_failed'}
-      });
+      this.lastError = {code: 'TIKTOK_BROWSER_FAILED', reason: error?.message ?? 'navigate_failed'};
+      this.capture = {
+        state: 'error',
+        reason: 'navigate_failed',
+        eventsReceived: 0,
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
+      if (this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+        this.#setState(TIKTOK_LOGIN_STATES.ERROR, {error: this.lastError});
+      }
       return this.status();
     }
     const ready = this.session.waitForReady
@@ -423,15 +477,28 @@ export class TikTokBrowserLogin {
       liveUrl
     };
     if (ready.closed) {
-      this.#setState(TIKTOK_LOGIN_STATES.ERROR, {
-        error: {code: 'TIKTOK_BROWSER_FAILED', reason: 'browser_closed'}
-      });
-      this.capture = {state: 'error', eventsReceived: 0, checkedAt: this.now()};
+      this.capture = {
+        state: 'error',
+        reason: 'browser_closed',
+        eventsReceived: 0,
+        roomEnterStatus: this.room.roomEnterStatus,
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
       return this.status();
     }
     if (!hasCookie) {
       this.#setState(TIKTOK_LOGIN_STATES.EXPIRED, {reason: 'no_valid_session_cookie'});
-      this.capture = {state: 'login_required', eventsReceived: 0, checkedAt: this.now()};
+      this.capture = {
+        state: 'login_required',
+        reason: 'no_session_cookie',
+        eventsReceived: 0,
+        roomEnterStatus: this.room.roomEnterStatus,
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
       return this.status();
     }
     if (ready.loginRequired || this.room.roomEnterStatus === 403) {
@@ -439,41 +506,143 @@ export class TikTokBrowserLogin {
       // platform refusing this browser, not a login success and not a reason
       // to forge frames.
       this.#setState(TIKTOK_LOGIN_STATES.REFUSED, {reason: 'room_enter_403'});
-      this.capture = {state: 'platform_refused', eventsReceived: 0, checkedAt: this.now()};
+      this.capture = {
+        state: 'platform_refused',
+        reason: 'room_enter_403',
+        eventsReceived: 0,
+        roomEnterStatus: this.room.roomEnterStatus ?? 403,
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
       return this.status();
     }
+    const eventsReceived = Number(this.room.eventsReceived ?? 0);
     this.verifiedAt = this.now();
     this.verifiedBy = 'live_room';
+    this.revalidationRequired = false;
     this.capture = {
-      state: this.room.eventsReceived > 0 ? 'events_received' : 'connected_no_events',
-      eventsReceived: this.room.eventsReceived,
+      state: eventsReceived > 0 ? 'events_received' : 'connected_no_events',
+      reason: eventsReceived > 0
+        ? 'events_received'
+        : (ready.timedOut ? 'no_events_timeout' : 'connected_no_events'),
+      eventsReceived,
       roomEnterStatus: this.room.roomEnterStatus,
+      timedOut: Boolean(ready.timedOut),
+      uniqueId: this.uniqueId,
+      liveUrl,
       checkedAt: this.now()
     };
     this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: 'live_room'});
     return this.status();
   }
 
+  /**
+   * Mirror evidence from the capture adapter back into the login badge.
+   * Called by TikTokService after the relay really opened the live page.
+   */
+  markCaptureVerified({eventsReceived = 0, roomEnterStatus = null, uniqueId = null, liveUrl = null} = {}) {
+    const count = Number(eventsReceived) || 0;
+    this.verifiedAt = this.now();
+    this.verifiedBy = 'live_room';
+    this.revalidationRequired = false;
+    this.capture = {
+      state: count > 0 ? 'events_received' : 'connected_no_events',
+      reason: count > 0 ? 'events_received' : (roomEnterStatus === 200 ? 'connected_no_events' : 'capture_started'),
+      eventsReceived: count,
+      roomEnterStatus: roomEnterStatus ?? null,
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      liveUrl,
+      checkedAt: this.now()
+    };
+    this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: 'live_room', reason: 'capture_verified'});
+    return this.status();
+  }
+
+  /** The official page refused room entry: never keep showing a stale login. */
+  markCaptureLoginRequired({reason = 'room_enter_403', roomEnterStatus = 403, uniqueId = null} = {}) {
+    this.revalidationRequired = true;
+    this.capture = {
+      state: 'platform_refused',
+      reason,
+      eventsReceived: 0,
+      roomEnterStatus,
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      checkedAt: this.now()
+    };
+    this.#setState(TIKTOK_LOGIN_STATES.REFUSED, {reason});
+    return this.status();
+  }
+
+  /** Browser launch/target failure: keep the login identity but record why. */
+  markCaptureFailed({reason = 'browser_failed', uniqueId = null} = {}) {
+    this.lastError = {code: 'TIKTOK_BROWSER_FAILED', reason};
+    this.capture = {
+      state: 'error',
+      reason,
+      eventsReceived: 0,
+      roomEnterStatus: null,
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      checkedAt: this.now()
+    };
+    if (this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+      this.#setState(TIKTOK_LOGIN_STATES.ERROR, {error: this.lastError});
+    }
+    return this.status();
+  }
+
   async cancel() {
     this.#stopPolling();
-    await this.#closeBrowser();
-    this.#setState(TIKTOK_LOGIN_STATES.IDLE, {reason: 'cancelled'});
-    this.room = null;
-    this.capture = null;
+    const captureActive = this.#captureActive();
+    const wasLoggedIn = this.state === TIKTOK_LOGIN_STATES.LOGGED_IN;
+    await this.#closeBrowser({keepOwnedBrowser: captureActive});
+    this.loginWindowClosedAt = this.now();
+    if (captureActive) {
+      // The capture adapter still owns a tab in the same dedicated browser.
+      // Closing the login page must not terminate that browser.
+      if (wasLoggedIn && this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+        this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'login_window_closed_capture_active'});
+      }
+      return this.status();
+    }
+    if (wasLoggedIn) {
+      this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'browser_closed'});
+      this.revalidationRequired = true;
+    } else {
+      this.#setState(TIKTOK_LOGIN_STATES.IDLE, {reason: 'cancelled'});
+      this.room = null;
+      this.capture = null;
+    }
     return this.status();
   }
 
   async closeBrowser() {
     this.#stopPolling();
-    await this.#closeBrowser();
+    const captureActive = this.#captureActive();
+    const wasLoggedIn = this.state === TIKTOK_LOGIN_STATES.LOGGED_IN;
+    await this.#closeBrowser({keepOwnedBrowser: captureActive});
+    this.loginWindowClosedAt = this.now();
     // Keep the persisted login state: closing the window is not a logout.
-    if (this.state === TIKTOK_LOGIN_STATES.WAITING || this.state === TIKTOK_LOGIN_STATES.VERIFYING) {
+    if (captureActive) {
+      if (wasLoggedIn && this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+        this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'login_window_closed_capture_active'});
+      }
+    } else if (wasLoggedIn) {
+      this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'browser_closed'});
+      this.revalidationRequired = true;
+    } else if (this.state === TIKTOK_LOGIN_STATES.WAITING || this.state === TIKTOK_LOGIN_STATES.VERIFYING) {
       this.#setState(TIKTOK_LOGIN_STATES.IDLE, {reason: 'browser_closed'});
     }
     return this.status();
   }
 
   async logout() {
+    if (this.#captureActive()) {
+      // Removing the dedicated profile would terminate the capture tab. Ask
+      // the user to stop recording first; never silently kill a live recording.
+      this.lastError = {code: 'TIKTOK_CAPTURE_ACTIVE', reason: 'stop_capture_first'};
+      return this.status();
+    }
     this.#stopPolling();
     await this.#closeBrowser();
     this.#clearProfile();
@@ -483,16 +652,19 @@ export class TikTokBrowserLogin {
     this.room = null;
     this.capture = null;
     this.cookieNames = [];
+    this.restoredFromDisk = false;
+    this.revalidationRequired = false;
+    this.lastError = null;
     this.#setState(TIKTOK_LOGIN_STATES.IDLE, {reason: 'logged_out'});
     return this.status();
   }
 
   async shutdown() {
     this.#stopPolling();
-    await this.#closeBrowser();
+    await this.#closeBrowser({force: true});
   }
 
-  async #closeBrowser() {
+  async #closeBrowser({keepOwnedBrowser = false, force = false} = {}) {
     const session = this.session;
     this.session = null;
     if (session) {
@@ -502,7 +674,7 @@ export class TikTokBrowserLogin {
         /* ignore */
       }
     }
-    if (this.profileDir) {
+    if (this.profileDir && (force || !keepOwnedBrowser)) {
       // The profile belongs to LiveMemory; closing its browser cannot affect
       // the user's daily Chrome/Edge windows because the command line must
       // contain this exact profile path.

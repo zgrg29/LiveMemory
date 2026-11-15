@@ -55,7 +55,7 @@ class FakeSession {
   }
 }
 
-function harness({session = new FakeSession(), dataDir = null} = {}) {
+function harness({session = new FakeSession(), dataDir = null, isCaptureActive = null} = {}) {
   const temp = dataDir ? null : createTempDir('tiktok-login-');
   const dir = dataDir ?? temp.dir;
   let terminated = 0;
@@ -64,6 +64,7 @@ function harness({session = new FakeSession(), dataDir = null} = {}) {
     logger: null,
     browserPath: 'C:\\fake\\chrome.exe',
     sessionFactory: () => session,
+    isCaptureActive,
     terminateBrowser: async () => {
       terminated += 1;
       return true;
@@ -82,6 +83,14 @@ function harness({session = new FakeSession(), dataDir = null} = {}) {
       temp?.cleanup();
     }
   };
+}
+
+function loggedInSession(extra = {}) {
+  return new FakeSession({
+    cookies: [{name: 'sessionid', value: 'x', expires: futureSeconds()}],
+    dom: {hasProfileLink: true, hasLoginLink: false},
+    ...extra
+  });
 }
 
 test('a session cookie plus an official profile page becomes logged in', async () => {
@@ -206,10 +215,112 @@ test('a persisted login survives a restart but a missing profile is not called l
       pollIntervalMs: 100000
     });
     assert.equal(second.status().state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(second.status().restoredFromDisk, true);
+    assert.equal(second.status().revalidationRequired, true, 'an old marker alone must require revalidation');
+
+    const fresh = loggedInSession({ready: {loginRequired: false, events: 2, roomEnterStatus: 200}});
+    second.sessionFactory = () => fresh;
+    const verified = await second.verify({uniqueId: 'creator', timeoutMs: 50});
+    assert.equal(verified.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(verified.capture.state, 'events_received');
+    assert.equal(verified.capture.eventsReceived, 2);
+    assert.equal(verified.revalidationRequired, false, 'real event delivery clears the revalidation flag');
+
     await second.logout();
     assert.equal(second.status().state, TIKTOK_LOGIN_STATES.IDLE);
   } finally {
     temp.cleanup();
+  }
+});
+
+test('verifying without a room link reports the missing input without poisoning the login', async () => {
+  const ctx = harness({session: loggedInSession()});
+  try {
+    await ctx.login.start();
+    const loggedIn = await ctx.login.checkNow();
+    assert.equal(loggedIn.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+
+    const verified = await ctx.login.verify({timeoutMs: 50});
+    assert.equal(verified.state, TIKTOK_LOGIN_STATES.LOGGED_IN, 'a missing room is not a login failure');
+    assert.equal(verified.capture.state, 'needs_room');
+    assert.equal(verified.capture.reason, 'unique_id_required');
+    assert.equal(verified.browserOpen, true);
+    assert.equal(verified.error, null);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('closing the login window keeps the account logged in and marks revalidation', async () => {
+  const ctx = harness({session: loggedInSession()});
+  try {
+    await ctx.login.start();
+    await ctx.login.checkNow();
+    const closed = await ctx.login.cancel();
+    assert.equal(closed.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(closed.browserOpen, false);
+    assert.ok(closed.loginWindowClosedAt > 0);
+    assert.equal(closed.revalidationRequired, true);
+    assert.equal(closed.captureActive, false);
+    assert.equal(ctx.terminated() >= 1, true);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('closing the login page during an active capture does not terminate the owned browser', async () => {
+  const capture = {active: false};
+  const ctx = harness({session: loggedInSession(), isCaptureActive: () => capture.active});
+  try {
+    await ctx.login.start();
+    await ctx.login.checkNow();
+    capture.active = true;
+    const before = ctx.terminated();
+    const closed = await ctx.login.cancel();
+    assert.equal(closed.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(closed.browserOpen, false);
+    assert.equal(closed.captureActive, true);
+    assert.equal(ctx.terminated(), before, 'the capture tab must keep its browser process');
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('logout is refused while a capture is active instead of killing the recording', async () => {
+  const capture = {active: false};
+  const ctx = harness({session: loggedInSession(), isCaptureActive: () => capture.active});
+  try {
+    await ctx.login.start();
+    await ctx.login.checkNow();
+    capture.active = true;
+    const status = await ctx.login.logout();
+    assert.equal(status.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(status.error.code, 'TIKTOK_CAPTURE_ACTIVE');
+    assert.equal(status.error.reason, 'stop_capture_first');
+    assert.equal(ctx.terminated(), 0);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('capture evidence updates the login badge and a 403 turns it into refused', async () => {
+  const ctx = harness({session: loggedInSession()});
+  try {
+    await ctx.login.start();
+    await ctx.login.checkNow();
+    const delivered = ctx.login.markCaptureVerified({eventsReceived: 3, roomEnterStatus: 200});
+    assert.equal(delivered.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(delivered.verifiedBy, 'live_room');
+    assert.equal(delivered.capture.state, 'events_received');
+    assert.equal(delivered.capture.eventsReceived, 3);
+
+    const refused = ctx.login.markCaptureLoginRequired({roomEnterStatus: 403, reason: 'room_enter_403'});
+    assert.equal(refused.state, TIKTOK_LOGIN_STATES.REFUSED);
+    assert.equal(refused.capture.state, 'platform_refused');
+    assert.equal(refused.capture.roomEnterStatus, 403);
+    assert.equal(refused.revalidationRequired, true);
+  } finally {
+    await ctx.cleanup();
   }
 });
 

@@ -176,6 +176,7 @@ export const livePage = {
     let tiktokLogin = null;
     let tiktokLoginTimer = null;
     let tiktokLoginBusy = false;
+    let tiktokVerifyResult = null;
     let tiktokCaptureHost = null;
     let tiktokLoginHost = null;
     let douyinLoginHint = '';
@@ -469,6 +470,7 @@ export const livePage = {
         }
         updateHeroConnection(selected);
         updateTikTokCaptureHost();
+        updateTikTokLoginHost();
       }
       return payload;
     }
@@ -1994,6 +1996,140 @@ export const livePage = {
       return map[code] ? t(map[code]) : t('live.source.tiktokReasonUnknown');
     }
 
+    function tiktokReasonDetailText(reason) {
+      const map = {
+        browser_not_found: 'live.source.tiktokReasonBrowserUnavailable',
+        browser_did_not_start: 'live.source.tiktokReasonBrowserDidNotStart',
+        page_target_unavailable: 'live.source.tiktokReasonPageTarget',
+        page_closed: 'live.source.tiktokReasonPageClosed',
+        room_enter_403: 'live.source.tiktokReasonRoomEnter403',
+        no_session_cookie: 'live.source.tiktokReasonNoSessionCookie',
+        no_valid_session_cookie: 'live.source.tiktokReasonNoSessionCookie',
+        browser_closed: 'live.source.tiktokReasonBrowserClosed',
+        navigate_failed: 'live.source.tiktokReasonNavigateFailed',
+        unique_id_required: 'live.source.tiktokReasonUniqueIdRequired',
+        profile_not_owned: 'live.source.tiktokReasonProfileNotOwned',
+        launch_failed: 'live.source.tiktokReasonLaunchFailed',
+        browser_launch_failed: 'live.source.tiktokReasonLaunchFailed',
+        session_expired: 'live.source.tiktokReasonSessionExpired',
+        capture_active: 'live.source.tiktokReasonCaptureActive',
+        stop_capture_first: 'live.source.tiktokReasonCaptureActive',
+        login_required: 'live.source.tiktokReasonLoginRequired',
+        login_in_progress: 'live.source.tiktokReasonLoginInProgress',
+        login_unavailable: 'live.source.tiktokReasonBrowserUnavailable',
+        login_not_configured: 'live.source.tiktokReasonBrowserUnavailable',
+        relay_not_available: 'live.source.tiktokReasonBrowserUnavailable',
+        signer_not_available: 'live.source.tiktokReasonSignerUnavailable',
+        no_events_timeout: 'live.source.tiktokLoginCaptureNoEvents',
+        connected_no_events: 'live.source.tiktokLoginCaptureNoEvents',
+        events_received: 'live.source.tiktokLoginCaptureEvents'
+      };
+      return map[reason] ? t(map[reason]) : (reason ? String(reason) : t('live.source.tiktokReasonUnknown'));
+    }
+
+    function tiktokErrorText(error) {
+      const base = ctx.describeError(error);
+      const reason = error?.details?.reason;
+      if (!reason) return base;
+      return `${base} ${t('live.source.tiktokErrorReasonDetail', {reason: tiktokReasonDetailText(reason)})}`;
+    }
+
+    function tiktokCaptureTone(capture) {
+      if (!capture) return 'neutral';
+      if (capture.state === 'events_received') return 'accent';
+      if (capture.state === 'connected_no_events') return 'warn';
+      if (capture.state === 'needs_room') return 'warn';
+      if (['login_required', 'platform_refused', 'error'].includes(capture.state)) return 'danger';
+      return 'neutral';
+    }
+
+    function tiktokRecordingState() {
+      const active = recordings.find((recording) => recording.platform === 'tiktok');
+      return active?.connection?.state ?? tiktokStatus?.recording ?? 'idle';
+    }
+
+    function tiktokCaptureForUi(login) {
+      const result = tiktokVerifyResult ?? login?.capture ?? null;
+      if (!result) return null;
+      const currentRoom = checkedTikTok?.uniqueId ?? null;
+      if (currentRoom && result.uniqueId && result.uniqueId !== currentRoom) return null;
+      return result;
+    }
+
+    function tiktokVerificationSummary(login) {
+      const box = el('section', {className: 'tiktok-verification'});
+      box.append(el('span', {className: 'label', text: t('live.source.tiktokVerificationTitle')}));
+      const loginMeta = tiktokLoginStateMeta(login);
+      const capture = tiktokCaptureForUi(login);
+      const recordingState = tiktokRecordingState();
+      const rows = [
+        {
+          label: t('live.source.tiktokVerificationAccount'),
+          value: t(loginMeta.key),
+          tone: loginMeta.tone
+        },
+        {
+          label: t('live.source.tiktokVerificationRoom'),
+          value: checkedTikTok
+            ? `@${checkedTikTok.uniqueId ?? '—'} · ${checkedTikTok.roomId ?? '—'}`
+            : t('live.source.tiktokVerificationNotChecked'),
+          tone: checkedTikTok ? 'accent' : 'neutral'
+        },
+        {
+          label: t('live.source.tiktokVerificationConnection'),
+          value: capture ? tiktokLoginCaptureText(capture) : t('live.source.tiktokVerificationNotConnected'),
+          tone: capture ? tiktokCaptureTone(capture) : 'neutral'
+        },
+        {
+          label: t('live.source.tiktokVerificationEvents'),
+          value: Number(capture?.eventsReceived) > 0
+            ? t('live.source.tiktokVerificationEventsCount', {n: formatInteger(capture.eventsReceived, ctx.locale)})
+            : t('live.source.tiktokVerificationNoEvents'),
+          tone: Number(capture?.eventsReceived) > 0 ? 'accent' : 'neutral'
+        },
+        {
+          label: t('live.source.tiktokVerificationRecording'),
+          value: recordingState === 'connected' || recordingState === 'connecting'
+            ? t('live.source.tiktokVerificationRecordingActive')
+            : (recordingState === 'idle' ? t('live.source.tiktokVerificationNotRecording') : t('live.source.tiktokCaptureStateStopped')),
+          tone: recordingState === 'connected' || recordingState === 'connecting' ? 'live' : 'neutral'
+        }
+      ];
+      for (const row of rows) {
+        box.append(el('div', {className: 'source-status'},
+          el('span', {className: 'small', text: row.label}),
+          chip(row.value, row.tone)));
+      }
+      return box;
+    }
+
+    function tiktokVerifyResultBlock(login) {
+      const result = tiktokCaptureForUi(login);
+      if (!result) return null;
+      const box = el('section', {className: 'tiktok-verify-result'});
+      box.append(el('span', {className: 'label', text: t('live.source.tiktokLoginVerifyResultTitle')}));
+      box.append(el('div', {className: 'source-status'},
+        chip(tiktokLoginCaptureText(result), tiktokCaptureTone(result))));
+      const lines = [];
+      if (Number(result.eventsReceived) > 0) {
+        lines.push(t('live.source.tiktokLoginVerifyEvents', {n: formatInteger(result.eventsReceived, ctx.locale)}));
+      }
+      if (result.roomEnterStatus !== null && result.roomEnterStatus !== undefined) {
+        lines.push(t('live.source.tiktokLoginVerifyRoomEnter', {status: result.roomEnterStatus}));
+      }
+      if (result.reason) {
+        lines.push(t('live.source.tiktokLoginVerifyReason', {reason: tiktokReasonDetailText(result.reason)}));
+      }
+      if (result.checkedAt) {
+        lines.push(t('live.source.tiktokLoginVerifyCheckedAt', {time: formatDateTime(result.checkedAt, ctx.locale)}));
+      }
+      if (result.state === 'needs_room') {
+        lines.push(t('live.source.tiktokLoginVerifyNeedsRoom'));
+      }
+      for (const line of lines) box.append(el('p', {className: 'source-note', text: line}));
+      return box;
+    }
+
     function tiktokCaptureMeta(capture) {
       const category = capture?.category;
       if (category === 'normal') return {key: 'live.source.tiktokCaptureStateConnected', tone: 'live'};
@@ -2015,6 +2151,8 @@ export const livePage = {
       if (capture.state === 'connected_no_events') return t('live.source.tiktokLoginCaptureNoEvents');
       if (capture.state === 'login_required') return t('live.source.tiktokLoginCaptureLoginRequired');
       if (capture.state === 'platform_refused') return t('live.source.tiktokLoginCaptureRefused');
+      if (capture.state === 'needs_room') return t('live.source.tiktokLoginCaptureNeedsRoom');
+      if (capture.state === 'error') return t('live.source.tiktokLoginCaptureError');
       return t('live.source.tiktokLoginCaptureUnknown');
     }
 
@@ -2113,17 +2251,29 @@ export const livePage = {
         el('span', {className: 'label', text: t('live.source.tiktokLoginTitle')}),
         chip(t(meta.key), meta.tone, {dot: meta.tone === 'warn'})));
       card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginHint')}));
+      const captureActive = Boolean(tiktokStatus?.transport?.captureActive)
+        || recordings.some((recording) => recording.platform === 'tiktok');
       if (login?.browserOpen) card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginBrowserOpen')}));
-      else if (login?.state === 'logged_in') card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginBrowserClosed')}));
+      else if (login?.state === 'logged_in') {
+        card.append(el('p', {
+          className: 'source-note',
+          text: captureActive
+            ? t('live.source.tiktokLoginWindowClosedCapture')
+            : t('live.source.tiktokLoginBrowserClosed')
+        }));
+        if (login?.revalidationRequired) {
+          card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginRevalidation')}));
+        }
+      }
       if (login?.error?.code) {
         card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginError', {
-          reason: login.error.reason ?? login.error.code
+          reason: login.error.reason ? tiktokReasonDetailText(login.error.reason) : login.error.code
         })}));
       }
       if (login?.capture) {
         card.append(el('div', {className: 'source-status'},
           el('span', {className: 'label', text: t('live.source.tiktokLoginCaptureTitle')}),
-          chip(tiktokLoginCaptureText(login.capture), login.capture.state === 'events_received' ? 'accent' : 'neutral')));
+          chip(tiktokLoginCaptureText(login.capture), tiktokCaptureTone(login.capture))));
       }
       const actions = el('div', {className: 'hero-actions', style: {marginTop: '12px', flexWrap: 'wrap'}});
       const loggedIn = login?.state === 'logged_in';
@@ -2147,6 +2297,7 @@ export const livePage = {
           className: 'button button--ghost button--small',
           type: 'button',
           text: t('live.source.tiktokLoginLogout'),
+          attrs: captureActive ? {disabled: ''} : {},
           onClick: (event) => logoutTikTokLogin(event.currentTarget)
         }));
       }
@@ -2159,6 +2310,12 @@ export const livePage = {
         }));
       }
       card.append(actions);
+      if (captureActive) {
+        card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginLogoutBusy')}));
+      }
+      const resultBlock = tiktokVerifyResultBlock(login);
+      if (resultBlock) card.append(resultBlock);
+      card.append(tiktokVerificationSummary(login));
       card.append(el('p', {className: 'source-note', text: t('live.source.tiktokLoginVerifyHint')}));
       const security = el('details', {className: 'auto-details'});
       security.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
@@ -2289,10 +2446,11 @@ export const livePage = {
         const payload = await api.post('/api/tiktok/transport', {transport});
         tiktokStatus = payload.tiktok ?? tiktokStatus;
         tiktokLogin = tiktokStatus?.login ?? tiktokLogin;
+        tiktokVerifyResult = null;
         renderSource();
         ctx.toast(t('live.source.tiktokTransportSaved'));
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
       }
     }
 
@@ -2373,6 +2531,7 @@ export const livePage = {
       button.disabled = true;
       const original = button.textContent;
       button.textContent = t('live.source.tiktokLoginOpening');
+      tiktokVerifyResult = null;
       try {
         const payload = await api.post('/api/tiktok/login/start', {url: tiktokInputValue() || null});
         tiktokLogin = payload.login ?? tiktokLogin;
@@ -2380,7 +2539,7 @@ export const livePage = {
         updateTikTokLoginHost();
         startTikTokLoginPolling();
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
         button.disabled = false;
         button.textContent = original;
       } finally {
@@ -2392,29 +2551,56 @@ export const livePage = {
       if (tiktokLoginBusy) return;
       const url = tiktokInputValue();
       if (!url) {
-        ctx.toast(t('errors.tiktokLinkInvalid'), {tone: 'error'});
+        tiktokVerifyResult = {
+          state: 'needs_room',
+          reason: 'unique_id_required',
+          eventsReceived: 0,
+          roomEnterStatus: null,
+          checkedAt: Date.now()
+        };
+        updateTikTokLoginHost();
+        ctx.toast(t('live.source.tiktokLoginVerifyNeedsRoom'), {tone: 'warn'});
         return;
       }
       tiktokLoginBusy = true;
       button.disabled = true;
       const original = button.textContent;
       button.textContent = t('live.source.tiktokLoginVerifying');
+      tiktokVerifyResult = null;
       try {
         const payload = await api.post('/api/tiktok/login/verify', {url});
         tiktokLogin = payload.login ?? tiktokLogin;
         if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        const capture = tiktokLogin?.capture ?? payload.login?.verification?.capture ?? null;
+        tiktokVerifyResult = capture
+          ? {...capture}
+          : {
+            state: tiktokLogin?.state === 'logged_in' ? 'connected_no_events' : 'login_required',
+            reason: tiktokLogin?.state ?? 'not_logged_in',
+            eventsReceived: 0,
+            checkedAt: Date.now()
+          };
         updateTikTokLoginHost();
-        if (tiktokLogin?.capture?.state === 'events_received') {
+        if (tiktokVerifyResult.state === 'events_received') {
           ctx.toast(t('live.source.tiktokLoginCaptureEvents'));
-        } else if (tiktokLogin?.capture?.state === 'connected_no_events') {
+        } else if (tiktokVerifyResult.state === 'connected_no_events') {
           ctx.toast(t('live.source.tiktokLoginCaptureNoEvents'), {tone: 'warn'});
-        } else if (tiktokLogin?.capture?.state === 'platform_refused') {
+        } else if (tiktokVerifyResult.state === 'platform_refused') {
           ctx.toast(t('live.source.tiktokLoginCaptureRefused'), {tone: 'error'});
+        } else if (tiktokVerifyResult.state === 'needs_room') {
+          ctx.toast(t('live.source.tiktokLoginVerifyNeedsRoom'), {tone: 'warn'});
         } else {
-          ctx.toast(t('live.source.tiktokLoginCaptureUnknown'), {tone: 'warn'});
+          ctx.toast(tiktokLoginCaptureText(tiktokVerifyResult) || t('live.source.tiktokLoginCaptureUnknown'), {tone: 'warn'});
         }
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        tiktokVerifyResult = {
+          state: 'error',
+          reason: error?.details?.reason ?? error?.code ?? 'request_failed',
+          eventsReceived: 0,
+          checkedAt: Date.now()
+        };
+        updateTikTokLoginHost();
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
       } finally {
         tiktokLoginBusy = false;
         button.disabled = false;
@@ -2436,7 +2622,7 @@ export const livePage = {
         if (tiktokStatus) tiktokStatus.login = tiktokLogin;
         updateTikTokLoginHost();
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
       }
     }
 
@@ -2447,9 +2633,16 @@ export const livePage = {
         const payload = await api.post('/api/tiktok/login/logout', {});
         tiktokLogin = payload.login ?? tiktokLogin;
         if (tiktokStatus) tiktokStatus.login = tiktokLogin;
+        if (tiktokLogin?.error?.code === 'TIKTOK_CAPTURE_ACTIVE') {
+          ctx.toast(t('live.source.tiktokLoginLogoutBusy'), {tone: 'warn'});
+          button.disabled = false;
+          updateTikTokLoginHost();
+          return;
+        }
+        tiktokVerifyResult = null;
         updateTikTokLoginHost();
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
         button.disabled = false;
       }
     }
@@ -2466,9 +2659,12 @@ export const livePage = {
       try {
         const result = await api.post('/api/tiktok/room', {url});
         checkedTikTok = {...result.room, input: url};
+        if (tiktokVerifyResult?.uniqueId && tiktokVerifyResult.uniqueId !== checkedTikTok.uniqueId) {
+          tiktokVerifyResult = null;
+        }
         renderSource();
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
         button.disabled = false;
         button.textContent = original;
       }
@@ -2482,15 +2678,24 @@ export const livePage = {
       try {
         const payload = await api.post('/api/tiktok/connect', {url: checkedTikTok.input});
         checkedTikTok = null;
+        tiktokVerifyResult = null;
         await refreshTikTokStatus();
         await refreshRecordings();
         await openSession(payload.session.id, {force: true});
         await ctx.refreshStatus();
         ctx.toast(t('live.source.tiktokStarted', {name: payload.room?.anchorName ?? payload.room?.uniqueId ?? ''}));
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
         button.disabled = false;
         button.textContent = original;
+        // A browser 403/stale-session failure is mirrored back into the login
+        // badge by the service; refresh it so the UI cannot keep saying
+        // "logged in" next to an actionable login error.
+        await refreshTikTokStatus();
+        if (!destroyed) {
+          updateTikTokLoginHost();
+          updateTikTokCaptureHost();
+        }
       }
     }
 
@@ -2502,7 +2707,7 @@ export const livePage = {
         renderSource();
         ctx.toast(t('live.source.tiktokRetentionApplied', {count: result?.summary?.purged ?? 0}));
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        ctx.toast(tiktokErrorText(error), {tone: 'error'});
         button.disabled = false;
       }
     }

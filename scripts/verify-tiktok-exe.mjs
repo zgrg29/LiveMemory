@@ -233,6 +233,34 @@ try {
       `HTTP ${loginStatus.status}, state ${loginStatus.json?.login?.state ?? 'missing'}`
     ]);
 
+    // Regression for the M2 acceptance bug: selecting the browser relay used
+    // to leave `transport.active = null` because the service probed a
+    // non-existent `relay.start` member. The packaged EXE must recognize the
+    // transport without launching a browser, and must not depend on the signer.
+    const browserTransport = await httpJson(new URL('/api/tiktok/transport', info.url).href, {
+      method: 'POST',
+      body: {transport: 'browser'}
+    });
+    record('the packaged EXE recognizes the selected browser relay as an available transport',
+      browserTransport.status === 200
+        && browserTransport.json?.tiktok?.transport?.requested === 'browser'
+        && browserTransport.json?.tiktok?.transport?.browserAvailable === true
+        && browserTransport.json?.tiktok?.transport?.active === 'browser', [
+        `HTTP ${browserTransport.status}`,
+        `requested ${browserTransport.json?.tiktok?.transport?.requested ?? 'missing'}`,
+        `browserAvailable ${browserTransport.json?.tiktok?.transport?.browserAvailable ?? 'missing'}`,
+        `active ${browserTransport.json?.tiktok?.transport?.active ?? 'missing'}`
+      ]);
+    const signerTransport = await httpJson(new URL('/api/tiktok/transport', info.url).href, {
+      method: 'POST',
+      body: {transport: 'signer'}
+    });
+    record('switching back to the signing transport takes effect without a restart',
+      signerTransport.status === 200 && signerTransport.json?.tiktok?.transport?.active === 'signer', [
+        `HTTP ${signerTransport.status}`,
+        `active ${signerTransport.json?.tiktok?.transport?.active ?? 'missing'}`
+      ]);
+
     const roomResponse = await httpJson(new URL('/api/tiktok/room', info.url).href, {
       method: 'POST',
       body: {url: liveUrl},

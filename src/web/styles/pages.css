@@ -1769,6 +1769,26 @@
   line-height: 1.5;
 }
 
+.tiktok-verification,
+.tiktok-verify-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.tiktok-verification .source-status,
+.tiktok-verify-result .source-status {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tiktok-verify-result .source-note {
+  margin-top: 0;
+}
+
 .source-meta {
   display: grid;
   gap: 6px;
