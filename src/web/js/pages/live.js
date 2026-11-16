@@ -176,6 +176,7 @@ export const livePage = {
     let douyinCookieDraft = '';
     let douyinCookieError = '';
     let tiktokCaptureHost = null;
+    let tiktokListHost = null;
     let douyinLoginHint = '';
 
     const summaryCache = new Map();
@@ -1496,6 +1497,7 @@ export const livePage = {
         clear(refs.activeHost);
         if (count > 0) refs.activeHost.append(buildActiveRecordingsCard());
       }
+      updateTikTokListHost();
     }
 
     function renderNewView() {
@@ -1580,6 +1582,7 @@ export const livePage = {
       qrCanvasRef = null;
       qrWrapRef = null;
       tiktokCaptureHost = null;
+      tiktokListHost = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
           el('div', {className: 'card-title', text: t('live.source.title')}),
@@ -2197,11 +2200,20 @@ export const livePage = {
       return box;
     }
 
+    function updateTikTokListHost() {
+      if (!tiktokListHost || destroyed) return;
+      clear(tiktokListHost);
+      const list = buildTikTokRecordingsList();
+      tiktokListHost.hidden = !list;
+      if (list) tiktokListHost.append(list);
+    }
+
     function updateTikTokCaptureHost() {
       if (!tiktokCaptureHost || destroyed) return;
       clear(tiktokCaptureHost);
       tiktokCaptureHost.append(tiktokStateSummary());
       tiktokCaptureHost.append(tiktokCaptureCard(currentTikTokCapture()));
+      updateTikTokListHost();
     }
 
     function tiktokCaptureCard(capture) {
@@ -2336,8 +2348,9 @@ export const livePage = {
       if (tiktokAutoMonitor) {
         panel.append(buildAutoMonitorSection('tiktok'));
         panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
-        const activeList = buildTikTokRecordingsList();
-        if (activeList) panel.append(activeList);
+        tiktokListHost = el('div');
+        updateTikTokListHost();
+        panel.append(tiktokListHost);
         tiktokCaptureHost = el('div');
         tiktokCaptureHost.append(tiktokStateSummary());
         tiktokCaptureHost.append(tiktokCaptureCard(capture));
@@ -2369,8 +2382,9 @@ export const livePage = {
 
       if (checkedTikTok) panel.append(buildTikTokRoomMeta(checkedTikTok));
 
-      const activeList = buildTikTokRecordingsList();
-      if (activeList) panel.append(activeList);
+      tiktokListHost = el('div');
+      updateTikTokListHost();
+      panel.append(tiktokListHost);
 
       tiktokCaptureHost = el('div');
       tiktokCaptureHost.append(tiktokStateSummary());
