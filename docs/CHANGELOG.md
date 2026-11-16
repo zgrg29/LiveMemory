@@ -1,5 +1,58 @@
 # 版本变化（CHANGELOG）
 
+## 0.14.0 — 2026-11-16（五平台正式发布：Twitch / 抖音 / TikTok，Multi-Platform Release）
+
+首个**正式稳定版**（非 RC）。产品版本从 `0.13.3` 升到 `0.14.0`：
+相对上一个正式发布 `v0.13.2-rc.0`（Tag `cb28624`）累计 44 个提交、
+136 个文件、+37,847 / −184，新增三个直播平台。
+
+### 发布
+
+| 项目 | 值 |
+| --- | --- |
+| Release Title | `LiveMemory v0.14.0 — Multi-Platform Release` |
+| Release Tag | `v0.14.0` |
+| 类型 | 正式稳定版（非 Pre-release） |
+| EXE Build ID | `17f84b1956e1` |
+| EXE SHA-256 | `6862079a025fa08d5b7fcf82c16cc3152fedbb7852866022dad4c96977bbe0d9` |
+| EXE 大小 | 97,769,984 bytes |
+| 发布包 | `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes，SHA-256 `5d7b7e65…`） |
+| Manifest | `requireAdministrator` |
+
+### 新增平台
+
+- **Twitch**：匿名 IRC 公开频道聊天 + 公开频道只读元数据；无需账号/OAuth/API Key/Cookie；
+  真实 6 频道 60 秒 418 条事件，418/418 带稳定 User ID 与消息 ID；1 条真实 resub。
+- **抖音 Live**：公开直播间页 + 匿名签名 WebSocket；昵称、稳定 UID、原文、消息 ID、去重、重连、
+  两次离线确认、多房间隔离、自动开播；礼物需登录（真实礼物未观测）。
+- **TikTok Live**：统一匿名本地 `webcast` WebSocket（仅匿名 `ttwid`）；无登录/无扫码/无中继/
+  不依赖签名服务；房间信息本地免费读取；非官方协议、无续传游标。
+
+### 改进
+
+- TikTok 多直播间并发：重复限制收窄到同一 `platformRoomId`，可在同一窗口记录多个不同房间。
+- 五平台统一走 `EventIngest`：去重、观众聚合、按币种与 value_kind 金额统计口径一致。
+- 断线重连指数退避 + 抖动；平台错误如实上报；两次离线确认才判定下播。
+- 正式界面移除模拟直播入口，`MockLiveSource` 与 `/api/simulate/*` 仅作测试夹具。
+
+### 修复
+
+- 抖音登录打开两个浏览器窗口；Cookie 状态改为分级验证（格式/不完整/过期/平台拒绝/网络）。
+- TikTok `PushFrame` 被当作 `WebcastResponse` 解析导致真实事件为 0；`403` 被误判为登录失效。
+- TikTok 采集状态不可见；重连不限流；房间列表不刷新；旧版本专用浏览器 Profile 残留。
+
+### 验收（本轮真实执行）
+
+- 单元 **687 passed / 0 failed**；集成 **347 passed / 0 failed**（合计 1034）。
+- `verify-exe` **10/10**；`verify-p0-2-exe` **13/13**；`verify-ai-token-exe` **16/16**。
+- 发布包 5 个文件，SHA256SUMS 逐项复核通过，包内 EXE 与 `dist/LiveMemory.exe` 哈希一致。
+
+### 未验证 / 不宣称
+
+- TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订：**NOT-OBSERVED**。
+- 干净 Windows 环境、真实双击 UAC、长期多房间压力测试、真实网卡断线：**未执行**。
+- 十语言界面、独立 AI 输出语言设置、Kick 及其他新平台：**未实现**，仅为后续规划。
+
 ## 0.13.3-r2 — 2026-11-16（TIKTOK-M6 人工验收通过并合并 main）
 
 ### 合并

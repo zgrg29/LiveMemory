@@ -31,6 +31,20 @@
 
 > v0.14.0 规划轮（2026-11-16，I18N/PLATFORM）：**只做规划、调查与文档，不改业务代码、不新增语言、不接入新平台、不打包、不发布。** 核实当前国际化真实结构（三语、每份字典 2,265 键、键集与占位符零差异），确认「界面语言」与「AI 输出语言」目前是默认耦合且无独立持久设置；定位到真实缺口（两份语言清单、3 项 Header 语言控件、`max-width:132px`、`LOCALE_NAME` 三语、`dedupe_key` 语言相关）。调查 Kick 三个候选开源项目（kixo / Kick-Live-Connector / kick-api）并确认官方 API 无「读取聊天」能力。新增 `docs/I18N.md`、`docs/PLATFORM_ADMISSION.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md`。详见 `docs/STATUS.md` §0.45。
 
+> v0.14.0 正式发布（2026-11-16，Multi-Platform Release）：五平台版本封版。产品版本 `0.13.3` → `0.14.0`，Tag `v0.14.0` 指向 `d268cf9`，GitHub Release 已发布。EXE Build ID `17f84b1956e1` / SHA-256 `6862079a…` / 97,769,984 bytes / `requireAdministrator`；发布包 `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`）。验收：**687 unit + 347 integration = 1034 passed**；`verify-exe` 10/10、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16。TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订仍 **NOT-OBSERVED**。**十语言、独立 AI 输出语言与 Kick 等新平台均为后续规划，不在本版。** 详见 `docs/STATUS.md` §0.46、`docs/RELEASE.md` §11。
+
+## P45 v0.14.0 五平台正式发布（2026-11-16）🚀
+
+- ✅ 版本决策：`0.14.0`（相对 `v0.13.2-rc.0` 新增 Twitch / 抖音 / TikTok 三平台，SemVer minor）
+- ✅ 版本号同步：`package.json`、`src/shared/app-info.mjs`、CHANGELOG、STATUS、release notes
+- ✅ 全量自动化：**687 unit + 347 integration = 1034 passed / 0 failed / 0 skipped**
+- ✅ EXE 验收：`verify-exe` **10/10**、`verify-p0-2-exe` **13/13**、`verify-ai-token-exe` **16/16**
+- ✅ 正式 EXE：Build ID `17f84b1956e1`、97,769,984 bytes、SHA-256 `6862079a…`、Manifest `requireAdministrator`
+- ✅ 发布包：`LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`），
+  含 EXE / README / LICENSE / RELEASE_NOTES / SHA256SUMS，逐项校验通过，无密钥与用户数据
+- ✅ Tag `v0.14.0` → `d268cf9`；GitHub Release 与 Tag 一致；未创建重复 Tag/Release
+- ⬜ 真实双击 UAC、干净 Windows 环境、真实手机扫码、真实礼物：仍需人工或事件触发，未宣称通过
+
 ## P38 I18N/PLATFORM 规划：十语言与平台准入规范（v0.14.0 规划，2026-11-16）✅
 
 - ✅ 只读调查：`src/web/i18n/*.json`（三语、2,265 键/份）、`src/web/js/i18n.js`、`src/shared/locale.mjs`、
@@ -46,7 +60,7 @@
 - ✅ 更新 `AGENTS.md` §2/§4/§6.16/§6.17/§7/§10/§11（长期约束）
 - ⬜ 未新增语言、未接入平台、未改任何业务代码（本轮边界）
 
-## P39 I18N-M0：国际化架构整理（v0.14.0）⬜
+## P39 I18N-M0：国际化架构整理（v0.15.0）⬜
 
 目标：拆掉「三语假设」，**不新增语言**即可独立验收。
 
@@ -59,7 +73,7 @@
 - 风险：Header 高可见区域回归；归一化行为变化；漏改路由白名单校验点
 - 详见 `docs/I18N.md` §5
 
-## P40 I18N-M1：新增七种语言资源（v0.14.0）⬜
+## P40 I18N-M1：新增七种语言资源（v0.15.0）⬜
 
 目标：`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七份字典 100% 对齐。
 
@@ -71,7 +85,7 @@
 - 风险：约 15,855 条翻译量；德语/西语膨胀；`zh-TW` 不是简繁转换；EXE 体积
 - 详见 `docs/I18N.md` §5、§6
 
-## P41 I18N-M2：AI 输出语言解耦与兼容性验证（v0.14.1）⬜
+## P41 I18N-M2：AI 输出语言解耦与兼容性验证（v0.15.1）⬜
 
 目标：L2 独立、持久、任务内不可变，跨语言不破坏长期画像。
 
@@ -84,7 +98,7 @@
 - 风险：合并键语言分叉、提示词体积/Token 成本、新语言 Provider JSON 遵循度
 - 详见 `docs/I18N.md` §5
 
-## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.15.0）⬜
+## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.16.0）⬜
 
 目标：十语言在真实 Windows EXE 上完成整体验收。
 
@@ -96,7 +110,7 @@
 - 风险：矩阵工作量大、容易被「抽查 2 语言即宣称通过」；多语言 Provider 输出质量；干净 Windows 环境仍未验证
 - 详见 `docs/I18N.md` §5
 
-## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.15.x）🟡 调查完成、未连接
+## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.16.x）🟡 调查完成、未连接
 
 - ✅ G0 调查完成（2026-11-16）：三个候选项目存在性/维护状态/许可证已核实
   （kixo MIT，2026-10 活跃；Kick-Live-Connector MIT，2024-11 停更；kick-api Apache-2.0，Rust，不适配）
@@ -891,8 +905,8 @@ M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 →
 所有 → M8 ⬜
 
 # 2026-11-16 起的两条主线（互不阻塞，可交替推进）
-P38 ✅（规划/文档）→ P39 ⬜ → P40 ⬜ → P41 ⬜ → P42 ⬜
-P38 ✅（规划/文档）→ P43 🟡（Kick G0 完成，待 G1）→ P44 🟡（后续候选逐个 G0–G6）
+P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P39 ⬜ → P40 ⬜ → P41 ⬜ → P42 ⬜
+P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P43 🟡（Kick G0 完成，待 G1）→ P44 🟡（后续候选逐个 G0–G6）
 ```
 
 **主线排序原则**：国际化优先（P39–P42），完成后才开始第一个新平台的 G1 真实验证（P43）。

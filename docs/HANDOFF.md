@@ -1,6 +1,82 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · I18N/PLATFORM 规划轮 · **只调查与写文档；未改业务代码；687 unit passed；未新增语言/平台；未 Push/Tag/Release**
+本轮：2026-11-16 · **v0.14.0 五平台正式发布** · 产品版本 `0.14.0` · Tag `v0.14.0` → `d268cf9` · EXE Build ID `17f84b1956e1` · 1034 测试通过 · **已 Push/Tag/Release**
+
+> 用户明确授权本轮完成**阶段性正式 Release**。已发布：
+> `LiveMemory v0.14.0 — Multi-Platform Release`，Tag `v0.14.0`，
+> 资产 `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`）。
+> 发布前完成了版本决策、全量测试、正式 EXE 构建、`verify-exe` 等三套 EXE 验收与包内容校验。
+> **未改动采集/AI/画像/存储/恢复逻辑（唯一代码改动是版本号 2 行），未做无关重构，
+> 未创建重复 Tag 或重复 Release。十语言、独立 AI 输出语言与 Kick 等新平台仍未实现。**
+
+## 0. 本轮（v0.14.0 正式发布）
+
+### 0.1 版本决策
+
+| 项目 | 值 | 依据 |
+| --- | --- | --- |
+| 上一正式发布 | `v0.13.2-rc.0`（Tag `cb28624`） | 仓库此前唯一 Tag 与 Release |
+| 开发期版本 | `0.13.3` | `package.json` / `APP_VERSION` |
+| **本版** | **`0.14.0`** | 相对上一版新增 Twitch / 抖音 / TikTok 三个平台 + 多房间并发，属 SemVer minor；`0.13.3` 已作开发期版本 |
+| Tag / Title | `v0.14.0` / `LiveMemory v0.14.0 — Multi-Platform Release` | 正式稳定版（非 Pre-release） |
+| Tag Target | `d268cf9`（`chore: bump version to 0.14.0`） | 该提交的 `src/` 内容即 EXE 的 `build-info.commit` |
+
+版本号同步：`package.json`、`src/shared/app-info.mjs`、`docs/CHANGELOG.md`、`docs/STATUS.md`、
+`docs/release-notes/v0.14.0.md`。
+
+### 0.2 测试与 EXE 验收（真实结果）
+
+| 运行 | 结果 |
+| --- | --- |
+| 单元（`--test-isolation=none`） | **687 passed / 0 failed / 0 skipped**（15,179.52 ms） |
+| 集成 | **347 passed / 0 failed / 0 skipped**（267,428.51 ms） |
+| `verify-exe` | **10 / 10** |
+| `verify-p0-2-exe` | **13 / 13** |
+| `verify-ai-token-exe` | **16 / 16** |
+
+`node --test tests/unit tests/integration` 在本环境不可用（沙箱禁止带管道 stdio 的子进程），
+因此使用 `AGENTS.md` §5 记录的单进程模式；这是既有做法，不是降低标准。
+
+**环境限制（如实记录）**：`verify-exe` 首次以 `EPERM / no writable application folder` 中止，
+原因是本轮沙箱禁止写入 `%LOCALAPPDATA%\LiveMemory`。把 EXE 解压根与临时目录重定向到仓库内
+可写目录后，**同一二进制 10/10 通过**（`app-root` = `17f84b1956e1d197afef`，即本版资产哈希）。
+真实用户环境使用 `%LOCALAPPDATA%`，与此无关；**不得因此宣称已在干净环境验收**。
+
+### 0.3 发布产物
+
+| 文件 | bytes | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | 97,769,984 | `6862079a025fa08d5b7fcf82c16cc3152fedbb7852866022dad4c96977bbe0d9` |
+| `README.md` | 54,502 | `de40a0b4b7ff74788fa78f359cc193e8329020b12663857b34c37ac54b1a4cc5` |
+| `LICENSE` | 1,063 | `32f41a237cd7e80b1f83589c058ff8da73903dd25091b4eefb0114487182303b` |
+| `RELEASE_NOTES.md` | 15,911 | `0fc30e7012a3c179750ab20b5c51b26123a2617067ccccd4179022fa5992a4c7` |
+| `LiveMemory-v0.14.0-windows-x64.zip` | 35,977,845 | `5d7b7e65eb3cea72156c5ecd97496c277427e1a33782d5b75b7a16dc09091188` |
+
+Build ID `17f84b1956e1` / commit `d268cf9` / builtAt `2026-11-16T06:51:04.013Z` /
+226 files / 51 required modules / 内嵌 Node `24.21.0` / Manifest **`requireAdministrator`**。
+
+### 0.4 未验证 / 不得改成 PASS
+
+- TikTok 礼物 / 连送 / 订阅：**NOT-OBSERVED**。
+- 抖音真实礼物、真实手机扫码：**NOT-OBSERVED / 未执行**。
+- Twitch Bits 与赠订：**NOT-OBSERVED**（订阅/续订已观测）。
+- 干净 Windows 环境、真实双击 UAC、长期多房间压力测试、真实网卡断线：**未执行**。
+- 除 DeepSeek 外其他 Provider 的真实付费验收：**未逐一执行**。
+
+### 0.5 下一轮
+
+**P39 / I18N-M0：国际化架构整理（v0.15.0）**，不新增语言。
+`docs/ROADMAP.md` 已把 P39–P44 的版本标签顺延（P39/P40 → v0.15.0，P41 → v0.15.1，
+P42 → v0.16.0，P43 → v0.16.x），因为 `v0.14.0` 已被本次发布占用。
+
+### 0.6 Git
+
+- Tag `v0.14.0` → `d268cf9`；`main` 已 Push 到 `origin`；GitHub Release 与 Tag 一致。
+- 发布后的文档提交不改变 buildId（buildId 是内容哈希）。
+
+---
+
+上一轮：2026-11-16 · I18N/PLATFORM 规划轮 · **只调查与写文档；未改业务代码；687 unit passed；未新增语言/平台；未 Push/Tag/Release**
 
 > 本轮是**规划轮**：核实国际化的真实结构、五平台适配器结构、调查 Kick 等候选开源项目，
 > 建立十二层语言模型与平台准入规范。**没有新增任何语言、没有接入任何新平台、
@@ -77,7 +153,7 @@
 
 ---
 
-上一轮：2026-11-16 · TIKTOK-M6 人工验收通过并合并 `main` · **合并 `980de0f`；1034 测试通过；main EXE `e48016f19362`；未 Push/Tag/Release**
+更早：2026-11-16 · TIKTOK-M6 人工验收通过并合并 `main` · **合并 `980de0f`；1034 测试通过；main EXE `e48016f19362`；未 Push/Tag/Release**
 
 > 开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间采集验收，确认可同时创建并采集多个不同
 > TikTok LIVE，且不再出现只能记录一场的问题。据此正式批准将 `feature/tiktok` 合并到本地 `main`。

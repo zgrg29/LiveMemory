@@ -1,8 +1,85 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（I18N/PLATFORM 规划轮：只做调查与文档，未改业务代码；三语字典 2,265 键零差异；687 unit passed；新增 `docs/I18N.md`、`docs/PLATFORM_ADMISSION.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md`）
+最后更新：2026-11-16（**v0.14.0 正式发布**：五平台封版；产品版本 0.14.0；EXE Build ID `17f84b1956e1`；1034 测试通过；已 Push、Tag、GitHub Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.46 v0.14.0 五平台正式发布（2026-11-16）🚀
+
+用户明确授权本轮完成**阶段性正式 Release**。已执行：版本确认 → 测试 → 构建 → EXE 验收 →
+打包校验 → 提交 → Push → Tag → GitHub Release。**未修改平台采集、AI 分析或长期画像逻辑，
+未做无关重构，未创建重复 Tag 或重复 Release。**
+
+### 0.46.1 版本决策
+
+| 项目 | 值 | 说明 |
+| --- | --- | --- |
+| 上一个正式发布 | `v0.13.2-rc.0`（Tag `cb28624`，2026-11-14） | 仓库当时唯一的 Tag 与 Release |
+| 开发期版本 | `0.13.3` | `package.json` / `APP_VERSION` 原值 |
+| 本版版本号 | **`0.14.0`** | 相对上一版新增 **三个直播平台**（Twitch / 抖音 / TikTok）与多房间并发，属 SemVer minor；`0.13.3` 已作开发期版本，故以 `0.14.0` 封版 |
+| Tag / Title | `v0.14.0` / `LiveMemory v0.14.0 — Multi-Platform Release` | 用户指定 |
+| 类型 | 正式稳定版（非 Pre-release） | 五平台均有已有真实验收证据 |
+
+版本号同步位置：`package.json` → `version`，`src/shared/app-info.mjs` → `APP_VERSION`，
+`docs/CHANGELOG.md`，本文件，`docs/release-notes/v0.14.0.md`。
+
+### 0.46.2 五平台状态（发布口径）
+
+| 平台 | 状态 |
+| --- | --- |
+| Bilibili | 真实房间聊天/身份验证过；未登录可能昵称打码、UID=0；礼物/SC/大航海按公开协议映射 |
+| YouTube | 仅公开网页聊天路径；真实频道验证；30 天原文保留 |
+| Twitch | 匿名 IRC；真实 6 频道 60 秒 418 事件、418/418 稳定 User ID + 消息 ID、1 条真实 resub |
+| 抖音 | 公开页 + 匿名签名 WS；真实聊天含 UID/昵称/消息 ID；礼物需登录，真实礼物 NOT-OBSERVED |
+| TikTok | 匿名本地 webcast WS；真实 30 分钟与双房间 EXE 验收；礼物/连送/订阅 NOT-OBSERVED |
+
+**不得改成 PASS 的项**：TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订、
+干净 Windows 环境、真实双击 UAC、长期多房间压力测试、真实网卡断线。
+
+### 0.46.3 测试与 EXE 验收（本轮真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **687 passed / 0 failed / 0 skipped**（15,179.52 ms） |
+| `node --test --test-isolation=none "tests/integration/*.test.mjs"` | **347 passed / 0 failed / 0 skipped**（267,428.51 ms） |
+| `scripts/verify-exe.mjs` | **10 / 10**（全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语、`--version`） |
+| `scripts/verify-p0-2-exe.mjs` | **13 / 13**（备份 → 恢复 → 再次备份闭环） |
+| `scripts/verify-ai-token-exe.mjs` | **16 / 16**（AI 入口、批次保存、Resume） |
+| 合计自动化 | **1034 passed / 0 failed / 0 skipped** |
+
+第一次 `verify-exe` 在本环境以 `EPERM / no writable application folder` 中止：沙箱禁止写入
+`%LOCALAPPDATA%\LiveMemory`。把 EXE 的解压根与临时目录重定向到仓库内可写目录后，**同一二进制
+10/10 通过**，`app-root` 为 `17f84b1956e1d197afef`（本版资产哈希）。这是环境限制，
+不是产品缺陷；真实用户环境使用 `%LOCALAPPDATA%\LiveMemory`。**不得因此宣称已在干净环境验收。**
+
+### 0.46.4 发布产物
+
+| 文件 | 大小（bytes） | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | 97,769,984 | `6862079a025fa08d5b7fcf82c16cc3152fedbb7852866022dad4c96977bbe0d9` |
+| `README.md` | 54,502 | `de40a0b4b7ff74788fa78f359cc193e8329020b12663857b34c37ac54b1a4cc5` |
+| `LICENSE` | 1,063 | `32f41a237cd7e80b1f83589c058ff8da73903dd25091b4eefb0114487182303b` |
+| `RELEASE_NOTES.md` | 15,911 | `0fc30e7012a3c179750ab20b5c51b26123a2617067ccccd4179022fa5992a4c7` |
+| `LiveMemory-v0.14.0-windows-x64.zip` | 35,977,845 | `5d7b7e65eb3cea72156c5ecd97496c277427e1a33782d5b75b7a16dc09091188` |
+
+- Build ID `17f84b1956e1`；构建提交 `d268cf9b5c64d467872c55425bf6446bf614880c`；
+  builtAt `2026-11-16T06:51:04.013Z`；226 files / 51 required modules；内嵌 Node `24.21.0`。
+- Manifest：构建时断言 + 注入后复读，均为 **`requireAdministrator`**。
+- 包内 5 个文件，`SHA256SUMS.txt` 逐项复核通过；解压后 EXE 哈希与 `dist/LiveMemory.exe` 一致。
+- 包内不含 API Key、Token、Cookie、数据库、聊天记录、`secrets/`、缓存或日志。
+
+### 0.46.5 本轮改动范围
+
+- `package.json`、`src/shared/app-info.mjs`：版本号 `0.13.3` → `0.14.0`（唯一代码改动，2 行）。
+- `README.md`：当前能力标题版本号、去掉已合并分支的「阶段交付」表述。
+- 文档：`docs/release-notes/v0.14.0.md`（新增）、`docs/RELEASE.md` §11、`docs/CHANGELOG.md`、
+  本文件、`docs/HANDOFF.md`、`docs/ROADMAP.md`、`log/2026-11-16-v0.14.0-release.md`。
+- 未改动任何采集/AI/画像/存储/恢复逻辑。
+
+### 0.46.6 Git 与发布
+
+见 `docs/RELEASE.md` §11 与本文件 §0.46 的提交记录；Tag `v0.14.0` 指向
+`d268cf9b5c64d467872c55425bf6446bf614880c`，GitHub Release 使用同一 Tag。
 
 ## 0.45 I18N/PLATFORM 规划轮：国际化十语言与平台准入（2026-11-16）📝 只规划，无代码改动
 

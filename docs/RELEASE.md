@@ -165,3 +165,59 @@ LiveMemory-v0.1.0-windows-x64.zip
 - 不勾选 “Set as the latest release”
 - 资产：优先上传 `LiveMemory-v0.13.2-rc.0-windows-x64.zip`；也可同时附加裸 `LiveMemory.exe`、`SHA256SUMS.txt` 与 `RELEASE_NOTES.md`
 - Release body：使用 `docs/release-notes/v0.13.2-rc.0.md`（含中文正文与英文摘要）
+
+---
+
+## 11. 正式发布 v0.14.0（2026-11-16，用户明确授权）
+
+按用户指令执行**阶段性正式 Release**（五平台版本封版）。与 §10 的 RC0 预发布不同，
+本次为**正式稳定版**，并已完成 Push、Tag 与 GitHub Release。
+
+### 11.1 命名与依据
+
+| 项目 | 值 | 依据 |
+| --- | --- | --- |
+| 产品版本 | `0.14.0`（`package.json` 与 `APP_VERSION` 同步） | 相对上一个正式发布 `v0.13.2-rc.0` 新增 **三个直播平台**（Twitch / 抖音 / TikTok）与多房间并发等能力，属 SemVer 的 minor 级变化；`0.13.3` 已被用作开发期版本，故以 `0.14.0` 封版 |
+| Release Tag | `v0.14.0` | 仓库已有 `v0.13.2-rc.0`，无重复 Tag，符合 `vX.Y.Z` 惯例 |
+| Release Title | `LiveMemory v0.14.0 — Multi-Platform Release` | 与本轮功能范围一致 |
+| 类型 | 正式稳定版（Pre-release 不勾选） | 五平台已验证，无 RC 后缀 |
+| Tag Target | `d268cf9b5c64d467872c55425bf6446bf614880c`（`chore: bump version to 0.14.0`） | 该提交的 `src/` 内容即 EXE 的 `build-info.commit` 与 `sourceHash` 来源；其后仅文档提交，不改变 buildId |
+
+### 11.2 发布资产
+
+目录 `dist/release-v0.14.0/`；压缩包 `dist/LiveMemory-v0.14.0-windows-x64.zip`。
+
+| 文件 | 大小 | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | 97,769,984 | `6862079a025fa08d5b7fcf82c16cc3152fedbb7852866022dad4c96977bbe0d9` |
+| `README.md` | 54,502 | `de40a0b4b7ff74788fa78f359cc193e8329020b12663857b34c37ac54b1a4cc5` |
+| `LICENSE` | 1,063 | `32f41a237cd7e80b1f83589c058ff8da73903dd25091b4eefb0114487182303b` |
+| `RELEASE_NOTES.md` | 15,911 | `0fc30e7012a3c179750ab20b5c51b26123a2617067ccccd4179022fa5992a4c7` |
+| `SHA256SUMS.txt` | 314 | 见 Release 说明 |
+| `LiveMemory-v0.14.0-windows-x64.zip` | 35,977,845 | `5d7b7e65eb3cea72156c5ecd97496c277427e1a33782d5b75b7a16dc09091188` |
+
+- `SHA256SUMS.txt` 覆盖前四个文件；压缩包与校验文件自身的哈希在 Release 说明中给出。
+- 包内只含上述 5 个文件；不含 API Key、Token、Cookie、数据库、聊天记录、`secrets/`、缓存或日志。
+- 解压后 `LiveMemory.exe` 的 SHA-256 与 `dist/LiveMemory.exe` 一致；Manifest 为 `requireAdministrator`。
+
+### 11.3 发布前检查（本轮真实结果）
+
+- [x] 工作区在封版前干净（`main` 起始 HEAD `25e6fbe`，仅领先远程 2 个文档提交）
+- [x] 版本一致：`package.json` = `APP_VERSION` = `0.14.0`
+- [x] 全量自动化：**687 unit + 347 integration = 1034 passed / 0 failed / 0 skipped**
+- [x] `verify-exe` **10/10**（含全新目录、重启、硬杀恢复、端口顺延、单实例、不可写目录、异目录、解压复用、CLI 三语与 `--version`）
+- [x] `verify-p0-2-exe` **13/13**（备份 → 恢复 → 再次备份闭环）
+- [x] `verify-ai-token-exe` **16/16**（AI 入口、批次保存、Resume）
+- [x] EXE Manifest `requireAdministrator`（构建断言 + 注入后复读）
+- [x] 压缩包内 5 个文件与 `SHA256SUMS.txt` 逐项复核通过
+- [x] 发布包内无密钥、Token、用户数据或测试数据
+- [ ] 真实 Windows 双击与 UAC 点击：**仍需人工确认**，自动化不能代替
+- [ ] 干净 Windows 环境、真实手机扫码、真实礼物事件：**未执行 / NOT-OBSERVED**
+
+### 11.4 已知的环境限制（不影响发布产物）
+
+本轮执行环境的文件沙箱禁止写入 `%LOCALAPPDATA%\LiveMemory`，因此 `verify-exe` 首次运行在
+Bootstrap 解压阶段以 `EPERM` 中止（`no writable application folder`）。该失败是环境限制，
+不是产品缺陷：把 EXE 的解压根目录与临时目录重定向到仓库内可写目录后，同一二进制
+**10/10 全部通过**（`app-root` 使用 `17f84b1956e1d197afef`，即本版本资产哈希）。
+真实用户环境使用 `%LOCALAPPDATA%\LiveMemory`，与此无关。

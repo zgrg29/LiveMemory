@@ -1,6 +1,6 @@
 # LiveMemory 直播记忆
 
-本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live** 与 **TikTok Live**（抖音为 `feature/douyin` 阶段交付：匿名弹幕/稳定 UID/自动监听已真实接入；礼物需登录。扫码登录已改为本机 Chrome/Edge 官方页面，真实手机扫码与真实礼物尚未验证。TikTok 为 `feature/tiktok` M5 阶段交付：统一为匿名本地 webcast WebSocket 采集，不需要登录、不需要选择采集通道，也不依赖付费签名服务；非官方协议，实验性）。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live** 与 **TikTok Live**。抖音：匿名弹幕、稳定 UID、自动监听已真实接入；礼物需登录，真实手机扫码与真实礼物尚未验证。TikTok：统一为匿名本地 webcast WebSocket 采集，不需要登录、不需要选择采集通道，也不依赖付费签名服务；属于非官方协议，实验性。
 
 Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douyin Live and TikTok Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
 
@@ -14,7 +14,7 @@ Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douy
 
 LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。v0.13.2 起，AI 分析只有一个入口：选择直播、选择你配置的 API 模型、选择分析范围，点击「开始 AI 分析」。不再提供匿名免费 AI，也不再要求复制提示词或粘贴 JSON。
 
-### 现在能做什么（v0.13.2）
+### 现在能做什么（v0.14.0）
 
 - **双击启动请求管理员权限（v0.13.2 RC0-ADMIN）**：正式 EXE 使用 `requireAdministrator`，双击时 Windows 显示标准 UAC 确认；同意后以管理员权限启动，拒绝则由 Windows 取消启动。不需要右键“以管理员身份运行”，程序不会绕过或关闭 UAC。
 - **内置三语使用说明（v0.13.2 RC0 封版）**：侧栏新增「使用说明」，用简体中文 / 日本語 / English 说明首次启动、Bilibili 与 YouTube 连接、记录与观众数据、AI Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移和常见问题。页面只读，不修改设置、不弹确认、不新增任何使用限制。
