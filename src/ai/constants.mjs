@@ -49,10 +49,11 @@ export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
  *
  * This is the interface-language registry narrowed to the entries whose prompt
  * set, result schema and translation target name really exist (`aiOutput`).
- * P40 shipped ten *interface* languages but only three *analysis output*
- * languages; sending `ko`/`de`/… to a provider is deliberately impossible until
- * P41 adds their prompt and schema support. `promptVersionFor()` and every
- * caller degrade to `DEFAULT_LOCALE` instead of inventing a locale.
+ * P41 gave every shipped language that support, so all ten are analysis output
+ * languages. The narrowing remains the capability gate: a language without
+ * `aiOutput: true` (or an unknown tag such as `th-TH`) can never reach a
+ * provider, and `promptVersionFor()` degrades to `DEFAULT_LOCALE` instead of
+ * inventing a locale.
  */
 export const SUPPORTED_LOCALES = AI_OUTPUT_LOCALES;
 

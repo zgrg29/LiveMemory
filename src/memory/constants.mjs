@@ -30,8 +30,9 @@ export function memoryPromptVersionFor(locale) {
  *
  * Like the session-analysis list this is the interface registry narrowed to the
  * languages that actually have a memory prompt and result schema (`aiOutput`).
- * P40 added ten interface languages but no new memory prompt: a `ko` request
- * falls back to `DEFAULT_LOCALE` instead of reaching a provider.
+ * P41 added the memory rule and localized compact example for every shipped
+ * language; an unknown tag still falls back to `DEFAULT_LOCALE` instead of
+ * reaching a provider.
  */
 export const SUPPORTED_MEMORY_LOCALES = AI_OUTPUT_LOCALES;
 
