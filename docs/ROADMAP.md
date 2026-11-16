@@ -132,7 +132,7 @@
 - ✅ 方案 B：跨语言事实共存、旧事实 0 删除、跨观众证据 0、同语言去重不变
 - ✅ 语言独立性：7 组界面/AI 组合、固定输出不随界面变、重启保留、`follow-ui`、非法值 400
 - ✅ 任务恢复：韩语任务暂停 → 界面德语 + AI 西班牙语 → 重启 → 恢复仍韩语（`ai-i18n-locales` 4/4）
-- ✅ 真实 EXE：Build `5b9e355dccc7`、99,200,512 B、SHA-256 `39450a23…`、`requireAdministrator`；
+- ✅ 真实 EXE：Build `5b9e355dccc7`、commit `c74dbcd`、99,200,512 B、SHA-256 `ef7f1b37…`、`requireAdministrator`；
   `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16
 - ✅ 真实浏览器：源码 **440/440**、EXE 内服务 **440/440**；40 + 40 张截图
 - ✅ 旧 schema-15 数据升级到 16：计数/hash 全一致、settings 未改写、旧报告可读、备份→恢复计数一致

@@ -29,8 +29,8 @@
 
 | 项目 | 值 |
 | --- | --- |
-| Build ID / commit | `5b9e355dccc7` / `3b75e8b`（P42 工作树；提交后重建会更新 commit 标记） |
-| 大小 / SHA-256 | `99,200,512` bytes / `39450a233eb8c64347a9cfadf0d3b88e71ed7df9e023b84ba53b90e282021778` |
+| Build ID / commit | `5b9e355dccc7` / `c74dbcd`（asset hash `5b9e355dccc749bde6f2`） |
+| 大小 / SHA-256 | `99,200,512` bytes / `ef7f1b3718f6505d3de81e24ae1db634d7ae7e6eb738c9c7dccbbea9d22c8057` |
 | Manifest | **`requireAdministrator`** |
 | `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` | **11/11 / 14/14 / 16/16** |
 
@@ -60,7 +60,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建，P39–P41 提交完整） |
-| 提交 | P42 代码/测试/截图 + 文档本地提交（见 `git log -1`） |
+| 提交 | `2d6777e`（help/UAC）、`68f551e`（验收脚本）、`c74dbcd`（文档/截图）+ 最终 EXE 数字文档提交 |
 | main | **未合并、未 Push、未 Tag、未 Release** |
 
 ---

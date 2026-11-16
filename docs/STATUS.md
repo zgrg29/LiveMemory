@@ -54,9 +54,9 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 构建 | `node scripts/build-windows.mjs`，Build ID `5b9e355dccc7`，commit 标记 `3b75e8b`（P42 工作树） |
-| 大小 / SHA-256 | `99,200,512` bytes / `39450a233eb8c64347a9cfadf0d3b88e71ed7df9e023b84ba53b90e282021778` |
-| builtAt / 资源 | `2026-11-16T14:55:09.547Z` / 237 files / 51 modules |
+| 构建 | `node scripts/build-windows.mjs`，Build ID `5b9e355dccc7`（asset hash `5b9e355dccc749bde6f2`），commit `c74dbcd` |
+| 大小 / SHA-256 | `99,200,512` bytes / `ef7f1b3718f6505d3de81e24ae1db634d7ae7e6eb738c9c7dccbbea9d22c8057` |
+| builtAt / 资源 | `2026-11-16T16:21:04.971Z` / 237 files / 51 modules |
 | RT_MANIFEST | **`requireAdministrator`**（构建脚本断言） |
 | `verify-exe` | **11/11**（含共享注册表、十字典、十 AI 输出、动态语言控件） |
 | `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
@@ -64,6 +64,10 @@
 | 源码服务器浏览器矩阵 | **440/440** 页面加载 PASS（10 语 × 1440/1024/820/390 × 明暗 × live/history/viewers/ai/settings/help + 详情） |
 | **EXE 内服务浏览器矩阵** | **440/440** 页面加载 PASS（同一矩阵，服务由 asInvoker 功能副本启动） |
 | 截图 | `docs/screenshots/i18n-p42-*` 40 张（源码）+ `i18n-p42-exe-*` 40 张（EXE） |
+
+> 浏览器矩阵在 asset hash `5b9e355dccc749bde6f2` 的构建上完成；提交后最终重建的 Build ID 与
+> asset hash 不变，只更新了嵌入的 commit 标记 `c74dbcd` 与 SHA-256，因此布局结论仍适用。
+> 最终构建重新执行了 `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16。
 
 - 布局断言：无横向溢出、无控件出视口、语言控件不遮挡主题按钮、`MUST_NOT_TRUNCATE` 标签不被省略号截断、
   无未解析翻译键；十语言 × 明暗 × 四宽度全部通过。
@@ -147,7 +151,9 @@
   旧数据升级/备份恢复、五平台无代码回归均完成；无 P0/P1 阻断。
 - 条件：真实 UAC 双击与干净 Windows 账户需人工验收；Twitch/抖音真实采集待有在播房间时补验；
   母语审校未做；版本号与 Tag/Release 未动。
-- 分支 `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建），提交见 `git log -1`；
+- 分支 `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建）；本地提交：
+  `2d6777e`（help/UAC 修复）、`68f551e`（验收脚本）、`c74dbcd`（P42 文档/截图）、
+  最终 EXE 数字的文档提交见 `git log -1`；
   **未 Push、未 Merge main、未 Tag、未 Release**。
 
 ## 0.49 P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）✅ 未发布
