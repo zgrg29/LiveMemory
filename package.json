@@ -1,6 +1,6 @@
 {
   "name": "livememory",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "private": true,
   "description": "LiveMemory — local-first livestream memory system for Bilibili Live and YouTube Live.",
   "license": "MIT",

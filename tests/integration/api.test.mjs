@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import {request as httpRequest} from 'node:http';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {startServer} from '../../src/server/index.mjs';
+import {APP_VERSION} from '../../src/shared/app-info.mjs';
 import {readZipEntry, readZipIndex} from '../../src/shared/zip.mjs';
 import {buildAnalysisPackage} from '../../src/ai/export/package.mjs';
 
@@ -57,7 +58,9 @@ test('local API serves the console, records a session, exports a package and res
     assert.equal(health.port, server.port);
 
     const bootstrap = await (await fetch(`${base}api/bootstrap`)).json();
-    assert.equal(bootstrap.app.version, '0.13.2');
+    // Compare against the single source of truth instead of a literal version
+    // that has to be edited on every release bump.
+    assert.equal(bootstrap.app.version, APP_VERSION);
     assert.equal(bootstrap.effective.locale, 'en');
     assert.equal(bootstrap.settings.locale, 'system');
     assert.equal(bootstrap.settings.theme, 'system');

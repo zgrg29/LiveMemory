@@ -30,7 +30,8 @@ function connectionRank(state) {
   switch (state) {
     case CONNECTION_STATE.CONNECTED: return 6;
     case CONNECTION_STATE.CONNECTING: return 5;
-    case CONNECTION_STATE.RECONNECTING: return 4;
+    case CONNECTION_STATE.RECONNECTING: return 4.5;
+    case CONNECTION_STATE.RATE_LIMITED: return 4;
     case CONNECTION_STATE.AUTH_REQUIRED: return 3;
     case CONNECTION_STATE.FAILED: return 2;
     case CONNECTION_STATE.STOPPED: return 1;
@@ -103,6 +104,7 @@ export class SessionManager {
         state: recording.connection,
         detail: recording.detail
       },
+      capture: recording.adapter?.capture?.() ?? null,
       platformStatus: recording.platformStatus ?? null,
       platformStatusAt: recording.platformStatusAt ?? null,
       lastLiveSeenAt: recording.lastLiveSeenAt ?? null,

@@ -523,6 +523,73 @@
   display: none;
 }
 
+/* ------------------------------------------- active background recordings */
+
+.live-active-recordings {
+  margin-top: 16px;
+}
+
+.live-recording-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.live-recording-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.live-recording-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.live-recording-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--text-tertiary);
+}
+
+.live-recording-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.tiktok-active-recordings {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.tiktok-active-recordings > .source-status {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 700px) {
+  .live-recording-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .live-recording-actions {
+    justify-content: flex-end;
+  }
+}
+
 .live-connection-line {
   margin-top: 9px;
 }
@@ -1767,6 +1834,20 @@
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.tiktok-verification {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.tiktok-verification .source-status {
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .source-meta {

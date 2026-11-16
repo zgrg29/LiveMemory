@@ -11,6 +11,7 @@ export const CONNECTION_STATE = Object.freeze({
   CONNECTING: 'connecting',
   CONNECTED: 'connected',
   RECONNECTING: 'reconnecting',
+  RATE_LIMITED: 'rate_limited',
   AUTH_REQUIRED: 'auth_required',
   FAILED: 'failed',
   STOPPED: 'stopped'

@@ -122,7 +122,8 @@ test('local API requires a browser session and rejects cross-site requests', asy
       'api/ai/providers',
       'api/monitoring',
       'api/douyin/login/browser/status',
-      'api/douyin/login/check'
+      'api/douyin/login/check',
+      'api/tiktok/status'
     ]) {
       const response = await jsonRequest(base, path);
       assert.equal(response.status, 401, path);
@@ -147,7 +148,11 @@ test('local API requires a browser session and rejects cross-site requests', asy
       ['POST', 'api/douyin/login/browser/start', {}],
       ['POST', 'api/douyin/login/browser/cancel', {}],
       ['POST', 'api/douyin/login/cookie', {cookie: 'sessionid=x'}],
-      ['POST', 'api/douyin/login/logout', {}]
+      ['POST', 'api/douyin/login/logout', {}],
+      ['POST', 'api/tiktok/room', {url: 'https://www.tiktok.com/@creator/live'}],
+      ['POST', 'api/tiktok/connect', {url: 'https://www.tiktok.com/@creator/live'}],
+      ['POST', 'api/tiktok/disconnect', {}],
+      ['POST', 'api/tiktok/retention/apply', {}]
     ];
     for (const [method, path, body] of cases) {
       const response = await jsonRequest(base, path, {method, body});

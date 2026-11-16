@@ -36,6 +36,7 @@ import {BilibiliRoomDetector} from './detectors/bilibili.mjs';
 import {YouTubeChannelDetector} from './detectors/youtube.mjs';
 import {TwitchChannelDetector} from './detectors/twitch.mjs';
 import {DouyinRoomDetector} from './detectors/douyin.mjs';
+import {TikTokRoomDetector} from './detectors/tiktok.mjs';
 
 /**
  * Unified automatic-monitoring scheduler.
@@ -62,6 +63,7 @@ export class MonitoringManager {
     youtube = null,
     twitch = null,
     douyin = null,
+    tiktok = null,
     logger = null,
     now = Date.now,
     detectors = null,
@@ -75,6 +77,7 @@ export class MonitoringManager {
     this.youtube = youtube;
     this.twitch = twitch;
     this.douyin = douyin;
+    this.tiktok = tiktok;
     this.logger = logger;
     this.now = now;
     this.onChange = onChange;
@@ -130,6 +133,15 @@ export class MonitoringManager {
         now: this.now,
         pacer: this.pacer,
         policy: MONITOR_POLICY.douyin
+      });
+    }
+    if (this.tiktok?.client) {
+      detectors.tiktok = new TikTokRoomDetector({
+        client: this.tiktok.client,
+        logger: this.logger,
+        now: this.now,
+        pacer: this.pacer,
+        policy: MONITOR_POLICY.tiktok
       });
     }
     return detectors;
@@ -230,7 +242,8 @@ export class MonitoringManager {
         bilibili: {checkIntervalMs: MONITOR_POLICY.bilibili.baseMs},
         youtube: {checkIntervalMs: MONITOR_POLICY.youtube.baseMs},
         twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs},
-        douyin: {checkIntervalMs: MONITOR_POLICY.douyin.baseMs}
+        douyin: {checkIntervalMs: MONITOR_POLICY.douyin.baseMs},
+        tiktok: {checkIntervalMs: MONITOR_POLICY.tiktok.baseMs}
       },
       summary: summarizeTargets(targets),
       targets
@@ -791,6 +804,17 @@ export class MonitoringManager {
         ...observation,
         status: 'live',
         webRid: observation?.webRid ?? row.target_key,
+        roomId: observation?.roomId,
+        anchorUid: observation?.anchorUid ?? row.platform_uid,
+        anchorName: observation?.anchorName ?? observation?.channelTitle ?? row.display_name ?? null
+      }, {monitorTargetId: row.id, input: row.input});
+    }
+    if (row.platform === 'tiktok') {
+      if (!this.tiktok?.connectDetected) throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
+      return this.tiktok.connectDetected({
+        ...observation,
+        status: 'live',
+        uniqueId: observation?.uniqueId ?? row.target_key,
         roomId: observation?.roomId,
         anchorUid: observation?.anchorUid ?? row.platform_uid,
         anchorName: observation?.anchorName ?? observation?.channelTitle ?? row.display_name ?? null

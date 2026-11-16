@@ -514,6 +514,16 @@ function douyinError(error) {
   });
 }
 
+/** TikTok failures (link, room, signer, login gate) are mapped by TikTokService. */
+function tiktokError(error) {
+  if (error instanceof AppError) return error;
+  return new AppError('TIKTOK_ERROR', {
+    messageKey: 'errors.tiktokError',
+    httpStatus: 502,
+    cause: error
+  });
+}
+
 export function createRouter(routes, deps) {
   const compiled = routes.map((route) => {
     const names = [];
@@ -605,8 +615,10 @@ export function buildRoutes() {
           ...effectiveSettings(deps),
           status: statusPayload(deps),
           capabilities: {
+            // The product records the five real live platforms only. Simulation
+            // remains an internal test fixture (`/api/simulate/*`) and is no
+            // longer advertised or reachable from the user interface.
             platforms: [
-              {id: 'mock', label: 'Simulation', state: 'available'},
               {id: 'bilibili', label: 'Bilibili Live', state: 'available'},
               {
                 id: 'youtube',
@@ -616,6 +628,23 @@ export function buildRoutes() {
                 requiresApiKey: false,
                 requiresLogin: false,
                 requiresCookie: false
+              },
+              {
+                id: 'twitch',
+                label: 'Twitch',
+                state: 'available',
+                mode: 'anonymous-irc',
+                requiresLogin: false
+              },
+              {id: 'douyin', label: 'Douyin Live', state: 'available'},
+              {
+                id: 'tiktok',
+                label: 'TikTok Live',
+                state: 'available',
+                mode: 'local-webcast',
+                unofficial: true,
+                requiresLogin: false,
+                requiresPaidService: false
               }
             ],
             ai: {automated: true, export: false, import: false, schemaVersion: RESULT_SCHEMA_VERSION},
@@ -819,6 +848,10 @@ export function buildRoutes() {
         });
       }
     },
+    // Internal test fixture only: the simulator is no longer exposed in the
+    // product UI, but the integration/EXE suites use it to seed deterministic
+    // sessions. Keeping it preserves the test infrastructure; user-visible
+    // entry points and the mock UI panel were removed.
     {
       method: 'POST',
       path: '/api/simulate/start',
@@ -2641,6 +2674,80 @@ export function buildRoutes() {
           throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
         }
         sendJson(res, 200, {stats: contentStats(deps.db, sessionId)});
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/tiktok/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.tiktok.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/tiktok/cleanup',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = await deps.tiktok.startup();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/tiktok/room',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const room = await deps.tiktok.checkRoom(body.url ?? body.uniqueId ?? body.input);
+          sendJson(res, 200, {room});
+        } catch (error) {
+          throw tiktokError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/tiktok/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.tiktok.connect(body.url ?? body.uniqueId ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            room: result.room,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw tiktokError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/tiktok/disconnect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.tiktok.disconnect({sessionId: body.sessionId ?? null});
+          if (!result?.stopped && result?.reason === 'session_id_required') {
+            throw sessionIdRequiredError({count: result.count, platform: 'tiktok'});
+          }
+          sendJson(res, 200, {
+            stopped: Boolean(result?.stopped),
+            session: serializeSessionRow(result?.session ?? null)
+          });
+        } catch (error) {
+          throw tiktokError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/tiktok/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.tiktok.applyRetention();
+        sendJson(res, 200, result);
       }
     }
   ];

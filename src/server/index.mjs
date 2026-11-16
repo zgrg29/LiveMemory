@@ -11,6 +11,7 @@ import {BilibiliService} from '../platforms/bilibili/service.mjs';
 import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {TwitchService} from '../platforms/twitch/service.mjs';
 import {DouyinService} from '../platforms/douyin/service.mjs';
+import {TikTokService} from '../platforms/tiktok/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -93,6 +94,11 @@ export async function startServer({
   douyinAdapterOptions = null,
   douyinWebSocketImpl = null,
   douyinFetchImpl = null,
+  tiktokClient = null,
+  tiktokAdapterOptions = null,
+  tiktokFetchImpl = null,
+  tiktokWebSocketImpl = null,
+  tiktokTtwidProvider = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -184,6 +190,22 @@ export async function startServer({
       ...(douyinWebSocketImpl ? {WebSocketImpl: douyinWebSocketImpl} : {}),
       ...(douyinAdapterOptions ? {adapterOptions: douyinAdapterOptions} : {})
     });
+    // TikTok has one capture path: the anonymous local WebSocket. No login, no
+    // paid signing service and no dedicated browser profile. It uses the same
+    // SessionManager/EventIngest pipeline as every other platform.
+    const tiktok = new TikTokService({
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      dataDir: paths.root,
+      ...(tiktokFetchImpl ? {fetchImpl: tiktokFetchImpl} : {}),
+      ...(tiktokClient ? {client: tiktokClient} : {}),
+      ...(tiktokWebSocketImpl ? {WebSocketImpl: tiktokWebSocketImpl} : {}),
+      ...(tiktokTtwidProvider ? {ttwidProvider: tiktokTtwidProvider} : {}),
+      ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
@@ -191,6 +213,7 @@ export async function startServer({
       youtube,
       twitch,
       douyin,
+      tiktok,
       logger,
       now,
       onChange: () => {
@@ -223,6 +246,13 @@ export async function startServer({
       platforms: ['douyin'],
       logger
     });
+    // TikTok events follow the same 30-day raw-content policy, scoped to TikTok.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['tiktok'],
+      logger
+    });
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
@@ -253,6 +283,7 @@ export async function startServer({
       youtube,
       twitch,
       douyin,
+      tiktok,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -292,6 +323,12 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.douyin.failed', code: error?.code ?? 'unknown'});
     }
+    // TikTok's browser transport keeps a dedicated Chrome/Edge window open.
+    try {
+      await instance.tiktok?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.tiktok.failed', code: error?.code ?? 'unknown'});
+    }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
@@ -319,6 +356,7 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
+    get tiktok() { return runtime.tiktok; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -413,6 +451,20 @@ export async function startServer({
   // restart with many channels does not produce a request burst.
   runtime.monitoring.start();
 
+  // TikTok startup work: restore the cached anonymous device cookie and remove
+  // the retired browser-relay profile/login marker. Best-effort and off the
+  // critical path: a failure here must not stop the server.
+  runtime.tiktok?.startup?.()
+    .then((result) => {
+      const cleanup = result?.legacyCleanup ?? null;
+      if (cleanup?.removed?.length) {
+        logger?.info({event: 'tiktok.legacy.cleanup.applied', removed: cleanup.removed.length});
+      }
+    })
+    .catch((error) => {
+      logger?.warn({event: 'tiktok.startup.failed', code: error?.code ?? 'unknown'});
+    });
+
   // Historical rows abandoned by a crash/shutdown are probed after the server
   // is available so a slow/blocked platform cannot delay startup. The probe is
   // idempotent, never changes `ended_at`, and only annotates platform state.
@@ -479,6 +531,7 @@ export async function startServer({
     get youtube() { return runtime.youtube; },
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
+    get tiktok() { return runtime.tiktok; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

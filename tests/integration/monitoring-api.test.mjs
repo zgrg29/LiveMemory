@@ -181,7 +181,17 @@ test('enabled targets survive a restart and are recovered without a live session
     systemLocale: 'en',
     youtubeWebBase: fake.base
   });
-  const restored = await (await request(`${server.url}api/monitoring`)).json();
+  // Startup recovery may start a due check immediately; `checking` is a valid
+  // transient state. The invariant is that the target is re-enabled, has no
+  // active session and settles back to `waiting` without a live broadcast.
+  let restored = null;
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    restored = await (await request(`${server.url}api/monitoring`)).json();
+    const target = restored.targets?.[0];
+    if (target && target.state === 'waiting') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   assert.equal(restored.targets.length, 1);
   assert.equal(restored.targets[0].id, id);
   assert.equal(restored.targets[0].state, 'waiting');

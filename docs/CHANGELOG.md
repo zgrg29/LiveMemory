@@ -1,5 +1,30 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.3-r1 — 2026-11-16（TIKTOK-M6：多直播间并发 + 模拟直播清理）
+
+### 修复 / 新增
+
+- **同一平台多个不同 TikTok 直播间可同时记录**：真实根因是 TikTok 面板用
+  `!tiktokActiveRecording()` 把「存在任意 TikTok 记录」当成「该房间重复」，全局禁用开始按钮；
+  `SessionManager`、`TikTokLocalAdapter`、SQLite 与去重一直是按 session/room 隔离的。
+- 重复判断收窄为同一 `platformRoomId`（handle 回退）；服务端 `SESSION_DUPLICATE_ROOM` 保留。
+- 新增逐场活动列表（TikTok 面板 + 新建记录页）：主播、平台、连接/采集状态、已记录消息数、
+  观众数、查看、独立停止；停止 A 不停止 B。
+- **正式界面移除模拟直播**：删除「模拟直播」标签、模拟面板、顶部「开始模拟直播」按钮、
+  `handleStart()`、启动器模拟提示与三语专用文案；默认平台改为 Bilibili。
+- **保留测试基础设施**：`MockLiveSource`、`SessionManager.startSimulation()`、
+  `/api/simulate/start|stop`、fixtures 与演示脚本；历史 mock 场次仍可读。
+- 修正新建记录页 `history.aiTitle` 原始翻译键为 `history.detail.aiTitle`。
+
+### 验证
+
+- 全量 **687 unit + 347 integration = 1034 passed / 0 failed / 0 skipped**。
+- 真实双房间 EXE：`@aljazeeraenglish` + `@aljazeera`，**17/17 passed**；A 4 条 / B 1 条真实 chat；
+  重复 A 409；停止 A 后 B 保持 connected 且消息 1→2；两场 AI report 200。
+- `verify-exe` **10/10**；`verify-tiktok-exe` **22/22 + 2 NOT-OBSERVED**。
+- EXE `e48016f19362` / commit `4224f7c` / `96,730,112` B / SHA-256 `02acd0b1…` / requireAdministrator。
+- 真实礼物/连送/订阅仍 **NOT-OBSERVED**；未合并 main、未 Push、未 Tag、未 Release。
+
 ## 0.13.2-r24 — 2026-11-15（DOUYIN-SINGLE-WINDOW：重复浏览器窗口修复）
 
 ### 修复

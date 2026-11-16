@@ -30,3 +30,27 @@ The upstream `a_bogus.js` is not shipped (only the WebSocket signature is needed
 
 `src/web/js/vendor/qrcode.js` keeps its own license file
 (`src/web/js/vendor/qrcode.LICENSE.txt`).
+
+## TikTok webcast protocol reference — MIT
+
+The TikTok local WebSocket capture (`src/platforms/tiktok/webcast.mjs`,
+`local-adapter.mjs`) was written for LiveMemory against the protocol observed in
+[talkaboutdesign/tiklive](https://github.com/talkaboutdesign/tiklive), which is
+MIT licensed:
+
+```text
+MIT License
+Copyright (c) 2026 Talkabout Design LLC
+```
+
+**No tiklive source file is copied or bundled.** tiklive is built on Effect 4
+and Bun; LiveMemory keeps its zero-runtime-dependency rule and reuses its own
+protobuf codec (`protobuf.mjs`) and message mapper (`messages.mjs`). The MIT
+notice is recorded here because the connection algorithm, frame field numbers
+and heartbeat/ack behaviour were derived from reading that project's source
+(`packages/core/src/LiveConnection.ts`, `packages/core/src/proto/frames.ts`,
+`docs/PROTOCOL.md`), and LiveMemory's implementation is a derivative of that
+protocol work.
+
+The protocol itself belongs to TikTok and is **not** an official API: it is
+TikTok's private web protocol and can change without notice.

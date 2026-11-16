@@ -63,7 +63,6 @@ const MESSAGES = {
       '  --help               显示此帮助'
     ].join('\n'),
     recoveredSessions: '检测到 {count} 个未正常结束的直播场次，已标记为“已中断”。',
-    simulatedNote: '当前为模拟直播（用于验证记录流程），不是真实平台数据。',
     webHint: '提示：关闭浏览器不会停止记录；请在命令行按 Ctrl+C 结束。',
     pressKey: '按任意键关闭此窗口（日志已保存在上方路径）。',
     failedStep: '失败步骤：{step}',
@@ -137,7 +136,6 @@ const MESSAGES = {
       '  --help               このヘルプを表示'
     ].join('\n'),
     recoveredSessions: '正常終了していない配信が {count} 件あったため、「中断」として記録しました。',
-    simulatedNote: '現在は記録フロー検証用のシミュレーション配信です（実際のプラットフォームのデータではありません）。',
     webHint: 'ヒント: ブラウザーを閉じても記録は続きます。終了はコマンドラインで Ctrl+C を押してください。',
     pressKey: '任意のキーを押すとこのウィンドウを閉じます（ログは上記の場所に保存済み）。',
     failedStep: '失敗した手順: {step}',
@@ -211,7 +209,6 @@ const MESSAGES = {
       '  --help               print this help'
     ].join('\n'),
     recoveredSessions: '{count} session(s) had not ended normally and were marked as interrupted.',
-    simulatedNote: 'This is a simulated stream used to verify recording; it is not real platform data.',
     webHint: 'Tip: closing the browser does not stop recording. Press Ctrl+C here to finish.',
     pressKey: 'Press any key to close this window (the log was saved to the path above).',
     failedStep: 'Failed step: {step}',

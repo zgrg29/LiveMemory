@@ -10,9 +10,10 @@ import {withTransaction} from '../storage/database/connection.mjs';
  * clearly separated deletion modes, and the post-deletion reinitialisation.
  *
  * `data` keeps preferences, login credentials, the data-folder pointer and
- * backups. `factory` additionally removes preferences, credentials, caches and
- * logs and restores settings defaults. Neither mode ever deletes the data root
- * itself or any file outside LiveMemory's own managed folders.
+ * backups. `factory` additionally removes preferences, credentials (including
+ * the dedicated TikTok browser profile), caches and logs and restores settings
+ * defaults. Neither mode ever deletes the data root itself or any file outside
+ * LiveMemory's own managed folders.
  */
 
 const CLEARED_TABLES = Object.freeze([
@@ -245,6 +246,16 @@ export async function clearData({
   if (mode === 'factory') {
     removed.push(...clearDirectory(deps.paths.secrets));
     removed.push(...clearDirectory(deps.paths.logs));
+    // TikTok/other browser logins live in a dedicated Chromium profile under
+    // the data folder. It contains official cookies, so a factory reset must
+    // remove the whole owned folder (and close the browser first), not just
+    // config/secrets. No other browser profile is ever touched.
+    try {
+      await deps.tiktok?.shutdown?.();
+    } catch {
+      /* local deletion still proceeds */
+    }
+    removed.push(...clearDirectory(join(root, 'browser', 'tiktok')));
     deps.settingsStore.reset({now});
   }
 
