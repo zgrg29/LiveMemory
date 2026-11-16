@@ -233,3 +233,18 @@ P41 追加 A19/A20 两个 AI 输出语言术语。本表是十份界面字典（
 2. 修改既有 `zh-CN` / `ja` / `en` 译文不属于 P40 范围；如确需修改，单独记录并说明理由。
 3. 术语冲突时以本表为准；本表未覆盖时以 `en.json` 的语义为准，并在同轮补表。
 4. 本文件与 `docs/I18N.md` §7 一起构成「新增语言必须遵循的翻译规范」。
+
+## 7. P42 补充：UAC 与管理员权限（2026-11-16）
+
+正式 EXE 的 Manifest 为 `requireAdministrator`，使用说明必须准确描述 Windows UAC，不得再写
+「不需要管理员权限」。以下术语用于 `help.sections.start.step1` 与备份迁移说明：
+
+| 概念 | zh-CN | en | ja | ko | es | pt-BR | zh-TW | fr | de | id |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 管理员权限 | 管理员权限 | administrator permission | 管理者権限 | 관리자 권한 | permisos de administrador | permissões de administrador | 系統管理員權限 | droits d'administrateur | Administratorrechte | hak administrator |
+| UAC 确认 | UAC 确认 | UAC prompt | UAC の確認 | UAC 확인 | confirmación de UAC | confirmação do UAC | UAC 確認 | confirmation UAC | UAC-Abfrage | konfirmasi UAC |
+| 拒绝（UAC） | 否 | No | いいえ | 아니요 | No | Não | 否 | Non | Nein | Tidak |
+
+- 不翻译 `UAC`、`LiveMemory.exe`、`requireAdministrator`。
+- 语义必须同时包含：选择「是」才启动；选择「否」由 Windows 取消；不要求右键「以管理员身份运行」；
+  不绕过/关闭 UAC；备份逻辑本身不需要额外提权，但整个 EXE 仍按 Manifest 请求管理员权限。

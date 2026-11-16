@@ -2403,7 +2403,7 @@
       "start": {
         "title": "Premier lancement et déroulement de base",
         "lead": "Double-cliquez sur LiveMemory.exe. Le service démarre sur cet ordinateur et ouvre la console dans votre navigateur par défaut.",
-        "step1": "Double-cliquez sur LiveMemory.exe. Les droits d'administrateur ne sont pas nécessaires. Si Windows affiche \"Windows a protégé votre PC\", choisissez Plus d'infos, puis Exécuter quand même.",
+        "step1": "Double-cliquez sur LiveMemory.exe. Windows affiche la confirmation UAC des droits d'administrateur ; choisissez Oui pour démarrer. Si vous choisissez Non, Windows annule le lancement. Si Windows affiche aussi « Windows a protégé votre PC », choisissez Plus d'infos, puis Exécuter quand même.",
         "step2": "La console s'ouvre automatiquement dans votre navigateur par défaut. Si ce n'est pas le cas, relancez LiveMemory au lieu d'ouvrir vous-même une ancienne adresse : une page ouverte manuellement ne peut pas obtenir cette session.",
         "step3": "À la première utilisation, ouvrez les paramètres pour choisir la langue de l'interface et le thème. Les deux peuvent être modifiés à tout moment depuis la barre supérieure et sont mémorisés.",
         "step4": "Allez dans Direct, cliquez sur + Nouvel enregistrement, collez le lien du direct ou l'ID du salon et démarrez l'enregistrement. Vous pouvez enregistrer plusieurs directs en même temps.",
@@ -2510,7 +2510,7 @@
         "step3": "Avant de restaurer, sélectionnez le fichier de sauvegarde dans les paramètres et vérifiez le résumé, puis saisissez RESTORE pour lancer la restauration.",
         "step4": "Les données actuelles sont copiées automatiquement avant une restauration. Si la restauration échoue ou si le processus est tué, le démarrage suivant l'annule ou la termine à partir du journal.",
         "step5": "Après une restauration, reconnectez-vous à Bilibili et saisissez à nouveau vos clés d'API. Le chat public YouTube ne nécessite aucune connexion.",
-        "step6": "Pour passer à un nouveau PC, démarrez LiveMemory sur celui-ci et restaurez à partir du même fichier de sauvegarde. Aucun ancien nom d'utilisateur, ancien chemin ni droits d'administrateur ne sont nécessaires.",
+        "step6": "Pour passer à un nouveau PC, démarrez LiveMemory sur celui-ci et restaurez à partir du même fichier de sauvegarde. Vous n'avez pas besoin de l'ancien nom d'utilisateur ni de l'ancien chemin, mais le nouveau PC exige aussi d'accepter la confirmation UAC des droits d'administrateur.",
         "note": "Les fichiers de sauvegarde ne sont pas chiffrés et contiennent les pseudonymes des spectateurs, le chat et les rapports IA ; conservez-les en lieu sûr. Une restauration remplace tout ; elle ne fusionne pas deux ordinateurs. La rétrogradation depuis une version plus récente n'est pas prise en charge."
       },
       "faq": {

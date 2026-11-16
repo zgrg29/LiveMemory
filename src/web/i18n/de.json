@@ -2403,7 +2403,7 @@
       "start": {
         "title": "Erster Start und grundlegender Ablauf",
         "lead": "Doppelklicken Sie auf LiveMemory.exe. Der Dienst startet auf diesem Computer und öffnet die Konsole in Ihrem Standardbrowser.",
-        "step1": "Doppelklicken Sie auf LiveMemory.exe. Administratorrechte sind nicht erforderlich. Wenn Windows „Windows hat Ihren PC geschützt“ anzeigt, wählen Sie „Weitere Informationen“ und dann „Trotzdem ausführen“.",
+        "step1": "Doppelklicken Sie auf LiveMemory.exe. Windows zeigt die UAC-Abfrage für Administratorrechte; wählen Sie „Ja“, um zu starten. Bei „Nein“ bricht Windows den Start ab. Wenn zusätzlich „Windows hat Ihren PC geschützt“ erscheint, wählen Sie „Weitere Informationen“ und dann „Trotzdem ausführen“.",
         "step2": "Die Konsole öffnet sich automatisch in Ihrem Standardbrowser. Wenn nicht, starten Sie LiveMemory erneut, statt eine alte Adresse von Hand zu öffnen: Eine manuell geöffnete Seite erhält diese Sitzung nicht.",
         "step3": "Öffnen Sie bei der ersten Verwendung die Einstellungen, um Oberflächensprache und Erscheinungsbild zu wählen. Beides lässt sich jederzeit in der oberen Leiste ändern und wird gespeichert.",
         "step4": "Gehen Sie zu Live, klicken Sie auf + Neue Aufzeichnung, fügen Sie den Livestream-Link oder die Raum-ID ein und starten Sie die Aufzeichnung. Sie können mehrere Livestreams gleichzeitig aufzeichnen.",
@@ -2510,7 +2510,7 @@
         "step3": "Wählen Sie vor dem Wiederherstellen die Sicherungsdatei in den Einstellungen und prüfen Sie die Zusammenfassung; geben Sie dann RESTORE ein, um die Wiederherstellung auszuführen.",
         "step4": "Vor einer Wiederherstellung wird der aktuelle Datenstand automatisch gespeichert. Wenn die Wiederherstellung fehlschlägt oder der Prozess beendet wird, macht der nächste Start sie anhand des Journals rückgängig oder schließt sie ab.",
         "step5": "Nach einer Wiederherstellung melden Sie sich erneut bei Bilibili an und geben Ihre API-Schlüssel erneut ein. Der öffentliche YouTube-Chat benötigt keine Anmeldung.",
-        "step6": "Um auf einen neuen PC umzuziehen, starten Sie LiveMemory dort und stellen Sie aus derselben Sicherungsdatei wieder her. Alter Benutzername, alter Pfad und Administratorrechte sind nicht erforderlich.",
+        "step6": "Um auf einen neuen PC umzuziehen, starten Sie LiveMemory dort und stellen Sie aus derselben Sicherungsdatei wieder her. Alter Benutzername und alter Pfad sind nicht erforderlich; auch der neue PC verlangt die Bestätigung der UAC-Abfrage für Administratorrechte.",
         "note": "Sicherungsdateien sind nicht verschlüsselt und enthalten Anzeigenamen von Zuschauern, Chat und KI-Berichte; bewahren Sie sie sicher auf. Eine Wiederherstellung ersetzt alles; sie führt zwei Computer nicht zusammen. Ein Wechsel von einer neueren Version zurück wird nicht unterstützt."
       },
       "faq": {

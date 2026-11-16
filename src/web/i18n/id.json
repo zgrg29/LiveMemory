@@ -2403,7 +2403,7 @@
       "start": {
         "title": "Peluncuran pertama dan alur dasar",
         "lead": "Klik dua kali LiveMemory.exe. Layanan mulai di komputer ini dan membuka konsol di peramban bawaan Anda.",
-        "step1": "Klik dua kali LiveMemory.exe. Hak administrator tidak diperlukan. Jika Windows menampilkan “Windows melindungi PC Anda”, pilih Informasi selengkapnya, lalu Jalankan saja.",
+        "step1": "Klik dua kali LiveMemory.exe. Windows akan menampilkan konfirmasi UAC untuk hak administrator; pilih Ya untuk memulai. Jika memilih Tidak, Windows membatalkan peluncuran. Jika Windows juga menampilkan “Windows melindungi PC Anda”, pilih Informasi selengkapnya, lalu Jalankan saja.",
         "step2": "Konsol terbuka otomatis di peramban bawaan. Jika tidak terbuka, jalankan LiveMemory lagi, jangan membuka alamat lama secara manual: halaman yang dibuka manual tidak bisa mendapatkan sesi ini.",
         "step3": "Saat pertama kali digunakan, buka Pengaturan untuk memilih bahasa antarmuka dan tema. Keduanya dapat diubah kapan saja dari bilah atas dan pilihan itu diingat.",
         "step4": "Buka Siaran, klik + Rekaman baru, tempel tautan siaran langsung atau ID ruang, lalu mulai merekam. Beberapa siaran dapat direkam pada saat yang sama.",
@@ -2510,7 +2510,7 @@
         "step3": "Sebelum memulihkan, pilih berkas cadangan di Pengaturan dan tinjau ringkasannya, lalu ketik RESTORE untuk menjalankan pemulihan.",
         "step4": "Data saat ini otomatis dibuatkan cuplikan sebelum pemulihan. Jika pemulihan gagal atau prosesnya dihentikan paksa, peluncuran berikutnya akan mengembalikan atau menyelesaikannya berdasarkan jurnal.",
         "step5": "Setelah pemulihan, masuk lagi ke Bilibili dan isi ulang kunci API Anda. Chat publik YouTube tidak memerlukan login.",
-        "step6": "Untuk pindah ke PC baru, jalankan LiveMemory di sana dan pulihkan dari berkas cadangan yang sama. Nama pengguna lama, jalur lama, atau hak administrator tidak diperlukan.",
+        "step6": "Untuk pindah ke PC baru, jalankan LiveMemory di sana dan pulihkan dari berkas cadangan yang sama. Nama pengguna atau jalur lama tidak diperlukan, tetapi PC baru juga memerlukan persetujuan konfirmasi UAC hak administrator.",
         "note": "Berkas cadangan tidak terenkripsi dan memuat nama panggilan penonton, chat, serta laporan AI, jadi simpan dengan aman. Pemulihan mengganti seluruh data; pemulihan bukan penggabungan dua komputer. Penurunan versi dari versi yang lebih baru tidak didukung."
       },
       "faq": {

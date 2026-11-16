@@ -2403,7 +2403,7 @@
       "start": {
         "title": "Primer inicio y flujo básico",
         "lead": "Haz doble clic en LiveMemory.exe. El servicio se inicia en este PC y abre la consola en el navegador predeterminado.",
-        "step1": "Haz doble clic en LiveMemory.exe. No se necesitan derechos de administrador. Si Windows muestra «Windows protegió tu PC», elige Más información y después Ejecutar de todos modos.",
+        "step1": "Haz doble clic en LiveMemory.exe. Windows mostrará la confirmación de UAC para permisos de administrador; elige Sí para iniciar. Si eliges No, Windows cancelará el inicio. Si también aparece «Windows protegió tu PC», elige Más información y luego Ejecutar de todos modos.",
         "step2": "La consola se abre automáticamente en el navegador predeterminado. Si no se abre, vuelve a ejecutar LiveMemory en lugar de abrir a mano una dirección antigua: una página abierta manualmente no puede obtener esta sesión.",
         "step3": "En el primer uso, abre Ajustes para elegir el idioma de la interfaz y el tema. Ambos se pueden cambiar en cualquier momento desde la barra superior y se recuerdan.",
         "step4": "Ve a Directo, haz clic en + Nueva grabación, pega el enlace del directo o el ID de sala e inicia la grabación. Se pueden grabar varios directos al mismo tiempo.",
@@ -2510,7 +2510,7 @@
         "step3": "Antes de restaurar, selecciona el archivo de copia de seguridad en Ajustes y revisa el resumen; después escribe RESTORE para ejecutar la restauración.",
         "step4": "Los datos actuales se guardan en una instantánea automáticamente antes de restaurar. Si la restauración falla o el proceso se interrumpe, el siguiente inicio la revierte o la completa desde el diario.",
         "step5": "Después de restaurar, vuelve a iniciar sesión en Bilibili y vuelve a introducir tus claves de API. El chat público de YouTube no necesita inicio de sesión.",
-        "step6": "Para pasar a un PC nuevo, inicia LiveMemory allí y restaura desde el mismo archivo de copia de seguridad. No se necesitan el nombre de usuario antiguo, la ruta antigua ni derechos de administrador.",
+        "step6": "Para pasar a un PC nuevo, inicia LiveMemory allí y restaura desde el mismo archivo de copia de seguridad. No necesitas el nombre de usuario ni la ruta antiguos, pero el PC nuevo también requiere aceptar la confirmación de UAC de administrador.",
         "note": "Los archivos de copia de seguridad no están cifrados y contienen apodos de espectadores, chat e informes de IA, así que guárdalos de forma segura. Una restauración lo reemplaza todo; no fusiona dos PC. No se admite volver a una versión anterior desde una versión más reciente."
       },
       "faq": {

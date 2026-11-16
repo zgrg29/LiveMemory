@@ -2403,7 +2403,7 @@
       "start": {
         "title": "Primeira inicialização e fluxo básico",
         "lead": "Clique duas vezes em LiveMemory.exe. O serviço inicia neste computador e abre o console no navegador padrão.",
-        "step1": "Clique duas vezes em LiveMemory.exe. Direitos de administrador não são necessários. Se o Windows mostrar \"O Windows protegeu seu PC\", escolha Mais informações e depois Executar assim mesmo.",
+        "step1": "Clique duas vezes em LiveMemory.exe. O Windows mostrará a confirmação do UAC para permissões de administrador; escolha Sim para iniciar. Se escolher Não, o Windows cancelará a inicialização. Se também aparecer \"O Windows protegeu seu PC\", escolha Mais informações e depois Executar assim mesmo.",
         "step2": "O console abre automaticamente no navegador padrão. Se isso não acontecer, execute o LiveMemory novamente em vez de abrir um endereço antigo manualmente: uma página aberta manualmente não consegue obter esta sessão.",
         "step3": "No primeiro uso, abra Configurações para escolher o idioma da interface e o tema. Ambos podem ser alterados na barra superior a qualquer momento e ficam salvos.",
         "step4": "Vá para Ao vivo, clique em + Nova gravação, cole o link da transmissão ao vivo ou o ID da sala e inicie a gravação. Você pode gravar várias transmissões ao mesmo tempo.",
@@ -2510,7 +2510,7 @@
         "step3": "Antes de restaurar, selecione o arquivo de backup em Configurações e revise o resumo; depois digite RESTORE para executar a restauração.",
         "step4": "Os dados atuais recebem um snapshot automaticamente antes de uma restauração. Se a restauração falhar ou o processo for encerrado à força, a próxima inicialização reverte a operação ou a conclui a partir do diário.",
         "step5": "Depois de uma restauração, entre novamente no Bilibili e preencha suas chaves de API outra vez. O chat público do YouTube não exige login.",
-        "step6": "Para migrar para um novo PC, inicie o LiveMemory nele e restaure a partir do mesmo arquivo de backup. Não é necessário nome de usuário antigo, caminho antigo nem direitos de administrador.",
+        "step6": "Para migrar para um novo PC, inicie o LiveMemory nele e restaure a partir do mesmo arquivo de backup. Você não precisa do nome de usuário ou caminho antigos, mas o novo PC também exige aceitar a confirmação de UAC de administrador.",
         "note": "Os arquivos de backup não são criptografados e contêm apelidos de espectadores, chat e relatórios de IA, portanto guarde-os com segurança. A restauração substitui tudo; ela não mescla dois computadores. Não há suporte para rebaixar a partir de uma versão mais nova."
       },
       "faq": {
