@@ -1,7 +1,9 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**P40 / I18N-M1 完成**：新增七种界面语言并完成**十语言界面 + 启动器**；
-AI 输出语言仍三种；**未 Push / 未 Tag / 未 Release**）
+最后更新：2026-11-16（**P40 / I18N-M1 完成**：新增七种界面语言，完成**十语言界面 + 启动器**；
+十份字典各 2,265 键、键集/占位符零差异；**1077 测试通过**（727 unit + 350 integration）；
+真实浏览器 **380/380** 页面加载通过、40 张截图；EXE Build ID `09014dc765e0`、`verify-exe` 11/11；
+**AI 输出语言仍三种**；**未 Push / 未 Tag / 未 Release**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
@@ -41,19 +43,21 @@ AI 输出语言仍三种；**未 Push / 未 Tag / 未 Release**）
 5. **翻译流程**：`en.json` 为源 + `zh-CN.json` 参照 → 10 个章节对齐批次 → 每批机器门禁必须 PASS →
    按 `en.json` 结构与键序合并 → 字典级门禁 → 逐语言审校。
 
-### 0.48.2 自动化与真实 UI（本机真实执行）
+### 0.48.3 自动化与真实 UI（本机真实执行）
 
 | 运行 | 结果 |
 | --- | --- |
-| 全量单元 `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **722 passed / 0 failed / 0 skipped** |
+| 全量单元 `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **727 passed / 0 failed / 0 skipped** |
 | 全量集成 `… "tests/integration/*.test.mjs"` | **350 passed / 0 failed / 0 skipped** |
-| 合计 | **1072 passed / 0 failed / 0 skipped** |
+| 合计 | **1077 passed / 0 failed / 0 skipped** |
 | 字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × **2,265** 键；键集缺失 0 / 多余 0；占位符差异 0；空值 0；未解析键 0 |
 | 英文残留 | 逐语言列出「与英文完全相同」的键并逐条审阅 → `tests/fixtures/i18n-same-as-english.json`（占位符/URL/品牌/同形词）；未列入即失败；该白名单本身也被断言「不得包含已翻译的键」 |
 | 真实浏览器 `node scripts/verify-i18n-ui.mjs` | **380/380 页面加载 PASS**：10 语言 × 1440/1024/820/390 × 亮/暗 × 主要页面；**40 张截图** |
 | 布局断言 | 无横向溢出、无控件出视口、语言控件不覆盖主题按钮、界面标签不被截断 |
 | `scripts/verify-exe.mjs` | **11/11**（含「共享注册表 + 十字典 + `aiOutput` 子集 + 动态控件」） |
 | `scripts/verify-help-exe.mjs` | **14/14**（十语言使用说明 112 键 × 10，九大主题逐语言齐全） |
+| 启动器十语言 | EXE 的 asInvoker 功能副本逐个执行 `--help --lang <code>`：**10/10 exit 0**，`{locales}` 均展开为十个语言码，输出为对应语言 |
+| 控制台回退 | `tests/unit/launcher-console.test.mjs`：UTF-8 控制台输出所选语言；无 Unicode 时改用英文 ASCII 集合并折叠非 ASCII；写入抛错也不中止启动 |
 
 - 截图：`docs/screenshots/i18n-p40-<locale>-{live-1440-light,settings-1440-dark,live-390-light,ai-1440-light}.png`（10 语言 × 4）。
 - 真实浏览器验收需要一次性 `danger-full-access`（沙箱禁止 Chromium 的 mojo 命名管道），已在日志中如实记录；
@@ -67,14 +71,28 @@ AI 输出语言仍三种；**未 Push / 未 Tag / 未 Release**）
 - 审校：七种新语言各一轮「原生读者」审校，共修正 **284** 键（ko 44 / es 35 / pt-BR 15 / zh-TW 101 /
   fr 17 / de 41 / id 31），审校后门禁全部 PASS。**无母语签收人**。
 
-<!-- P40-STATUS-RESULTS -->
+### 0.48.4 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `09014dc765e0` |
+| 构建 commit | `1a0303eaf210cdab4ade69473a0d0ac33992faa7` |
+| source hash | `09014dc765e04acde1501023cd9052f0ebfb04a7d5b84cb6badc1f80604b1324` |
+| 大小 / SHA-256 | `99,160,576` bytes / `82f335c1f3d62e7a9b2fe179fecae6ae7829cddee08e88e97b5c636459b733c9` |
+| builtAt | `2026-11-16T12:51:20.167Z` |
+| 资源 / 模块 | **236 files**（十份字典）/ 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11**（含「共享注册表 + 十字典 + `aiOutput` 子集 + 动态控件」） |
+| `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10，九大主题逐语言齐全） |
+
+- EXE 大小从 P39 的 97,788,416 增至 99,160,576 bytes（+1.37 MB，七份字典 + 七套控制台文案）。
+- 功能场景使用 asInvoker 功能副本；正式 EXE 单独断言 `requireAdministrator`。
+- `verify-exe` 的 `LOCALAPPDATA` 重定向到仓库内临时目录，避免写入真实用户目录；不是产品缺陷。
+- **真实双击 UAC、干净 Windows 账户仍未人工验证**，不得写成已通过。
 
 
-### 0.48.3 Windows EXE
-
-<!-- P40-STATUS-EXE -->
-
-### 0.48.4 明确未做 / 遗留
+### 0.48.5 明确未做 / 遗留
 
 - AI 输出语言仍只有 `zh-CN` / `ja` / `en`：未扩提示词、记忆提示词、结果 Schema、翻译目标（P41）。
 - **没有**新增 `aiOutputLocale` 设置；任务语言快照语义未变；翻译缓存业务语义未变。
@@ -86,9 +104,16 @@ AI 输出语言仍三种；**未 Push / 未 Tag / 未 Release**）
 - 发现一处**既有**文案与实现不一致（不在本轮范围，未改）：`help.sections.connect` /
   `start` 仍写「不需要管理员权限」，而正式 EXE 自 RC0 起为 `requireAdministrator`。
 
-### 0.48.5 Git
+### 0.48.6 Git
 
-<!-- P40-STATUS-GIT -->
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p40-i18n-m1`（从 `feature/p39-i18n-m0` / `7c704bd` 创建） |
+| 代码/测试/翻译/文档提交 | `1a0303e` `feat: add seven interface languages and localise the launcher`（85 files） |
+| 文档/构建记录提交 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+| 工作区 | 代码提交后仅剩本轮结果文档 |
+
 
 ## 0.47 P39 / I18N-M0 国际化基础架构整理（2026-11-16）✅ 未发布
 

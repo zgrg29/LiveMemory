@@ -27,9 +27,9 @@
 
 | 运行 | 结果 |
 | --- | --- |
-| 全量单元 | **722 passed / 0 failed / 0 skipped** |
+| 全量单元 | **727 passed / 0 failed / 0 skipped** |
 | 全量集成 | **350 passed / 0 failed / 0 skipped** |
-| 合计 | **1072 passed / 0 failed / 0 skipped** |
+| 合计 | **1077 passed / 0 failed / 0 skipped** |
 | 字典门禁 | 10 份 × 2,265 键；键集/占位符/空值差异 0；未解析键 0；英文残留逐键审阅白名单 |
 | 真实浏览器 `verify-i18n-ui.mjs` | **380/380** 页面加载 PASS；40 张截图 `docs/screenshots/i18n-p40-*.png` |
 | `verify-exe` | **11/11**（十字典 + `aiOutput` 子集） |
@@ -45,7 +45,20 @@
 
 ### 0.3 Windows EXE
 
-<!-- P40-HANDOFF-EXE -->
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `09014dc765e0` |
+| 构建 commit | `1a0303ea`（P40 代码/翻译提交） |
+| 大小 / SHA-256 | `99,160,576` bytes / `82f335c1f3d62e7a9b2fe179fecae6ae7829cddee08e88e97b5c636459b733c9` |
+| builtAt | `2026-11-16T12:51:20.167Z` |
+| 资源 / 模块 | 236 files（十份字典）/ 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11** |
+| `verify-help-exe` | **14/14** |
+
+真实双击 UAC、干净 Windows 账户仍未人工验证；不得写成已通过。
+
 
 ### 0.4 下一轮（P41 / I18N-M2）
 
@@ -60,7 +73,13 @@
 
 ### 0.5 Git
 
-<!-- P40-HANDOFF-GIT -->
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p40-i18n-m1`（从 `feature/p39-i18n-m0` / `7c704bd`） |
+| 代码/翻译提交 | `1a0303e`（85 files） |
+| 文档/构建记录 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
 
 ---
 
