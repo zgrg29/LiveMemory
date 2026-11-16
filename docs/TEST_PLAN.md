@@ -2086,3 +2086,65 @@ SQLite 6/6 external_id；自动监听目标 check → recording → 真实 chat 
 - `room/enter` 403 的服务端具体原因（地区/账号/房间/请求上下文）：未确认。
 - 真实断网、下播长跑、干净 Windows 账户、真实 UAC 双击、真实礼物投递：未验证。
 - 免费本地方案未接入、未做 ToS/合规结论。
+
+## 52. TIKTOK-M5：匿名本地 WebSocket 统一采集（2026-11-16）
+
+### 52.1 新增/更新的自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/tiktok-webcast.test.mjs`（新） | PushFrame 编解码（enter/hb/ack）、socket URL 参数（无签名/token）、ttwid 获取/缓存/持久化/限流重试、socket enter/心跳/ack/gzip/未压缩/控制帧、掉线/空闲/双 host 失败、旧 Profile 清理（有/无标记）、ttwid 存储校验 |
+| `tests/unit/tiktok-local-adapter.test.mjs`（新） | 真实帧 → canonical chat（UID/msgId/原文/Unicode）、帧≠事件、历史跳过、连送合并/超时冲刷/停止冲刷、chat 与 gift 的 msgId 去重、掉线重连 + gap、两次离线确认、房间变化、ttwid 限流后恢复、控制消息只是一次观测 |
+| `tests/integration/tiktok-session.test.mjs`（重写） | WebSocket → mapper → `EventIngest` → SQLite（`tiktok:<uid>`、昵称、原文、msgId、时间）、礼物最终数量/无金额、AI 包、重复 msgId、重连同 session、双房间独立、状态为单一路径/无 login、停止（两条停止路径）都显示 stopped、非直播拒绝 |
+| `tests/integration/tiktok-monitoring.test.mjs`（重写） | 自动监听目标 → `tick` → 本地 adapter → recording；离线不建 session；未知 handle → MONITOR_NOT_FOUND；策略仍为 90 秒 |
+| `tests/unit/tiktok-ui.test.mjs`（重写） | 单路径无登录面板、无 `/api/tiktok/login/*` 与 `/transport`、四项状态、旧键不存在、三语键一致、构建模块清单、`tiktokTransport` 设置被拒绝 |
+| `tests/integration/api-auth.test.mjs` | 删除已下线路由的 401 断言；保留 status/room/connect/disconnect/retention |
+| `tests/unit/tiktok-messages.test.mjs` | 新增 `isHistory` 解码字段（其余映射断言不变） |
+| 全量 | `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` |
+
+### 52.2 真实 30 分钟长测（独立验证脚本）
+
+命令：
+
+```text
+node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 30 --reconnect-at-minute 12
+```
+
+| 指标 | 结果 |
+| --- | --- |
+| 窗口 | 2026-11-16 10:54:56 → 11:24:57（Asia/Shanghai），30.00 分钟连续 |
+| 房间 / host | `aljazeeraenglish` / `7706695538414062349` / `webcast-ws.tiktok.com` |
+| 连接次数 / 重连 | 2 / 1（第 12 分钟强制断线，第 1 次重试即成功；仍是同一 session） |
+| 帧 / 事件批 / 控制帧 | 2427 / 2247 / 180 |
+| 消息 / 历史回放跳过 | 8192 / 12 |
+| 真实 chat | **706**；**110** 位可识别观众（110 个稳定 UID） |
+| 昵称 / 原文 | 110 个昵称；408 条非 ASCII（Unicode/Emoji 原样） |
+| 缺失字段 | UID 0 / msgId 0 / 原文 0 |
+| 重复事件 | **0**（0 个重复 msgId） |
+| 礼物 / 连送 / 订阅 | **0 / 0 / 0 → NOT-OBSERVED** |
+| 最大静默 | 8,935 ms |
+| 速率 | 80.9 帧/分、273.1 消息/分、23.53 弹幕/分 |
+| 请求 | ttwid 0（复用缓存）/ 房间查询 0（直接用 room-id 启动）/ WebSocket 连接 2 |
+| 报告 | `tests/.tmp/verify-local-ws-30m-v2/report.json`（临时目录，不提交） |
+
+未映射消息（只计数、不写事件）：`WebcastMemberMessage` 4,619、`WebcastLikeMessage` 1,690、
+`WebcastRoomUserSeqMessage` 883、`WebcastSocialMessage` 249、`WebcastBarrageMessage` 13、
+`WebcastHotRoomMessage` 10、`WebcastAISummaryMessage` 6、`WebcastImDeleteMessage` 2。
+礼物与订阅在该房间的真实运行中为 0，故标记 **NOT-OBSERVED**；不得据此宣称礼物已真实验收。
+
+### 52.3 结果
+
+| 运行 | 结果 |
+| --- | --- |
+| 定向 TikTok（unit + integration） | **72 passed / 0 failed / 0 skipped（6,293.84 ms）** |
+| 全量 | **1019 passed / 0 failed / 0 skipped（290,038.02 ms，2026-11-16）** |
+| `scripts/verify-exe.mjs` | **10/10**（Build ID `9b63b0018235`，commit `a0e6638`） |
+| `scripts/verify-tiktok-exe.mjs @aljazeeraenglish` | **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| 真实 30 分钟 | 见 §52.2；礼物/订阅 **NOT-OBSERVED** |
+
+### 52.4 未验证 / 不得宣称
+
+- 真实礼物、连送、订阅：本轮 **NOT-OBSERVED**（只有合成帧 + SQLite/去重测试）。
+- 真实第二直播间并发：未执行（本轮只有一个可确认在播房间）。
+- 真实断网（网卡/路由器）、真实下播长跑、干净 Windows 账户、真实 UAC 双击：未验证。
+- 协议为非官方 web 协议，可能随平台变化失效；无续传游标，重连期间可能漏消息。

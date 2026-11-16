@@ -542,123 +542,132 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 **未验证 / 不得宣称**：真实手机扫码成功、登录后的礼物推送、真实礼物、真实连送、真实付费留言、
 真实断网恢复、真实下播、10+ 房间压力、抖音官方稳定性承诺。
 
-## 3C. TikTok Live（M2，2026-11-15，`feature/tiktok`）
+## 3C. TikTok Live（M5，2026-11-16，`feature/tiktok`：统一为匿名本地 WebSocket）
 
-完整可行性报告：`docs/TIKTOK_FEASIBILITY_2026-11.md`。以下只记录工程事实。
+M5 产品决定（用户明确授权）：TikTok 面向普通用户**只有一条采集路径**——匿名本地 webcast WebSocket。
+本轮已删除浏览器扫码登录、登录状态 UI、专用浏览器中继、免费社区签名通道与「采集通道」选择。
+历史实现与调查见 §3C.9；真实验收数字见 `docs/STATUS.md` §0.42。
 
-### 3C.1 传输
+### 3C.1 唯一传输：匿名本地 webcast WebSocket
 
-| 传输 | 说明 | 默认 |
-| --- | --- | --- |
-| `signer` | 免费社区签名通道 `GET /webcast/rooms/<id>/connect`；无 API Key、无付费、不要求 Business；匿名约 130 秒/请求（见 §3C.6）；`baseUrl` 可换自建/兼容服务 | ✅ |
-| `browser` | 本机 Chrome/Edge 专用资料目录 + 页面级 CDP，读取官方直播页自身的 WebSocket 帧；先完成官方登录；`room/enter` 403 只作为直播间访问警告，真实帧优先；无帧宽限期后报 `TIKTOK_ROOM_REFUSED`，不改变登录状态 | 可选（实验性） |
+| 项目 | 事实 |
+| --- | --- |
+| 端点 | `wss://webcast-ws.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/`（备选 `webcast-ws.us.tiktok.com`） |
+| 凭据 | 仅匿名 `ttwid` 设备 Cookie（TikTok 对任何访客的普通页面请求都会下发） |
+| 账号 | **不需要**；不扫码、不导入 Cookie、不读用户浏览器资料 |
+| 第三方服务 | **不需要**；不依赖付费或免费社区签名服务，无 API Key |
+| 额外运行时 | **不需要**；Node 22+ 内置 `fetch` + 全局 `WebSocket`，可在 Node SEA Windows EXE 内运行 |
+| 请求签名 | 不需要 `X-Bogus`/`signature`/`msToken`；`im/fetch` 未被使用 |
+| 协议性质 | **TikTok 非公开 web 协议，不是官方 API**；TikTok 可随时更改或限制，界面与文档均标注「非官方/实验性」 |
 
-- 无 Key/无付费；**不得**把免费社区签发描述成官方 API。
-- 匿名免费通道实际有 **30 次/小时** 账号/IP 上限；只在用尽后通过 429 暴露。M1 的 15 秒轮询（240/h）会在约 7.5 分钟后耗尽，是频繁重连的根因。M2 改为共享预算 + 130 秒节奏，并完整遵守 `Retry-After`/`ratelimit-reset`。
-- 浏览器中继不启用 `--no-sandbox`、不关闭 Web 安全、不注入 stealth、不伪造签名。
-- 自动切换未启用：浏览器中继需要登录且登录后的真实事件仍待人工验证；手动选择避免重复事件/错误状态。
+连接参数（`src/platforms/tiktok/webcast.mjs` `buildSocketUrl`）镜像网页播放器：`room_id`、`identity=audience`、
+`compress=gzip`、`resp_content_type=protobuf`、`heartbeat_duration=10000`、`aid=1988` 等。
+握手头只带 `user-agent`、`cookie: ttwid=…`、`origin: https://www.tiktok.com`。
+**没有**任何登录、签名或 token 参数。
 
-### 3C.2 本地免费公开接口
+### 3C.2 连接与帧处理
+
+1. 取匿名 `ttwid`：`GET https://www.tiktok.com/`，读 `set-cookie: ttwid=…`；缓存到 `<data>/tiktok/ttwid.json`
+   （`0600`，仅设备 Cookie，不是登录凭据）。TikTok 会对突发页面请求返回无 Cookie 的错误页
+   （`x-tt-system-error: 3`）；实现按 1.5s/3s 退避重试 3 次，仍失败则报告 `TIKTOK_RATE_LIMITED`。
+2. 房间元数据仍来自公开接口（见 §3C.3）。
+3. 打开 WebSocket，发送 `im_enter_room`（`room id / live_id=12 / audience`）。
+4. 每 10 秒发送 `hb` 心跳；TikTok 在心跳缺失时以 `client_ping_timeout` 关闭连接。
+5. 每帧是 `PushFrame`：`field 6` encoding、`field 7` payloadType、`field 8` payload、`field 2` logId。
+   仅 `payloadType='msg'` 且 `encoding='pb'` 的帧解事件批；gzip 魔数 `1f 8b` 时先解压，
+   再解 `ProtoMessageFetchResult`（`field 1` 消息数组、`field 6` isHistory）。
+6. 有 `logId` 的帧回 `ack`（payload `-`）。
+7. `ProtoMessageFetchResult.Message` → `mapTikTokMessage` → canonical event → **统一 `EventIngest`**。
+8. 无续传游标：重连期间的消息可能遗漏，恢复后不补录；UI 显示「可能遗漏」。
+
+### 3C.3 本地免费公开接口（房间元数据）
 
 | 端点 | 用途 |
 | --- | --- |
 | `www.tiktok.com/api-live/user/room/?...&uniqueId=<handle>&sourceType=54` | 房间 ID、开播状态、主播 `user.id`/昵称、标题 |
 | `webcast.tiktok.com/webcast/room/info/?room_id=<id>` | 标题、开播时间、主播 `id_str`/`sec_uid`、累计观看 |
-| `webcast.tiktok.com/webcast/gift/list/?room_id=<id>` | 礼物目录（名称 + 钻石数，809 个；10 分钟缓存） |
+| `webcast.tiktok.com/webcast/gift/list/?room_id=<id>` | 礼物目录（名称 + 钻石数，10 分钟缓存） |
 
-不需要登录、Cookie、API Key 或签名服务。
+这些接口在突发请求下会返回 403/空响应（限流）：实现把它分类为 `RATE_LIMITED`，**不**把它当成登录失效或下播，
+也不会因为一次元数据读取失败就结束正在进行的采集。
 
-### 3C.3 事件映射
+### 3C.4 事件映射
 
 | TikTok 消息 | canonical | 去重 | 说明 |
 | --- | --- | --- | --- |
-| `WebcastChatMessage` / `WebcastEmoteChatMessage` | `chat` | `common.msgId` | 原文保留 Unicode/Emoji；`viewer_uid = user.id` |
-| `WebcastGiftMessage`（`repeatEnd=1` 或超时冲刷） | `gift` | `common.msgId` | `amount_minor=null`、`currency=null`、`value_kind=unknown`；`amount_display="<钻石合计> TikTok Diamonds"`；`source_quality=estimated`（真实事件未观测） |
-| `WebcastSubNotifyMessage` | `membership` | `common.msgId` | 无金额；`source_quality=estimated` |
+| `WebcastChatMessage` / `WebcastEmoteChatMessage` | `chat` | `common.msgId` | 原文保留 Unicode/Emoji；`viewer_uid = user.id`；历史回放（`isHistory`）跳过 |
+| `WebcastGiftMessage`（`repeatEnd=1` 或超时冲刷） | `gift` | `common.msgId` | 同 `groupId` 只写一条最终态；`amount_display` 为钻石展示值，`amount_minor=null`、`value_kind=unknown`、不换算收入 |
+| `WebcastSubNotifyMessage` | `membership` | `common.msgId` | 无金额 |
 | `WebcastMemberMessage` / `LikeMessage` / `SocialMessage` | 只计数 | — | 不写事件 |
 | `WebcastRoomUserSeqMessage` | 当前观众数 | — | 只更新 snapshot |
-| `WebcastControlMessage(action=3)` | 一次离线观测 | — | 需两次确认才结束 |
+| `WebcastControlMessage(action=3)` | 一次离线观测 | — | 需两次独立观测才结束 |
 
 - 稳定身份：`tiktok:<user.id>`；昵称只用于显示；`tiktok:<handle>` 只作监控目标键。
-- 连送：同一 `groupId` 仅最终态写一条；10 秒未收到最终态时按最后值冲刷一次。
-- 钻石是展示价值，**不是主播收入**；不得换算本币。
+- 连送：同一 `groupId` 仅最终态写一条；10 秒未收到最终态时按最后值冲刷一次；礼物是否真实观测到
+  以每次运行的实际事件为准，未收到即标 `NOT-OBSERVED`。
+- 一帧不等于弹幕：`frames / batchFrames / controlFrames / messages / chats / gifts` 分开计数，
+  `eventsVerified` 只在收到真实 chat/gift/membership 后为真。
 
-### 3C.4 监控与保留
+### 3C.5 状态机、重连与多房间
+
+- 连接状态：`connecting / connected / reconnecting / rate_limited / failed / stopped`；
+  采集分类：`waiting_events`（已连接但还没有事件）、`normal`（已有真实事件）等。
+- 掉线：1→30 秒指数退避 + 抖动；连续 12 次失败后进入 5 分钟慢探测，不放弃记录。
+- 60 秒无任何帧 → 视为死连接并重连（`idle_timeout`）。
+- 重连前重新解析房间：room id 变化（主播重新开播）或公开状态 `isLive=false` 作为一次离线观测；
+  两次独立观测才结束同一 session，并标记 `platform_ended`。
+- 只有 socket-open 失败才刷新 `ttwid`；普通网络掉线复用缓存 Cookie，避免触发页面请求限流。
+- 多房间：每个 `tiktok` 录制拥有独立 adapter、socket、session 与停止操作；同一 `platform+room` 不允许重复启动。
+- 每次中断/恢复记录 `disconnectedAt`、`recoveredAt`、`gapMs`、`lastEventAt`、`possibleMissed=true`，不声称补录。
+
+### 3C.6 UI：四项状态分离
+
+TikTok 面板只保留普通用户需要的东西：直播间链接/`@用户名`、检查直播间、开始/停止记录、自动监听、
+采集状态与错误。技术上不再有登录，也不再有采集通道选择。
+
+| 状态 | 来源 |
+| --- | --- |
+| 直播间识别 | 当前「检查直播间」的结果或正在记录的 `roomId`；切换输入不会用旧结果冒充新直播间 |
+| 采集连接 | adapter 的 `connected/reconnecting/rate_limited/...` |
+| 真实事件 | `counters.chats/gifts/memberships` 与 `lastEventAt`；帧数不算事件 |
+| 正式记录 | `SessionManager` 中确实存在的 session；没有 session 绝不显示「正在记录」 |
+
+高级详情保留：协议 `webcast-ws`、ws host、帧/批/控制帧数、消息数、重复数、历史跳过、心跳数、间隔与错误原因。
+
+### 3C.7 监控与保留
 
 - 检测器：`src/monitoring/detectors/tiktok.mjs`；周期键 `tiktok:<handle>:<roomId>`（每场新 roomId）。
 - 策略：90 秒基准、60–150 秒抖动、2 秒请求间隔、4 次连续失败进入错误态、30 分钟慢重试。
-- 保留：TikTok-only 30 天清理原文与过期昵称；保留事件行、计数、稳定 ID。
+- 保留：TikTok-only 30 天清理原文与过期昵称；保留事件行、计数、稳定 ID、金额合计。
 
-### 3C.5 验证状态（2026-11-15，Asia/Shanghai）
+### 3C.8 已删除的旧实现与兼容清理
 
-| 验证 | 结果 |
+| 删除项 | 说明 |
 | --- | --- |
-| 公开接口 | `aljazeeraenglish`：room `7706695538414062349`、status 2、主播 ID `7074562477175424046`、标题、累计观看 50,817,556；礼物目录 809 个 |
-| 官方网页匿名 | `room/enter` 403；聊天面板“正在加载”；移动端不可用 |
-| 未登录直连推送 WS | 被拒（HTTP 200 代替 101 / 1006）；未签名 `im/fetch` 0 字节 |
-| 免费社区签名通道 | 真实 `WebcastChatMessage`；6/6 有 `user.id` + `msgId` + Unicode 正文 |
-| 源码服务器短测（M2） | 3 分钟 24 条 chat / 11 位可识别观众 / 24 个不同 msgId / 24 条稳定 UID / 0 重连 / 0 限流 / 2 次请求（130 秒间隔） |
-| 源码服务器 30 分钟（M2） | 见 `docs/STATUS.md` §0.39；报告由 `scripts/verify-tiktok-live-30m.mjs` 输出 |
-| 正式 EXE（`verify-tiktok-exe`） | 见 §0.39 与最终交付；不再宣称旧的 20/20 覆盖新登录 API |
-| 礼物/连送/订阅 | 已解析 + 自动化测试；**真实事件仍未观测** |
-| 浏览器中继 | 登录入口、状态机、单窗口复用已实现并单元测试；**真实浏览器启动在本 DSH 沙箱 BLOCKED**，登录后真实弹幕投递待人工验收 |
-| 浏览器中继可用性（M3） | 真实 `TikTokBrowserRelay` 只暴露 `createAdapter`；`transport()` 已改为按此判断。打包 EXE `verify-tiktok-exe` 断言 `requested=browser / browserAvailable=true / active=browser`，并可无重启切回 signer |
-| 浏览器中继数据路径（M3） | 合成帧已验证 chat/gift → `EventIngest` → SQLite：原文、昵称、`tiktok:<user.id>`、`msgId`、事件时间、连送最终数量；**真实登录后投递仍 BLOCKED** |
-| 浏览器中继 403（M4） | 真实桌面 EXE 在登录后对 `@freefirelatino` 得到 `room/enter` **HTTP 403**；旧实现把它当成登录失效并立即中止。M4 将其改为直播间访问警告：真实 PushFrame 事件优先，宽限期无帧才报 `platform_refused`，登录仍保持 `logged_in`（Cookie 仍有效时） |
-| 浏览器中继帧格式（M4） | 旧代码把 WebSocket `PushFrame` 当成事件批次解析，真实帧恒为 0 条事件。M4 先解 `PushFrame.payloadType='msg'` / field 8，再解 gzip `ProtoMessageFetchResult`；用当前 TikTok web 协议结构做了单测与 SQLite 回归 |
-| 免费本地方案调查（M4，仅研究） | `talkaboutdesign/tiklive`（MIT，2026-10 新项目）声明无登录、无签名服务、本地运行；源码使用匿名 `ttwid` + `webcast-ws.tiktok.com` PushFrame。只读探针在同一台机器 35 秒收到 **469 chat / 19 gift / 78 msg 帧**；未接入产品，待产品/合规决策 |
-| 浏览器中继真实登录后端到端 | **仍未验证**：DSH 沙箱终止 Chromium（`TIKTOK_BROWSER_FAILED / launch_failed`），必须由开发者在普通 Windows 桌面人工验收；不得写成 PASS |
+| `browser-login.mjs` / `browser-launch.mjs` / `browser-relay.mjs` | 扫码登录、专用 Profile、CDP 中继 |
+| `signer.mjs` / `rate-budget.mjs` | 免费社区签名通道与共享预算 |
+| `adapter.mjs` / `transports.mjs` | 15 秒轮询适配器与 `auto/signer/browser` 通道选择 |
+| `/api/tiktok/login/*`、`/api/tiktok/transport` | 登录与通道选择路由（现在返回 404） |
+| 设置 `tiktokTransport` | 不再接受；旧客户端提交该字段会得到 `SETTINGS_INVALID` |
+| 三语 `tiktokLogin*` / `tiktokTransport*` / `tiktokSigner*` / `tiktokBrowser*` 文案 | 已删除；`tiktokLogin*` 等遗留键不得再出现 |
 
-### 3C.6 免费通道预算与重连状态机
+- **旧 Profile 清理**：`src/platforms/tiktok/legacy-cleanup.mjs` 在启动时删除
+  `<data>/browser/tiktok/login-state.json` 与**带 `.livememory-owned` 标记**的
+  `<data>/browser/tiktok/account`；没有标记的目录一律保留并记录跳过原因。
+  绝不读取或删除 Chrome/Edge 的日常用户资料。
+- 历史 TikTok 直播、弹幕、观众画像与 AI 数据不受影响（数据库 schema 未改）。
+- 抖音的扫码登录、Cookie 教程与浏览器登录代码**未改动**（独立模块，单独测试）。
 
-真实 429 证据：
+### 3C.9 历史调查（已归档，不再作为产品路径）
 
-```text
-HTTP 429
-ratelimit-limit: 30
-ratelimit-policy: 30;w=3600
-ratelimit-remaining: 0
-ratelimit-reset: 2708
-retry-after: 2708
-{"code":429,"message":"You have reached the rate limit...","limit_label":"rate_limit_account_hour"}
-```
+- `signer` 免费社区通道：30 次/小时匿名上限，130 秒级轮询，不是实时；M5 已删除。
+- `browser` 中继：真实桌面 EXE 登录后 `room/enter` 403、`PushFrame` 解析、登录/采集状态分离等
+  M2–M4 修复均保留在历史文档中；真实登录后端到端投递始终 BLOCKED。M5 不再需要它。
+- `talkaboutdesign/tiklive`（MIT）：M4 只读探针 35 秒收到 469 chat / 19 gift；M5 以它作为协议参考，
+  用零依赖的本地实现替代，未引入 Bun / Effect / 任何运行时依赖。许可证与归属见 `THIRD_PARTY_NOTICES.md`。
+- 使用该协议的前提是**不绕过任何访问控制**：不破解验证码、不伪造登录态、不规避地区限制。
+  若平台明确拒绝访问，必须停止该路径并报告。
 
-实现：
-
-- `TikTokRateBudget` 进程内共享（按 IP），所有房间共用；默认匿名 `130000 ms` 最小间隔。
-- 429 使用完整 `Retry-After`/`ratelimit-reset`（不再截断到 30 秒），状态为 `rate_limited`，不是 `failed`，也不是下播。
-- `failed` 仅用于连续 15 次可恢复传输失败后的慢探测；`auth_required` 只用于登录要求；`stopped` 只用于用户停止或确认下播。
-- 0 消息批次是成功；暂时低弹幕频率不触发重连。
-- 协议错误/过期 cursor 会重置 cursor 并重新校验房间；房间 ID 变化会作为离线观测，两次确认后结束同一场。
-- 每次中断/恢复记录 `disconnectedAt`、`recoveredAt`、`gapMs`、`lastEventAt`、`possibleMissed=true`；不声称补录。
-
-### 3C.7 浏览器登录生命周期
-
-| 状态 | 含义 |
-| --- | --- |
-| `idle` | 未登录 |
-| `opening` | 正在启动专用 Chrome/Edge |
-| `waiting` | 官方登录页已打开，等待用户完成二维码/手机/邮箱/用户名登录 |
-| `verifying` | 检测到官方 Cookie，正在验证 |
-| `logged_in` | 官方登录状态已识别（`verifiedBy` 标明 cookie/页面/直播间） |
-| `expired` | Cookie 过期/被移除，或直播页明确要求重新登录；需要重新登录 |
-| `refused` | 平台拒绝该账号的登录会话（不是普通的直播间 `room/enter` 403）；需要重新登录/换账号 |
-| `unavailable` | 本机没有 Chrome/Edge 或无法使用专用 profile |
-| `error` | 启动/导航失败 |
-
-**登录与直播间访问是两件事**：`roomAccess` 单独记录 `ok/refused/unknown` 与 HTTP 状态。`room/enter` 403 不再把 `login.state` 改成 `refused`；只有页面/Cookie 明确要求登录才进入 `expired`/`refused`。UI 必须同时显示「账号已登录」和「该直播间访问被拒绝」。
-
-- 只使用 `<data>/browser/tiktok/account` 专用 profile（`.livememory-owned` 标记）；不读取/清理用户日常浏览器资料。
-- 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`；M3 增加 `needs_room`（未填写直播间，不改变登录状态）。
-- 同一登录任务单飞行；重复点击只聚焦已有窗口；关闭窗口后状态可恢复；采集停止只关闭自己创建的 tab。
-- **M3 可用性判断**：`TikTokBrowserRelay` 没有 `start()`，可用性必须检查 `createAdapter()`。旧代码检查 `start` 导致显式 browser 时 `active=null`，最终返回 `TIKTOK_NOT_CONFIGURED` 503。
-- **M3/M4 持久会话验证**：磁盘上的 `logged_in` 只是提示；profile 仍存在时允许中继实际打开直播页，真实 200/事件回写 `logged_in`，真实 `room/enter` 403 回写 `roomAccess=refused`（登录状态不变），只有页面明确要求登录才回写 `expired`。
-- **M3 关闭窗口**：关闭登录页保留 `logged_in`，设置 `loginWindowClosedAt` 与 `revalidationRequired`；正在采集时只关闭登录 tab，不终止专用浏览器；采集中拒绝退出登录（`TIKTOK_CAPTURE_ACTIVE`）。
-- **M3 礼物**：浏览器适配器按 `groupKey` 合并连送，最终态或 10 秒超时写一条 `gift`；钻石只写 `amount_display`，`amount_minor=null`、`value_kind=unknown`。
-- **M3 验证反馈**：`verify` 返回 `reason`、`eventsReceived`、`roomEnterStatus`、`timedOut`、`uniqueId`、`liveUrl`、`checkedAt`；UI 将登录/直播间/连接/事件/记录五项分开显示。
-- **M4 403 根因与语义**：`room/enter` 403 来自官方页面自身的网络请求（`Network.responseReceived`，域名 `tiktok.com`/`webcast.tiktok.com`），不是本地映射错误。它可能只是页面的一次入房 HTTP 调用被拒，而事件 WebSocket 仍可用；旧代码在 403 时立即中止且把登录标成 `refused`，造成「登录成功但平台拒绝访问 / 无事件」。M4 等待真实帧；有帧则正常采集并保留警告，无帧宽限期后才报 `TIKTOK_ROOM_REFUSED`。
-- **M4 PushFrame**：当前 TikTok web 播放器的二进制帧是 `PushFrame`（field 6 encoding、7 payloadType、8 payload），事件批次在其 field 8 内且通常 gzip。旧实现直接解 `WebcastResponse`，真实帧永远不会产生事件；M4 先解 PushFrame 再解批次，并保留旧格式兼容。
-- **M4 状态一致性**：`capture.captureState` 区分 `events_received` / `connected_no_events` / `room_unconfirmed` / `platform_refused` / `error` / `login_required` / `stopped`；连接 `state` 与采集结果分开。开始记录失败时 `lastCapture` 显示失败原因，停止后显示 `stopped`，不再退回 `tiktokCaptureStateIdle` 原始键。
 
 ## 4. 统一事件模型
 

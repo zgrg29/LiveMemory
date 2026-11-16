@@ -1,11 +1,72 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · TIKTOK-M4：真实桌面 403 调查、PushFrame 解码、登录/采集/直播间访问分离 · **真实登录后端到端仍 BLOCKED，等待人工验收**
+本轮：2026-11-16 · TIKTOK-M5：匿名本地 WebSocket 统一采集、删除登录与通道选择 · **真实 30 分钟 + EXE 已验收；礼物 NOT-OBSERVED；待人工复验**
 
-> 真实 Windows EXE 在登录后对 `@freefirelatino` 得到 `room/enter` HTTP 403。M4 证明这是官方页面的直播间进入响应，不是本地映射；旧实现把它误判为登录失效并提前中止，同时用错帧格式解 PushFrame，导致真实事件恒为 0。已修复状态分离、PushFrame 解码、403 宽限与 UI 五项状态。**未合并 main、未 Push、未 Tag、未 Release。**
-> 根因与实现：`docs/STATUS.md` §0.41；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C；日志：`log/2026-11-15-tiktok-m4-browser-relay-403.md`。
+> TikTok 现在只有一条采集路径：匿名本地 webcast WebSocket（匿名 `ttwid`，无需登录、无需浏览器中继、不依赖任何签名服务）。本轮验证并接入这条路径，随后删除扫码登录、登录状态 UI、专用浏览器 Profile、免费社区签名通道与通道选择；旧 Profile 只清理 LiveMemory 自己创建的目录。**未合并 main、未 Push、未 Tag、未 Release。**
+> 实现：`docs/STATUS.md` §0.42；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C；日志：`log/2026-11-16-tiktok-m5-local-websocket.md`。
 
-## 0. 本轮（TIKTOK-M4）
+## 0. 本轮（TIKTOK-M5）
+
+### 0.1 这一轮做了什么
+
+1. **审查并验证匿名本地 WebSocket**：阅读 `talkaboutdesign/tiklive`（MIT）实际源码、许可证、依赖、连接机制、
+   帧解析与断线恢复；确认它是 Effect 4 + Bun 项目，不能嵌入零依赖 Node SEA，于是按其协议用原生 Node 重写。
+   未复制其源码，归属见 `THIRD_PARTY_NOTICES.md`。
+2. **独立 30 分钟真实验证**（`scripts/verify-tiktok-local-ws.mjs`）：真实聊天、昵称、稳定 UID、消息 ID、
+   断线重连、请求次数、重复与静默；礼物未观测到 → `NOT-OBSERVED`。数字见 `docs/STATUS.md` §0.42.3。
+3. **正式接入**：新增 `webcast.mjs` / `local-adapter.mjs` / `state.mjs` / `legacy-cleanup.mjs`，重写
+   `service.mjs`；所有事件仍只经统一 `EventIngest`，SQLite schema 未改。
+4. **统一产品形态**：删除 TikTok 扫码登录、登录状态 UI、关闭/退出登录、浏览器中继、免费社区签名通道与
+   「采集通道」选择；删除 `/api/tiktok/login/*`、`/api/tiktok/transport` 与 `tiktokTransport` 设置。
+5. **UI 重写**：TikTok 面板只保留链接/检查/开始/停止/自动监听/状态与错误；四项独立状态（直播间识别 /
+   采集连接 / 真实事件 / 正式记录）+ 高级技术详情；三语齐全。
+6. **旧 Profile 安全清理**：只删除带 `.livememory-owned` 标记的目录与 LiveMemory 自己的 `login-state.json`；
+   抖音登录与 Chrome/Edge 日常资料不受影响。
+7. **EXE 验收**：重建、运行 `verify-exe` 与 `verify-tiktok-exe`（真实弹幕、稳定 UID、SQLite、AI、自动监听、
+   四平台回归）；礼物未观测时输出 `NOT-OBSERVED`。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 技术与合规审查 | 未发现阻断性许可证或访问控制问题；上游 MIT；未复制源码；零新增运行时依赖 |
+| 真实 30 分钟 | **706 chat / 110 位稳定 UID / 0 缺失 / 0 重复 / 2427 帧 / 1 次强制断线后重连成功**；礼物与订阅 **NOT-OBSERVED** |
+| 定向 TikTok | **72 passed / 0 failed / 0 skipped** |
+| 全量 | **1019 passed / 0 failed / 0 skipped（290,038.02 ms）** |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe` | **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| 其他四平台真实回归 | Bilibili 房间 6：1 条 / 1 人；YouTube `4t4AQ15yj1M`：75 条 / 12 人；Twitch `kato_junichi0817`：7 条 / 7 人；抖音 `708764876300`：2 条 / 2 人；全部 `connected` 并停止成功 |
+| EXE | `D:\LiveMemory\dist\LiveMemory.exe` / Build ID `9b63b0018235` / commit `a0e6638` / `97,760,768` B / SHA-256 `5d66ab103549…` / `requireAdministrator` |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+**真实礼物、连送、订阅：NOT-OBSERVED。** 本轮唯一可确认正在直播的房间在 30 分钟内没有礼物；
+其他候选账号均为已结束。礼物/连送/订阅只有合成帧 + SQLite + 去重测试，不得写成真实礼物通过。
+
+### 0.3 下一轮 / 人工验收必须先做
+
+1. 普通 Windows 桌面双击 `dist/LiveMemory.exe`，允许 UAC。
+2. TikTok → 输入真实正在直播的链接 → 检查直播间 → 开始记录：
+   - 确认显示「已连接」并开始出现真实弹幕；四项状态中「真实事件」> 0；「正式记录」= 正在记录。
+   - 确认 SQLite 中有 `tiktok:<uid>`、昵称、原文、消息 ID、事件时间。
+3. 在一个有礼物的直播间（例如 PK/连送活动）重复上述步骤，确认礼物只计一次、连送按最终数量合并；
+   **没有真实礼物就继续标 NOT-OBSERVED，不得写成通过**。
+4. 断开网络 1–2 分钟再恢复：确认同一场 session、UI 从重连回到已连接，并显示「可能遗漏」。
+5. 停止记录：确认显示「已停止」，不出现原始 i18n 键；再从历史页停止另一场，确认 TikTok 面板仍显示已停止。
+6. 检查旧数据：升级前已有的 TikTok 历史会话、观众画像、AI 结果仍可读；`<data>/browser/tiktok` 旧 Profile
+   已被清理，且 Chrome/Edge 日常资料完好。
+7. 抖音扫码登录仍可用（回归）。
+8. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.4 边界与提交
+
+- TikTok 不再有登录依赖：没有登录路由、登录状态、Cookie 读取、账号凭据或专用 Profile 依赖；仅保留一次性旧文件清理。
+- 其他四平台（Bilibili / YouTube / Twitch / 抖音）、数据库 schema、AI 契约与提示词均未改；抖音扫码登录回归通过。
+- 使用 TikTok 非公开 web 协议，不是官方 API；无续传游标，重连期间可能漏消息；平台可随时变更。
+- 真实礼物/连送/订阅本轮 `NOT-OBSERVED`；只有合成帧与集成测试。
+- EXE 已用 asInvoker 功能副本自动验收；真实双击 UAC 与干净 Windows 账户仍需人工确认。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A. 上一轮（TIKTOK-M4）
 
 ### 0.1 根因
 
@@ -56,7 +117,7 @@
 - 本地 unsigned 方案使用 TikTok 非公开协议，未接入产品；不得默认启用。
 - 提交身份匿名；**未 Push / 未 Tag / 未发布**。
 
-## 0-A. 上一轮（TIKTOK-M3）
+## 0-B. 上两轮（TIKTOK-M3）
 
 ### 0.1 根因
 

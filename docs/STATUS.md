@@ -1,8 +1,163 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（TIKTOK-M4：真实桌面 403 调查、PushFrame 解码、登录/采集/直播间访问分离；1050 测试；EXE `a463acfad051`）
+最后更新：2026-11-16（TIKTOK-M5：匿名本地 WebSocket 统一采集，删除登录与通道选择；1019 测试；EXE `9b63b0018235`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.42 TIKTOK-M5：匿名本地 WebSocket 统一采集，删除登录与通道选择（2026-11-16）🟢（feature/tiktok，真实 30 分钟 + EXE 已验收）
+
+范围：按用户明确授权，验证并接入 `talkaboutdesign/tiklive` 所采用的**匿名本地 TikTok LIVE WebSocket**，成功后把
+TikTok 统一为唯一、无需登录的采集方式，删除扫码登录、浏览器中继与免费社区签名通道。
+**未改数据库 schema（仍 16）、AI 结果 Schema、提示词；未改 Bilibili / YouTube / Twitch / 抖音适配器；未新增运行时依赖；
+未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.42.1 技术与合规审查（结论：无阻断性许可证或访问控制问题）
+
+| 项目 | 结论 |
+| --- | --- |
+| 上游源码 | `talkaboutdesign/tiklive` @ `a290dd4`（v0.6.0）；MIT；Copyright 2026 Talkabout Design LLC |
+| 是否复制源码 | **否**。上游核心依赖 Effect 4 + Bun，无法嵌入零依赖 Node SEA；本项目按其协议用原生 Node 重写，归属写入 `THIRD_PARTY_NOTICES.md` |
+| 许可证 | MIT 允许派生/再分发；未打包上游任何文件 |
+| 额外运行时 | 无（不需要 Bun / Python / Chrome / `npm install`） |
+| 用户安装 | 无额外程序 |
+| 第三方云服务 | 无；**不依赖付费或免费社区签名服务**，无 API Key |
+| 隐藏配额 | 无开发者配额；只有 TikTok 自己的匿名页面/连接限流 |
+| 持续性 | 是；真实 30 分钟连续采集 + 强制断线重连（§0.42.3） |
+| 稳定 UID | 是；`tiktok:<user.id>` |
+| 礼物/连送 | 解析 + 连送合并 + 去重 + SQLite 集成测试；**本轮真实运行未观测到礼物 → NOT-OBSERVED** |
+| 平台条款/访问控制 | 使用 TikTok **非公开 web 协议**，不是官方 API；未绕过验证码、登录、地区或权限控制。若平台明确拒绝访问，必须停止并报告 |
+| 阻断性问题 | 未发现许可证或访问控制阻断；协议可变，产品始终标注「非官方 / 实验性」 |
+
+### 0.42.2 实现（唯一路径 `local`）
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/platforms/tiktok/webcast.mjs`（新） | 匿名 `ttwid`（3 次退避重试、持久化、`0600`）、socket URL、PushFrame 编解码、`im_enter_room`/`hb`/`ack`、空闲检测、双 host 回退、逐帧计数 |
+| `src/platforms/tiktok/local-adapter.mjs`（新） | 连接状态机、1→30 秒退避重连、12 次后 5 分钟慢探测、两次离线确认、连送合并/超时冲刷、msgId 去重（含礼物）、历史回放跳过、房间重校验、gap 记录 |
+| `src/platforms/tiktok/state.mjs`（新） | `<data>/tiktok/ttwid.json` 匿名设备 Cookie（非登录凭据；不进入备份/导出/AI 包） |
+| `src/platforms/tiktok/legacy-cleanup.mjs`（新） | 只删除带 `.livememory-owned` 标记的旧 TikTok 专用 Profile 与 LiveMemory 自己的 `login-state.json`；无标记目录一律保留并记录 |
+| `src/platforms/tiktok/service.mjs` | 单一 `local` 路径；`transport()` 不含选择；状态中移除 `login`；共享 ttwid；停止/结束状态可回读（含通过共享 stop 路由停止） |
+| `src/server/{index,routes,settings-store}.mjs` | 删除 `/api/tiktok/login/*` 与 `/api/tiktok/transport`（现 404）；删除 `tiktokTransport` 设置（旧客户端提交得到 `SETTINGS_INVALID`）；启动时恢复 ttwid + 清理旧 Profile |
+| `src/monitoring/detectors/tiktok.mjs` | 本地传输错误映射（socket/timeout/network/rate-limit/not-configured） |
+| `src/web/js/pages/live.js` | 面板只保留：链接/`@用户名`、检查直播间、开始/停止记录、自动监听、采集状态与错误；**四项独立状态**（直播间识别 / 采集连接 / 真实事件 / 正式记录）+ 高级技术详情 |
+| `src/web/i18n/*.json` | 删除 96 个旧键 × 3 语言；新增本地采集、四项状态、技术详情、错误文案；三语键完全一致 |
+| `scripts/verify-tiktok-local-ws.mjs`（新） | 独立 30 分钟真实长测（帧/事件/UID/msgId/重复/静默/重连/请求数），JSON 报告 |
+| `scripts/verify-tiktok-exe.mjs` | 改为匿名本地传输验收；断言登录/通道路由 404；礼物未观测时输出 `NOT-OBSERVED` 且不计失败 |
+| `scripts/build-windows.mjs` | 必需模块列表更新为 10 个 TikTok 模块 |
+
+事件语义未变：聊天原文原样保存；身份 `tiktok:<user.id>`；`msgId` 去重；连送只在最终态写一条；
+钻石只作展示价值（`amount_minor=null`、`value_kind=unknown`）；member/like/social 只计数；
+`WebcastControlMessage(3)` 只是一次离线观测，需两次确认才结束。
+
+### 0.42.3 真实 30 分钟采集（独立验证，非正式 adapter）
+
+命令：`node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 30 --reconnect-at-minute 12`
+
+| 指标 | 结果 |
+| --- | --- |
+| 窗口 | 2026-11-16 10:54:56 → 11:24:57（Asia/Shanghai），30.00 分钟连续 |
+| 房间 / host | `aljazeeraenglish` / `7706695538414062349` / `webcast-ws.tiktok.com` |
+| 连接次数 / 重连 | 2 / 1（第 12 分钟强制断线，第 1 次重试即成功；仍是同一 session） |
+| 帧 / 事件批 / 控制帧 | 2427 / 2247 / 180 |
+| 消息 / 历史回放跳过 | 8192 / 12 |
+| 真实 chat | **706**；**110** 位可识别观众（110 个稳定 UID） |
+| 昵称 / 原文 | 110 个昵称；408 条非 ASCII（Unicode/Emoji 原样） |
+| 缺失字段 | UID 0 / msgId 0 / 原文 0 |
+| 重复事件 | **0**（0 个重复 msgId） |
+| 礼物 / 连送 / 订阅 | **0 / 0 / 0 → NOT-OBSERVED** |
+| 最大静默 | 8,935 ms |
+| 速率 | 80.9 帧/分、273.1 消息/分、23.53 弹幕/分 |
+| 请求 | ttwid 0（复用缓存）/ 房间查询 0（直接用 room-id 启动）/ WebSocket 连接 2 |
+| 报告 | `tests/.tmp/verify-local-ws-30m-v2/report.json`（临时目录，不提交） |
+
+未映射消息（只计数、不写事件）：`WebcastMemberMessage` 4,619、`WebcastLikeMessage` 1,690、
+`WebcastRoomUserSeqMessage` 883、`WebcastSocialMessage` 249、`WebcastBarrageMessage` 13、
+`WebcastHotRoomMessage` 10、`WebcastAISummaryMessage` 6、`WebcastImDeleteMessage` 2。
+礼物与订阅在该房间的真实运行中为 0，故标记 **NOT-OBSERVED**；不得据此宣称礼物已真实验收。
+
+### 0.42.4 删除的旧实现与兼容清理
+
+- 删除文件：`browser-login.mjs`、`browser-launch.mjs`、`browser-relay.mjs`、`signer.mjs`、`rate-budget.mjs`、
+  轮询 `adapter.mjs`、`transports.mjs`。
+- 删除测试：`tiktok-browser-login`、`tiktok-browser-relay`、`tiktok-signer`、`tiktok-adapter`、`tiktok-rate-budget`、
+  `tiktok-reconnect`；重写 `tiktok-session` / `tiktok-monitoring` / `tiktok-ui`。
+- 删除脚本：`verify-tiktok-browser-login.mjs`、`verify-tiktok-live-30m.mjs`。
+- UI / i18n：删除扫码登录、登录状态、关闭登录窗口、退出登录、Cookie 检测与会话管理、通道选择、签名额度等入口与文案。
+- **抖音登录未受影响**：`src/platforms/douyin/browser-login.mjs` 等独立模块、路由、测试保持原样。
+- **TikTok 不再存在登录依赖**：没有登录路由、登录状态字段、Cookie 读取、账号凭据或专用 Profile 依赖；
+  唯一保留的是 `legacy-cleanup.mjs` 对旧版本遗留文件的一次性清理。
+- **其他四平台未受影响**：Bilibili / YouTube / Twitch / 抖音适配器、数据库 schema、AI 契约与提示词均未改；
+  EXE 回归中四个状态端点仍为 200（YouTube `web`、Twitch `anonymous-irc`）。
+- 历史 TikTok 数据完整保留（schema 未改）；旧专用浏览器 Profile 由 `legacy-cleanup.mjs` 安全清理，
+  绝不触碰 Chrome/Edge 日常资料。
+
+### 0.42.5 自动化测试
+
+| 运行 | 结果 |
+| --- | --- |
+| 定向 TikTok（`tests/unit/tiktok-*.test.mjs` + `tests/integration/tiktok-*.test.mjs`） | **72 passed / 0 failed / 0 skipped（6,293.84 ms，2026-11-16）** |
+| 全量 `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` | **1019 passed / 0 failed / 0 skipped（290,038.02 ms，2026-11-16）** |
+| `scripts/verify-exe.mjs` | **10/10**（Build ID `9b63b0018235`，commit `a0e6638`） |
+| `scripts/verify-tiktok-exe.mjs @aljazeeraenglish` | **22/22 passed + 2 NOT-OBSERVED，0 failed**（真实 chat / 稳定 UID / msgId / 帧与事件分离 / 自动监听 / SQLite / AI / 重启 / 四平台回归） |
+
+EXE 专项断言（真实运行）：
+
+- TikTok 状态：`mode=local`、`transport=local/webcast-ws`，状态中**没有 `login` 字段**，`requiresLogin=false`。
+- 已删除路由在打包 EXE 内返回 **404**：`/api/tiktok/login/status|start|verify|cancel|logout`、`/api/tiktok/transport`。
+- 真实房间解析：`aljazeeraenglish` / room `7706695538414062349` / 主播稳定 ID `7074562477175424046`。
+- 连接：HTTP 201、`connected`、`transport=local`、`ws host=webcast-ws.tiktok.com`、`error=none`。
+- 帧与事件分离：frames 8 / batches 7 / chats 1（messages 31，history skipped 6）。
+- 真实事件：`tiktok:<user.id>`、昵称、原文、消息 ID 写入 SQLite；AI report 200；长期画像 200。
+- 自动监听：创建目标 → check → `recording` → 真实 chat → 删除目标。
+- 重启：同一 Build ID，session 与数据保留；Bilibili/YouTube/Twitch/抖音状态仍 200。
+- 礼物：真实运行与 SQLite 两处均为 **NOT-OBSERVED**（脚本单独计数，不计为失败）。
+
+其他四平台真实回归（源码服务器，真实公开直播，2026-11-16）：
+
+| 平台 | 输入 | 结果 |
+| --- | --- | --- |
+| Bilibili | 房间 `6` | 201 `connected`；真实 1 条消息 / 1 位可识别观众；停止成功 |
+| YouTube | `4t4AQ15yj1M` | 201 `connected`；真实 75 条消息 / 12 位可识别观众；停止成功 |
+| Twitch | `kato_junichi0817` | 201 `connected`；真实 7 条消息 / 7 位可识别观众；停止成功 |
+| 抖音 | `708764876300` | 201 `connected`；真实 2 条消息 / 2 位可识别观众；停止成功 |
+
+### 0.42.6 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `9b63b0018235` |
+| source hash | `9b63b00182354491b99948744dd6ea8109a2be8d501acdd3a0bf6a59a3a6c29f` |
+| commit（构建时 HEAD） | `a0e663859b5c1d3bb4b536cf5d36859a480d9023` |
+| 大小 / SHA-256 | `97,760,768` bytes / `5d66ab103549d96f6d920926da81bc04ab8853ee46891a2be4dfbd61f1dbddd1` |
+| builtAt | `2026-11-16T03:26:23.262Z` |
+| 资源 / 模块 | 226 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| EXE 验收 | `verify-exe` **10/10**；`verify-tiktok-exe` **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| 版本 | `0.13.3` |
+
+- EXE 在代码提交 `a0e6638` 之后重建，因此 `build-info.commit` 等于该代码提交；本轮最后的文档/构建记录提交
+  在其后（见 `git log -1`），只改文档与日志，不改变 `src/` 内容或 `buildId`。
+- asInvoker 功能副本用于自动化场景；正式 EXE 单独断言 `requireAdministrator`。真实双击 UAC 仍需人工确认。
+
+### 0.42.7 尚未解决 / NOT-OBSERVED / 人工验收
+
+- **真实礼物与连送：NOT-OBSERVED**。本轮唯一确认正在直播的 `aljazeeraenglish` 在 30 分钟内没有礼物；
+  其他候选账号公开接口均为已结束。礼物/连送/订阅语义有合成帧 + SQLite + 去重测试，但**不得**写成真实礼物通过。
+- **真实订阅（`WebcastSubNotifyMessage`）：NOT-OBSERVED**。
+- **真实第二直播间并发：未执行**。自动化测试覆盖两个独立 session；本轮只有一个可确认在播房间。
+- **真实断网（网卡/路由器）**：未执行；已验证强制断线后的自动重连与 gap 标记。
+- **干净 Windows 账户 / 真实双击 UAC**：未验证；自动化只断言 `requireAdministrator` 与 asInvoker 功能副本。
+- 协议为非官方、无续传游标：重连期间可能漏消息且不补录；TikTok 更改协议可随时失效。
+
+### 0.42.8 Git / 交付
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/tiktok` |
+| 代码 / 测试 / 脚本提交 | `a0e663859b5c1d3bb4b536cf5d36859a480d9023`（`feat: unify TikTok capture on the anonymous local WebSocket`） |
+| 文档与构建记录 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
 
 ## 0.41 TIKTOK-M4：真实 403 调查与浏览器中继链路审计（2026-11-16）🟡（feature/tiktok，真实登录后端到端仍 BLOCKED）
 

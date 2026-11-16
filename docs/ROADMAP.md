@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.3（2026-11-16，TIKTOK-M5）：TikTok 统一为**唯一匿名本地 webcast WebSocket 采集**：只使用任何访客都会获得的匿名 `ttwid`，不需要账号/扫码登录/Cookie 导入/浏览器中继，也不依赖付费或免费社区签名服务。新增 `webcast.mjs`、`local-adapter.mjs`、`state.mjs`、`legacy-cleanup.mjs`，重写 `service.mjs`；删除 TikTok 扫码登录、登录状态 UI、专用浏览器 Profile、浏览器中继、免费社区签名通道与通道选择；`/api/tiktok/login/*`、`/api/tiktok/transport` 现返回 404，`tiktokTransport` 设置被拒绝。UI 只保留链接/检查/开始/停止/自动监听与四项独立状态。真实 30 分钟长测与正式 EXE 验收通过；**真实礼物/连送/订阅 NOT-OBSERVED**（本轮在播房间无礼物）。协议为非官方、无续传游标。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.42。
 > v0.13.2（2026-11-16，TIKTOK-M4）：真实 Windows EXE 登录后 `room/enter` 403 调查。确认 403 来自官方直播页自身请求，不是本地映射；旧实现误判为登录失效并提前中止，且把 `PushFrame` 当 `WebcastResponse` 解析，真实事件恒为 0。M4 改为「真实帧优先、403 宽限、登录/直播间访问分离」；补齐 `captureState`/`lastCapture`、停止状态、三语键与监控映射。定向 TikTok **103 passed**；全量 **1050 passed / 0 failed / 0 skipped**；`verify-exe` **10/10**、`verify-tiktok-exe` **23/23**（真实 6 chat / 3 可识别观众）。真实登录后浏览器端到端仍 **BLOCKED**（DSH 终止 Chromium）。仅研究报告 `tiklive` 本地 unsigned webcast 方案（35 秒 469 chat / 19 gift），未接入。EXE `a463acfad051`（commit `ea950c0`，`97,893,888` B，`requireAdministrator`）。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.41。
 > v0.13.2（2026-11-15，TIKTOK-M3）：修复真实桌面验收的阻断问题。浏览器中继可用性误查 `relay.start`（真实类只有 `createAdapter`），导致登录和 room check 成功后仍返回 `TIKTOK_NOT_CONFIGURED` 503；已改为 `createAdapter` 并将显式 browser 从 signer 依赖中解耦。同步修复浏览器中继丢弃礼物、关闭登录窗口生命周期、`needs_room` 验证反馈与五项状态分离。新增 9 测试，全量 **1037 passed / 0 failed**；`verify-tiktok-exe` **23/23**（含 EXE 内 browser 通道识别与 6 条真实 chat）；真实登录后浏览器投递仍因沙箱终止 Chromium 而 **BLOCKED**，待人工验收。正式 EXE `e11f4008b9e3`（commit `1b9a38b`，`97,867,776` B，`requireAdministrator`）。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.40。
 > v0.13.2（2026-11-15，TIKTOK-M2）：修复免费社区签名通道频繁重连。匿名 429 的真实上限是 **30 次/小时**；M1 15 秒轮询约 7.5 分钟用尽，`Retry-After: 2708` 又被截断到 30 秒。M2 新增共享预算（130 秒/请求、多房间共享、完整遵守 `Retry-After`），状态机区分 `rate_limited` 与 `failed`；浏览器登录生命周期与专用 profile；真实 30 分钟 **146 条 chat / 49 位可识别观众 / 146 个 msgId / 0 重连 / 0 限流**；全量 **1028 passed**；EXE `a97447fe6329`，`verify-tiktok-exe` **21/21**。真实浏览器登录/扫码 **BLOCKED**，待普通 Windows 桌面验收。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.39。
@@ -25,6 +26,21 @@
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
+
+## P35 TIKTOK-M5：匿名本地 WebSocket 统一采集（v0.13.3，2026-11-16）🟢 真实 30 分钟 + EXE 已验收
+
+- ✅ 源码与合规审查：`talkaboutdesign/tiklive`（MIT）实际源码、许可证、依赖、连接/解析/重连；
+  Effect 4 + Bun 无法嵌入零依赖 Node SEA → 按其协议用原生 Node 重写，未复制源码
+- ✅ 唯一采集路径：匿名 `ttwid` + `webcast-ws.tiktok.com` PushFrame → 既有 mapper → 统一 `EventIngest`
+- ✅ 无需登录、无需浏览器、不依赖付费或免费签名服务、无 API Key、无新增运行时依赖
+- ✅ 真实 30 分钟连续采集 + 强制断线自动重连；帧/事件分离；UID/msgId/重复/静默/请求数上报
+- ✅ 删除扫码登录、登录状态、专用浏览器 Profile、浏览器中继、社区签名通道与通道选择
+- ✅ 旧 Profile 安全清理：仅带 `.livememory-owned` 标记的目录 + 自有 `login-state.json`
+- ✅ UI：四项独立状态（直播间识别 / 采集连接 / 真实事件 / 正式记录）+ 高级技术详情；三语一致
+- ✅ 抖音登录、其他四平台、SQLite schema、AI 契约均未改动
+- 🟡 真实礼物/连送/订阅 **NOT-OBSERVED**（本轮在播房间没有礼物；只有合成帧 + 集成测试）
+- 🟡 真实第二直播间并发、真实断网、干净 Windows 账户与真实 UAC 双击待人工验收
+- ⬜ 未合并 main、未 Push、未 Tag、未 Release
 
 ## P34 TIKTOK-M4：浏览器中继真实 403 与完整链路审计（v0.13.2，2026-11-16）🟡 真实登录后端到端 BLOCKED
 
