@@ -140,7 +140,9 @@ export const livePage = {
     let recordingsRefreshTimer = null;
     let lastLeaderboardSignature = null;
     let lastSessionRow = null;
-    let sourceMode = 'mock';
+    // The new-recording view always starts on a real platform. Simulation was
+    // removed from the product UI; its server fixture remains test-only.
+    let sourceMode = 'bilibili';
     let checkedRoom = null;
     let checkedVideo = null;
     let checkedTwitch = null;
@@ -1407,6 +1409,78 @@ export const livePage = {
 
     /* -------------------------------------------------------- new view */
 
+    function recordingName(recording) {
+      return recording?.broadcasterName
+        || recording?.roomTitle
+        || platformLabel(recording?.platform, t)
+        || t('live.tabs.untitled');
+    }
+
+    /**
+     * "New recording" never hides what is already running. Every active
+     * recording is listed with its own status and stop action, so a second room
+     * is an addition rather than a replacement.
+     */
+    function buildActiveRecordingsCard() {
+      const card = el('section', {className: 'card live-active-recordings', style: {marginTop: '16px'}});
+      card.append(el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('live.new.activeTitle', {n: recordings.length})}),
+        el('div', {className: 'card-hint', text: t('live.new.activeHint')})));
+      const body = el('div', {className: 'card-body'});
+      const list = el('div', {className: 'live-recording-list'});
+      for (const recording of recordings) {
+        const meta = connectionStateMeta(recording, t);
+        const messages = Number(recording.messageCount ?? 0);
+        const viewers = Number(recording.uniqueViewerCount ?? 0);
+        list.append(el('div', {className: 'live-recording-row'},
+          el('div', {className: 'live-recording-main'},
+            el('div', {className: 'row-title'},
+              el('span', {className: 'row-title-text', text: recordingName(recording)})),
+            el('div', {className: 'live-recording-meta'},
+              chip(platformLabel(recording.platform, t), 'neutral'),
+              chip(meta.text, meta.tone, {dot: meta.dot}),
+              el('span', {className: 'small', text: t('live.new.recordingMessages', {
+                n: formatInteger(messages, ctx.locale)
+              })}),
+              el('span', {className: 'small', text: t('live.new.recordingViewers', {
+                n: formatInteger(viewers, ctx.locale)
+              })}))),
+          el('div', {className: 'live-recording-actions'},
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.new.open'),
+              onClick: () => openSession(recording.sessionId)
+            }),
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.new.stop'),
+              onClick: (event) => stopBackgroundRecording(recording, event.currentTarget)
+            }))));
+      }
+      body.append(list);
+      card.append(body);
+      return card;
+    }
+
+    async function stopBackgroundRecording(recording, button) {
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.new.stopping');
+      try {
+        await api.post(`/api/live/recordings/${encodeURIComponent(recording.sessionId)}/stop`, {});
+        retireRecording(recording, {state: 'stopped', reason: 'user'});
+        await refreshRecordings();
+        await ctx.refreshStatus();
+        ctx.toast(t('live.new.stopDone'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
     function updateNewNotice() {
       if (!refs.newNotice) return;
       const count = recordings.length;
@@ -1416,6 +1490,11 @@ export const livePage = {
         refs.newSubtitle.textContent = count > 0
           ? t('live.new.subtitleRunning', {n: count})
           : t('live.new.subtitleIdle');
+      }
+      if (refs.activeHost) {
+        refs.activeHost.hidden = count === 0;
+        clear(refs.activeHost);
+        if (count > 0) refs.activeHost.append(buildActiveRecordingsCard());
       }
     }
 
@@ -1433,6 +1512,8 @@ export const livePage = {
           : t('live.new.subtitleIdle')
       });
       sourceHost = el('div');
+      refs.activeHost = el('div');
+      refs.activeHost.hidden = true;
       bodyHost.append(
         el('section', {className: 'hero', dataset: {live: 'false'}},
           el('div', {className: 'hero-body'},
@@ -1440,8 +1521,8 @@ export const livePage = {
               el('div', {className: 'hero-eyebrow'}, chip(t('live.new.eyebrow'), 'neutral')),
               el('h1', {className: 'hero-title', text: t('live.new.title')}),
               refs.newSubtitle,
-              notice),
-            el('div', {className: 'hero-actions'}, startButton()))),
+              notice))),
+        refs.activeHost,
         sourceHost,
         buildLastSessionCard()
       );
@@ -1450,15 +1531,6 @@ export const livePage = {
     }
 
     /* -------------------------------------------------------- live source */
-
-    function startButton() {
-      return el('button', {
-        className: 'button button--primary',
-        type: 'button',
-        text: t('live.hero.start'),
-        onClick: (event) => handleStart(event.currentTarget)
-      });
-    }
 
     function tabButton(label, mode, onSelect) {
       const active = sourceMode === mode;
@@ -1514,7 +1586,6 @@ export const livePage = {
           el('div', {className: 'card-hint', text: t('live.source.hint')})));
 
       const tabs = el('div', {className: 'source-tabs'},
-        tabButton(t('live.source.mockTab'), 'mock'),
         tabButton(t('live.source.biliTab'), 'bilibili'),
         tabButton(t('live.source.youtubeTab'), 'youtube'),
         tabButton(t('live.source.twitchTab'), 'twitch'),
@@ -1522,22 +1593,13 @@ export const livePage = {
         tabButton(t('live.source.tiktokTab'), 'tiktok'));
 
       const body = el('div', {className: 'card-body'}, tabs);
-      if (sourceMode === 'mock') body.append(buildMockPanel());
-      else if (sourceMode === 'bilibili') body.append(buildBiliPanel());
+      if (sourceMode === 'bilibili') body.append(buildBiliPanel());
       else if (sourceMode === 'twitch') body.append(buildTwitchPanel());
       else if (sourceMode === 'douyin') body.append(buildDouyinPanel());
       else if (sourceMode === 'tiktok') body.append(buildTikTokPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
-    }
-
-    function buildMockPanel() {
-      const panel = el('div', {className: 'source-panel'});
-      panel.append(
-        el('p', {className: 'source-note', text: t('live.source.mockNote')}),
-        el('div', {className: 'hero-actions', style: {marginTop: '12px'}}, startButton()));
-      return panel;
     }
 
     function loginStateText() {
@@ -1994,14 +2056,47 @@ export const livePage = {
       return `${base} ${t('live.source.tiktokErrorReasonDetail', {reason: tiktokReasonDetailText(reason)})}`;
     }
 
-    function tiktokActiveRecording() {
-      return recordings.find((recording) => recording.platform === 'tiktok') ?? null;
+    function tiktokRecordings() {
+      return recordings.filter((recording) => recording.platform === 'tiktok');
+    }
+
+    /**
+     * A duplicate is the same live room, not "another TikTok room". Comparing
+     * the platform room id (and the handle as a fallback) is what lets room B
+     * start while room A keeps recording.
+     */
+    function tiktokRecordingForRoom(room) {
+      if (!room) return null;
+      const roomId = room.roomId === null || room.roomId === undefined ? null : String(room.roomId);
+      const uniqueId = room.uniqueId ? String(room.uniqueId).replace(/^@/, '') : null;
+      return tiktokRecordings().find((recording) => {
+        const activeRoomId = recording.platformRoomId === null || recording.platformRoomId === undefined
+          ? null
+          : String(recording.platformRoomId);
+        if (roomId && activeRoomId === roomId) return true;
+        const activeHandle = recording.meta?.uniqueId
+          ?? recording.meta?.room?.uniqueId
+          ?? null;
+        return Boolean(uniqueId && activeHandle && String(activeHandle).replace(/^@/, '') === uniqueId);
+      }) ?? null;
+    }
+
+    /**
+     * The recording the panel describes: the selected TikTok tab first, then
+     * the room that was just checked, then the most recent TikTok capture.
+     */
+    function tiktokPanelRecording() {
+      const selected = recordings.find((recording) => recording.sessionId === selectedId);
+      if (selected?.platform === 'tiktok') return selected;
+      if (checkedTikTok) return tiktokRecordingForRoom(checkedTikTok);
+      return tiktokRecordings().at(-1) ?? null;
     }
 
     function currentTikTokCapture() {
-      const selected = recordings.find((recording) => recording.sessionId === selectedId);
-      if (selected?.platform === 'tiktok' && selected.capture) return selected.capture;
-      return tiktokActiveRecording()?.capture ?? tiktokStatus?.capture ?? null;
+      const recording = tiktokPanelRecording();
+      if (recording) return recording.capture ?? null;
+      if (checkedTikTok) return null;
+      return tiktokStatus?.capture ?? null;
     }
 
     function tiktokCaptureMeta(capture) {
@@ -2045,7 +2140,7 @@ export const livePage = {
      * state, and "recording" is only ever reported when a session exists.
      */
     function tiktokStateSummary() {
-      const recording = tiktokActiveRecording();
+      const recording = tiktokPanelRecording();
       const capture = currentTikTokCapture();
       const room = checkedTikTok ?? (recording
         ? {uniqueId: recording.meta?.uniqueId ?? recording.meta?.room?.uniqueId ?? null, roomId: recording.platformRoomId ?? null}
@@ -2174,6 +2269,50 @@ export const livePage = {
       return card;
     }
 
+    /**
+     * Every active TikTok room, with its own stop action. A second room is
+     * never hidden behind the first one.
+     */
+    function buildTikTokRecordingsList() {
+      const list = tiktokRecordings();
+      if (list.length === 0) return null;
+      const section = el('section', {className: 'tiktok-active-recordings'});
+      section.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.tiktokActiveTitle')}),
+        chip(t('live.source.tiktokActiveCount', {n: list.length}), 'neutral')));
+      for (const recording of list) {
+        const capture = recording.capture;
+        const meta = tiktokCaptureMeta(capture);
+        const messages = Number(recording.messageCount ?? 0);
+        section.append(el('div', {className: 'live-recording-row'},
+          el('div', {className: 'live-recording-main'},
+            el('div', {className: 'row-title'},
+              el('span', {className: 'row-title-text', text: recordingName(recording)})),
+            el('div', {className: 'live-recording-meta'},
+              chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'}),
+              recording.meta?.uniqueId
+                ? el('span', {className: 'small', text: `@${recording.meta.uniqueId}`})
+                : null,
+              el('span', {className: 'small', text: t('live.new.recordingMessages', {
+                n: formatInteger(messages, ctx.locale)
+              })}))),
+          el('div', {className: 'live-recording-actions'},
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.new.open'),
+              onClick: () => openSession(recording.sessionId)
+            }),
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.source.tiktokStop'),
+              onClick: (event) => stopTikTok(event.currentTarget, recording.sessionId)
+            }))));
+      }
+      return section;
+    }
+
     function buildTikTokPanel() {
       const panel = el('div', {className: 'source-panel'});
       tiktokCaptureHost = null;
@@ -2187,7 +2326,6 @@ export const livePage = {
         return panel;
       }
 
-      const recording = tiktokActiveRecording();
       const capture = currentTikTokCapture();
 
       panel.append(autoMonitorToggle('tiktok', tiktokAutoMonitor, (checked) => {
@@ -2198,6 +2336,8 @@ export const livePage = {
       if (tiktokAutoMonitor) {
         panel.append(buildAutoMonitorSection('tiktok'));
         panel.append(el('p', {className: 'source-note', text: t('live.source.tiktokMetadataNote')}));
+        const activeList = buildTikTokRecordingsList();
+        if (activeList) panel.append(activeList);
         tiktokCaptureHost = el('div');
         tiktokCaptureHost.append(tiktokStateSummary());
         tiktokCaptureHost.append(tiktokCaptureCard(capture));
@@ -2229,15 +2369,8 @@ export const livePage = {
 
       if (checkedTikTok) panel.append(buildTikTokRoomMeta(checkedTikTok));
 
-      if (recording) {
-        panel.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
-          el('button', {
-            className: 'button button--ghost',
-            type: 'button',
-            text: t('live.source.tiktokStop'),
-            onClick: (event) => stopTikTok(event.currentTarget, recording.sessionId)
-          })));
-      }
+      const activeList = buildTikTokRecordingsList();
+      if (activeList) panel.append(activeList);
 
       tiktokCaptureHost = el('div');
       tiktokCaptureHost.append(tiktokStateSummary());
@@ -2285,12 +2418,16 @@ export const livePage = {
         details.push(`${t('live.source.tiktokTotalViewers')}: ${formatInteger(room.totalViewers, ctx.locale)}`);
       }
       if (details.length) meta.append(el('div', {text: details.join(' · ')}));
-      const canStart = Boolean(room.isLive) && !tiktokActiveRecording();
+      // Only this exact room is a duplicate. A different TikTok room may start
+      // while the first one keeps running in the background.
+      const existing = tiktokRecordingForRoom(room);
+      const otherCount = tiktokRecordings().length - (existing ? 1 : 0);
+      const canStart = Boolean(room.isLive) && !existing;
       meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
         el('button', {
           className: 'button button--primary',
           type: 'button',
-          text: tiktokActiveRecording() ? t('live.source.tiktokAlreadyRecording') : t('live.source.tiktokStart'),
+          text: existing ? t('live.source.tiktokAlreadyRecording') : t('live.source.tiktokStart'),
           attrs: canStart ? {} : {disabled: ''},
           onClick: (event) => {
             if (!canStart) return;
@@ -2298,7 +2435,10 @@ export const livePage = {
           }
         })));
       if (!room.isLive) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
-      else if (tiktokActiveRecording()) meta.append(el('p', {className: 'source-note', text: t('live.source.tiktokAlreadyRecordingHint')}));
+      else if (existing) meta.append(el('p', {className: 'source-note', text: t('live.source.tiktokAlreadyRecordingHint')}));
+      else if (otherCount > 0) {
+        meta.append(el('p', {className: 'source-note', text: t('live.source.tiktokOtherRecordings', {n: otherCount})}));
+      }
       return meta;
     }
 
@@ -3262,7 +3402,7 @@ export const livePage = {
               : null
           }),
           statCard({label: t('live.stats.payments'), value: formatInteger(row.paymentEventCount, ctx.locale), sub: t('live.stats.supportSub')}),
-          statCard({label: t('history.aiTitle'), value: row.aiStatus === 'exported' ? '✓' : '—'}))));
+          statCard({label: t('history.detail.aiTitle'), value: row.aiStatus === 'exported' ? '✓' : '—'}))));
       return node;
     }
 
@@ -3277,22 +3417,6 @@ export const livePage = {
         await openSession(sessionId, {force: true});
       }
       await ctx.refreshStatus();
-    }
-
-    async function handleStart(button) {
-      button.disabled = true;
-      button.textContent = t('live.hero.starting');
-      try {
-        const payload = await api.post('/api/simulate/start', {
-          title: t('live.hero.simulationTitle'),
-          speed: 'normal'
-        });
-        await afterStart(payload.session?.id ?? null);
-      } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
-        button.disabled = false;
-        button.textContent = t('live.hero.start');
-      }
     }
 
     async function stopSelected(button) {

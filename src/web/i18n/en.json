@@ -116,32 +116,36 @@
     "new": {
       "eyebrow": "Ready to record",
       "title": "New recording",
-      "subtitleIdle": "Connect to a live Bilibili or YouTube broadcast, or try the simulator to see how recording works.",
+      "subtitleIdle": "Choose Bilibili, YouTube, Twitch, Douyin or TikTok and connect to a live room. Recordings already running keep going in the background.",
       "subtitleRunning": "{n} broadcast(s) keep recording in the background. Starting a new one will not stop them.",
-      "background": "{n} broadcast(s) are still recording in the background. Open their tabs at any time."
+      "background": "{n} broadcast(s) are still recording in the background. Open their tabs at any time.",
+      "activeTitle": "{n} recording(s) in progress",
+      "activeHint": "Background captures are independent: starting another recording, switching platform or leaving this page never stops them.",
+      "recordingMessages": "{n} messages recorded",
+      "recordingViewers": "{n} viewers",
+      "open": "View",
+      "stop": "Stop",
+      "stopping": "Stopping…",
+      "stopDone": "Recording stopped"
     },
     "hero": {
       "liveEyebrow": "Recording now",
       "idleEyebrow": "Ready to record",
       "idleTitle": "No stream is being recorded",
-      "idleSubtitle": "Start a simulated stream to see how LiveMemory records chat, gifts and viewers — or connect to a Bilibili or YouTube broadcast that is live right now.",
+      "idleSubtitle": "Connect to a live Bilibili, YouTube, Twitch, Douyin or TikTok room to start recording.",
       "simulatedChip": "Simulated session",
       "elapsed": "Elapsed",
       "duration": "Recorded for",
       "startedAt": "Started",
       "endedAt": "Ended",
-      "start": "Start simulated stream",
       "stop": "Stop recording",
       "stopHint": "Only this broadcast stops. Other tabs keep recording.",
       "viewHistory": "Open in history",
       "endedNotice": "This recording has ended and is saved in live history.",
       "platformEndedNotice": "The platform broadcast ended. Recording stopped automatically and everything captured so far is saved.",
       "failedNotice": "This broadcast's connection was lost. Other recordings are unaffected and received data is saved.",
-      "simulationTitle": "Simulated stream",
       "stopDone": "Recording stopped and saved",
-      "starting": "Starting…",
-      "stopping": "Stopping…",
-      "startFailed": "The simulated stream could not start."
+      "stopping": "Stopping…"
     },
     "stats": {
       "messages": "Messages",
@@ -206,10 +210,8 @@
     },
     "source": {
       "title": "Live source",
-      "hint": "The simulator lets you try the recording flow; Bilibili and YouTube connect to real live broadcasts (live only).",
-      "mockTab": "Simulated",
+      "hint": "Choose a platform and connect to a live room. Several different rooms on the same platform can be recorded at the same time (live only).",
       "biliTab": "Bilibili live",
-      "mockNote": "Simulated events only verify the recording flow; they are not real platform data.",
       "roomLabel": "Live room ID",
       "roomPlaceholder": "e.g. 5050",
       "check": "Check room",
@@ -493,7 +495,10 @@
       "tiktokReasonRoomOffline": "the room is not live",
       "tiktokReasonRoomChanged": "the room changed (stream restarted)",
       "tiktokReasonNotConfigured": "this build cannot open the connection",
-      "tiktokReasonIdle": "no data for too long"
+      "tiktokReasonIdle": "no data for too long",
+      "tiktokActiveTitle": "TikTok rooms being recorded",
+      "tiktokActiveCount": "{n} room(s)",
+      "tiktokOtherRecordings": "{n} other TikTok room(s) are recording in the background; you can add a different room."
     }
   },
   "history": {

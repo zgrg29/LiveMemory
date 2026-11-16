@@ -718,7 +718,6 @@ export async function runLauncher({
       printStatus(status);
     };
     ui.blank();
-    ui.note(t(locale, 'simulatedNote'));
     ui.note(t(locale, 'webHint'));
     ui.field(t(locale, 'quitting'), t(locale, 'quitHint'));
     ui.footer();

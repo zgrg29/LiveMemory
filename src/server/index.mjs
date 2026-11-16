@@ -98,6 +98,7 @@ export async function startServer({
   tiktokAdapterOptions = null,
   tiktokFetchImpl = null,
   tiktokWebSocketImpl = null,
+  tiktokTtwidProvider = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -202,6 +203,7 @@ export async function startServer({
       ...(tiktokFetchImpl ? {fetchImpl: tiktokFetchImpl} : {}),
       ...(tiktokClient ? {client: tiktokClient} : {}),
       ...(tiktokWebSocketImpl ? {WebSocketImpl: tiktokWebSocketImpl} : {}),
+      ...(tiktokTtwidProvider ? {ttwidProvider: tiktokTtwidProvider} : {}),
       ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
     });
     const monitoring = new MonitoringManager({

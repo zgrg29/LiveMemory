@@ -116,32 +116,36 @@
     "new": {
       "eyebrow": "准备就绪",
       "title": "新建记录",
-      "subtitleIdle": "连接一场正在直播的 Bilibili 或 YouTube，或先用模拟直播体验记录流程。",
+      "subtitleIdle": "选择 Bilibili、YouTube、Twitch、抖音或 TikTok，连接一场正在直播的直播间；已有记录会继续在后台运行。",
       "subtitleRunning": "已有 {n} 场直播在后台继续记录。新建记录不会停止它们。",
-      "background": "后台还在记录 {n} 场直播，可随时点击上方标签查看。"
+      "background": "后台还在记录 {n} 场直播，可随时点击上方标签查看。",
+      "activeTitle": "正在记录 {n} 场直播",
+      "activeHint": "后台采集独立运行；新建记录、切换平台或离开此页面都不会停止它们。",
+      "recordingMessages": "已记录 {n} 条消息",
+      "recordingViewers": "{n} 位观众",
+      "open": "查看",
+      "stop": "停止",
+      "stopping": "正在停止…",
+      "stopDone": "该场记录已停止"
     },
     "hero": {
       "liveEyebrow": "正在记录",
       "idleEyebrow": "准备就绪",
       "idleTitle": "当前没有正在记录的直播",
-      "idleSubtitle": "可以先开始一场模拟直播，体验 LiveMemory 如何记录聊天、礼物与观众；也可以连接正在直播的 Bilibili 或 YouTube。",
+      "idleSubtitle": "连接正在直播的 Bilibili、YouTube、Twitch、抖音或 TikTok 直播间，开始记录。",
       "simulatedChip": "模拟场次",
       "elapsed": "已记录",
       "duration": "记录时长",
       "startedAt": "开始于",
       "endedAt": "结束于",
-      "start": "开始模拟直播",
       "stop": "停止记录",
       "stopHint": "只停止当前这一场；其他标签页的直播会继续记录。",
       "viewHistory": "在历史中查看",
       "endedNotice": "这场记录已结束，数据已保存到直播历史。",
       "platformEndedNotice": "平台直播已结束，LiveMemory 已自动停止记录并保存此前采集的全部数据。",
       "failedNotice": "这场直播的连接已中断，其他直播不受影响；已收到的数据已保存。",
-      "simulationTitle": "模拟直播",
       "stopDone": "记录已结束并保存",
-      "starting": "正在开始…",
-      "stopping": "正在停止…",
-      "startFailed": "模拟直播未能开始。"
+      "stopping": "正在停止…"
     },
     "stats": {
       "messages": "消息",
@@ -206,10 +210,8 @@
     },
     "source": {
       "title": "直播来源",
-      "hint": "模拟直播用于体验记录流程；Bilibili 与 YouTube 连接真实直播间（仅直播）。",
-      "mockTab": "模拟直播",
+      "hint": "选择平台并连接正在直播的直播间；同一平台可以同时记录多个不同直播间（仅直播）。",
       "biliTab": "Bilibili 直播",
-      "mockNote": "模拟事件只用于验证记录流程，不是真实平台数据。",
       "roomLabel": "直播间 ID",
       "roomPlaceholder": "例如 5050",
       "check": "检查直播间",
@@ -493,7 +495,10 @@
       "tiktokReasonRoomOffline": "直播已结束",
       "tiktokReasonRoomChanged": "直播间已更换（重新开播）",
       "tiktokReasonNotConfigured": "此版本无法建立连接",
-      "tiktokReasonIdle": "长时间无数据"
+      "tiktokReasonIdle": "长时间无数据",
+      "tiktokActiveTitle": "正在记录的 TikTok 直播间",
+      "tiktokActiveCount": "{n} 场",
+      "tiktokOtherRecordings": "另有 {n} 个 TikTok 直播间在后台记录；可以继续添加不同的直播间。"
     }
   },
   "history": {

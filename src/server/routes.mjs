@@ -615,8 +615,10 @@ export function buildRoutes() {
           ...effectiveSettings(deps),
           status: statusPayload(deps),
           capabilities: {
+            // The product records the five real live platforms only. Simulation
+            // remains an internal test fixture (`/api/simulate/*`) and is no
+            // longer advertised or reachable from the user interface.
             platforms: [
-              {id: 'mock', label: 'Simulation', state: 'available'},
               {id: 'bilibili', label: 'Bilibili Live', state: 'available'},
               {
                 id: 'youtube',
@@ -626,6 +628,23 @@ export function buildRoutes() {
                 requiresApiKey: false,
                 requiresLogin: false,
                 requiresCookie: false
+              },
+              {
+                id: 'twitch',
+                label: 'Twitch',
+                state: 'available',
+                mode: 'anonymous-irc',
+                requiresLogin: false
+              },
+              {id: 'douyin', label: 'Douyin Live', state: 'available'},
+              {
+                id: 'tiktok',
+                label: 'TikTok Live',
+                state: 'available',
+                mode: 'local-webcast',
+                unofficial: true,
+                requiresLogin: false,
+                requiresPaidService: false
               }
             ],
             ai: {automated: true, export: false, import: false, schemaVersion: RESULT_SCHEMA_VERSION},
@@ -829,6 +848,10 @@ export function buildRoutes() {
         });
       }
     },
+    // Internal test fixture only: the simulator is no longer exposed in the
+    // product UI, but the integration/EXE suites use it to seed deterministic
+    // sessions. Keeping it preserves the test infrastructure; user-visible
+    // entry points and the mock UI panel were removed.
     {
       method: 'POST',
       path: '/api/simulate/start',

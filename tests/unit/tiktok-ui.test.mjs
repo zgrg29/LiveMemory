@@ -65,11 +65,26 @@ test('the TikTok panel keeps room, connection, events and recording separate', (
   assert.match(liveSource, /live\.source\.tiktokVerificationEvents/);
   assert.match(liveSource, /live\.source\.tiktokVerificationRecording/);
   // "Recording" is only reported when a session exists ...
-  assert.match(liveSource, /const recording = tiktokActiveRecording\(\)/);
+  assert.match(liveSource, /const recording = tiktokPanelRecording\(\)/);
   assert.match(liveSource, /live\.source\.tiktokStateRecordingOff/);
   // ... and events are counted from decoded messages, not from frames.
   assert.match(liveSource, /counters\.chats/);
   assert.match(liveSource, /counters\.gifts/);
+});
+
+test('a different TikTok room is not treated as a duplicate recording', () => {
+  // The duplicate guard is scoped to the same platform room, never to "any
+  // active TikTok recording". This was the real cause of the single-room limit.
+  assert.match(liveSource, /function tiktokRecordingForRoom\(room\)/);
+  assert.match(liveSource, /const existing = tiktokRecordingForRoom\(room\)/);
+  assert.match(liveSource, /const canStart = Boolean\(room\.isLive\) && !existing/);
+  assert.doesNotMatch(liveSource, /!tiktokActiveRecording\(\)/);
+  // Every active TikTok room keeps its own stop action and message count.
+  assert.match(liveSource, /function tiktokRecordings\(\)/);
+  assert.match(liveSource, /function buildTikTokRecordingsList\(\)/);
+  assert.match(liveSource, /live\.source\.tiktokOtherRecordings/);
+  assert.match(liveSource, /live\.source\.tiktokActiveCount/);
+  assert.match(liveSource, /stopTikTok\(event\.currentTarget, recording\.sessionId\)/);
 });
 
 test('all three locales carry the same TikTok UI and error keys', () => {
@@ -84,6 +99,9 @@ test('all three locales carry the same TikTok UI and error keys', () => {
     'live.source.tiktokStop',
     'live.source.tiktokStopped',
     'live.source.tiktokAlreadyRecording',
+    'live.source.tiktokOtherRecordings',
+    'live.source.tiktokActiveTitle',
+    'live.source.tiktokActiveCount',
     'live.source.tiktokMetadataNote',
     'live.source.tiktokIdentityNote',
     'live.source.tiktokGiftNote',
