@@ -30,7 +30,7 @@
 | 十语言门禁 | 字典 10 × 2,271 键零差异；Schema 十语；`ai-i18n-locales` / `ai-i18n-translation` 通过 |
 | 正式 EXE | Build ID `945bee868455`、`99,200,512` B、SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`、`requireAdministrator` |
 | EXE 验收 | `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**（功能副本为同一源码、同一 buildId `945bee868455` 的单独 asInvoker 构建：本机应用控制策略阻止事后打补丁副本；正式 EXE 单独断言 `requireAdministrator`） |
-| Tag / Release | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338`；Release id `RELEASE_ID_PLACEHOLDER`；资产 `LiveMemory.exe` + `SHA256SUMS.txt` |
+| Tag / Release | `v0.15.0`（tag object `75d238d`）→ `e07233cc1dababc138830bcd63d76f5eb5269338`；Release id `447343485`（`published_at 2026-11-16T17:09:41Z`）；资产 `LiveMemory.exe`（99,200,512 B，SHA-256 `b8458ab7…`）+ `SHA256SUMS.txt`，下载后哈希与本地一致 |
 
 ### 0.3 未验证 / 仍然存在的限制
 
@@ -53,10 +53,11 @@
 
 | 项目 | 值 |
 | --- | --- |
-| `main` | 合并提交 `37a075e1f0e726742c9133dad8a4dad232effc6b` + 版本/文档提交 |
-| Tag | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338`（annotated） |
+| `main` | 合并提交 `37a075e`（`37a075e1f0e726742c9133dad8a4dad232effc6b`）+ 版本提交 `e07233c` + 测试工具/发布文档提交（`8050432`、`3676735`、本提交） |
+| Tag | `v0.15.0`（tag object `75d238d`）→ `e07233cc1dababc138830bcd63d76f5eb5269338`（= EXE 内嵌 commit） |
 | 工作区 | clean |
-| Push | `main` 与 `v0.15.0` 已推送 `origin` |
+| Push | `main`：`a70321c..3676735`；`v0.15.0` 已推送 `origin` |
+| Release | id `447343485`，`draft=false` / `prerelease=false`，资产下载后 SHA-256 与本地一致 |
 
 ---
 

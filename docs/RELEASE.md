@@ -296,12 +296,24 @@ Bootstrap 解压阶段以 `EPERM` 中止（`no writable application folder`）�
 
 | 项目 | 值 |
 | --- | --- |
-| GitHub Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `RELEASE_ID_PLACEHOLDER`） |
+| GitHub Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `447343485`，`published_at 2026-11-16T17:09:41Z`） |
 | URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.15.0 |
 | 类型 | `draft=false`、`prerelease=false` |
-| Tag | `v0.15.0`（annotated）→ `e07233cc1dababc138830bcd63d76f5eb5269338` |
-| Push | `main` 与 `v0.15.0` 已推送 |
-| 资产 1 | `LiveMemory.exe`，`99,200,512` bytes，`sha256:b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
-| 资产 2 | `SHA256SUMS.txt`，`81` bytes，`sha256:ea3f61201ff2c8c63b1c988eec8d0f5762c3addedd848ec7841028e461e3421a` |
-| Release body | 与 `docs/release-notes/v0.15.0.md` 字节一致 |
+| Tag | `v0.15.0`（annotated tag object `75d238d`）→ `e07233cc1dababc138830bcd63d76f5eb5269338` |
+| Push | `main`：`a70321c..3676735`；`v0.15.0` 为新 Tag |
+| 资产 1 | `LiveMemory.exe`（id `755699837`），`99,200,512` bytes，`sha256:b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| 资产 2 | `SHA256SUMS.txt`（id `755702168`），`81` bytes，`sha256:ea3f61201ff2c8c63b1c988eec8d0f5762c3addedd848ec7841028e461e3421a` |
+| Release body | 与 `docs/release-notes/v0.15.0.md` 字节一致（SHA-256 `1b35ec4530483baacf62b763d1e7919afdc3e7bfe9ba16d28ece16b544b54b1e`） |
+| 下载验证 | 重新下载 `LiveMemory.exe`：99,200,512 B、SHA-256 `b8458ab7…` 与本地一致；`SHA256SUMS.txt` 81 B 且哈希一致 |
+| 页面可访问 | Release 页 `200`、`/releases/latest` `200`、资产 URL `200`（`content-length` 一致） |
+
+### 12.5 发布后核对（2026-11-17）
+
+- [x] Release 状态为 Published（`draft=false`、`prerelease=false`，`published_at 2026-11-16T17:09:41Z`）
+- [x] Tag 为 `v0.15.0`，指向 `e07233c`，与 EXE `build-info.commit` 一致
+- [x] 两个资产可访问（HTTP 200，`content-length` 与本地一致）
+- [x] 重新下载 `LiveMemory.exe` 的 SHA-256 与本地构建完全一致（`b8458ab7…`）
+- [x] `main` 包含合并、版本与发布文档提交；工作区 clean
+- [x] 文档中的版本、Tag、Release、资产大小与 SHA-256 均与实测一致
+- [ ] 真实双击 UAC（同意/拒绝）、干净 Windows 账户、母语审校、Twitch/抖音真实采集：人工待办
 | 重复检查 | 发布前断言 `v0.15.0` 无既有 Tag/Release；未创建重复对象 |

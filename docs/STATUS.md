@@ -93,12 +93,17 @@ Push / Tag / GitHub Release → 发布后核对。**未改平台协议、数据�
 
 | 项目 | 值 |
 | --- | --- |
-| Tag | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338` |
-| Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `RELEASE_ID_PLACEHOLDER`） |
+| Tag | `v0.15.0`（annotated tag object `75d238d`）→ `e07233cc1dababc138830bcd63d76f5eb5269338` |
+| Push | `main`：`a70321c..3676735`；`v0.15.0` 为新 Tag |
+| Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `447343485`，`draft=false` / `prerelease=false`） |
 | Release URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.15.0 |
-| 资产 | `LiveMemory.exe`（`99,200,512` B，SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`）、`SHA256SUMS.txt` |
-| 资产一致性 | 上传后再下载/按大小与 SHA-256 核对，与本地构建字节一致 |
-| 重复发布 | 发布前断言无既有 `v0.15.0` Tag/Release，未创建重复对象 |
+| published_at | `2026-11-16T17:09:41Z` |
+| 资产 1 | `LiveMemory.exe`（id `755699837`，`99,200,512` B，`sha256:b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`） |
+| 资产 2 | `SHA256SUMS.txt`（id `755702168`，81 B，`sha256:ea3f61201ff2c8c63b1c988eec8d0f5762c3addedd848ec7841028e461e3421a`） |
+| Release body | 与 `docs/release-notes/v0.15.0.md` 一致（SHA-256 `1b35ec4530483baacf62b763d1e7919afdc3e7bfe9ba16d28ece16b544b54b1e`） |
+| 资产一致性 | **PASS**：重新下载 `LiveMemory.exe` 99,200,512 B、SHA-256 `b8458ab7…` 与本地构建逐字节一致；`SHA256SUMS.txt` 同样一致；GitHub `digest` 字段与本地哈希相同 |
+| 页面可访问 | Release 页 `200`、`/releases/latest` `200`、两个资产 URL `200` 且 `content-length` 与本地一致 |
+| 重复发布 | 发布前断言无既有 `v0.15.0` Tag/Release；未创建重复对象 |
 
 ## 0.50 P42 / I18N-M3 十语言最终综合验收（2026-11-16）✅ 未发布
 
