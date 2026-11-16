@@ -78,8 +78,16 @@
 
 ### 0.46.6 Git 与发布
 
-见 `docs/RELEASE.md` §11 与本文件 §0.46 的提交记录；Tag `v0.14.0` 指向
-`d268cf9b5c64d467872c55425bf6446bf614880c`，GitHub Release 使用同一 Tag。
+| 项目 | 值 |
+| --- | --- |
+| Tag | `v0.14.0`（annotated tag object `ffc4a22`）→ commit `d268cf9b5c64d467872c55425bf6446bf614880c` |
+| Push | `main`：`25e6fbe..aeadf56`；Tag `v0.14.0` 为新 Tag |
+| Release | `LiveMemory v0.14.0 — Multi-Platform Release`，id `446701465`，`draft=false` / `prerelease=false` |
+| Release URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.14.0 |
+| 资产 | `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 B，`sha256:5d7b7e65…`）、`SHA256SUMS.txt`（314 B） |
+| 下载验证 | zip Range `206` 且总长一致；`SHA256SUMS.txt` `200`；Release 页面 `200` |
+| Release body | 与 `docs/release-notes/v0.14.0.md` 字节一致（SHA-256 `0fc30e70…`） |
+| 重复 Tag/Release | 无（发布前已断言该 Tag 无既有 Release） |
 
 ## 0.45 I18N/PLATFORM 规划轮：国际化十语言与平台准入（2026-11-16）📝 只规划，无代码改动
 

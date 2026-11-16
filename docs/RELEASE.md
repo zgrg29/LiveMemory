@@ -221,3 +221,20 @@ Bootstrap 解压阶段以 `EPERM` 中止（`no writable application folder`）�
 不是产品缺陷：把 EXE 的解压根目录与临时目录重定向到仓库内可写目录后，同一二进制
 **10/10 全部通过**（`app-root` 使用 `17f84b1956e1d197afef`，即本版本资产哈希）。
 真实用户环境使用 `%LOCALAPPDATA%\LiveMemory`，与此无关。
+
+### 11.5 发布结果（已完成）
+
+| 项目 | 值 |
+| --- | --- |
+| GitHub Release | `LiveMemory v0.14.0 — Multi-Platform Release`（id `446701465`） |
+| URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.14.0 |
+| 类型 | `draft=false`、`prerelease=false`（正式稳定版） |
+| published_at | `2026-11-16T07:01:11Z` |
+| Tag | `v0.14.0`（annotated tag object `ffc4a22`）→ commit `d268cf9b5c64d467872c55425bf6446bf614880c` |
+| Push | `main`：`25e6fbe..aeadf56`；`v0.14.0` 为新 Tag |
+| 资产 1 | `LiveMemory-v0.14.0-windows-x64.zip`，35,977,845 bytes，`sha256:5d7b7e65eb3cea72156c5ecd97496c277427e1a33782d5b75b7a16dc09091188` |
+| 资产 2 | `SHA256SUMS.txt`，314 bytes，`sha256:11f89649fa77884725492bb75f366c651cfdd701b9a2600e9282d4388b8e8f07` |
+| Release body | 与 `docs/release-notes/v0.14.0.md` 字节一致（SHA-256 `0fc30e70…`，15,911 bytes） |
+| 下载验证 | zip Range 请求 `206`、总长 35,977,845；`SHA256SUMS.txt` 返回 `200` 且内容正确 |
+| 页面可访问 | 是（`HTTP 200`，标题为 `LiveMemory v0.14.0 — Multi-Platform Release`） |
+| 重复检查 | 发布前断言该 Tag 无既有 Release；未创建重复 Tag/Release |
