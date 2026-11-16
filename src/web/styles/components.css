@@ -642,6 +642,17 @@
   padding: 1px;
 }
 
+/* Large language sets (the planned ten languages) use the compact select at
+   every width; the currently shipped three keep the segmented buttons. */
+.language-control[data-mode="menu"] .language-segmented,
+.language-control[data-mode="menu"] .language-system-button {
+  display: none;
+}
+
+.language-control[data-mode="menu"] .language-compact {
+  display: inline-flex;
+}
+
 .language-segmented button {
   flex: 0 0 auto;
   min-height: 26px;
@@ -662,7 +673,10 @@
   appearance: none;
   -webkit-appearance: none;
   min-height: 28px;
-  max-width: 132px;
+  /* No fixed max-width: the control must fit "Português (Brasil)",
+     "Bahasa Indonesia" and other longer native names without clipping. */
+  max-width: 100%;
+  flex: 0 0 auto;
   padding: 0 22px 0 8px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-pill);
@@ -700,12 +714,6 @@
 
   .language-control {
     gap: 4px;
-  }
-}
-
-@media (max-width: 420px) {
-  .language-select {
-    max-width: 112px;
   }
 }
 

@@ -1,6 +1,6 @@
 import {api} from '../api.js';
 import {createModal} from '../dialog.js';
-import {localeDisplayName} from '../i18n.js';
+import {localeDisplayName, SUPPORTED_LOCALES} from '../i18n.js';
 import {el, formatBytes, formatInteger, pageHead} from '../ui.js';
 import {renderProviderSettingsCard} from './ai-settings.js';
 import {renderBackupCard} from './settings-backup.js';
@@ -27,11 +27,12 @@ export const settingsPage = {
 
     /* ------------------------------------------------------------ language */
 
+    const installedLocales = Array.isArray(ctx.state.locales) && ctx.state.locales.length > 0
+      ? ctx.state.locales
+      : SUPPORTED_LOCALES.map((code) => ({code, nativeName: localeDisplayName(code)}));
     const languageOptions = [
       ['system', t('settings.language.system')],
-      ['zh-CN', t('settings.language.zh')],
-      ['ja', t('settings.language.ja')],
-      ['en', t('settings.language.en')]
+      ...installedLocales.map((entry) => [entry.code, entry.nativeName || localeDisplayName(entry.code)])
     ];
     const languageButtons = languageOptions.map(([value, label]) => el('button', {
       type: 'button',

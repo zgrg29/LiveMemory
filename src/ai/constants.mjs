@@ -7,6 +7,8 @@
  * readable. The prompt version is recorded per job and per package so a user can
  * tell which instructions produced a given result.
  */
+import {AVAILABLE_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
+
 export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
 export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 
@@ -32,10 +34,11 @@ export const MEMORY_VIEWERS_PER_BATCH = 200;
 export const MAX_MEMORY_EXCERPT_MESSAGES = 3000;
 export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
 
-export const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
+/** Declared interface/AI languages; the list lives in shared/locales.mjs. */
+export const SUPPORTED_LOCALES = AVAILABLE_LOCALES;
 
 export function promptVersionFor(locale, mode = ANALYSIS_MODE.COMBINED) {
-  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
+  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE;
   const safeMode = Object.values(ANALYSIS_MODE).includes(mode) ? mode : ANALYSIS_MODE.COMBINED;
   if (safeMode === ANALYSIS_MODE.COMBINED) return `${PROMPT_VERSION}-${safeLocale}`;
   return `${PROMPT_VERSION_V13}-${safeMode}-${safeLocale}`;

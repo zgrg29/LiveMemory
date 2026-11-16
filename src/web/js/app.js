@@ -1,6 +1,13 @@
 import {api} from './api.js';
 import {establishSession} from './auth.js';
-import {loadDictionary, createTranslator, localeDisplayName} from './i18n.js';
+import {loadDictionary, createTranslator} from './i18n.js';
+import {renderLanguageControl} from './language-control.js';
+import {
+  AVAILABLE_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptors,
+  resolveLocaleTag
+} from '../../shared/locales.mjs';
 import {applyTheme} from './theme.js';
 import {
   clear,
@@ -32,11 +39,10 @@ const state = {
   locale: 'en',
   status: null,
   version: '0.1.0',
+  locales: [],
   pageCleanup: null,
   localePending: false
 };
-
-const LANGUAGE_CHOICES = Object.freeze(['zh-CN', 'ja', 'en']);
 
 let t = createTranslator({});
 let authErrorShown = false;
@@ -258,57 +264,26 @@ function renderShellMeta() {
 /**
  * Header language control.
  *
- * The three language names are always rendered in their own language so the
- * control stays usable when the current interface language is not readable.
- * Wide layouts expose all three choices plus a globe button for "follow the
- * system language"; narrow layouts collapse to one native <select>. Both
- * controls read and write the same persisted preference.
+ * Every option comes from the locale list returned by `/api/bootstrap`, which
+ * is generated from `src/shared/locales.mjs`. Native names are always rendered
+ * in their own language so the control stays usable when the current interface
+ * language is not readable. Narrow layouts collapse to one native <select>;
+ * large language sets use that same select at every width.
  */
-function languageChoiceLabel(value) {
-  return value === 'system' ? t('settings.language.system') : localeDisplayName(value);
-}
-
 function syncLanguageControls() {
   const preference = state.settings?.locale ?? 'system';
-  const segmented = document.getElementById('language-segmented');
-  if (segmented) {
-    segmented.setAttribute('aria-label', t('a11y.languageSelect'));
-    segmented.replaceChildren(...LANGUAGE_CHOICES.map((value) => el('button', {
-      type: 'button',
-      text: localeDisplayName(value),
-      attrs: {
-        'aria-pressed': String(preference === value),
-        'data-locale': value,
-        lang: value,
-        title: localeDisplayName(value)
-      },
-      onClick: () => chooseLocale(value)
-    })));
-  }
-
-  const systemButton = document.getElementById('language-system');
-  if (systemButton) {
-    systemButton.setAttribute('aria-pressed', String(preference === 'system'));
-    systemButton.setAttribute('aria-label', t('a11y.languageSystem'));
-    systemButton.title = t('a11y.languageSystem');
-    systemButton.onclick = () => chooseLocale('system');
-  }
-
-  const select = document.getElementById('language-select');
-  if (select) {
-    const choices = ['system', ...LANGUAGE_CHOICES];
-    select.replaceChildren(...choices.map((value) => el('option', {
-      value,
-      text: languageChoiceLabel(value),
-      attrs: value === 'system' ? null : {lang: value}
-    })));
-    select.value = preference;
-    select.setAttribute('aria-label', t('a11y.languageSelect'));
-    select.onchange = () => chooseLocale(select.value);
-  }
-
-  const control = document.querySelector('.language-control');
-  if (control) control.setAttribute('aria-label', t('a11y.languageSelect'));
+  renderLanguageControl({
+    root: document.querySelector('.language-control'),
+    segmented: document.getElementById('language-segmented'),
+    systemButton: document.getElementById('language-system'),
+    select: document.getElementById('language-select'),
+    locales: state.locales,
+    preference,
+    systemLabel: t('settings.language.system'),
+    systemAriaLabel: t('a11y.languageSystem'),
+    ariaLabel: t('a11y.languageSelect'),
+    onChange: chooseLocale
+  });
   for (const node of document.querySelectorAll('#language-segmented button, #language-system, #language-select')) {
     node.disabled = false;
   }
@@ -398,10 +373,8 @@ function wireShell() {
 
 /** Best-effort locale for the unauthenticated error page (no server data). */
 function initialLocale() {
-  const language = String(navigator.language ?? navigator.languages?.[0] ?? 'en').toLowerCase();
-  if (language.startsWith('zh')) return 'zh-CN';
-  if (language.startsWith('ja')) return 'ja';
-  return 'en';
+  const language = String(navigator.language ?? navigator.languages?.[0] ?? '');
+  return resolveLocaleTag(language) ?? DEFAULT_LOCALE;
 }
 
 /**
@@ -451,6 +424,9 @@ async function boot() {
     state.status = bootstrap.status;
     state.systemLocale = bootstrap.effective.systemLocale;
     state.version = bootstrap.app.version;
+    state.locales = Array.isArray(bootstrap.locales?.available) && bootstrap.locales.available.length > 0
+      ? bootstrap.locales.available
+      : localeDescriptors(AVAILABLE_LOCALES);
     applyTheme(bootstrap.settings.theme);
     await applyLocale(bootstrap.effective.locale);
     wireShell();

@@ -1,4 +1,5 @@
 import {DAY} from '../shared/time.mjs';
+import {AVAILABLE_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
 
 /**
  * Versioned constants for the long-term memory round trip (M7).
@@ -15,10 +16,14 @@ export const ACCEPTED_MEMORY_SCHEMA_VERSIONS = Object.freeze(['1.0.0']);
 export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.1';
 
 export function memoryPromptVersionFor(locale) {
-  return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : 'en'}`;
+  return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE}`;
 }
 
-export const SUPPORTED_MEMORY_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
+/**
+ * AI memory-task languages. The list is the shared interface-language registry;
+ * a memory task never invents a language that the product does not support.
+ */
+export const SUPPORTED_MEMORY_LOCALES = AVAILABLE_LOCALES;
 
 /** Atomic knowledge kinds. Deliberately small: everything else is `other`. */
 export const MEMORY_KIND = Object.freeze({

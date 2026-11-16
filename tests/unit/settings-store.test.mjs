@@ -4,6 +4,7 @@ import {readFileSync, readdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 import {DEFAULT_SETTINGS, normalizeSettings, SettingsStore} from '../../src/server/settings-store.mjs';
+import {AVAILABLE_LOCALES} from '../../src/shared/locale.mjs';
 
 test('default settings follow the system for language and theme', () => {
   assert.equal(DEFAULT_SETTINGS.locale, 'system');
@@ -28,6 +29,28 @@ test('loads an existing settings file and keeps valid preferences', () => {
   assert.equal(settings.theme, 'dark');
   assert.equal(settings.storageMode, 'full');
   assert.equal(settings.preferredPort, 48100);
+  temp.cleanup();
+});
+
+test('every existing language preference loads unchanged (backward compatibility)', () => {
+  const temp = createTempDir();
+  for (const locale of AVAILABLE_LOCALES) {
+    const file = join(temp.dir, `settings-${locale}.json`);
+    // A settings file written by an older release: only known keys, no new
+    // language-related settings. It must load and keep the stored value.
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      locale,
+      theme: 'system',
+      storageMode: 'compact',
+      preferredPort: 47800,
+      onboardingCompleted: true,
+      youtubeRawRetentionDays: 30
+    }));
+    const settings = new SettingsStore({file}).load();
+    assert.equal(settings.locale, locale);
+    assert.equal(normalizeSettings({locale}).locale, locale);
+  }
   temp.cleanup();
 });
 

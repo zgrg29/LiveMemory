@@ -8,6 +8,7 @@ import {
   formatInteger,
   formatTime
 } from '../ui.js';
+import {AVAILABLE_LOCALES, localeDescriptor, localeDescriptors} from '../../../shared/locales.mjs';
 
 /**
  * AI analysis report renderer.
@@ -317,10 +318,7 @@ function renderReportBody(ctx, report) {
 }
 
 function localeName(t, locale) {
-  if (locale === 'zh-CN') return t('settings.language.zh');
-  if (locale === 'ja') return t('settings.language.ja');
-  if (locale === 'en') return t('settings.language.en');
-  return t('ai.report.languageSourceUnknown');
+  return localeDescriptor(locale)?.nativeName ?? t('ai.report.languageSourceUnknown');
 }
 
 function formatCost(ctx, cost) {
@@ -503,7 +501,11 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
 
 function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
   const t = ctx.t;
-  const supported = ['zh-CN', 'ja', 'en'];
+  const installed = Array.isArray(ctx.state.locales) && ctx.state.locales.length > 0
+    ? ctx.state.locales
+    : localeDescriptors(AVAILABLE_LOCALES);
+  const supported = installed.map((entry) => entry.code);
+  const labels = new Map(installed.map((entry) => [entry.code, entry.nativeName || entry.code]));
   const source = payload.reportLocale ?? null;
   const selected = supported.includes(payload.displayLocale)
     ? payload.displayLocale
@@ -511,7 +513,7 @@ function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
   const select = el('select', {
     className: 'select select--compact',
     attrs: {'aria-label': t('ai.report.languageTitle')}
-  }, supported.map((locale) => el('option', {value: locale, text: localeName(t, locale)})));
+  }, supported.map((locale) => el('option', {value: locale, text: labels.get(locale) ?? locale})));
   select.value = selected;
   select.addEventListener('change', () => onLocaleChange?.(select.value));
   const status = payload.translation?.status ?? 'unavailable';

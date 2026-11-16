@@ -27,6 +27,7 @@ import {
   TRANSLATION_VERSION
 } from './fields.mjs';
 import {SUPPORTED_LOCALES} from '../constants.mjs';
+import {LOCALE_REGISTRY} from '../../shared/locale.mjs';
 import {createId} from '../../shared/ids.mjs';
 
 /**
@@ -45,11 +46,9 @@ const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_CHUNK_CHARS = 6000;
 const MAX_ITEMS_PER_CHUNK = 40;
 
-const LOCALE_NAME = Object.freeze({
-  'zh-CN': 'Simplified Chinese (zh-CN)',
-  ja: 'Japanese (ja)',
-  en: 'English (en)'
-});
+const LOCALE_NAME = Object.freeze(Object.fromEntries(
+  LOCALE_REGISTRY.map((entry) => [entry.code, `${entry.englishName ?? entry.nativeName} (${entry.code})`])
+));
 
 const ERROR_CODES = Object.freeze({
   LOCALE_INVALID: 'TRANSLATION_LOCALE_INVALID',

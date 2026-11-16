@@ -2,7 +2,15 @@ import {createReadStream, existsSync, mkdirSync, statSync, statfsSync} from 'nod
 import {dirname, join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
-import {normalizeLocale, resolveLocale, SUPPORTED_LOCALES} from '../shared/locale.mjs';import {
+import {
+  AVAILABLE_LOCALES,
+  defaultLocaleFor,
+  localeDescriptors,
+  normalizeLocale,
+  resolveLocale,
+  SUPPORTED_LOCALES
+} from '../shared/locale.mjs';
+import {
   serializeBatch,
   serializeBroadcasterRow,
   serializeEvent,
@@ -166,12 +174,29 @@ function statusPayload(deps) {
   };
 }
 
+function installedLocales(deps) {
+  return Array.isArray(deps.availableLocales) && deps.availableLocales.length > 0
+    ? deps.availableLocales
+    : AVAILABLE_LOCALES;
+}
+
+/** Language metadata for the selectors; it never contains a second list. */
+function localePayload(deps) {
+  const available = installedLocales(deps);
+  return {
+    default: defaultLocaleFor(available),
+    system: deps.systemLocale ?? null,
+    available: localeDescriptors(available)
+  };
+}
+
 function effectiveSettings(deps) {
   const settings = deps.settingsStore.get();
+  const available = installedLocales(deps);
   return {
     settings,
     effective: {
-      locale: resolveLocale(settings.locale, deps.systemLocale),
+      locale: resolveLocale(settings.locale, deps.systemLocale, {available}),
       systemLocale: deps.systemLocale,
       theme: settings.theme,
       storageMode: settings.storageMode
@@ -613,6 +638,7 @@ export function buildRoutes() {
             } : null
           },
           ...effectiveSettings(deps),
+          locales: localePayload(deps),
           status: statusPayload(deps),
           capabilities: {
             // The product records the five real live platforms only. Simulation
