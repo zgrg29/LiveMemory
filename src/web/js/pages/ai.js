@@ -14,7 +14,12 @@ import {renderAnalysisReport} from './ai-report.js';
 import {buildAnalysisProgress} from './ai-progress.js';
 import {providerConfigState} from './ai-config-state.js';
 import {chooseInitialSessionId} from './ai-selection.js';
-import {AVAILABLE_LOCALES, localeDescriptor, localeDescriptors} from '../../../shared/locales.mjs';
+import {
+  AI_OUTPUT_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptor,
+  localeDescriptors
+} from '../../../shared/locales.mjs';
 
 /**
  * AI analysis centre (v0.13.1).
@@ -194,12 +199,17 @@ export const aiPage = {
       stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
     let selectedId = chooseInitialSessionId(sessions, requestedId);
-    const outputLocales = Array.isArray(ctx.state.locales) && ctx.state.locales.length > 0
-      ? ctx.state.locales
-      : localeDescriptors(AVAILABLE_LOCALES);
+    // Ten interface languages but only the `aiOutput` subset can be analysed:
+    // this list is never the interface list, so an unsupported locale can never
+    // be sent to a provider.
+    const outputLocales = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
+      ? ctx.state.aiLocales
+      : localeDescriptors(AI_OUTPUT_LOCALES);
     let locale = ctx.locale;
     if (!outputLocales.some((entry) => entry.code === locale)) {
-      locale = outputLocales[0]?.code ?? locale;
+      locale = outputLocales.some((entry) => entry.code === DEFAULT_LOCALE)
+        ? DEFAULT_LOCALE
+        : (outputLocales[0]?.code ?? locale);
     }
     let runScope = 'session';
     let status = null;

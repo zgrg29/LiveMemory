@@ -8,7 +8,12 @@ import {
   formatInteger,
   formatTime
 } from '../ui.js';
-import {AVAILABLE_LOCALES, localeDescriptor, localeDescriptors} from '../../../shared/locales.mjs';
+import {
+  AI_OUTPUT_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptor,
+  localeDescriptors
+} from '../../../shared/locales.mjs';
 
 /**
  * AI analysis report renderer.
@@ -501,15 +506,20 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
 
 function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
   const t = ctx.t;
-  const installed = Array.isArray(ctx.state.locales) && ctx.state.locales.length > 0
-    ? ctx.state.locales
-    : localeDescriptors(AVAILABLE_LOCALES);
+  // Reading/translation languages are the `aiOutput` subset: ten interface
+  // languages must not offer ten translation targets before their prompts exist.
+  const installed = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
+    ? ctx.state.aiLocales
+    : localeDescriptors(AI_OUTPUT_LOCALES);
   const supported = installed.map((entry) => entry.code);
   const labels = new Map(installed.map((entry) => [entry.code, entry.nativeName || entry.code]));
   const source = payload.reportLocale ?? null;
+  const fallback = supported.includes(ctx.locale)
+    ? ctx.locale
+    : (supported.includes(DEFAULT_LOCALE) ? DEFAULT_LOCALE : supported[0]);
   const selected = supported.includes(payload.displayLocale)
     ? payload.displayLocale
-    : (supported.includes(source) ? source : ctx.locale);
+    : (supported.includes(source) ? source : fallback);
   const select = el('select', {
     className: 'select select--compact',
     attrs: {'aria-label': t('ai.report.languageTitle')}

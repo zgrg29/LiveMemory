@@ -51,14 +51,14 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 ## 4. 目录结构（实际）
 
 ```text
-src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行三语、退出
+src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行十语、退出
 src/server/          HTTP 服务、路由、设置存储、日志、SSE
 src/platforms/       平台适配器（现有五个真实平台：bilibili、youtube/anonymous、twitch、douyin、tiktok；另 mock 仅测试夹具）
   shared/            adapter 契约、ingest 写入管线、session manager、加密凭据存储
 src/storage/         database（连接/迁移）、repositories（SQL 访问）
 src/analytics/       sessions（时间线/汇总）、payments（币种合计）、viewers（画像读模型）
-src/ai/              export（分析包）、prompts（分语言说明，当前三语）、schemas（结果 JSON Schema）
-src/web/             index.html、js/（app、pages、i18n、chart、theme）、styles/、i18n/*.json（当前三语）
+src/ai/              export（分析包）、prompts（分语言说明，当前 AI 输出三语）、schemas（结果 JSON Schema）
+src/web/             index.html、js/（app、pages、i18n、chart、theme）、styles/、i18n/*.json（当前十语）
 src/shared/          跨层纯逻辑：事件模型、Emoji/表情、文本安全截断、金额、语言、主题、时间、zip、错误
 tests/               unit / integration / helpers / fixtures
 scripts/             构建 EXE、SEA bootstrap、UI 截图、冒烟脚本
@@ -144,7 +144,7 @@ node scripts/build-windows.mjs
 - 颜色、间距、圆角、阴影全部通过 `src/web/styles/tokens.css` 的 CSS 变量使用，不得在组件里写死颜色。
 - 明亮与黑暗**分别设计**，不能简单反转。
 - 首次渲染不得出现主题闪烁：`data-theme` 由 `js/theme-boot.js` 在样式表之前设置。
-- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**当前实现三语（`zh-CN` / `ja` / `en`），目标十语（另加 `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`）；规划见 `docs/I18N.md`，未落地的语言不得在任何地方声称已支持。**
+- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**当前已实现十种界面语言（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`，每份 2,265 键）；AI 分析输出语言仍是 `zh-CN` / `ja` / `en` 三种（`aiOutput` 能力位），不得把十语言界面写成十语言 AI 分析。详见 `docs/I18N.md`、`docs/i18n/GLOSSARY.md`。**
 - 新增/修改文案必须**同时**更新清单内所有语言的字典，键集与 `{param}` 占位符必须完全一致；不得先只加英文再「以后再补」。
 - 启动器文案放在 `src/launcher/cli-i18n.mjs`，各语言键必须一致；控制台编码失败时必须走既有 ASCII 降级，不得输出乱码。
 - 语言名在语言选择器中**始终用该语言自身文字显示**（简体中文 / 日本語 / English / 한국어 …），不跟随界面语言翻译。
@@ -214,7 +214,7 @@ fix: prevent duplicate payment events
 - 不得在未验证的情况下宣称 EXE 已在“干净 Windows 环境”通过验收。
 - 不得为了绕过平台的授权或配额限制而改用抓取、未公开接口或共享凭据。YouTube 公开网页聊天是唯一接入路径，但必须遵守 §6.12 的不绕过访问控制、不描述为官方/合规、如实说明可能失效等边界；不得偷偷恢复官方 API 双轨实现。TikTok 的匿名 webcast WebSocket 是 §6.12 明确授权的唯一例外，并只能在该节边界内使用：不绕过访问控制、不登录、不依赖第三方签名服务、标注非官方/实验性、失败即如实报告。
 - 不得在文档或界面中把「模拟/假 API 验证」描述为「真实平台验收」。缺少真实凭据时必须如实写「阻塞」。真实凭据与 API Key 不得出现在代码、测试、文档、截图或提交中。
-- **不得把「计划支持」的语言或平台写成「已支持」**：十语言中的 `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 与所有新直播平台（Kick、虎牙、斗鱼、CHZZK、SOOP、快手、Niconico、小红书、YY、Facebook Live）当前**均未实现**。README、界面、发布说明与 STATUS 只能描述实际存在的语言与平台。
+- **不得把「计划支持」写成「已支持」**：十种**界面**语言已实现（P40），但**AI 分析输出语言仍只有 `zh-CN` / `ja` / `en`**，`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 的提示词、结果 Schema 与翻译目标尚未实现（P41）；所有新直播平台（Kick、虎牙、斗鱼、CHZZK、SOOP、快手、Niconico、小红书、YY、Facebook Live）当前**均未实现**。README、界面、发布说明与 STATUS 只能描述实际存在的能力。
 - **不得仅凭开源项目 README、示例或接口存在就宣称平台支持**：没有本仓库真实样本与真实 EXE 验收的一律标「待验证」，缺失的事件一律标 `NOT-OBSERVED`。
 - **不得为通过平台验证而绕过访问控制**：不破解验证码、不伪造登录态、不规避地区/年龄/权限限制、不购买第三方采集/签名服务、不引入运行时第三方依赖。失败即停止并如实报告。
 - **不得复制许可证不兼容的代码**：AGPL 代码不得直接进入 MIT 代码区；引用任何第三方实现必须按其许可证在 `THIRD_PARTY_NOTICES.md` 标注。
@@ -225,7 +225,7 @@ fix: prevent duplicate payment events
 ## 11. 每轮交付自检清单
 
 - [ ] 本地服务器可启动，浏览器可打开控制台
-- [ ] 界面与命令行在**清单内所有语言**下无缺失键、无乱码、无截断（当前三语；新增语言按 `docs/I18N.md` 门禁）
+- [ ] 界面与命令行在**清单内所有语言**下无缺失键、无乱码、无截断（当前十语；新增语言按 `docs/I18N.md` 门禁）
 - [ ] 明亮/黑暗/跟随系统均正常，刷新后保持
 - [ ] 新增逻辑有对应测试，且 `node --test` 通过
 - [ ] 金额、身份、去重规则未被破坏

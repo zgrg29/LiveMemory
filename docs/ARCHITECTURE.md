@@ -35,7 +35,7 @@ LiveMemory.exe (Node SEA)
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
          ├─ src/ai/translation/         报告/长期画像的只读展示翻译、缓存与独立运行状态
          ├─ src/ai/tasks/               任务状态计算（从数据库事实）
-         ├─ src/ai/prompts/             三语提示词与提示词版本
+         ├─ src/ai/prompts/             AI 输出语言提示词（zh-CN / ja / en）与提示词版本
          ├─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
          ├─ src/ai/providers/           多 Provider 目录、适配器、加密配置、能力检测、费用
          └─ src/ai/api/                 配置 Provider 运行器、单场/画像任务、预算与暂停恢复
@@ -48,7 +48,7 @@ LiveMemory.exe (Node SEA)
 createAnalysisJob()
   ├─ countSessionMessages() → 按 batchSize 计算批次
   ├─ 每批：listSessionMessagesAsc(offset/limit) → messages.jsonl（seq 从 1）
-  │        + 本批 viewer_context + 整场统计 + 三语 instructions + result.schema.json
+  │        + 本批 viewer_context + 整场统计 + 该语言 instructions + result.schema.json
   ├─ 写 ZIP + ai_packages
   └─ BEGIN IMMEDIATE
        ├─ ai_jobs（job_id、prompt_version、batch_total、total_messages）
@@ -611,13 +611,13 @@ src/server/backup/
 
 - `AppError` 携带稳定 `code`、i18n `messageKey`、`httpStatus`；API 返回 `{error:{code,messageKey,details}}`。
 - 控制台按 `messageKey` 本地化，不解析英文句子。
-- 启动器捕获致命错误 → 写 `runtime/last-error.json` → 三语提示 → 等待回车（TTY）→ 退出码 1。
+- 启动器捕获致命错误 → 写 `runtime/last-error.json` → 本地化提示（无法 UTF-8 时英文 ASCII 回退）→ 等待回车（TTY）→ 退出码 1。
 - 前端页面渲染异常 → 捕获并展示重试界面，同时写入 `window.__lmLastError` 便于诊断。
 
 ## 8. 前端结构
 
 - `js/app.js`：会话建立、bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
-- `js/auth.js`：读取 URL fragment 中的一次性 token、交换 HttpOnly Cookie、清除 fragment；未授权时渲染三语“请从 LiveMemory 重新打开”页面。
+- `js/auth.js`：读取 URL fragment 中的一次性 token、交换 HttpOnly Cookie、清除 fragment；未授权时渲染本地化的“请从 LiveMemory 重新打开”页面。
 - Header 语言控件：`js/language-control.js` 由 `/api/bootstrap` 的 `locales.available` 动态生成。
   当前三种语言：宽屏 `#language-segmented`（原生语言名）+ `#language-system`，窄屏 `#language-select`；
   语言数 > 3 或原生名过长时自动使用同一个原生下拉。两个控件共享 `state.settings.locale`。
@@ -689,7 +689,7 @@ src/shared/locales.mjs（唯一语言清单；同构，无 Node API）
   `zh-HK` 当前降级 `zh-CN`，未来注册 `zh-TW` 后由同一算法优先选择 `zh-TW`。
 - 浏览器只额外暴露 `/shared/locales.mjs` 一个共享模块；其余 `src/shared` 不外泄。
 - 语言选择器不得再出现固定三项或固定像素宽度；新增语言只改注册表与字典。
-- 启动器控制台仍使用 `src/launcher/cli-i18n.mjs` 的独立消息表（三语）；测试强制其语言码与注册表一致，
+- 启动器控制台使用 `src/launcher/cli-i18n.mjs` 的独立消息表（十语，P40）；测试强制其语言码与注册表一致，
   本轮不扩控制台语言，未来统一方案见 `docs/I18N.md` §2.5。
 - JSON Schema 的 `locale.enum` 是协议镜像，由 `tests/unit/locale-registry.test.mjs` 强制与注册表一致。
 

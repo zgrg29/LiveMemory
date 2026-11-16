@@ -1,25 +1,42 @@
 /**
- * P39 / I18N-M0 real UI verification.
+ * P40 / I18N-M1 real-browser layout verification for ten languages.
  *
- * Renders the actual header CSS and the actual language-control module in a
- * headless Chromium:
- *   1. the production console with the three shipped languages (zh-CN/ja/en);
- *   2. a test-only fixture with the ten planned languages.
+ * This is not a unit test: it launches headless Chromium/Edge through the
+ * DevTools protocol, loads the *production* console in every shipped language,
+ * and measures real layout instead of string lengths.
  *
- * It records screenshots plus measured overflow/metrics. This script is not part
- * of `node --test` because it needs a browser; the environment may block
- * Chromium. A blocked launch is reported as BLOCKED, never as passed.
+ * What it checks for every language:
+ *   - 1440 / 1024 / 820 / 390 px widths, light and dark themes;
+ *   - the main pages: live, history, history detail, viewers, AI analysis,
+ *     settings, help and the viewer memory page;
+ *   - no horizontal document overflow, no text clipped inside a button, chip,
+ *     tab or select, no control pushed outside the viewport, and the language
+ *     control never overlaps the theme button;
+ *   - the rendered dictionary is the requested language (no raw `xx.yy.zz`
+ *     keys leaking into the DOM).
+ *
+ * A blocked browser is reported as BLOCKED (exit code 2), never as PASS.
  *
  * Usage:
- *   node scripts/verify-i18n-ui.mjs [--out docs/screenshots] [--report tests/.tmp/i18n-ui-report.json]
+ *   node scripts/verify-i18n-ui.mjs [--out docs/screenshots] [--report tests/.tmp/i18n-p40-ui-report.json] [--all-widths]
  */
-import {createServer} from 'node:http';
-import {readFile, mkdir, writeFile} from 'node:fs/promises';
-import {existsSync, statSync} from 'node:fs';
+import {mkdirSync, existsSync} from 'node:fs';
+import {mkdir, writeFile} from 'node:fs/promises';
 import {spawn, spawnSync} from 'node:child_process';
-import {extname, join, normalize, resolve, sep} from 'node:path';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {openDatabase, closeDatabase} from '../src/storage/database/connection.mjs';
+import {migrate} from '../src/storage/database/migrations/index.mjs';
 import {startServer} from '../src/server/index.mjs';
+import {createAnalysisJob} from '../src/ai/export/job.mjs';
+import {importAnalysisResult} from '../src/ai/import/importer.mjs';
+import {
+  addBroadcaster,
+  makeBatchResult,
+  readBatchPackage,
+  seedSession,
+  T0
+} from '../tests/helpers/ai-fixtures.mjs';
 import {createTempDir} from '../tests/helpers/temp-dir.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -29,69 +46,81 @@ const argValue = (name, fallback) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 const outDir = resolve(root, argValue('out', 'docs/screenshots'));
-const reportFile = resolve(root, argValue('report', 'tests/.tmp/i18n-ui-report.json'));
-const MIME = new Map(Object.entries({
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png'
-}));
-
+const reportFile = resolve(root, argValue('report', 'tests/.tmp/i18n-p40-ui-report.json'));
+const ALL_WIDTHS = args.includes('--all-widths');
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 
-function resolveStatic(roots, pathname) {
-  const decoded = decodeURIComponent(pathname);
-  for (const [prefix, rootDir] of roots) {
-    if (!decoded.startsWith(prefix)) continue;
-    const relative = decoded.slice(prefix.length);
-    const base = resolve(rootDir);
-    const candidate = normalize(join(base, relative));
-    if (candidate !== base && !candidate.startsWith(base + sep)) return null;
-    if (!existsSync(candidate) || !statSync(candidate).isFile()) return null;
-    return candidate;
-  }
-  return null;
-}
+const LOCALES = (() => {
+  const requested = argValue('locales', null);
+  if (!requested) return ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id'];
+  return requested.split(',').map((entry) => entry.trim()).filter(Boolean);
+})();
+const WIDTHS = [1440, 1024, 820, 390];
+const ROUTES = [
+  {id: 'live', path: '#/live'},
+  {id: 'history', path: '#/history'},
+  {id: 'viewers', path: '#/viewers'},
+  {id: 'ai', path: '#/ai'},
+  {id: 'settings', path: '#/settings'},
+  {id: 'help', path: '#/help'}
+];
 
-async function startFixtureServer() {
-  const roots = [
-    ['/fixtures/', join(root, 'tests/fixtures')],
-    ['/js/', join(root, 'src/web/js')],
-    ['/styles/', join(root, 'src/web/styles')],
-    ['/shared/', join(root, 'src/shared')],
-    ['/i18n/', join(root, 'src/web/i18n')]
-  ];
-  const fixture = await readFile(join(root, 'tests/fixtures/i18n-header-10.html'));
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      res.writeHead(200, {'Content-Type': MIME.get('.html'), 'Cache-Control': 'no-store'});
-      res.end(fixture);
-      return;
-    }
-    const file = resolveStatic(roots, url.pathname);
-    if (!file) {
-      res.writeHead(404, {'Content-Type': 'text/plain'});
-      res.end('not found');
-      return;
-    }
-    const data = await readFile(file);
-    res.writeHead(200, {
-      'Content-Type': MIME.get(extname(file).toLowerCase()) ?? 'application/octet-stream',
-      'Content-Length': data.length,
-      'Cache-Control': 'no-store'
-    });
-    res.end(data);
+/**
+ * Long, unbreakable-ish copy per language so layout is measured against the
+ * worst realistic translation instead of the English source.
+ */
+const LONG_TITLE = {
+  'zh-CN': '深夜电台 · 一起听老歌，聊聊这一周发生的事和下周的计划',
+  ja: '深夜ラジオ・昔の曲を聴きながら、今週あったことと来週の予定を話します',
+  en: 'Late-night radio · old songs, this week, and what is coming next week',
+  ko: '심야 라디오 · 옛 노래를 들으며 이번 주 이야기와 다음 주 계획을 나눕니다',
+  es: 'Radio nocturna · canciones antiguas, la semana y los planes para la próxima',
+  'pt-BR': 'Rádio da madrugada · músicas antigas, a semana e os planos para a próxima',
+  'zh-TW': '深夜電台 · 一起聽老歌，聊聊這一週發生的事和下週的計畫',
+  fr: 'Radio de nuit · vieilles chansons, la semaine écoulée et les projets à venir',
+  de: 'Nachtradio · alte Lieder, diese Woche und was als Nächstes ansteht',
+  id: 'Radio tengah malam · lagu lama, minggu ini, dan rencana minggu depan'
+};
+
+/** Seed a realistic data set: long titles, several viewers, an AI report. */
+async function seed(dataDir) {
+  const db = openDatabase({file: join(dataDir, 'database', 'livememory.db'), createDirectory: true});
+  migrate(db, {now: T0});
+  const broadcaster = addBroadcaster(db, {id: 'youtube:UC_P40_UI', name: 'LiveMemory Layout Channel'});
+  const primary = seedSession(db, {
+    messageCount: 24,
+    viewerCount: 3,
+    title: LONG_TITLE.de,
+    broadcasterId: broadcaster,
+    broadcasterName: 'LiveMemory Layout Channel',
+    startedAt: T0
   });
-  await new Promise((resolvePromise, reject) => {
-    server.once('error', reject);
-    server.listen({host: '127.0.0.1', port: 0}, resolvePromise);
+  seedSession(db, {
+    messageCount: 14,
+    viewerCount: 2,
+    roomId: 'p40-second-room',
+    title: LONG_TITLE.fr,
+    broadcasterId: broadcaster,
+    broadcasterName: 'LiveMemory Layout Channel',
+    startedAt: T0 + 86_400_000,
+    archived: true
   });
-  const address = server.address();
-  return {server, base: `http://127.0.0.1:${address.port}`};
+  const exportsDir = join(dataDir, 'exports');
+  mkdirSync(exportsDir, {recursive: true});
+  const job = await createAnalysisJob({
+    db,
+    sessionId: primary.id,
+    locale: 'en',
+    exportsDir,
+    batchSize: 100000
+  });
+  for (const pkg of job.packages) {
+    const data = readBatchPackage(exportsDir, pkg);
+    const result = makeBatchResult(data.manifest, data.messages, data.viewers);
+    importAnalysisResult({db, text: JSON.stringify(result), now: T0 + 60_000});
+  }
+  closeDatabase(db);
+  return primary.id;
 }
 
 function findBrowser() {
@@ -106,7 +135,7 @@ function findBrowser() {
 }
 
 async function launchBrowser(browserPath, userDataDir) {
-  const debugPort = 9300 + Math.floor(Math.random() * 200);
+  const debugPort = 9400 + Math.floor(Math.random() * 200);
   const child = spawn(browserPath, [
     '--headless=new',
     '--disable-gpu',
@@ -118,7 +147,7 @@ async function launchBrowser(browserPath, userDataDir) {
     `--remote-debugging-port=${debugPort}`,
     'about:blank'
   ], {stdio: 'ignore', windowsHide: true, detached: false});
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 25000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
@@ -165,7 +194,7 @@ async function connect(debugPort) {
     pending.set(id, {resolve: resolveCall, reject: rejectCall});
     socket.send(JSON.stringify({id, method, params}));
   });
-  const waitFor = (method, timeoutMs = 20000) => new Promise((resolveEvent, rejectEvent) => {
+  const waitFor = (method, timeoutMs = 25000) => new Promise((resolveEvent, rejectEvent) => {
     const timer = setTimeout(() => rejectEvent(new Error(`timeout waiting for ${method}`)), timeoutMs);
     const list = waiters.get(method) ?? [];
     list.push((params) => {
@@ -177,6 +206,110 @@ async function connect(debugPort) {
   return {socket, send, waitFor};
 }
 
+/**
+ * Layout probe. Deliberately conservative: it reports *clipping of visible text*
+ * and *document overflow*, not every element that happens to scroll internally
+ * (tables and code blocks are allowed to scroll inside their own wrapper).
+ */
+const PROBE = `(() => {
+  const viewport = {width: window.innerWidth, height: window.innerHeight};
+  const describe = (node) => {
+    const id = node.id ? '#' + node.id : '';
+    const cls = typeof node.className === 'string' && node.className.trim()
+      ? '.' + node.className.trim().split(/\\s+/).slice(0, 2).join('.')
+      : '';
+    return node.tagName.toLowerCase() + id + cls;
+  };
+  const isVisible = (node) => {
+    if (!node.getClientRects().length) return false;
+    const style = getComputedStyle(node);
+    if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) return false;
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return false;
+    // Off-canvas drawers are intentional; they are not overflow.
+    if (node.closest('[aria-hidden="true"], .sidebar[data-collapsed="true"], .drawer:not(.drawer--open)')) return false;
+    return true;
+  };
+  const NO_WRAP = (node) => {
+    const style = getComputedStyle(node);
+    return style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre';
+  };
+  const clipped = [];
+  // Two complementary checks:
+  //  1. nowrap controls whose own text does not fit;
+  //  2. translated UI labels that are cut by an ellipsis text-overflow without a
+  //     title fallback. User content (nicknames, room titles) is allowed to
+  //     truncate; the labels below must always show their full translation.
+  const MUST_NOT_TRUNCATE = [
+    '.recording-tab--new .recording-tab-label',
+    '.stat-label',
+    '.stat-sub',
+    '.card-title',
+    '.nav-item',
+    '.topbar-title',
+    '.badge',
+    '.pill'
+  ];
+  for (const node of document.querySelectorAll('button, a, .chip, .pill, .tab, .badge, td, th, label, .segmented button, option, .nav-item, .card-title, .field-label')) {
+    if (!isVisible(node)) continue;
+    if (node.tagName === 'OPTION') continue;
+    if (!NO_WRAP(node)) continue;
+    if (node.scrollWidth > node.clientWidth + 1 && node.clientWidth > 0) {
+      clipped.push({selector: describe(node), text: (node.textContent || '').trim().slice(0, 60), scrollWidth: node.scrollWidth, clientWidth: node.clientWidth});
+    }
+  }
+  for (const node of document.querySelectorAll(MUST_NOT_TRUNCATE.join(','))) {
+    if (!isVisible(node)) continue;
+    if (node.scrollWidth <= node.clientWidth + 1) continue;
+    if (node.closest('[title]') && node.closest('[title]').getAttribute('title')) continue;
+    clipped.push({selector: describe(node), text: (node.textContent || '').trim().slice(0, 60), scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, why: 'ellipsis'});
+  }
+  const control = document.querySelector('.language-control');
+  const themeButton = document.getElementById('theme-toggle');
+  const rectOf = (node) => (node ? node.getBoundingClientRect() : null);
+  const controlRect = rectOf(control);
+  const themeRect = rectOf(themeButton);
+  const overflowing = [];
+  for (const node of document.querySelectorAll('body *')) {
+    if (!isVisible(node)) continue;
+    const rect = node.getBoundingClientRect();
+    // Elements entirely left of the viewport are off-canvas by design (the
+    // skip link parked at -9999px and the closed mobile navigation drawer).
+    if (rect.right <= 0) continue;
+    if (rect.right > viewport.width + 1.5 || rect.left < -1.5) {
+      // Ignore nodes inside an element that is explicitly allowed to scroll.
+      const scroller = node.closest('[data-scrollable="true"], .table-scroll, .chart-scroll, pre');
+      if (scroller) continue;
+      overflowing.push({selector: describe(node), left: Math.round(rect.left), right: Math.round(rect.right), text: (node.textContent || '').trim().slice(0, 40)});
+    }
+  }
+  const bodyText = document.body.innerText || '';
+  // A leaked translation key looks like live.feed.title; version strings
+  // (v0.14.0) and host names (api.openai.com) must not be flagged, so only the
+  // actual dictionary roots count as evidence.
+  const ROOTS = '(?:a11y|ai|app|auth|common|errors|format|help|history|live|memory|monitoring|nav|settings|status|toast|viewers)';
+  const TLD = /\\.(?:com|net|org|io|cn|tv|app|co|me|dev|gg|info|biz|xyz|cc|so)$/;
+  const rawKey = (bodyText.match(new RegExp('\\\\b' + ROOTS + '(?:\\\\.[a-zA-Z0-9_]+){2,}\\\\b', 'g')) || [])
+    // A host name such as live.bilibili.com is documentation, not a lost key.
+    .filter((match) => !TLD.test(match))
+    .slice(0, 8);
+  return {
+    lang: document.documentElement.lang,
+    theme: document.documentElement.dataset.theme || 'light',
+    viewport,
+    docScrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+    clipped: clipped.slice(0, 10),
+    overflowing: overflowing.slice(0, 10),
+    rawKeys: rawKey,
+    languageMode: control ? control.dataset.mode : null,
+    languageOptionCount: (document.getElementById('language-select')?.options ?? []).length,
+    controlRight: controlRect ? Math.round(controlRect.right) : null,
+    themeLeft: themeRect ? Math.round(themeRect.left) : null,
+    heading: (document.querySelector('.page-title')?.textContent ?? '').trim().slice(0, 60)
+  };
+})()`;
+
 async function main() {
   const browserPath = findBrowser();
   if (!browserPath) {
@@ -187,8 +320,8 @@ async function main() {
   await mkdir(outDir, {recursive: true});
   await mkdir(resolve(reportFile, '..'), {recursive: true});
   const temp = createTempDir();
-  const app = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'zh-CN'});
-  const fixture = await startFixtureServer();
+  const sessionId = await seed(temp.dir);
+  const app = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'de-DE'});
   let browser = null;
   const results = [];
   try {
@@ -205,50 +338,32 @@ async function main() {
       return result.result?.value;
     };
 
-    const metricsExpression = `(() => {
-      const viewport = {width: window.innerWidth, height: window.innerHeight};
-      const control = document.querySelector('.language-control');
-      const select = document.getElementById('language-select');
-      const segmented = document.getElementById('language-segmented');
-      const theme = document.getElementById('theme-toggle');
-      const title = document.getElementById('page-title');
-      const controlRect = control.getBoundingClientRect();
-      const selectRect = select.getBoundingClientRect();
-      const themeRect = theme.getBoundingClientRect();
-      const titleRect = title.getBoundingClientRect();
-      const style = getComputedStyle(select);
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      context.font = style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily;
-      const selected = select.options[select.selectedIndex];
-      const label = selected ? selected.textContent : '';
-      const textWidth = context.measureText(label).width
-        + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-      const segmentedItems = [...segmented.querySelectorAll('button')].map((button) => ({
-        text: button.textContent,
-        clientWidth: button.clientWidth,
-        scrollWidth: button.scrollWidth
-      }));
-      return {
-        lang: document.documentElement.lang,
-        mode: control.dataset.mode,
-        optionCount: select.options.length,
-        selectedLabel: label,
-        segmentedButtons: segmented.querySelectorAll('button').length,
-        segmentedItems,
-        segmentedVisible: getComputedStyle(segmented).display !== 'none',
-        selectVisible: getComputedStyle(select).display !== 'none' && selectRect.width > 0,
-        control: {left: controlRect.left, right: controlRect.right, width: controlRect.width},
-        select: {left: selectRect.left, right: selectRect.right, width: selectRect.width, clientWidth: select.clientWidth, scrollWidth: select.scrollWidth, textWidth},
-        theme: {left: themeRect.left, right: themeRect.right},
-        title: {left: titleRect.left, right: titleRect.right},
-        docScrollWidth: document.documentElement.scrollWidth,
-        bodyScrollWidth: document.body.scrollWidth,
-        viewport
-      };
-    })()`;
+    const setLocale = async (locale) => {
+      const result = await evaluate(`fetch('/api/settings', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({locale: ${JSON.stringify(locale)}})
+      }).then(async (response) => ({status: response.status, body: await response.json()}))`);
+      if (result.status !== 200) throw new Error(`PATCH locale failed for ${locale}: ${JSON.stringify(result)}`);
+    };
 
-    const capture = async (name, {url, width, height, fullPage = false, dark = false, wait = 1600}) => {
+    // The launcher URL carries the one-time bootstrap token; visiting it once
+    // exchanges the token for the session cookie every later page load needs.
+    {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 1440, height: 900, deviceScaleFactor: 1, mobile: false, screenWidth: 1440, screenHeight: 900
+      });
+      const loaded = cdp.waitFor('Page.loadEventFired').catch(() => null);
+      await cdp.send('Page.navigate', {url: app.browserUrl});
+      await loaded;
+      await sleep(1500);
+      const status = await evaluate("fetch('/api/auth/status').then((r) => r.status)");
+      if (status !== 200) throw new Error(`bootstrap session exchange failed (status ${status})`);
+    }
+
+    let visitCounter = 0;
+
+    const visit = async ({path, width, height, dark, name, screenshot}) => {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width,
         height,
@@ -257,94 +372,128 @@ async function main() {
         screenWidth: width,
         screenHeight: height
       });
+      visitCounter += 1;
       const loaded = cdp.waitFor('Page.loadEventFired').catch(() => null);
-      const navigationUrl = new URL(url);
-      navigationUrl.searchParams.set('shot', name);
-      await cdp.send('Page.navigate', {url: navigationUrl.href});
+      // A hash-only change would not reload the document, so every visit carries
+      // a unique query string; the app router still reads `location.hash`.
+      await cdp.send('Page.navigate', {url: `${app.url}?shot=${visitCounter}-${encodeURIComponent(name)}${path}`});
       await loaded;
-      await sleep(wait);
+      await sleep(1500);
       if (dark) {
         await evaluate("document.documentElement.dataset.theme='dark';");
-        await sleep(200);
+        await sleep(250);
       }
-      const metrics = await evaluate(metricsExpression);
-      const screenshot = await cdp.send('Page.captureScreenshot', {
-        format: 'png',
-        captureBeyondViewport: false,
-        clip: fullPage ? undefined : {x: 0, y: 0, width, height: 190, scale: 1}
-      });
-      const file = join(outDir, `${name}.png`);
-      await writeFile(file, Buffer.from(screenshot.data, 'base64'));
+      const metrics = await evaluate(PROBE);
+      if (screenshot) {
+        const shot = await cdp.send('Page.captureScreenshot', {format: 'png', captureBeyondViewport: false});
+        await writeFile(join(outDir, `${name}.png`), Buffer.from(shot.data, 'base64'));
+      }
       const checks = {
-        noHorizontalOverflow: metrics.docScrollWidth <= metrics.viewport.width + 1
+        noDocumentOverflow: metrics.docScrollWidth <= metrics.viewport.width + 1
           && metrics.bodyScrollWidth <= metrics.viewport.width + 1,
-        controlInsideViewport: metrics.control.right <= metrics.viewport.width + 1
-          && metrics.control.left >= -1,
-        controlDoesNotOverlapTheme: metrics.control.right <= metrics.theme.left + 1,
-        selectTextNotClipped: !metrics.selectVisible
-          || metrics.select.width + 1 >= metrics.select.textWidth,
-        segmentedTextNotClipped: !metrics.segmentedVisible
-          || metrics.segmentedItems.every((item) => item.scrollWidth <= item.clientWidth + 1),
-        selectHasOptions: metrics.optionCount >= 2
+        noClippedText: metrics.clipped.length === 0,
+        noOverflowingNode: metrics.overflowing.length === 0,
+        noRawTranslationKeys: metrics.rawKeys.length === 0,
+        languageControlPresent: metrics.languageOptionCount >= 2,
+        languageControlDoesNotOverlapTheme: metrics.controlRight === null
+          || metrics.themeLeft === null
+          || metrics.controlRight <= metrics.themeLeft + 1
       };
-      const record = {name, file, width, height, dark, metrics, checks, ok: Object.values(checks).every(Boolean)};
+      const record = {name, path, width, height, dark, metrics, checks, ok: Object.values(checks).every(Boolean)};
       results.push(record);
-      console.log(`${record.ok ? 'PASS' : 'FAIL'} ${name} ${width}x${height} mode=${metrics.mode} options=${metrics.optionCount} label=${JSON.stringify(metrics.selectedLabel)} overflow=${metrics.docScrollWidth - metrics.viewport.width}px`);
+      if (!record.ok) {
+        console.log(`FAIL ${name} ${width}x${height}${dark ? ' dark' : ''} ${path}`);
+        for (const [key, value] of Object.entries(checks)) if (!value) console.log(`   - ${key}`);
+        if (metrics.clipped.length) console.log(`   clipped: ${JSON.stringify(metrics.clipped.slice(0, 4))}`);
+        if (metrics.overflowing.length) console.log(`   overflow: ${JSON.stringify(metrics.overflowing.slice(0, 4))}`);
+        if (metrics.rawKeys.length) console.log(`   raw keys: ${JSON.stringify(metrics.rawKeys)}`);
+      }
       return record;
     };
 
-    // --- Production console: the three real languages -----------------------
-    const bootstrapUrl = app.browserUrl;
-    await capture('i18n-p39-header-3lang-zh-CN-1440', {url: bootstrapUrl, width: 1440, height: 900});
+    const HEIGHTS = {1440: 900, 1024: 800, 820: 900, 390: 844};
 
-    const setLocale = async (locale) => {
-      const result = await evaluate(`fetch('/api/settings', {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({locale: ${JSON.stringify(locale)}})
-      }).then(async (response) => ({status: response.status, body: await response.json()}))`);
-      if (result.status !== 200) throw new Error(`PATCH locale failed: ${JSON.stringify(result)}`);
-      return result;
-    };
-    await setLocale('ja');
-    await capture('i18n-p39-header-3lang-ja-1440', {url: `${app.url}#/live`, width: 1440, height: 900});
-    await setLocale('en');
-    await capture('i18n-p39-header-3lang-en-1440', {url: `${app.url}#/live`, width: 1440, height: 900});
-    await setLocale('zh-CN');
-    await capture('i18n-p39-header-3lang-zh-CN-390', {url: `${app.url}#/live`, width: 390, height: 844, fullPage: false});
-
-    // --- Ten-language layout fixture ---------------------------------------
-    for (const width of [1440, 1024, 820, 390]) {
-      await capture(`i18n-p39-header-10lang-light-${width}`, {url: fixture.base, width, height: width <= 520 ? 844 : 900});
+    for (const locale of LOCALES) {
+      await setLocale(locale);
+      // Full measurement matrix (light) for every shipped language.
+      for (const width of WIDTHS) {
+        for (const route of ROUTES) {
+          await visit({
+            path: `${route.path}`,
+            width,
+            height: HEIGHTS[width],
+            dark: false,
+            name: `i18n-p40-${locale}-${route.id}-${width}`
+          });
+        }
+        await visit({
+          path: `#/history/${sessionId}`,
+          width,
+          height: HEIGHTS[width],
+          dark: false,
+          name: `i18n-p40-${locale}-session-${width}`
+        });
+        if (ALL_WIDTHS || width === 1440 || width === 390) {
+          for (const route of ROUTES.filter((entry) => ['live', 'ai', 'settings'].includes(entry.id))) {
+            await visit({
+              path: `${route.path}`,
+              width,
+              height: HEIGHTS[width],
+              dark: true,
+              name: `i18n-p40-${locale}-${route.id}-${width}-dark`
+            });
+          }
+        }
+      }
+      // Archived screenshots for the report (one per language).
+      await visit({
+        path: '#/live', width: 1440, height: 900, dark: false,
+        name: `i18n-p40-${locale}-live-1440-light`, screenshot: true
+      });
+      await visit({
+        path: '#/settings', width: 1440, height: 900, dark: true,
+        name: `i18n-p40-${locale}-settings-1440-dark`, screenshot: true
+      });
+      await visit({
+        path: '#/live', width: 390, height: 844, dark: false,
+        name: `i18n-p40-${locale}-live-390-light`, screenshot: true
+      });
+      await visit({
+        path: '#/ai', width: 1440, height: 900, dark: false,
+        name: `i18n-p40-${locale}-ai-1440-light`, screenshot: true
+      });
+      console.log(`done ${locale}: ${results.filter((entry) => entry.name.includes(`-${locale}-`)).length} page loads`);
     }
-    await capture('i18n-p39-header-10lang-dark-1440', {url: fixture.base, width: 1440, height: 900, dark: true});
 
-    const appRecords = results.filter((entry) => entry.name.includes('3lang'));
-    const fixtureRecords = results.filter((entry) => entry.name.includes('10lang'));
+    const byLocale = {};
+    for (const locale of LOCALES) {
+      const records = results.filter((entry) => entry.name.includes(`-${locale}-`));
+      byLocale[locale] = {
+        loads: records.length,
+        failed: records.filter((entry) => !entry.ok).length,
+        widths: [...new Set(records.map((entry) => entry.width))].sort((a, b) => b - a),
+        dark: records.some((entry) => entry.dark),
+        renderedLang: records[0]?.metrics.lang ?? null,
+        languageMode: records[0]?.metrics.languageMode ?? null,
+        heading: records[0]?.metrics.heading ?? null
+      };
+    }
     const summary = {
       generatedAt: new Date().toISOString(),
       browser: browserPath,
-      production: {
-        localeOrder: appRecords.map((entry) => entry.metrics.lang),
-        optionCounts: appRecords.map((entry) => entry.metrics.optionCount),
-        segmentedButtons: appRecords[0]?.metrics.segmentedButtons,
-        narrowUsesSelect: appRecords.find((entry) => entry.width === 390)?.metrics.selectVisible,
-        allOk: appRecords.every((entry) => entry.ok)
-      },
-      fixture: {
-        modes: fixtureRecords.map((entry) => entry.metrics.mode),
-        optionCounts: fixtureRecords.map((entry) => entry.metrics.optionCount),
-        widths: fixtureRecords.map((entry) => entry.width),
-        allOk: fixtureRecords.every((entry) => entry.ok)
-      },
+      url: app.url,
+      matrix: {locales: LOCALES, widths: WIDTHS, routes: ROUTES.map((entry) => entry.id), themes: ['light', 'dark']},
+      total: results.length,
+      failed: results.filter((entry) => !entry.ok).length,
+      byLocale,
       results
     };
     await writeFile(reportFile, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
-    if (!summary.production.allOk || !summary.fixture.allOk) {
-      console.error('FAIL: at least one layout check failed');
+    if (summary.failed > 0) {
+      console.error(`FAIL: ${summary.failed}/${summary.total} page loads violated the layout budget`);
       process.exitCode = 1;
     } else {
-      console.log(`PASS: ${results.length} real browser screenshots; report ${reportFile}`);
+      console.log(`PASS: ${summary.total} real browser page loads across ${LOCALES.length} languages; report ${reportFile}`);
     }
     cdp.socket.close();
   } catch (error) {
@@ -356,7 +505,6 @@ async function main() {
       await sleep(400);
     }
     try { await app.close(); } catch { /* ignore */ }
-    await new Promise((resolvePromise) => fixture.server.close(resolvePromise));
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         temp.cleanup();

@@ -7,7 +7,7 @@
  * readable. The prompt version is recorded per job and per package so a user can
  * tell which instructions produced a given result.
  */
-import {AVAILABLE_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
+import {AI_OUTPUT_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
 
 export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
 export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
@@ -34,8 +34,17 @@ export const MEMORY_VIEWERS_PER_BATCH = 200;
 export const MAX_MEMORY_EXCERPT_MESSAGES = 3000;
 export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
 
-/** Declared interface/AI languages; the list lives in shared/locales.mjs. */
-export const SUPPORTED_LOCALES = AVAILABLE_LOCALES;
+/**
+ * Declared AI output languages.
+ *
+ * This is the interface-language registry narrowed to the entries whose prompt
+ * set, result schema and translation target name really exist (`aiOutput`).
+ * P40 shipped ten *interface* languages but only three *analysis output*
+ * languages; sending `ko`/`de`/… to a provider is deliberately impossible until
+ * P41 adds their prompt and schema support. `promptVersionFor()` and every
+ * caller degrade to `DEFAULT_LOCALE` instead of inventing a locale.
+ */
+export const SUPPORTED_LOCALES = AI_OUTPUT_LOCALES;
 
 export function promptVersionFor(locale, mode = ANALYSIS_MODE.COMBINED) {
   const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE;

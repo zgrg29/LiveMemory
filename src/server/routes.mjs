@@ -3,12 +3,13 @@ import {dirname, join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
 import {
+  AI_OUTPUT_LOCALES,
   AVAILABLE_LOCALES,
+  aiOutputLocale,
   defaultLocaleFor,
   localeDescriptors,
   normalizeLocale,
-  resolveLocale,
-  SUPPORTED_LOCALES
+  resolveLocale
 } from '../shared/locale.mjs';
 import {
   serializeBatch,
@@ -186,7 +187,11 @@ function localePayload(deps) {
   return {
     default: defaultLocaleFor(available),
     system: deps.systemLocale ?? null,
-    available: localeDescriptors(available)
+    available: localeDescriptors(available),
+    // AI output/translation languages are a capability subset of the interface
+    // registry (`aiOutput`), not a second list: P40 shipped ten interface
+    // languages while prompts still exist for three.
+    aiOutput: localeDescriptors(AI_OUTPUT_LOCALES)
   };
 }
 
@@ -1655,7 +1660,11 @@ export function buildRoutes() {
         if (summary.stats.messages === 0) {
           throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
         }
-        const locale = normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        // The interface language may be `ko`/`de`/… while the AI prompt set only
+        // exists for the `aiOutput` subset: narrow before it reaches a provider.
+        const locale = aiOutputLocale(
+          normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale)
+        );
         try {
           const status = await deps.analysisRunner.start({
             sessionId,
@@ -1774,7 +1783,7 @@ export function buildRoutes() {
       handler: ({res, params, url, deps}) => {
         const requested = url.searchParams.get('locale');
         const locale = requested ? normalizeLocale(requested) : null;
-        if (requested && (!locale || !SUPPORTED_LOCALES.includes(locale))) {
+        if (requested && (!locale || !AI_OUTPUT_LOCALES.includes(locale))) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: requested},
@@ -1801,7 +1810,7 @@ export function buildRoutes() {
         }
         const requested = url.searchParams.get('locale');
         const locale = requested ? normalizeLocale(requested) : null;
-        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+        if (!locale || !AI_OUTPUT_LOCALES.includes(locale)) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: requested},
@@ -1827,7 +1836,7 @@ export function buildRoutes() {
         }
         const body = await readJsonBody(req);
         const locale = normalizeLocale(body.locale);
-        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+        if (!locale || !AI_OUTPUT_LOCALES.includes(locale)) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: body.locale ?? null},
@@ -1960,9 +1969,14 @@ export function buildRoutes() {
           throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
         }
         const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        // Same narrowing as session analysis: memory prompts exist for the
+        // `aiOutput` subset only, so an unsupported interface language degrades
+        // to a supported one instead of being sent to the provider.
+        const locale = aiOutputLocale(
+          requested && requested !== 'system'
+            ? requested
+            : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale)
+        );
         let created;
         try {
           created = await createMemoryUpdateJob({

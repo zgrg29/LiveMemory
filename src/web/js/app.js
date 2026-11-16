@@ -3,6 +3,7 @@ import {establishSession} from './auth.js';
 import {loadDictionary, createTranslator} from './i18n.js';
 import {renderLanguageControl} from './language-control.js';
 import {
+  AI_OUTPUT_LOCALES,
   AVAILABLE_LOCALES,
   DEFAULT_LOCALE,
   localeDescriptors,
@@ -59,6 +60,17 @@ function on(name, handler) {
 
 const view = document.getElementById('view');
 const pageTitleEl = document.getElementById('page-title');
+
+/**
+ * The compact top bar repeats the page name above the content. In German or
+ * French that label is wider than the narrow-screen top bar can give it, so the
+ * element keeps an ellipsis but always carries the full text as its title (and
+ * the same string is rendered in full by the page header below).
+ */
+function setPageTitle(text) {
+  pageTitleEl.textContent = text;
+  pageTitleEl.title = text;
+}
 const connectionPill = document.getElementById('connection-pill');
 const connectionText = document.getElementById('connection-text');
 const toaster = createToaster(document.getElementById('toasts'));
@@ -144,7 +156,7 @@ async function renderRoute() {
   clear(view);
   if (!route) {
     setActiveNav(null);
-    pageTitleEl.textContent = 'LiveMemory';
+    setPageTitle('LiveMemory');
     view.append(emptyState({
       title: t('errors.notFound'),
       body: t('errors.generic'),
@@ -154,7 +166,7 @@ async function renderRoute() {
     return;
   }
   setActiveNav(route.nav);
-  pageTitleEl.textContent = t(route.page.titleKey);
+  setPageTitle(t(route.page.titleKey));
   document.title = `LiveMemory · ${t(route.page.titleKey)}`;
   try {
     const result = await route.page.render(view, ctx, params, query);
@@ -392,7 +404,7 @@ async function renderAuthError(auth) {
   const message = auth?.code === 'NETWORK'
     ? t('errors.network')
     : (auth?.code === 'AUTH_INVALID' ? t('auth.invalid') : t('auth.body'));
-  pageTitleEl.textContent = t('auth.title');
+  setPageTitle(t('auth.title'));
   connectionPill.dataset.state = 'idle';
   connectionText.textContent = t('status.idle');
   clear(view);
@@ -427,6 +439,11 @@ async function boot() {
     state.locales = Array.isArray(bootstrap.locales?.available) && bootstrap.locales.available.length > 0
       ? bootstrap.locales.available
       : localeDescriptors(AVAILABLE_LOCALES);
+    // AI output/translation languages are the `aiOutput` subset of the same
+    // registry: ten interface languages must not imply ten analysis languages.
+    state.aiLocales = Array.isArray(bootstrap.locales?.aiOutput) && bootstrap.locales.aiOutput.length > 0
+      ? bootstrap.locales.aiOutput
+      : localeDescriptors(AI_OUTPUT_LOCALES);
     applyTheme(bootstrap.settings.theme);
     await applyLocale(bootstrap.effective.locale);
     wireShell();

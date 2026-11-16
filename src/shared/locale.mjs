@@ -14,6 +14,7 @@
  * missing dictionary degrades instead of leaving a blank console.
  */
 import {
+  AI_OUTPUT_LOCALES,
   AVAILABLE_LOCALES,
   DEFAULT_LOCALE,
   LOCALE_PREFERENCE_SYSTEM,
@@ -27,6 +28,7 @@ import {
 } from './locales.mjs';
 
 export {
+  AI_OUTPUT_LOCALES,
   AVAILABLE_LOCALES,
   DEFAULT_LOCALE,
   LOCALE_PREFERENCE_SYSTEM,
@@ -107,4 +109,19 @@ export function detectSystemLocale(env = process.env, options = {}) {
 
 export function isSupportedLocale(value) {
   return SUPPORTED_LOCALES.includes(value);
+}
+
+/**
+ * Narrow an interface language onto a language the AI output really supports.
+ *
+ * P40 ship ten interface languages but only the `aiOutput` subset has prompts,
+ * result schemas and translation target names. Callers use this before a locale
+ * reaches a provider, so an unsupported language can never be sent: the closest
+ * family member is used when one exists (`zh-TW` → `zh-CN`, `pt-PT` → `en`),
+ * otherwise the default language.
+ */
+export function aiOutputLocale(value, {fallback = DEFAULT_LOCALE} = {}) {
+  const resolved = resolveLocaleTag(value, {available: AI_OUTPUT_LOCALES});
+  if (resolved) return resolved;
+  return AI_OUTPUT_LOCALES.includes(fallback) ? fallback : (AI_OUTPUT_LOCALES[0] ?? DEFAULT_LOCALE);
 }

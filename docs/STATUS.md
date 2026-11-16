@@ -1,8 +1,94 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**P39 / I18N-M0 完成**：单一语言清单 + 可用性降级 + 动态语言选择器；仍只有三语；1060 测试通过；EXE Build ID `18df5c272a98`；**未 Push / 未 Tag / 未 Release**）
+最后更新：2026-11-16（**P40 / I18N-M1 完成**：新增七种界面语言并完成**十语言界面 + 启动器**；
+AI 输出语言仍三种；**未 Push / 未 Tag / 未 Release**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.48 P40 / I18N-M1 十语言界面与启动器（2026-11-16）✅ 未发布
+
+用户要求「在保留现有三种语言的基础上新增七种语言，完成十语言界面和启动器的国际化」。
+本轮完成开发、自动化回归、真实浏览器十语言布局验收与 Windows EXE 验收。
+**未改五平台采集、AI 任务调度/结构化输出/恢复、长期画像合并去重、数据库 Schema、原始弹幕保存、
+翻译缓存业务语义；未提前实现 P41；未 Push、未 Tag、未 Release。**
+
+### 0.48.1 本轮实际完成
+
+| 目标 | 结果 |
+| --- | --- |
+| 术语表 | **新增** `docs/i18n/GLOSSARY.md`：50 个核心术语 × 10 语言、18 个界面动作词、10 份语言风格卡、不翻译清单、机器门禁清单 |
+| 七份新字典 | `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`，每份 **2,265** 个叶子键 |
+| 键集/占位符 | 十份字典相对 `en.json` 缺失 **0**、多余 **0**、占位符差异 **0**、空值 **0** |
+| 不新增无关键 | 语言名只来自注册表；`settings.language` 恒为 10 个历史键，字典键数保持 **2,265** |
+| 注册表 | 10 条 + 新增 **`aiOutput`** 能力位；`AI_OUTPUT_LOCALES = zh-CN/ja/en` 由同一注册表派生 |
+| 选择器 | Header/设置页十语言；3 项仍为分段按钮、10 项自动原生下拉；原生名只用该语言自身文字 |
+| 系统识别 | `zh-HK`/`zh-MO`/`zh-Hant` → **`zh-TW`**；`pt-PT` → **`pt-BR`**；`in` → `id`；`de`/`fr`/`ko`/`es`/`id` 直命中；未知 → `en` |
+| 持久化 | 十语言可保存、重启后保持；旧三语配置（`zh-CN`/`ja`/`en`）原样加载并生效 |
+| 启动器 | `cli-i18n.mjs` 十套消息（61 键/语言）；`--lang` 接受十码与地区变体；`{locales}` 由注册表填充；ASCII 安全回退；SEA 引导器十语言失败消息 |
+| AI 安全 | 分析/记忆任务 locale、报告/翻译只读接口、结果 Schema `enum` 全部收窄到 `AI_OUTPUT_LOCALES`；未支持语言**永不**发往 Provider |
+
+### 0.48.2 关键设计决定
+
+1. **界面语言 ≠ AI 输出语言**：十语言是界面语言的完成。注册表新增 `aiOutput` 布尔位，
+   `AVAILABLE_LOCALES`（10）与 `AI_OUTPUT_LOCALES`（3）**同源派生**，不是第二份清单。
+2. **路由层收窄**：`/api/ai/analyze/run`、`/api/memory/jobs` 经 `aiOutputLocale()` 归一
+   （同族优先，例如 `zh-TW`→`zh-CN`，否则 `en`），因此任务行写入的 `locale` 一定是受支持语言；
+   报告/翻译接口对 `de` 等返回 400 而不是进入不存在的提示词。
+3. **字典键数不变**：P39 已把原生语言名集中到注册表，设置页/Header 从 bootstrap 渲染；
+   本轮**没有**给七种新语言加 `settings.language.*` 键，2,265 键契约与「不新增无关键」同时成立。
+4. **启动器 ASCII 回退**：控制台无法 UTF-8 时改用英文 ASCII 消息集并把非 ASCII 折叠为 `?`；
+   写入失败不会中止启动；`console.ready` 记录 `asciiFallback`。
+5. **翻译流程**：`en.json` 为源 + `zh-CN.json` 参照 → 10 个章节对齐批次 → 每批机器门禁必须 PASS →
+   按 `en.json` 结构与键序合并 → 字典级门禁 → 逐语言审校。
+
+### 0.48.2 自动化与真实 UI（本机真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **722 passed / 0 failed / 0 skipped** |
+| 全量集成 `… "tests/integration/*.test.mjs"` | **350 passed / 0 failed / 0 skipped** |
+| 合计 | **1072 passed / 0 failed / 0 skipped** |
+| 字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × **2,265** 键；键集缺失 0 / 多余 0；占位符差异 0；空值 0；未解析键 0 |
+| 英文残留 | 逐语言列出「与英文完全相同」的键并逐条审阅 → `tests/fixtures/i18n-same-as-english.json`（占位符/URL/品牌/同形词）；未列入即失败；该白名单本身也被断言「不得包含已翻译的键」 |
+| 真实浏览器 `node scripts/verify-i18n-ui.mjs` | **380/380 页面加载 PASS**：10 语言 × 1440/1024/820/390 × 亮/暗 × 主要页面；**40 张截图** |
+| 布局断言 | 无横向溢出、无控件出视口、语言控件不覆盖主题按钮、界面标签不被截断 |
+| `scripts/verify-exe.mjs` | **11/11**（含「共享注册表 + 十字典 + `aiOutput` 子集 + 动态控件」） |
+| `scripts/verify-help-exe.mjs` | **14/14**（十语言使用说明 112 键 × 10，九大主题逐语言齐全） |
+
+- 截图：`docs/screenshots/i18n-p40-<locale>-{live-1440-light,settings-1440-dark,live-390-light,ai-1440-light}.png`（10 语言 × 4）。
+- 真实浏览器验收需要一次性 `danger-full-access`（沙箱禁止 Chromium 的 mojo 命名管道），已在日志中如实记录；
+  这不代表产品需要提权，也不代表已在干净 Windows 账户验收。
+- 本轮发现并修复的**真实布局缺陷**（由十语言实测暴露，不是猜测）：
+  1. 统计卡 `.stat-label` / `.stat-sub` 的 `nowrap + ellipsis` 导致法语/德语/韩语标签被截断 → 改为换行；
+  2. 「＋ 新建记录」按钮复用 `.recording-tab-label` 的 145px 上限，德语 `Neue Aufzeichnung` 被截断 → 该按钮标签不再限宽；
+  3. 侧栏品牌标语 `.brand-tagline` 单行省略 → 允许两行；
+  4. 窄屏顶栏 `.topbar-title` 在 390px 下德语 `Einstellungen` 被截断 → 顶栏保留省略号但**补 `title` 全文**，
+     且同一文案在页面正文标题（`.page-title`）中始终完整显示。
+- 审校：七种新语言各一轮「原生读者」审校，共修正 **284** 键（ko 44 / es 35 / pt-BR 15 / zh-TW 101 /
+  fr 17 / de 41 / id 31），审校后门禁全部 PASS。**无母语签收人**。
+
+<!-- P40-STATUS-RESULTS -->
+
+
+### 0.48.3 Windows EXE
+
+<!-- P40-STATUS-EXE -->
+
+### 0.48.4 明确未做 / 遗留
+
+- AI 输出语言仍只有 `zh-CN` / `ja` / `en`：未扩提示词、记忆提示词、结果 Schema、翻译目标（P41）。
+- **没有**新增 `aiOutputLocale` 设置；任务语言快照语义未变；翻译缓存业务语义未变。
+- 未改五平台采集、AI 调度/恢复、长期画像合并去重、数据库 Schema、原始弹幕保存。
+- 未新增任何直播平台；未改备份格式。
+- SEA 引导器保留自包含消息表（解压前无法 import 注册表），其语言码由测试与注册表比对。
+- 真实双击 UAC、干净 Windows 账户仍未人工验证。
+- 翻译质量口径：机器门禁 + 逐语言审校 + 抽样人工检查；**没有母语签收人**，不声称做过母语终审。
+- 发现一处**既有**文案与实现不一致（不在本轮范围，未改）：`help.sections.connect` /
+  `start` 仍写「不需要管理员权限」，而正式 EXE 自 RC0 起为 `requireAdministrator`。
+
+### 0.48.5 Git
+
+<!-- P40-STATUS-GIT -->
 
 ## 0.47 P39 / I18N-M0 国际化基础架构整理（2026-11-16）✅ 未发布
 

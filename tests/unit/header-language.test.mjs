@@ -10,7 +10,6 @@ import {
   languageOptions,
   renderLanguageControl
 } from '../../src/web/js/language-control.js';
-import {TEN_LOCALE_FIXTURE} from '../fixtures/locales-10.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const LOCALES = AVAILABLE_LOCALES;
@@ -90,9 +89,18 @@ test('language names are always rendered in their own language', () => {
   assert.equal(localeDisplayName('zh-CN'), '简体中文');
   assert.equal(localeDisplayName('ja'), '日本語');
   assert.equal(localeDisplayName('en'), 'English');
+  // P40: the seven new languages are real, so their native names come from the
+  // same registry and are never translated by the current interface language.
+  assert.equal(localeDisplayName('ko'), '한국어');
+  assert.equal(localeDisplayName('es'), 'Español');
+  assert.equal(localeDisplayName('pt-BR'), 'Português (Brasil)');
+  assert.equal(localeDisplayName('zh-TW'), '繁體中文');
+  assert.equal(localeDisplayName('fr'), 'Français');
+  assert.equal(localeDisplayName('de'), 'Deutsch');
+  assert.equal(localeDisplayName('id'), 'Bahasa Indonesia');
   // Unknown values fall back to the English native name rather than to a
   // translated string from the current interface language.
-  assert.equal(localeDisplayName('de'), 'English');
+  assert.equal(localeDisplayName('th-TH'), 'English');
 });
 
 test('the header contains both language controls next to the theme control', async () => {
@@ -111,7 +119,7 @@ test('the header contains both language controls next to the theme control', asy
   assert.doesNotMatch(app, /localeDisplayName/);
 });
 
-test('language and data-management interface keys exist in all three languages', async () => {
+test('language and data-management interface keys exist in all ten languages', async () => {
   for (const locale of LOCALES) {
     const dict = await dictionary(locale);
     assert.ok(dict.a11y.languageSelect);
@@ -121,17 +129,25 @@ test('language and data-management interface keys exist in all three languages',
     assert.ok(dict.settings.danger?.clearTitle);
     assert.ok(dict.errors.relocationVerifyFailed);
     assert.ok(dict.errors.confirmTextMismatch);
-    // The three language names are stored natively in every dictionary.
+    // The three legacy native-name keys keep their exact text in every
+    // dictionary. The seven new languages are named by the registry only, so no
+    // dictionary key was added and the 2,265-key contract is unchanged.
     assert.equal(dict.settings.language.zh, '简体中文');
     assert.equal(dict.settings.language.ja, '日本語');
     assert.equal(dict.settings.language.en, 'English');
+    assert.equal(dict.settings.language.ko, undefined);
+    assert.equal(dict.settings.language.de, undefined);
   }
 });
 
-test('the current three languages keep the segmented interaction', () => {
-  const locales = localeDescriptors(AVAILABLE_LOCALES);
-  assert.equal(languageControlMode(locales), 'segmented');
-  const rendered = render(locales, 'ja');
+test('a three-item registry still uses the segmented interaction', () => {
+  const three = [
+    {code: 'zh-CN', nativeName: '简体中文'},
+    {code: 'ja', nativeName: '日本語'},
+    {code: 'en', nativeName: 'English'}
+  ];
+  assert.equal(languageControlMode(three), 'segmented');
+  const rendered = render(three, 'ja');
   assert.equal(rendered.mode, 'segmented');
   assert.equal(rendered.rootNode.dataset.mode, 'segmented');
   assert.equal(rendered.segmented.children.length, 3);
@@ -151,16 +167,22 @@ test('the current three languages keep the segmented interaction', () => {
   assert.equal(rendered.systemButton.getAttribute('aria-pressed'), 'false');
 });
 
-test('ten installed languages switch to the compact menu at every width', () => {
-  assert.equal(languageControlMode(TEN_LOCALE_FIXTURE), 'menu');
-  const rendered = render(TEN_LOCALE_FIXTURE, 'pt-BR');
+test('the shipped ten languages use the compact menu at every width', () => {
+  const locales = localeDescriptors(AVAILABLE_LOCALES);
+  assert.equal(locales.length, 10);
+  assert.equal(languageControlMode(locales), 'menu');
+  const rendered = render(locales, 'pt-BR');
   assert.equal(rendered.mode, 'menu');
   assert.equal(rendered.rootNode.dataset.mode, 'menu');
   assert.equal(rendered.select.children.length, 11);
   assert.equal(rendered.select.value, 'pt-BR');
   assert.deepEqual(
     rendered.select.children.map((node) => node.textContent),
-    ['系统语言', ...TEN_LOCALE_FIXTURE.map((entry) => entry.nativeName)]
+    ['系统语言', ...locales.map((entry) => entry.nativeName)]
+  );
+  assert.deepEqual(
+    rendered.select.children.slice(1).map((node) => node.value),
+    ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id']
   );
   // Every option carries its own lang so a screen reader uses native names.
   for (const node of rendered.select.children.slice(1)) assert.ok(node.lang);
@@ -177,12 +199,12 @@ test('three long native names also use the compact menu', () => {
 
 test('the control does not invent an option for an unavailable preference', () => {
   const locales = localeDescriptors(AVAILABLE_LOCALES);
-  const rendered = render(locales, 'zh-TW');
+  const rendered = render(locales, 'th-TH');
   // The stored preference is preserved server-side; the visible control shows
   // the system option rather than silently claiming another language.
   assert.equal(rendered.select.value, 'system');
   assert.equal(rendered.select.dataset.preference, 'unavailable');
-  assert.ok(!languageOptions(locales, {systemLabel: 'System'}).some((entry) => entry.value === 'zh-TW'));
+  assert.ok(!languageOptions(locales, {systemLabel: 'System'}).some((entry) => entry.value === 'th-TH'));
 });
 
 test('choosing a language calls the single change callback', () => {

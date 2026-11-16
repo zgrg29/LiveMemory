@@ -218,14 +218,14 @@ async function main() {
       && /@media \(max-width: 700px\)[\s\S]*?\.help-terms \{\s*grid-template-columns: 1fr;/.test(pagesCss.text));
 
     const dictionaries = {};
-    for (const locale of ['zh-CN', 'ja', 'en']) {
+    for (const locale of ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id']) {
       const response = await httpGet(new URL(`/i18n/${locale}.json`, base).href);
       dictionaries[locale] = response.status === 200 ? response.json : null;
     }
     const reference = dictionaries.en?.help;
     const parityOk = Object.values(dictionaries).every((dictionary) => dictionary?.help
       && JSON.stringify(collectKeys(dictionary.help)) === JSON.stringify(collectKeys(reference)));
-    record('all three packaged dictionaries expose the same guide keys', pathsOk(dictionaries) && parityOk, [
+    record('all ten packaged dictionaries expose the same guide keys', pathsOk(dictionaries) && parityOk, [
       `keys: ${collectKeys(reference).length}`
     ]);
 

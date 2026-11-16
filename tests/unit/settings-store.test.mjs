@@ -12,7 +12,9 @@ test('default settings follow the system for language and theme', () => {
   assert.equal(DEFAULT_SETTINGS.storageMode, 'compact');
   assert.equal(Object.hasOwn(DEFAULT_SETTINGS, 'youtubeCaptureMode'), false);
   assert.equal(normalizeSettings({}).locale, 'system');
-  assert.equal(normalizeSettings({locale: 'fr'}).locale, 'system');
+  // P40: `fr` is a shipped language now; an unknown one still falls back.
+  assert.equal(normalizeSettings({locale: 'fr'}).locale, 'fr');
+  assert.equal(normalizeSettings({locale: 'th-TH'}).locale, 'system');
   assert.equal(normalizeSettings({theme: 'neon'}).theme, 'system');
   // A legacy capture-mode value from an older settings file is ignored, not
   // resurrected as a hidden second YouTube mode.
@@ -85,7 +87,8 @@ test('updates are persisted atomically and validated', () => {
   assert.equal(reloaded.load().theme, 'dark');
 
   assert.throws(() => store.update({theme: 'neon'}), /SETTINGS_INVALID/);
-  assert.throws(() => store.update({locale: 'ko-KR'}), /SETTINGS_INVALID/);
+  // Ten languages are accepted; a language the product does not ship is not.
+  assert.throws(() => store.update({locale: 'th-TH'}), /SETTINGS_INVALID/);
   assert.throws(() => store.update({storageMode: 'eternal'}), /SETTINGS_INVALID/);
   assert.throws(() => store.update({unknownKey: 1}), /SETTINGS_INVALID/);
   assert.throws(() => store.update({preferredPort: 70000}), /SETTINGS_INVALID/);

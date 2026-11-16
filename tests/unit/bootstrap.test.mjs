@@ -83,8 +83,10 @@ test('extraction rejects path traversal inside the manifest', async () => {
   temp.cleanup();
 });
 
-test('the failure text is localised and mentions the log file', () => {
-  for (const locale of ['zh-CN', 'ja', 'en']) {
+test('the failure text is localised in all ten languages and mentions the log file', () => {
+  const codes = ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id'];
+  assert.deepEqual(Object.keys(bootstrap.MESSAGES), codes);
+  for (const locale of codes) {
     const text = bootstrap.buildFatalText({
       locale,
       error: Object.assign(new Error('disk on fire'), {code: 'EIO'}),
@@ -93,18 +95,32 @@ test('the failure text is localised and mentions the log file', () => {
       dataDir: 'C:/data',
       appRoot: null
     });
-    assert.ok(text.includes('C:/logs/bootstrap.log'));
-    assert.ok(text.includes('EIO'));
-    assert.ok(text.includes('app-root.extract'));
-    assert.ok(text.includes(bootstrap.MESSAGES[locale].title));
+    assert.ok(text.includes('C:/logs/bootstrap.log'), locale);
+    assert.ok(text.includes('EIO'), locale);
+    assert.ok(text.includes('app-root.extract'), locale);
+    for (const key of Object.keys(bootstrap.MESSAGES.en)) {
+      assert.equal(typeof bootstrap.MESSAGES[locale][key], 'string', `${locale}.${key}`);
+      assert.ok(bootstrap.MESSAGES[locale][key].trim().length > 0, `${locale}.${key} is empty`);
+    }
+    // Placeholders are identical to the English set in every language.
+    const placeholders = (value) => [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+    for (const key of Object.keys(bootstrap.MESSAGES.en)) {
+      assert.equal(placeholders(bootstrap.MESSAGES[locale][key]), placeholders(bootstrap.MESSAGES.en[key]), `${locale}.${key}`);
+    }
   }
 });
 
-test('locale selection prefers env, then saved settings, then the OS locale', () => {
+test('bootstrap locale selection understands every shipped language family', () => {
   assert.equal(bootstrap.pickLocale({env: {LIVE_MEMORY_LANG: 'ja'}}), 'ja');
   assert.equal(bootstrap.pickLocale({env: {}, settingsText: JSON.stringify({locale: 'en'})}), 'en');
   assert.equal(bootstrap.pickLocale({env: {}, settingsText: 'not json', intlLocale: 'zh-CN'}), 'zh-CN');
-  assert.equal(bootstrap.pickLocale({env: {}, intlLocale: 'de-DE'}), 'en');
+  assert.deepEqual(
+    ['de-DE', 'fr-FR', 'ko-KR', 'es-419', 'pt-PT', 'zh-HK', 'zh-Hant', 'id-ID', 'th-TH']
+      .map((tag) => bootstrap.pickLocale({env: {}, intlLocale: tag})),
+    ['de', 'fr', 'ko', 'es', 'pt-BR', 'zh-TW', 'zh-TW', 'id', 'en']
+  );
+  assert.equal(bootstrap.normalizeLocale('zh-MO'), 'zh-TW');
+  assert.equal(bootstrap.normalizeLocale('in-ID'), 'id');
 });
 
 test('a reused extraction with modified files is detected and re-extracted', async () => {

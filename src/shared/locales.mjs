@@ -37,7 +37,8 @@ export const LOCALE_REGISTRY = freeze([
     language: 'zh',
     script: 'Hans',
     regions: freeze(['CN', 'SG', 'MY']),
-    available: true
+    available: true,
+    aiOutput: true
   }),
   freeze({
     code: 'ja',
@@ -46,7 +47,8 @@ export const LOCALE_REGISTRY = freeze([
     language: 'ja',
     script: null,
     regions: freeze(['JP']),
-    available: true
+    available: true,
+    aiOutput: true
   }),
   freeze({
     code: 'en',
@@ -55,13 +57,95 @@ export const LOCALE_REGISTRY = freeze([
     language: 'en',
     script: null,
     regions: freeze(['US', 'GB', 'AU', 'CA', 'NZ', 'IE']),
-    available: true
+    available: true,
+    aiOutput: true
+  }),
+  freeze({
+    code: 'ko',
+    nativeName: '한국어',
+    englishName: 'Korean',
+    language: 'ko',
+    script: null,
+    regions: freeze(['KR']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'es',
+    nativeName: 'Español',
+    englishName: 'Spanish',
+    language: 'es',
+    script: null,
+    regions: freeze(['ES', 'MX', 'AR', 'CO', 'CL', 'PE', 'VE', 'UY', 'US']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'pt-BR',
+    nativeName: 'Português (Brasil)',
+    englishName: 'Brazilian Portuguese',
+    language: 'pt',
+    script: null,
+    regions: freeze(['BR']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'zh-TW',
+    nativeName: '繁體中文',
+    englishName: 'Traditional Chinese',
+    language: 'zh',
+    script: 'Hant',
+    regions: freeze(['TW', 'HK', 'MO']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'fr',
+    nativeName: 'Français',
+    englishName: 'French',
+    language: 'fr',
+    script: null,
+    regions: freeze(['FR', 'BE', 'CA', 'CH', 'LU', 'MC']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'de',
+    nativeName: 'Deutsch',
+    englishName: 'German',
+    language: 'de',
+    script: null,
+    regions: freeze(['DE', 'AT', 'CH', 'LU', 'LI']),
+    available: true,
+    aiOutput: false
+  }),
+  freeze({
+    code: 'id',
+    nativeName: 'Bahasa Indonesia',
+    englishName: 'Indonesian',
+    language: 'id',
+    script: null,
+    regions: freeze(['ID']),
+    available: true,
+    aiOutput: false
   })
 ]);
 
 /** Codes of the declared (shipped) interface languages, in selector order. */
 export const AVAILABLE_LOCALES = freeze(
   LOCALE_REGISTRY.filter((entry) => entry.available).map((entry) => entry.code)
+);
+
+/**
+ * Languages the *AI output* can be produced in. This is deliberately narrower
+ * than the interface list until the prompt set, the result schema and the
+ * translation target names exist for a language (P41). A language without
+ * `aiOutput: true` is never sent to a provider as an analysis language; the
+ * callers fall back to `DEFAULT_LOCALE` instead of inventing a locale.
+ */
+export const AI_OUTPUT_LOCALES = freeze(
+  LOCALE_REGISTRY.filter((entry) => entry.aiOutput).map((entry) => entry.code)
 );
 
 /** Legacy BCP-47 language subtags that are still accepted as aliases. */

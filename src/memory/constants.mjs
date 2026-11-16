@@ -1,5 +1,5 @@
 import {DAY} from '../shared/time.mjs';
-import {AVAILABLE_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
+import {AI_OUTPUT_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
 
 /**
  * Versioned constants for the long-term memory round trip (M7).
@@ -20,10 +20,14 @@ export function memoryPromptVersionFor(locale) {
 }
 
 /**
- * AI memory-task languages. The list is the shared interface-language registry;
- * a memory task never invents a language that the product does not support.
+ * AI memory-task output languages.
+ *
+ * Like the session-analysis list this is the interface registry narrowed to the
+ * languages that actually have a memory prompt and result schema (`aiOutput`).
+ * P40 added ten interface languages but no new memory prompt: a `ko` request
+ * falls back to `DEFAULT_LOCALE` instead of reaching a provider.
  */
-export const SUPPORTED_MEMORY_LOCALES = AVAILABLE_LOCALES;
+export const SUPPORTED_MEMORY_LOCALES = AI_OUTPUT_LOCALES;
 
 /** Atomic knowledge kinds. Deliberately small: everything else is `other`. */
 export const MEMORY_KIND = Object.freeze({
