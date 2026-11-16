@@ -2,7 +2,7 @@ import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
 import {PlatformAdapter, CONNECTION_STATE} from '../shared/adapter.mjs';
 import {TIKTOK_ERRORS, TikTokError} from './errors.mjs';
-import {decodeWebcastResponse, mapTikTokMessage} from './messages.mjs';
+import {decodeFetchResult, decodePushFrame, decodeWebcastResponse, mapTikTokMessage} from './messages.mjs';
 import {
   BROWSER_MARKER,
   buildBrowserArgs,
@@ -187,6 +187,29 @@ export function decodeFramePayload(base64) {
     /* not gzip */
   }
   for (const candidate of attempts) {
+    // Current TikTok web player: PushFrame -> payloadType 'msg' -> gzip
+    // ProtoMessageFetchResult. Decode the envelope before the batch; parsing
+    // the PushFrame as a batch silently yielded zero messages.
+    try {
+      const frame = decodePushFrame(candidate);
+      if (frame?.payloadType === 'msg' && frame.payload?.length) {
+        let payload = frame.payload;
+        try {
+          payload = gunzipSync(payload);
+        } catch {
+          /* payload may be uncompressed */
+        }
+        try {
+          const decoded = decodeFetchResult(payload);
+          if (decoded.messages.length > 0) return decoded.messages;
+        } catch {
+          /* try the classic batch below */
+        }
+      }
+    } catch {
+      /* not a PushFrame */
+    }
+    // Older/alternative web builds send the batch directly (or gzip it).
     try {
       const decoded = decodeWebcastResponse(candidate);
       if (decoded.messages.length > 0) return decoded.messages;
@@ -214,6 +237,7 @@ export class BrowserSession {
     fetchImpl = globalThis.fetch,
     launchTimeoutMs = 25000,
     loginWaitMs = 20000,
+    refusedGraceMs = 6000,
     env = process.env
   } = {}) {
     this.uniqueId = uniqueId;
@@ -227,6 +251,7 @@ export class BrowserSession {
     this.fetchImpl = fetchImpl;
     this.launchTimeoutMs = launchTimeoutMs;
     this.loginWaitMs = loginWaitMs;
+    this.refusedGraceMs = refusedGraceMs;
     this.env = env;
     this.cdp = null;
     this.sessionId = null;
@@ -235,6 +260,8 @@ export class BrowserSession {
     this.port = null;
     this.profileDir = null;
     this.roomEnterStatus = null;
+    this.roomEnterAt = null;
+    this.refusedGraceMs = 6000;
     this.frameCount = 0;
     this.decodedCount = 0;
     this.closed = false;
@@ -243,6 +270,7 @@ export class BrowserSession {
     this.launchKind = null;
     this.onFrame = () => {};
     this.onClose = () => {};
+    this.onRoomStatus = () => {};
   }
 
   async launch() {
@@ -390,11 +418,17 @@ export class BrowserSession {
       const url = String(params?.response?.url ?? '');
       if (url.includes('/webcast/room/enter/')) {
         this.roomEnterStatus = Number(params.response.status);
+        this.roomEnterAt = this.now();
         this.logger?.info({
           event: 'tiktok.browser.room_enter',
           status: this.roomEnterStatus,
           uniqueId: this.uniqueId
         });
+        try {
+          this.onRoomStatus?.({status: this.roomEnterStatus, at: this.roomEnterAt});
+        } catch {
+          /* a status listener must not break the network listener */
+        }
       }
       return;
     }
@@ -419,9 +453,18 @@ export class BrowserSession {
     }
   }
 
-  /** True when the page itself was refused room entry, i.e. login is required. */
-  requiresLogin() {
+  /**
+   * A 403 on the page's optional room-entry call is not proof that the account
+   * is logged out: the web player can still keep its event socket open. The
+   * relay must wait for the socket, not abort on this single HTTP response.
+   */
+  roomAccessRefused() {
     return this.roomEnterStatus === 403;
+  }
+
+  /** Kept for callers that used the old name; room entry is not a login test. */
+  requiresLogin() {
+    return false;
   }
 
   isAlive() {
@@ -431,13 +474,30 @@ export class BrowserSession {
   async waitForReady({timeoutMs = this.loginWaitMs} = {}) {
     const startedAt = this.now();
     for (;;) {
-      if (this.closed || !this.isAlive()) return {closed: true, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
-      if (this.requiresLogin()) return {closed: false, loginRequired: true, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
-      if (this.decodedCount > 0 || this.roomEnterStatus === 200) {
-        return {closed: false, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      if (this.closed || !this.isAlive()) return {closed: true, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus, roomRefused: false};
+      // Real frames always win: a 403 from the room-entry HTTP call must not
+      // discard a working WebSocket stream.
+      if (this.decodedCount > 0) {
+        return {closed: false, loginRequired: false, roomRefused: this.roomAccessRefused(), events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      }
+      if (this.roomEnterStatus === 200) {
+        return {closed: false, loginRequired: false, roomRefused: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
+      }
+      if (this.roomAccessRefused() && this.roomEnterAt !== null && this.now() - this.roomEnterAt >= this.refusedGraceMs) {
+        // Give the socket a short grace period after the HTTP refusal. If no
+        // frame arrives, report the room as refused instead of pretending the
+        // capture is healthy.
+        return {closed: false, loginRequired: false, roomRefused: true, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus};
       }
       if (this.now() - startedAt >= timeoutMs) {
-        return {closed: false, loginRequired: false, events: this.decodedCount, roomEnterStatus: this.roomEnterStatus, timedOut: true};
+        return {
+          closed: false,
+          loginRequired: false,
+          roomRefused: this.roomAccessRefused(),
+          events: this.decodedCount,
+          roomEnterStatus: this.roomEnterStatus,
+          timedOut: true
+        };
       }
       await new Promise((resolve) => {
         const timer = setTimeout(resolve, 250);
@@ -498,15 +558,31 @@ export class BrowserSession {
 
 function captureCategory(state, detail) {
   if (state === CONNECTION_STATE.CONNECTED) {
-    return detail?.eventsVerified ? 'normal' : 'waiting_events';
+    if (detail?.eventsVerified) return 'normal';
+    if (detail?.roomEnterStatus === 200) return 'waiting_events';
+    return 'room_unconfirmed';
   }
   if (state === CONNECTION_STATE.RECONNECTING) return 'auto_reconnect';
   if (state === CONNECTION_STATE.AUTH_REQUIRED) return 'user_action';
   if (state === CONNECTION_STATE.RATE_LIMITED) return 'rate_limit';
-  if (state === CONNECTION_STATE.FAILED) return 'failed';
+  if (state === CONNECTION_STATE.FAILED) {
+    return (detail?.reason === 'room_access_refused' || detail?.roomAccess?.state === 'refused')
+      ? 'platform_refused'
+      : 'failed';
+  }
   if (state === CONNECTION_STATE.STOPPED) return detail?.reason === 'platform_ended' ? 'ended' : 'stopped';
   if (state === CONNECTION_STATE.CONNECTING) return 'connecting';
   return 'idle';
+}
+
+function captureStateName(category) {
+  if (category === 'normal') return 'events_received';
+  if (category === 'waiting_events') return 'connected_no_events';
+  if (category === 'room_unconfirmed') return 'room_unconfirmed';
+  if (category === 'platform_refused') return 'platform_refused';
+  if (category === 'user_action') return 'login_required';
+  if (category === 'failed') return 'error';
+  return category;
 }
 
 /** Adapter over a browser session: same ingest contract as the signer adapter. */
@@ -520,6 +596,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     now = Date.now,
     sessionFactory = null,
     loginWaitMs = 20000,
+    refusedGraceMs = 6000,
     streakFlushMs = 10000,
     env = process.env,
     ...options
@@ -535,6 +612,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.sessionFactory = sessionFactory ?? ((args) => new BrowserSession(args));
     this.options = options;
     this.loginWaitMs = loginWaitMs;
+    this.refusedGraceMs = refusedGraceMs;
     this.streakFlushMs = streakFlushMs;
     this.session = null;
     this.started = false;
@@ -547,6 +625,8 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.lastEventType = null;
     this.eventsVerified = false;
     this.roomEnterStatus = null;
+    this.roomAccess = {state: 'unknown', status: null, at: null};
+    this.roomRefusalTimer = null;
     this.reconnectAttempts = 0;
     this.recoveries = 0;
     this.nextRetryAt = null;
@@ -557,18 +637,28 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
   }
 
   #detail(extra = {}) {
+    const category = extra.category ?? captureCategory(this.state, {
+      eventsVerified: this.eventsVerified,
+      roomEnterStatus: this.roomEnterStatus,
+      roomAccess: this.roomAccess,
+      reason: extra.reason
+    });
     return {
       uniqueId: this.uniqueId,
       roomId: this.roomId,
       transport: 'browser',
       state: this.state,
-      category: captureCategory(this.state, {eventsVerified: this.eventsVerified, reason: extra.reason}),
+      category,
+      captureState: captureStateName(category),
       lastEventAt: this.lastEventAt,
       lastEventType: this.lastEventType,
       lastSuccessAt: this.eventsVerified ? this.lastEventAt : null,
       eventsVerified: this.eventsVerified,
       waitingForEvents: Boolean(this.session?.isAlive?.()) && !this.eventsVerified,
       roomEnterStatus: this.roomEnterStatus,
+      roomAccess: {...this.roomAccess},
+      roomAccessRefused: this.roomAccess.state === 'refused',
+      roomUnconfirmed: this.roomAccess.state === 'unknown' && !this.eventsVerified && this.roomEnterStatus !== 200,
       browserOpen: Boolean(this.session?.isAlive?.()),
       browserReused: Boolean(this.session?.reusedBrowser),
       reconnectAttempts: this.reconnectAttempts,
@@ -611,21 +701,53 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     }
     const ready = session.waitForReady
       ? await session.waitForReady({timeoutMs: this.loginWaitMs})
-      : {loginRequired: session.requiresLogin?.(), events: 0};
-    this.roomEnterStatus = ready.roomEnterStatus ?? null;
+      : {
+        loginRequired: session.requiresLogin?.(),
+        roomRefused: session.roomAccessRefused?.(),
+        events: 0,
+        roomEnterStatus: session.roomEnterStatus ?? null
+      };
+    this.roomEnterStatus = ready.roomEnterStatus ?? session.roomEnterStatus ?? null;
+    this.roomAccess = {
+      state: this.roomEnterStatus === 200 ? 'ok' : (this.roomEnterStatus === 403 ? 'refused' : 'unknown'),
+      status: this.roomEnterStatus,
+      at: this.now()
+    };
     if (ready.loginRequired) {
       this.loginRequired = true;
       this.#setState(CONNECTION_STATE.AUTH_REQUIRED, {reason: 'login_required', code: TIKTOK_ERRORS.LOGIN_REQUIRED});
-      await this.stop();
+      this.started = false;
+      await session.close().catch(() => {});
       throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
         messageKey: 'errors.tiktokLoginRequired',
         httpStatus: 403,
-        details: {reason: 'room_enter_403'}
+        details: {reason: 'login_required'}
+      });
+    }
+    if (ready.roomRefused && Number(ready.events ?? 0) === 0) {
+      // A 403 on the page's room-entry call with no event frame after the
+      // grace period is a real refusal for this room. It is not proof that the
+      // account is logged out; the login module keeps the account state.
+      this.started = false;
+      this.lastFailure = {code: TIKTOK_ERRORS.ROOM_REFUSED, at: this.now(), reason: 'room_enter_403'};
+      this.#setState(CONNECTION_STATE.FAILED, {
+        category: 'platform_refused',
+        code: TIKTOK_ERRORS.ROOM_REFUSED,
+        reason: 'room_access_refused',
+        needsUserAction: true,
+        roomEnterStatus: 403,
+        roomAccess: {...this.roomAccess}
+      });
+      await session.close().catch(() => {});
+      throw new TikTokError(TIKTOK_ERRORS.ROOM_REFUSED, {
+        messageKey: 'errors.tiktokRoomRefused',
+        httpStatus: 403,
+        details: {reason: 'room_enter_403', roomEnterStatus: 403}
       });
     }
     if (ready.closed) {
       this.started = false;
-      await this.stop();
+      await session.close().catch(() => {});
       throw new TikTokError(TIKTOK_ERRORS.BROWSER_FAILED, {
         messageKey: 'errors.tiktokBrowserFailed',
         httpStatus: 502,
@@ -639,7 +761,14 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       transport: 'browser',
       eventsVerified: this.eventsVerified,
       waitingForEvents: !this.eventsVerified,
-      roomEnterStatus: this.roomEnterStatus
+      roomEnterStatus: this.roomEnterStatus,
+      roomAccess: {...this.roomAccess},
+      category: this.eventsVerified
+        ? 'normal'
+        : (this.roomEnterStatus === 200 ? 'waiting_events' : 'room_unconfirmed'),
+      reason: this.eventsVerified
+        ? 'events_received'
+        : (this.roomEnterStatus === 200 ? 'room_entered_no_events' : 'room_not_confirmed')
     });
     this.#startWatchdog();
     this.#startGiftFlush();
@@ -654,11 +783,75 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
       logger: this.logger,
       now: this.now,
       env: this.env,
-      loginWaitMs: this.loginWaitMs
+      loginWaitMs: this.loginWaitMs,
+      refusedGraceMs: this.refusedGraceMs
     });
     session.onFrame = (message) => this.#handleMessage(message);
     session.onClose = () => this.#onBrowserClosed();
+    session.onRoomStatus = (info) => this.#onRoomStatus(info);
     return session;
+  }
+
+  /**
+   * The live page may report a room-entry 403 while its event socket is still
+   * delivering frames. Wait a short grace period; only end the capture when no
+   * frame arrives. A 200 confirms the room immediately.
+   */
+  #onRoomStatus({status, at} = {}) {
+    if (!this.started) return;
+    const numeric = Number(status);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    this.roomEnterStatus = numeric;
+    this.roomAccess = {
+      state: numeric === 200 ? 'ok' : (numeric === 403 ? 'refused' : 'unknown'),
+      status: numeric,
+      at: at ?? this.now()
+    };
+    if (this.roomAccess.state === 'ok') {
+      this.#clearRoomRefusalTimer();
+      this.#setState(CONNECTION_STATE.CONNECTED, {
+        category: this.eventsVerified ? 'normal' : 'waiting_events',
+        roomEnterStatus: numeric,
+        roomAccess: {...this.roomAccess},
+        reason: this.eventsVerified ? 'events_received' : 'room_entered_no_events'
+      });
+      return;
+    }
+    if (this.roomAccess.state === 'refused' && !this.eventsVerified) {
+      this.#clearRoomRefusalTimer();
+      this.#setState(CONNECTION_STATE.CONNECTED, {
+        category: 'room_unconfirmed',
+        roomEnterStatus: 403,
+        roomAccess: {...this.roomAccess},
+        reason: 'room_enter_403_waiting_events'
+      });
+      this.roomRefusalTimer = setTimeout(() => {
+        this.roomRefusalTimer = null;
+        if (!this.started || this.eventsVerified) return;
+        this.lastFailure = {code: TIKTOK_ERRORS.ROOM_REFUSED, at: this.now(), reason: 'room_enter_403'};
+        this.#setState(CONNECTION_STATE.FAILED, {
+          category: 'platform_refused',
+          code: TIKTOK_ERRORS.ROOM_REFUSED,
+          reason: 'room_access_refused',
+          needsUserAction: true,
+          roomEnterStatus: 403,
+          roomAccess: {...this.roomAccess}
+        });
+        try {
+          this.onEnd?.({reason: 'room_access_refused', status: 'failed'});
+        } catch {
+          /* ending is best effort; the state already reports the failure */
+        }
+      }, this.refusedGraceMs);
+      this.roomRefusalTimer.unref?.();
+    }
+  }
+
+  #clearRoomRefusalTimer() {
+    if (this.roomRefusalTimer) {
+      clearTimeout(this.roomRefusalTimer);
+      this.roomRefusalTimer = null;
+    }
   }
 
   #onBrowserClosed() {
@@ -713,13 +906,30 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     if (!entry?.event) return;
     this.counters.messages += 1;
     this.counters.gifts += 1;
-    this.lastEventAt = this.now();
-    this.lastEventType = 'gift';
-    this.eventsVerified = true;
+    this.#markEventReceived('gift');
     try {
       this.onEvent(entry.event);
     } catch (error) {
       this.logger?.warn({event: 'tiktok.browser.emit.failed', kind: 'gift', code: error?.code ?? 'unknown'});
+    }
+  }
+
+  /** First real frame proves the relay works even if room/enter answered 403. */
+  #markEventReceived(eventType) {
+    const wasVerified = this.eventsVerified;
+    this.eventsVerified = true;
+    this.lastEventAt = this.now();
+    this.lastEventType = eventType;
+    this.#clearRoomRefusalTimer();
+    if (!wasVerified || this.detail?.category === 'room_unconfirmed' || this.detail?.category === 'waiting_events') {
+      this.#setState(CONNECTION_STATE.CONNECTED, {
+        category: 'normal',
+        eventsVerified: true,
+        waitingForEvents: false,
+        roomEnterStatus: this.roomEnterStatus,
+        roomAccess: {...this.roomAccess},
+        reason: 'events_received'
+      });
     }
   }
 
@@ -746,7 +956,12 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
           await session.launch();
           const ready = session.waitForReady
             ? await session.waitForReady({timeoutMs: this.loginWaitMs})
-            : {loginRequired: false, events: 0};
+            : {
+              loginRequired: session.requiresLogin?.(),
+              roomRefused: session.roomAccessRefused?.(),
+              events: 0,
+              roomEnterStatus: session.roomEnterStatus ?? null
+            };
           if (ready.loginRequired) {
             this.loginRequired = true;
             this.lastFailure = {code: TIKTOK_ERRORS.LOGIN_REQUIRED, at: this.now(), reason: 'login_required'};
@@ -755,16 +970,43 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
             this.recoveries += 1;
             return;
           }
-          this.roomEnterStatus = ready.roomEnterStatus ?? null;
+          this.roomEnterStatus = ready.roomEnterStatus ?? session.roomEnterStatus ?? null;
+          this.roomAccess = {
+            state: this.roomEnterStatus === 200 ? 'ok' : (this.roomEnterStatus === 403 ? 'refused' : 'unknown'),
+            status: this.roomEnterStatus,
+            at: this.now()
+          };
           this.eventsVerified = Number(ready.events ?? 0) > 0;
+          if (ready.roomRefused && !this.eventsVerified) {
+            this.lastFailure = {code: TIKTOK_ERRORS.ROOM_REFUSED, at: this.now(), reason: 'room_enter_403'};
+            this.#setState(CONNECTION_STATE.FAILED, {
+              category: 'platform_refused',
+              code: TIKTOK_ERRORS.ROOM_REFUSED,
+              reason: 'room_access_refused',
+              needsUserAction: true,
+              roomEnterStatus: 403,
+              roomAccess: {...this.roomAccess}
+            });
+            this.started = false;
+            this.recoveries += 1;
+            try {
+              this.onEnd?.({reason: 'room_access_refused', status: 'failed'});
+            } catch {
+              /* ignore */
+            }
+            return;
+          }
           this.nextRetryAt = null;
           this.recoveries += 1;
           this.#setState(CONNECTION_STATE.CONNECTED, {
-            category: this.eventsVerified ? 'normal' : 'waiting_events',
+            category: this.eventsVerified
+              ? 'normal'
+              : (this.roomEnterStatus === 200 ? 'waiting_events' : 'room_unconfirmed'),
             eventsVerified: this.eventsVerified,
             waitingForEvents: !this.eventsVerified,
             recoveredAt: this.now(),
-            roomEnterStatus: this.roomEnterStatus
+            roomEnterStatus: this.roomEnterStatus,
+            roomAccess: {...this.roomAccess}
           });
           return;
         } catch (error) {
@@ -832,9 +1074,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     this.counters.messages += 1;
     if (event.event_type === 'chat') this.counters.chats += 1;
     if (event.event_type === 'gift') this.counters.gifts += 1;
-    this.lastEventAt = this.now();
-    this.lastEventType = event.event_type;
-    this.eventsVerified = true;
+    this.#markEventReceived(event.event_type);
     try {
       this.onEvent(event);
     } catch (error) {
@@ -847,6 +1087,7 @@ export class TikTokBrowserAdapter extends PlatformAdapter {
     // already observed is not lost.
     this.#flushGifts();
     this.started = false;
+    this.#clearRoomRefusalTimer();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

@@ -32,6 +32,7 @@ const HTTP_BY_CODE = new Map([
   [TIKTOK_ERRORS.ROOM_NOT_FOUND, [404, 'errors.tiktokRoomNotFound']],
   [TIKTOK_ERRORS.ROOM_OFFLINE, [409, 'errors.tiktokRoomOffline']],
   [TIKTOK_ERRORS.ROOM_UNAVAILABLE, [403, 'errors.tiktokRoomUnavailable']],
+  [TIKTOK_ERRORS.ROOM_REFUSED, [403, 'errors.tiktokRoomRefused']],
   [TIKTOK_ERRORS.LOGIN_REQUIRED, [403, 'errors.tiktokLoginRequired']],
   [TIKTOK_ERRORS.RATE_LIMITED, [429, 'errors.tiktokRateLimit']],
   [TIKTOK_ERRORS.NETWORK, [502, 'errors.tiktokNetwork']],
@@ -121,6 +122,9 @@ export class TikTokService {
     }
     this.adapterOptions = adapterOptions;
     this.lastEnd = null;
+    // The last capture result that is no longer backed by an active recording.
+    // Without it, a failed start looked identical to "idle" in the UI.
+    this.lastCapture = null;
   }
 
   #hasActiveCapture() {
@@ -246,7 +250,11 @@ export class TikTokService {
           lastEnd: this.lastEnd
         }
         : {state: 'idle', detail: null, uniqueId: null, roomId: null, title: null, viewers: null, lastEnd: this.lastEnd},
-      capture: latest?.capture ?? null,
+      capture: latest?.capture
+        ?? (this.lastCapture && (this.lastCapture.transport ?? 'browser') === transport.active ? this.lastCapture : null),
+      captureSource: latest?.capture
+        ? 'recording'
+        : (this.lastCapture && (this.lastCapture.transport ?? 'browser') === transport.active ? 'last_attempt' : null),
       recordings,
       recording: latest?.connection.state ?? 'idle',
       session: latest
@@ -363,6 +371,20 @@ export class TikTokService {
           details: {reason: 'login_in_progress', loginState}
         });
       }
+      if (loginState === TIKTOK_LOGIN_STATES.REFUSED) {
+        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
+          messageKey: 'errors.tiktokLoginRequired',
+          httpStatus: 403,
+          details: {reason: 'login_refused', loginState}
+        });
+      }
+      if (loginState === TIKTOK_LOGIN_STATES.EXPIRED) {
+        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
+          messageKey: 'errors.tiktokLoginRequired',
+          httpStatus: 403,
+          details: {reason: 'session_expired', loginState}
+        });
+      }
       // A persisted `logged_in` marker is only a hint. When the dedicated
       // profile still exists the relay is allowed to try: a stale cookie is
       // then reported as a real platform refusal instead of being trusted.
@@ -430,43 +452,85 @@ export class TikTokService {
       });
     } catch (error) {
       // The adapter is the only component that actually talks to the logged-in
-      // official page. Mirror its evidence back into the login badge so a stale
-      // "logged in" marker cannot survive a 403/browser failure.
-      if (transport.active === 'browser' && this.browserLogin) {
-        if (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED) {
-          this.browserLogin.markCaptureLoginRequired?.({
-            roomEnterStatus: error?.details?.roomEnterStatus ?? 403,
-            reason: error?.details?.reason ?? 'room_enter_403',
-            uniqueId: room.uniqueId
-          });
-        } else if ([TIKTOK_ERRORS.BROWSER_FAILED, TIKTOK_ERRORS.BROWSER_UNAVAILABLE].includes(error?.code)) {
-          this.browserLogin.markCaptureFailed?.({
-            reason: error?.details?.reason ?? error?.code,
-            uniqueId: room.uniqueId
-          });
+      // official page. Mirror its evidence back into the login badge, but keep
+      // login state and room-access state separate: a room-entry 403 does not
+      // mean the account logged out.
+      const reason = error?.details?.reason ?? null;
+      const roomEnterStatus = error?.details?.roomEnterStatus ?? null;
+      if (transport.active === 'browser') {
+        this.lastCapture = {
+          transport: transport.active,
+          state: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
+            ? 'platform_refused'
+            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'login_required' : 'error'),
+          category: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
+            ? 'platform_refused'
+            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'user_action' : 'failed'),
+          reason: reason ?? error?.code ?? 'connect_failed',
+          eventsReceived: 0,
+          eventsVerified: false,
+          captureState: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
+            ? 'platform_refused'
+            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'login_required' : 'error'),
+          roomEnterStatus,
+          roomAccess: roomEnterStatus === 403 ? {state: 'refused', status: 403, at: this.now()} : null,
+          uniqueId: room.uniqueId,
+          liveUrl: room.liveUrl ?? null,
+          checkedAt: this.now()
+        };
+        if (this.browserLogin) {
+          if (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED) {
+            this.browserLogin.markCaptureLoginRequired?.({
+              roomEnterStatus,
+              reason: reason ?? 'login_required',
+              uniqueId: room.uniqueId
+            });
+          } else if (error?.code === TIKTOK_ERRORS.ROOM_REFUSED) {
+            this.browserLogin.markCaptureRefused?.({
+              roomEnterStatus: roomEnterStatus ?? 403,
+              reason: reason ?? 'room_enter_403',
+              uniqueId: room.uniqueId,
+              liveUrl: room.liveUrl ?? null
+            });
+          } else if ([TIKTOK_ERRORS.BROWSER_FAILED, TIKTOK_ERRORS.BROWSER_UNAVAILABLE].includes(error?.code)) {
+            this.browserLogin.markCaptureFailed?.({
+              reason: reason ?? error?.code,
+              uniqueId: room.uniqueId
+            });
+          }
         }
       }
       throw error;
     }
-    if (transport.active === 'browser' && this.browserLogin) {
+    if (transport.active === 'browser') {
+      this.lastCapture = null;
       let capture = null;
       try {
         capture = adapter.capture?.() ?? adapter.snapshot?.()?.capture ?? null;
       } catch {
         capture = null;
       }
-      if (capture?.roomEnterStatus === 403) {
-        this.browserLogin.markCaptureLoginRequired?.({
-          roomEnterStatus: 403,
-          reason: 'room_enter_403',
-          uniqueId: room.uniqueId
-        });
-      } else if (capture && (capture.eventsVerified === true || capture.roomEnterStatus === 200)) {
-        this.browserLogin.markCaptureVerified?.({
+      if (capture && (capture.eventsVerified === true || capture.roomEnterStatus === 200)) {
+        this.browserLogin?.markCaptureVerified?.({
           eventsReceived: Number(capture.counters?.messages ?? 0),
           roomEnterStatus: capture.roomEnterStatus ?? null,
+          roomAccess: capture.roomAccess ?? null,
           uniqueId: room.uniqueId,
           liveUrl: room.liveUrl ?? null
+        });
+      } else if (capture?.roomEnterStatus === 403) {
+        this.browserLogin?.markCaptureRefused?.({
+          roomEnterStatus: 403,
+          reason: 'room_enter_403',
+          uniqueId: room.uniqueId,
+          liveUrl: room.liveUrl ?? null
+        });
+      } else if (capture) {
+        this.browserLogin?.markCaptureUnconfirmed?.({
+          reason: 'room_not_confirmed',
+          uniqueId: room.uniqueId,
+          liveUrl: room.liveUrl ?? null,
+          roomEnterStatus: capture.roomEnterStatus ?? null
         });
       }
     }
@@ -532,6 +596,20 @@ export class TikTokService {
       reason: 'user'
     });
     if (result.stopped) this.#applyRetention();
+    if (result.stopped && !this.#recordings().length) {
+      const activeTransport = this.transport().active ?? 'browser';
+      this.lastCapture = {
+        transport: activeTransport,
+        state: 'stopped',
+        category: 'stopped',
+        captureState: 'stopped',
+        reason: 'user',
+        eventsReceived: 0,
+        eventsVerified: false,
+        checkedAt: this.now()
+      };
+      if (activeTransport === 'browser') this.browserLogin?.markCaptureStopped?.({reason: 'user'});
+    }
     return result;
   }
 

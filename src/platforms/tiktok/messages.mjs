@@ -81,6 +81,34 @@ function readEnvelopeId(messageFields) {
   return null;
 }
 
+/**
+ * Decode a WebSocket `PushFrame` envelope.
+ *
+ * The current TikTok web player wraps every binary socket frame in this
+ * envelope (seqId/logId/service/method/headers/payloadEncoding/payloadType/
+ * payload). The event batch (`ProtoMessageFetchResult`/`WebcastResponse`) is
+ * inside field 8 and is normally gzip-compressed. The older relay parsed the
+ * frame body as if it were the batch itself, so a real page frame always
+ * decoded to zero messages. Keep the envelope and the batch separate.
+ */
+export function decodePushFrame(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) return null;
+  const fields = readFields(buffer);
+  const payloadType = asString(field(fields, 7, 2));
+  const payloadEncoding = asString(field(fields, 6, 2));
+  const payload = field(fields, 8, 2)?.bytes ?? null;
+  if (!payloadType || !payload) return null;
+  return {
+    seqId: readId(fields, 1),
+    logId: readId(fields, 2),
+    service: asString(field(fields, 3, 2)),
+    method: asString(field(fields, 4, 2)),
+    payloadEncoding: payloadEncoding ?? null,
+    payloadType,
+    payload
+  };
+}
+
 /** Decode `ProtoMessageFetchResult` from the signed bootstrap endpoint. */
 export function decodeFetchResult(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw protocolError('empty_fetch_result');

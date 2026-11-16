@@ -107,6 +107,7 @@ export class TikTokBrowserLogin {
     this.verifiedBy = null;
     this.capture = null;
     this.room = null;
+    this.roomAccess = {state: 'unknown', status: null, at: null};
     this.loginWindowClosedAt = null;
     this.restoredFromDisk = false;
     this.revalidationRequired = false;
@@ -221,6 +222,7 @@ export class TikTokBrowserLogin {
       error: this.lastError,
       capture: this.capture,
       room: this.room,
+      roomAccess: {...this.roomAccess},
       loginWindowClosedAt: this.loginWindowClosedAt,
       restoredFromDisk: this.restoredFromDisk,
       revalidationRequired: this.revalidationRequired,
@@ -386,7 +388,7 @@ export class TikTokBrowserLogin {
       }
       return;
     }
-    if (this.state === TIKTOK_LOGIN_STATES.WAITING) {
+    if (this.state === TIKTOK_LOGIN_STATES.WAITING || this.state === TIKTOK_LOGIN_STATES.EXPIRED || this.state === TIKTOK_LOGIN_STATES.REFUSED) {
       this.#setState(TIKTOK_LOGIN_STATES.VERIFYING, {reason: 'session_cookie_found'});
       await this.#verifyCookie();
     }
@@ -465,7 +467,13 @@ export class TikTokBrowserLogin {
     }
     const ready = this.session.waitForReady
       ? await this.session.waitForReady({timeoutMs})
-      : {loginRequired: this.session.requiresLogin?.(), events: 0, roomEnterStatus: null, closed: false};
+      : {
+        loginRequired: this.session.requiresLogin?.(),
+        roomRefused: this.session.roomAccessRefused?.(),
+        events: 0,
+        roomEnterStatus: this.session.roomEnterStatus ?? null,
+        closed: false
+      };
     const cookies = await this.session.getCookies?.() ?? [];
     const hasCookie = hasSessionCookie(cookies, this.now());
     this.lastCheckedAt = this.now();
@@ -475,6 +483,13 @@ export class TikTokBrowserLogin {
       eventsReceived: Number(ready.events ?? 0),
       checkedAt: this.now(),
       liveUrl
+    };
+    this.roomAccess = {
+      state: this.room.roomEnterStatus === 200
+        ? 'ok'
+        : (this.room.roomEnterStatus === 403 ? 'refused' : 'unknown'),
+      status: this.room.roomEnterStatus,
+      at: this.now()
     };
     if (ready.closed) {
       this.capture = {
@@ -488,11 +503,13 @@ export class TikTokBrowserLogin {
       };
       return this.status();
     }
-    if (!hasCookie) {
-      this.#setState(TIKTOK_LOGIN_STATES.EXPIRED, {reason: 'no_valid_session_cookie'});
+    if (!hasCookie || ready.loginRequired) {
+      // The browser page itself lost the login. This is the only path that
+      // changes the account state; a room-entry 403 does not.
+      this.#setState(TIKTOK_LOGIN_STATES.EXPIRED, {reason: hasCookie ? 'login_required' : 'no_valid_session_cookie'});
       this.capture = {
         state: 'login_required',
-        reason: 'no_session_cookie',
+        reason: hasCookie ? 'login_required' : 'no_session_cookie',
         eventsReceived: 0,
         roomEnterStatus: this.room.roomEnterStatus,
         uniqueId: this.uniqueId,
@@ -501,39 +518,73 @@ export class TikTokBrowserLogin {
       };
       return this.status();
     }
-    if (ready.loginRequired || this.room.roomEnterStatus === 403) {
-      // A valid cookie plus a 403 from the official room-entry endpoint is the
-      // platform refusing this browser, not a login success and not a reason
-      // to forge frames.
-      this.#setState(TIKTOK_LOGIN_STATES.REFUSED, {reason: 'room_enter_403'});
+    const eventsReceived = Number(this.room.eventsReceived ?? 0);
+    if (eventsReceived > 0) {
+      // Real frames beat a room-entry 403: the event socket is working.
+      this.verifiedAt = this.now();
+      this.verifiedBy = 'live_room';
+      this.revalidationRequired = false;
+      this.capture = {
+        state: 'events_received',
+        reason: 'events_received',
+        eventsReceived,
+        roomEnterStatus: this.room.roomEnterStatus,
+        roomAccess: {...this.roomAccess},
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
+      this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: 'live_room', reason: 'events_received'});
+      return this.status();
+    }
+    if (ready.roomRefused || this.room.roomEnterStatus === 403) {
+      // The account can still be logged in while TikTok refuses this room.
+      // Report the room refusal separately; never turn it into "login expired".
       this.capture = {
         state: 'platform_refused',
         reason: 'room_enter_403',
         eventsReceived: 0,
         roomEnterStatus: this.room.roomEnterStatus ?? 403,
+        roomAccess: {...this.roomAccess},
         uniqueId: this.uniqueId,
         liveUrl,
         checkedAt: this.now()
       };
+      this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'room_access_refused'});
       return this.status();
     }
-    const eventsReceived = Number(this.room.eventsReceived ?? 0);
-    this.verifiedAt = this.now();
-    this.verifiedBy = 'live_room';
-    this.revalidationRequired = false;
+    if (this.room.roomEnterStatus === 200) {
+      this.verifiedAt = this.now();
+      this.verifiedBy = 'live_room';
+      this.revalidationRequired = false;
+      this.capture = {
+        state: 'connected_no_events',
+        reason: ready.timedOut ? 'no_events_timeout' : 'connected_no_events',
+        eventsReceived: 0,
+        roomEnterStatus: 200,
+        roomAccess: {...this.roomAccess},
+        timedOut: Boolean(ready.timedOut),
+        uniqueId: this.uniqueId,
+        liveUrl,
+        checkedAt: this.now()
+      };
+      this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: 'live_room'});
+      return this.status();
+    }
+    // The page opened but neither a room-entry confirmation nor an event was
+    // observed. Do not claim a working connection.
     this.capture = {
-      state: eventsReceived > 0 ? 'events_received' : 'connected_no_events',
-      reason: eventsReceived > 0
-        ? 'events_received'
-        : (ready.timedOut ? 'no_events_timeout' : 'connected_no_events'),
-      eventsReceived,
+      state: 'room_unconfirmed',
+      reason: ready.timedOut ? 'room_not_confirmed_timeout' : 'room_not_confirmed',
+      eventsReceived: 0,
       roomEnterStatus: this.room.roomEnterStatus,
+      roomAccess: {...this.roomAccess},
       timedOut: Boolean(ready.timedOut),
       uniqueId: this.uniqueId,
       liveUrl,
       checkedAt: this.now()
     };
-    this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {verifiedBy: 'live_room'});
+    this.#setState(TIKTOK_LOGIN_STATES.LOGGED_IN, {reason: 'room_not_confirmed'});
     return this.status();
   }
 
@@ -541,16 +592,22 @@ export class TikTokBrowserLogin {
    * Mirror evidence from the capture adapter back into the login badge.
    * Called by TikTokService after the relay really opened the live page.
    */
-  markCaptureVerified({eventsReceived = 0, roomEnterStatus = null, uniqueId = null, liveUrl = null} = {}) {
+  markCaptureVerified({eventsReceived = 0, roomEnterStatus = null, uniqueId = null, liveUrl = null, roomAccess = null} = {}) {
     const count = Number(eventsReceived) || 0;
     this.verifiedAt = this.now();
     this.verifiedBy = 'live_room';
     this.revalidationRequired = false;
+    this.roomAccess = roomAccess ?? {
+      state: roomEnterStatus === 200 ? 'ok' : (roomEnterStatus === 403 ? 'refused' : 'unknown'),
+      status: roomEnterStatus ?? null,
+      at: this.now()
+    };
     this.capture = {
       state: count > 0 ? 'events_received' : 'connected_no_events',
       reason: count > 0 ? 'events_received' : (roomEnterStatus === 200 ? 'connected_no_events' : 'capture_started'),
       eventsReceived: count,
       roomEnterStatus: roomEnterStatus ?? null,
+      roomAccess: {...this.roomAccess},
       uniqueId: uniqueId ?? this.uniqueId ?? null,
       liveUrl,
       checkedAt: this.now()
@@ -559,18 +616,84 @@ export class TikTokBrowserLogin {
     return this.status();
   }
 
-  /** The official page refused room entry: never keep showing a stale login. */
-  markCaptureLoginRequired({reason = 'room_enter_403', roomEnterStatus = 403, uniqueId = null} = {}) {
-    this.revalidationRequired = true;
+  /**
+   * The page opened and the account is still valid, but no room-entry response
+   * or event was observed. This is explicitly not a success.
+   */
+  markCaptureUnconfirmed({reason = 'room_not_confirmed', uniqueId = null, liveUrl = null, roomEnterStatus = null} = {}) {
+    this.roomAccess = {
+      state: roomEnterStatus === 200 ? 'ok' : (roomEnterStatus === 403 ? 'refused' : 'unknown'),
+      status: roomEnterStatus ?? null,
+      at: this.now()
+    };
+    this.capture = {
+      state: 'room_unconfirmed',
+      reason,
+      eventsReceived: 0,
+      roomEnterStatus: roomEnterStatus ?? null,
+      roomAccess: {...this.roomAccess},
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      liveUrl,
+      checkedAt: this.now()
+    };
+    if (this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+      this.revalidationRequired = true;
+    }
+    return this.status();
+  }
+
+  /**
+   * The official page refused this room (HTTP 403 on room entry) and no event
+   * socket frame arrived. The account session can still be valid: do not
+   * overwrite it with "refused"/"expired".
+   */
+  markCaptureRefused({reason = 'room_enter_403', roomEnterStatus = 403, uniqueId = null, liveUrl = null} = {}) {
+    this.roomAccess = {state: 'refused', status: roomEnterStatus, at: this.now()};
     this.capture = {
       state: 'platform_refused',
       reason,
       eventsReceived: 0,
       roomEnterStatus,
+      roomAccess: {...this.roomAccess},
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      liveUrl,
+      checkedAt: this.now()
+    };
+    if (this.state !== TIKTOK_LOGIN_STATES.LOGGED_IN) {
+      // Do not turn a room denial into a login success. The login badge keeps
+      // whatever the cookie/page check established.
+      this.revalidationRequired = true;
+    }
+    return this.status();
+  }
+
+  /** The browser page itself requires a login again (cookie gone/invalid). */
+  markCaptureLoginRequired({reason = 'login_required', roomEnterStatus = null, uniqueId = null} = {}) {
+    this.revalidationRequired = true;
+    this.capture = {
+      state: 'login_required',
+      reason,
+      eventsReceived: 0,
+      roomEnterStatus,
+      roomAccess: {state: 'unknown', status: roomEnterStatus ?? null, at: this.now()},
       uniqueId: uniqueId ?? this.uniqueId ?? null,
       checkedAt: this.now()
     };
-    this.#setState(TIKTOK_LOGIN_STATES.REFUSED, {reason});
+    this.#setState(TIKTOK_LOGIN_STATES.EXPIRED, {reason});
+    return this.status();
+  }
+
+  /** The user stopped the recording; keep the login evidence, update capture. */
+  markCaptureStopped({reason = 'user', uniqueId = null} = {}) {
+    this.capture = {
+      state: 'stopped',
+      reason,
+      eventsReceived: 0,
+      roomEnterStatus: null,
+      roomAccess: {...this.roomAccess},
+      uniqueId: uniqueId ?? this.uniqueId ?? null,
+      checkedAt: this.now()
+    };
     return this.status();
   }
 
@@ -651,6 +774,7 @@ export class TikTokBrowserLogin {
     this.verifiedBy = null;
     this.room = null;
     this.capture = null;
+    this.roomAccess = {state: 'unknown', status: null, at: null};
     this.cookieNames = [];
     this.restoredFromDisk = false;
     this.revalidationRequired = false;

@@ -157,6 +157,19 @@ export function webcastResponse({messages = [], cursor = 'cursor-1', internalExt
   return Buffer.concat(parts);
 }
 
+/**
+ * Current TikTok web-player socket envelope (`PushFrame`). The event batch
+ * lives in field 8, normally gzip-compressed; it is not the frame body itself.
+ */
+export function pushFrame({payload, payloadType = 'msg', encoding = 'pb', logId = null} = {}) {
+  return Buffer.concat([
+    ...(logId === null || logId === undefined ? [] : [encodeId(2, logId)]),
+    encodeBytesField(6, encoding),
+    encodeBytesField(7, payloadType),
+    encodeBytesField(8, payload ?? Buffer.alloc(0))
+  ]);
+}
+
 export function fieldsOf(buffer) {
   return readFields(buffer);
 }

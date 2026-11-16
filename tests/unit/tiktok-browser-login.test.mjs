@@ -146,17 +146,73 @@ test('a live-room verification separates login success from event delivery', asy
   }
 });
 
-test('a cookie plus a 403 room entry is platform refusal, not a fake success', async () => {
+test('a cookie plus a 403 room entry is a room refusal, not a login failure', async () => {
   const ctx = harness({session: new FakeSession({
     cookies: [{name: 'sessionid', value: 'x', expires: futureSeconds()}],
     dom: {hasProfileLink: true, hasLoginLink: false},
-    ready: {loginRequired: true, events: 0, roomEnterStatus: 403}
+    ready: {loginRequired: false, roomRefused: true, events: 0, roomEnterStatus: 403}
   })});
   try {
     await ctx.login.start({uniqueId: 'creator'});
     const status = await ctx.login.verify({uniqueId: 'creator', timeoutMs: 100});
-    assert.equal(status.state, TIKTOK_LOGIN_STATES.REFUSED);
+    assert.equal(status.state, TIKTOK_LOGIN_STATES.LOGGED_IN, 'a room 403 must not erase a valid login');
     assert.equal(status.capture.state, 'platform_refused');
+    assert.equal(status.roomAccess.state, 'refused');
+    assert.equal(status.roomAccess.status, 403);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('real events win over a room-entry 403', async () => {
+  const ctx = harness({session: new FakeSession({
+    cookies: [{name: 'sessionid', value: 'x', expires: futureSeconds()}],
+    dom: {hasProfileLink: true, hasLoginLink: false},
+    ready: {loginRequired: false, roomRefused: true, events: 4, roomEnterStatus: 403}
+  })});
+  try {
+    await ctx.login.start({uniqueId: 'creator'});
+    const status = await ctx.login.verify({uniqueId: 'creator', timeoutMs: 100});
+    assert.equal(status.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(status.capture.state, 'events_received');
+    assert.equal(status.capture.eventsReceived, 4);
+    assert.equal(status.roomAccess.state, 'refused', 'the room warning is kept next to the working events');
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('an unconfirmed room is not reported as a working connection', async () => {
+  const ctx = harness({session: new FakeSession({
+    cookies: [{name: 'sessionid', value: 'x', expires: futureSeconds()}],
+    dom: {hasProfileLink: true, hasLoginLink: false},
+    ready: {loginRequired: false, events: 0, roomEnterStatus: null, timedOut: true}
+  })});
+  try {
+    await ctx.login.start({uniqueId: 'creator'});
+    const status = await ctx.login.verify({uniqueId: 'creator', timeoutMs: 100});
+    assert.equal(status.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(status.capture.state, 'room_unconfirmed');
+    assert.equal(status.capture.eventsReceived, 0);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test('logging in again in the same window clears an expired state', async () => {
+  const ctx = harness({session: new FakeSession({
+    cookies: [{name: 'sessionid', value: 'x', expires: Math.floor(Date.now() / 1000) - 10}],
+    dom: {hasProfileLink: true, hasLoginLink: false}
+  })});
+  try {
+    await ctx.login.start();
+    const expired = await ctx.login.checkNow();
+    assert.equal(expired.state, TIKTOK_LOGIN_STATES.EXPIRED);
+
+    ctx.session.cookies = [{name: 'sessionid', value: 'fresh', expires: futureSeconds()}];
+    const relogged = await ctx.login.checkNow();
+    assert.equal(relogged.state, TIKTOK_LOGIN_STATES.LOGGED_IN);
+    assert.equal(relogged.captureActive, false);
   } finally {
     await ctx.cleanup();
   }
@@ -303,7 +359,7 @@ test('logout is refused while a capture is active instead of killing the recordi
   }
 });
 
-test('capture evidence updates the login badge and a 403 turns it into refused', async () => {
+test('capture evidence updates the login badge; room refusal and login expiry stay separate', async () => {
   const ctx = harness({session: loggedInSession()});
   try {
     await ctx.login.start();
@@ -314,11 +370,17 @@ test('capture evidence updates the login badge and a 403 turns it into refused',
     assert.equal(delivered.capture.state, 'events_received');
     assert.equal(delivered.capture.eventsReceived, 3);
 
-    const refused = ctx.login.markCaptureLoginRequired({roomEnterStatus: 403, reason: 'room_enter_403'});
-    assert.equal(refused.state, TIKTOK_LOGIN_STATES.REFUSED);
+    const refused = ctx.login.markCaptureRefused({roomEnterStatus: 403, reason: 'room_enter_403'});
+    assert.equal(refused.state, TIKTOK_LOGIN_STATES.LOGGED_IN, 'room access is not the login state');
     assert.equal(refused.capture.state, 'platform_refused');
     assert.equal(refused.capture.roomEnterStatus, 403);
-    assert.equal(refused.revalidationRequired, true);
+    assert.equal(refused.roomAccess.state, 'refused');
+    assert.equal(refused.revalidationRequired, false);
+
+    const expired = ctx.login.markCaptureLoginRequired({roomEnterStatus: null, reason: 'login_required'});
+    assert.equal(expired.state, TIKTOK_LOGIN_STATES.EXPIRED);
+    assert.equal(expired.capture.state, 'login_required');
+    assert.equal(expired.revalidationRequired, true);
   } finally {
     await ctx.cleanup();
   }

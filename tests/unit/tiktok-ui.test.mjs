@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {gzipSync} from 'node:zlib';
-import {buildBrowserArgs, decodeFramePayload, parseDevToolsActivePort, findBrowserExecutable} from '../../src/platforms/tiktok/browser-relay.mjs';
-import {chatMessage, webcastResponse} from '../helpers/tiktok-frames.mjs';
+import {BrowserSession, buildBrowserArgs, decodeFramePayload, parseDevToolsActivePort, findBrowserExecutable} from '../../src/platforms/tiktok/browser-relay.mjs';
+import {chatMessage, fetchResult, pushFrame, webcastResponse} from '../helpers/tiktok-frames.mjs';
 import {SettingsStore, normalizeSettings, SETTINGS_KEYS} from '../../src/server/settings-store.mjs';
 import {createTempDir} from '../helpers/temp-dir.mjs';
 
@@ -129,6 +129,17 @@ test('all three locales carry the same TikTok UI and error keys', () => {
     'live.source.tiktokCaptureStateConnected',
     'live.source.tiktokCaptureStateRateLimited',
     'live.source.tiktokCaptureStateNeedsAction',
+    'live.source.tiktokCaptureStateIdle',
+    'live.source.tiktokCaptureStateRoomRefused',
+    'live.source.tiktokCaptureStateRoomUnconfirmed',
+    'live.source.tiktokCaptureRoomUnconfirmed',
+    'live.source.tiktokCaptureRoomRefusedButEvents',
+    'live.source.tiktokLoginRoomAccessRefused',
+    'live.source.tiktokLoginCaptureRoomUnconfirmed',
+    'live.source.tiktokVerificationRecordingFailed',
+    'live.source.tiktokVerificationRecordingUnconfirmed',
+    'live.source.tiktokVerificationRecordingNotStartedFailed',
+    'errors.tiktokRoomRefused',
     'live.source.tiktokCaptureLastMessage',
     'live.source.tiktokCaptureReconnects',
     'live.source.tiktokCaptureLastFailure',
@@ -159,6 +170,16 @@ test('all three locales carry the same TikTok UI and error keys', () => {
   const reference = [...sets[0]].sort();
   for (const set of sets.slice(1)) {
     assert.deepEqual([...set].sort(), reference);
+  }
+});
+
+test('every literal TikTok UI key used by the live page exists in all three locales', () => {
+  const used = new Set();
+  for (const match of liveSource.matchAll(/['"]((?:live\.source|errors)\.tiktok[A-Za-z0-9_.]+)['"]/g)) used.add(match[1]);
+  assert.ok(used.has('live.source.tiktokCaptureStateIdle'), 'the idle capture key is actually referenced');
+  for (const locale of Object.keys(dictionaries)) {
+    const keys = new Set(leafKeys(dictionaries[locale]));
+    for (const key of used) assert.ok(keys.has(key), `${locale} is missing ${key}`);
   }
 });
 
@@ -208,6 +229,24 @@ test('the browser relay launches a dedicated profile and never disables browser 
   assert.equal(parseDevToolsActivePort('12345\n/nope'), null);
 });
 
+test('a real PushFrame envelope is decoded instead of treating it as a batch', () => {
+  const batch = fetchResult({
+    messages: [{method: 'WebcastChatMessage', payload: chatMessage({msgId: 'p-1', content: 'push frame'}), msgId: 901n}]
+  });
+  const gz = gzipSync(batch);
+  const frame = pushFrame({payload: gz, logId: 42n});
+  const decoded = decodeFramePayload(frame.toString('base64'));
+  assert.equal(decoded.length, 1);
+  assert.equal(decoded[0].method, 'WebcastChatMessage');
+  assert.equal(decoded[0].envelopeMsgId, '901');
+  // Non-event control frames must be ignored, not parsed as an empty batch.
+  assert.deepEqual(decodeFramePayload(pushFrame({payloadType: 'hb', payload: Buffer.from([0x08, 0x01])}).toString('base64')), []);
+  assert.deepEqual(decodeFramePayload(pushFrame({payloadType: 'ack', payload: Buffer.from('-')}).toString('base64')), []);
+  // Uncompressed payloads are accepted too.
+  const raw = decodeFramePayload(pushFrame({payload: batch}).toString('base64'));
+  assert.equal(raw.length, 1);
+});
+
 test('a browser relay frame is gzip protobuf and decodes to real message payloads', () => {
   const payload = webcastResponse({messages: [{method: 'WebcastChatMessage', payload: chatMessage({msgId: '55'}), msgId: 55n}]});
   const gz = gzipSync(payload);
@@ -218,6 +257,29 @@ test('a browser relay frame is gzip protobuf and decodes to real message payload
   assert.equal(raw.length, 1);
   assert.deepEqual(decodeFramePayload(''), []);
   assert.deepEqual(decodeFramePayload(Buffer.from('not protobuf').toString('base64')), []);
+});
+
+test('the browser session waits for frames after a room-entry 403 instead of failing immediately', async () => {
+  const session = new BrowserSession({refusedGraceMs: 10, loginWaitMs: 500, now: Date.now});
+  session.cdp = {closed: false};
+  session.closed = false;
+  session.roomEnterStatus = 403;
+  session.roomEnterAt = Date.now() - 100;
+  const refused = await session.waitForReady({timeoutMs: 300});
+  assert.equal(refused.roomRefused, true);
+  assert.equal(refused.loginRequired, false, 'a room 403 is not a login failure');
+  assert.equal(refused.events, 0);
+
+  session.decodedCount = 2;
+  const withEvents = await session.waitForReady({timeoutMs: 50});
+  assert.equal(withEvents.roomRefused, true, 'the warning is preserved');
+  assert.equal(withEvents.events, 2, 'real frames win over the HTTP refusal');
+
+  session.roomEnterStatus = 200;
+  session.decodedCount = 0;
+  const roomOk = await session.waitForReady({timeoutMs: 50});
+  assert.equal(roomOk.roomRefused, false);
+  assert.equal(roomOk.roomEnterStatus, 200);
 });
 
 test('a browser executable is only accepted from known install paths', () => {
