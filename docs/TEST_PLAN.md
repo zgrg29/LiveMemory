@@ -63,6 +63,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 - 真实双击 UAC（同意/拒绝）、干净 Windows 账户、Windows 原生启动器。
 - 母语审校；十语言质量仅为机器判据 + 抽样阅读。
 - Twitch/抖音真实采集；长报告多块翻译；真实 429/限流。
+- 错误/恢复界面未做专项十语言截图（API 错误与恢复逻辑由测试覆盖）。
 
 ## 2.0 M6 本轮结果（2026-11-16，TIKTOK-M6）
 
