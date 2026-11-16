@@ -1,6 +1,85 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · **v0.14.0 五平台正式发布** · 产品版本 `0.14.0` · Tag `v0.14.0` → `d268cf9` · EXE Build ID `17f84b1956e1` · 1034 测试通过 · **已 Push/Tag/Release**
+本轮：2026-11-16 · **P39 / I18N-M0 国际化基础架构整理完成** · 仍三语 · 1060 测试 · EXE `18df5c272a98`（`verify-exe` 11/11）· **未发布**
+
+> 本轮把「三语假设」从代码结构中移除：新增单一语言清单 `src/shared/locales.mjs`（Node/浏览器同源）、
+> 可用性驱动降级、动态 Header/设置/AI/报告语言选择器，并修复 `max-width:132px` 等布局限制。
+> **未新增语言、未改 AI 输出语言设置、未改长期画像/数据库/平台采集、未 Push/Tag/Release。**
+> 长期画像跨语言策略已由用户确定为**方案 B**（允许混合语言事实、接受跨语言重复），只在文档记录。
+> 三语行为与视觉保持；十语言整体仍未完成，下一轮从 P40 开始。
+
+## 0. 本轮（P39 / I18N-M0）
+
+### 0.1 完成内容
+
+| 目标 | 结果 |
+| --- | --- |
+| 单一语言清单 | `src/shared/locales.mjs`：code/nativeName/englishName/language/script/regions/available/默认 `en`；删除前端/后端/AI/记忆/翻译/下拉的重复三语清单 |
+| 可用性驱动降级 | `resolveLocale(..., {available})` + `detectInstalledLocales()`；`zh-HK` 当前 `zh-CN`、未来 `zh-TW`；`pt-PT`→`pt-BR`、`in`→`id`、未知→`en` |
+| 偏好/系统/资源分离 | 合法旧配置原样加载；资源缺失只降级 effective，不改写保存值 |
+| 动态选择器 | `language-control.js` 由 `/api/bootstrap.locales.available` 生成；三语保持原三段按钮，>3 项/长名称自动下拉；设置/AI 输出/报告阅读同源 |
+| 布局 | 删除 `max-width:132px/112px`；真实浏览器十语言无截断/重叠/溢出 |
+| 资源缺失 | 字典 404/损坏回退默认一次；默认也失败显示既有错误页 |
+| 三语完整 | 每份字典仍 2,265 键，键集/占位符零差异 |
+
+### 0.2 测试与验收（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **711 passed / 0 failed / 0 skipped**（17,466.98 ms） |
+| 全量集成 | **349 passed / 0 failed / 0 skipped**（404,067.46 ms） |
+| 合计 | **1060 passed / 0 failed / 0 skipped** |
+| 真实浏览器 `verify-i18n-ui.mjs` | **9/9 PASS**：三语 1440/390；十语言 1440/1024/820/390/黑暗 |
+| `verify-exe` | **11/11**，含 i18n 资源场景 |
+
+截图：`docs/screenshots/i18n-p39-header-3lang-*.png`、`i18n-p39-header-10lang-*.png`。
+十语言仅测试夹具（`tests/fixtures/`），不在产品语言列表。
+
+**环境限制（如实记录）**：本机默认沙箱禁止 Chromium 的命名管道（mojo），真实浏览器验收需一次性
+`danger-full-access`；`verify-exe` 的 `LOCALAPPDATA` 重定向到 `tests/.tmp`，避免写入真实用户目录。
+这不代表产品需要提权，也不代表已在干净 Windows 账户验收。
+
+### 0.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `18df5c272a98` |
+| 构建 commit | `ba0ff26fbd45d68d536fd0e73542a455fc5bd3bc` |
+| 大小 / SHA-256 | `97,788,416` bytes / `691c4f002c2487f879d5a2a08ef5d3330c38e53834bbdd45509a59443527ef24` |
+| builtAt | `2026-11-16T09:36:30.079Z` |
+| 资源 / 模块 | 229 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11**；i18n 场景：`locales=zh-CN,ja,en`、三字典 200、`/shared/locales.mjs` 200、`language-control.js` 200 |
+
+真实双击 UAC、干净 Windows 账户仍未人工验证；不得写成已通过。
+
+### 0.4 P41 方案 B（仅文档）
+
+允许长期画像出现不同语言事实并接受跨语言语义重复；不锁首次语言、不自动跨语言合并、
+不引入别名表/语义归一化/DB 迁移；保留同语言去重；切换输出语言不得删除/覆盖/重译已有事实；
+语言混合不得导致约束冲突/任务失败/数据损坏。**P39 未改长期画像代码、DB 或 AI。**
+
+### 0.5 下一轮（P40 / I18N-M1）
+
+1. 先读 `docs/I18N.md` §3、§5、§7；建立 `docs/i18n/GLOSSARY.md`。
+2. 新增 `ko/es/pt-BR/zh-TW/fr/de/id` 七份字典（各 2,265 键），注册表追加 7 条并设 `available: true`。
+3. 决定启动器控制台：扩到十语，或明确「控制台三语 + 英文回退」。
+4. 十语言排序、长文本布局走查（其他页面 112–260px 标签）；`i18n.test.mjs` 已遍历注册表。
+5. 完成后才可进入 P41；P42 十语言 EXE 验收仍未开始。
+
+### 0.6 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p39-i18n-m0`（从 `main` / `a70321c`） |
+| 代码/测试提交 | `ba0ff26`（26 files，+1666/−146） |
+| 文档/截图提交 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+---
+
+上一轮：2026-11-16 · **v0.14.0 五平台正式发布** · 产品版本 `0.14.0` · Tag `v0.14.0` → `d268cf9` · EXE Build ID `17f84b1956e1` · 1034 测试通过 · **已 Push/Tag/Release**
 
 > 用户明确授权本轮完成**阶段性正式 Release**。已发布：
 > `LiveMemory v0.14.0 — Multi-Platform Release`，Tag `v0.14.0`，
@@ -66,6 +145,7 @@ Build ID `17f84b1956e1` / commit `d268cf9` / builtAt `2026-11-16T06:51:04.013Z` 
 ### 0.5 下一轮
 
 **P39 / I18N-M0：国际化架构整理（v0.15.0）**，不新增语言。
+P39 已于 2026-11-16 完成，见本文件顶部；下一轮为 **P40 / I18N-M1（新增七种语言资源）**。
 `docs/ROADMAP.md` 已把 P39–P44 的版本标签顺延（P39/P40 → v0.15.0，P41 → v0.15.1，
 P42 → v0.16.0，P43 → v0.16.x），因为 `v0.14.0` 已被本次发布占用。
 

@@ -1,10 +1,103 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**v0.14.0 正式发布**：五平台封版；产品版本 0.14.0；EXE Build ID `17f84b1956e1`；1034 测试通过；已 Push、Tag、GitHub Release）
+最后更新：2026-11-16（**P39 / I18N-M0 完成**：单一语言清单 + 可用性降级 + 动态语言选择器；仍只有三语；1060 测试通过；EXE Build ID `18df5c272a98`；**未 Push / 未 Tag / 未 Release**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
-## 0.46 v0.14.0 五平台正式发布（2026-11-16）🚀
+## 0.47 P39 / I18N-M0 国际化基础架构整理（2026-11-16）✅ 未发布
+
+用户要求把 LiveMemory 从「三语假设」升级为可扩展架构，**不新增任何语言**，最终用户仍只能选择
+`zh-CN` / `ja` / `en`。本轮完成开发、自动化回归、真实浏览器布局验收与 Windows EXE 验收；
+**未改平台采集、AI 分析任务/批次/恢复、长期画像合并/去重/持久化、数据库 Schema、原始弹幕、
+AI 输出语言设置、翻译缓存语义。未 Push、未 Tag、未 Release。**
+长期画像跨语言策略已由用户确定为**方案 B**，本轮只在 `docs/I18N.md` / 架构 / 路线图记录，
+**未提前修改长期画像代码、数据库或 AI 分析逻辑**。
+
+### 0.47.1 本轮实际完成
+
+| 目标 | 结果 |
+| --- | --- |
+| 统一语言清单 | 新增 `src/shared/locales.mjs`（Node 与浏览器同一文件）：语言码、原生名、英文名、语言族、script、regions、`available`、默认 `en`；删除前端/后端/AI/记忆/翻译/四个下拉的重复三语清单 |
+| 可用性驱动降级 | `resolveLocale(preference, system, {available})` + `detectInstalledLocales()`；`zh-HK` 当前降级 `zh-CN`，未来有 `zh-TW` 资源时优先 `zh-TW`；`pt-PT`→`pt-BR`、`in`→`id`（有资源时）；未知→`en` |
+| 偏好/系统/资源分离 | 合法旧配置原样加载；资源缺失只影响 effective，不改写保存值；未知/不支持语言安全降级 |
+| 动态语言选择器 | `src/web/js/language-control.js` 由 `/api/bootstrap` 的 `locales.available` 生成；三种语言保持原三段按钮 + 系统按钮，>3 项或长名称自动原生下拉；设置页/AI 输出/报告阅读同源 |
+| 布局修复 | 删除 `.language-select` 的 `max-width:132px` 与 `112px`；真实浏览器十语言无截断/重叠/横向溢出 |
+| 资源缺失 | 字典 404/损坏回退默认一次；默认也失败显示既有本地化错误页，不白屏 |
+| 三语完整 | 三份字典仍各 **2,265** 键；键集缺失 0/多余 0；占位符差异 0；切换/持久化/系统识别保持 |
+
+### 0.47.2 架构修改前后
+
+| 项目 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 语言清单 | 前端 `i18n.js`、`shared/locale.mjs`、`ai/constants.mjs`、`memory/constants.mjs` 各一份；`LOCALE_NAME`、`localeDisplayName`、四个下拉硬编码三语 | `src/shared/locales.mjs` 唯一来源；前端与 Node 引用同一模块 |
+| 归一化 | `zh*`→`zh-CN` 等固定前缀 | 精确码 → 语言族 region/script → 默认语言；可用集合驱动 |
+| Header | `LANGUAGE_CHOICES` 三项 + `max-width:132px` | 动态列表；3 项原交互，>3 项菜单；无固定宽度 |
+| 资源缺失 | 可能 404/白屏 | 服务端检查真实字典；客户端回退默认一次 |
+
+### 0.47.3 自动化与真实 UI（本机真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **711 passed / 0 failed / 0 skipped**（17,466.98 ms） |
+| 全量集成 `... "tests/integration/*.test.mjs"` | **349 passed / 0 failed / 0 skipped**（404,067.46 ms） |
+| 合计 | **1060 passed / 0 failed / 0 skipped** |
+| 真实浏览器 `node scripts/verify-i18n-ui.mjs` | **9/9 PASS**（三语 1440/390；十语言夹具 1440/1024/820/390/黑暗） |
+| `scripts/verify-exe.mjs` | **11/11**（新增 i18n 资源场景） |
+
+- 新增/扩展测试：`locale-registry`、`i18n-locale-api`、`locale`、`i18n`、`header-language`、`settings-store`。
+- 十语言夹具：`tests/fixtures/locales-10.mjs`、`tests/fixtures/i18n-header-10.html`；
+  **不在 `src/`，不进入正式可选语言列表或产品构建。**
+- 截图：`docs/screenshots/i18n-p39-header-3lang-*.png`、`i18n-p39-header-10lang-*.png`。
+- 本环境默认沙箱禁止 Chromium mojo；真实浏览器验收以一次性 `danger-full-access` 执行，
+  已在日志中如实记录；不代表普通用户环境需要提权。
+
+### 0.47.4 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `18df5c272a98` |
+| 构建 commit | `ba0ff26fbd45d68d536fd0e73542a455fc5bd3bc` |
+| source hash | `18df5c272a983f223f90373394dd9a86abbfc9f1c46a0dd7c0b455bf9ee9cefa` |
+| 大小 / SHA-256 | `97,788,416` bytes / `691c4f002c2487f879d5a2a08ef5d3330c38e53834bbdd45509a59443527ef24` |
+| builtAt | `2026-11-16T09:36:30.079Z` |
+| 资源 / 模块 | 229 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11**（启动矩阵 + i18n 资源：共享注册表/三字典/动态控件） |
+
+- 功能场景使用 asInvoker 功能副本；正式 EXE 单独断言 `requireAdministrator`。
+- `verify-exe` 的 `LOCALAPPDATA` 重定向到 `tests/.tmp`，避免写入真实用户目录；不是产品缺陷。
+- **真实双击 UAC、干净 Windows 账户仍未人工验证**，不得写成已通过。
+
+### 0.47.5 P41 方案 B（仅文档决策）
+
+- 允许长期画像出现不同语言事实，接受跨语言语义重复。
+- 不锁定首次分析语言；不自动跨语言合并；不引入别名表/语义归一化/DB 迁移。
+- 保留现有同语言合并/去重；切换 AI 输出语言不得删除、覆盖或重新翻译已有事实；
+  语言混合不得导致约束冲突、任务失败或数据损坏。
+- 记录位置：`docs/I18N.md` §6、`docs/ARCHITECTURE.md` §10.1、`docs/ROADMAP.md` P41。
+- **P39 未改任何长期画像代码、数据库或 AI 分析逻辑。**
+
+### 0.47.6 明确未做 / 遗留
+
+- 未新增 `ko/es/pt-BR/zh-TW/fr/de/id` 任何字典或设置；十语言整体仍未完成。
+- 未新增 `aiOutputLocale`；AI 输出语言仍默认取界面语言（P41）。
+- 未改启动器控制台语言行为（仍三语独立消息表）；仅测试对齐语言码，未来统一方案见 I18N.md §2.5。
+- 其他页面标签的 112–260px 固定宽度仍需 P40 十语言走查。
+- P40/P41/P42 仍为待开发；不得因 P39 完成而宣称十语言完成。
+- 真实 UAC、干净 Windows 账户未验证。
+
+### 0.47.7 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p39-i18n-m0`（从 `main` / `a70321c` 创建） |
+| 代码/测试提交 | `ba0ff26` `feat: unify the locale registry and generate language controls`（26 files，+1666/−146） |
+| 文档/截图提交 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+| 工作区 | 代码提交后仅剩文档/截图/日志 |
+
+### 0.46 v0.14.0 五平台正式发布（2026-11-16）🚀
 
 用户明确授权本轮完成**阶段性正式 Release**。已执行：版本确认 → 测试 → 构建 → EXE 验收 →
 打包校验 → 提交 → Push → Tag → GitHub Release。**未修改平台采集、AI 分析或长期画像逻辑，
