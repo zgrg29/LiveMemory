@@ -26,7 +26,47 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
-## 2.0 本轮结果（2026-11-15，DOUYIN-M2M3 + Twitch 合并）
+## 2.0 M6 本轮结果（2026-11-16，TIKTOK-M6）
+
+### 2.0.1 自动化
+
+| 运行 | 结果 |
+| --- | --- |
+| 定向（新增文件 + 受影响既有测试） | **26 passed / 0 failed** |
+| 全量单元 `tests/unit/*.test.mjs` | **687 passed / 0 failed / 0 skipped（31,958.09 ms）** |
+| 全量集成 `tests/integration/*.test.mjs` | **347 passed / 0 failed / 0 skipped（445,550.52 ms，与单元测试并行运行）** |
+| 合计 | **1034 passed / 0 failed / 0 skipped** |
+
+新增覆盖：
+
+- `tests/integration/tiktok-concurrent.test.mjs`（3）：两个不同 TikTok room 同时启动并各自收到事件；
+  同一 msgId 在两个 session 均保留（去重按 session 隔离）；稳定 UID 归属正确；停止 A 后 B 继续；
+  A 断线重连仍是同一 session 且不碰 B；A 两次离线确认下播只结束 A；重复启动 A 409 且不新增 session。
+- `tests/integration/tiktok-live-api.test.mjs`（4）：`/api/live/recordings` 同时返回两场及各自 messageCount；
+  两场 AI report 分别 200；重复 A 409；通过共享 stop 路由停止 A 后 B 仍 connected 并继续计数。
+- `tests/integration/tiktok-cross-platform.test.mjs`（1）：TikTok + Bilibili 同库并发，停止/结束互不影响。
+- `tests/unit/live-new-ui.test.mjs`（5）：模拟入口移除、五个真实平台、活动列表与独立停止、
+  `live.js` 全部字面翻译键存在、历史 mock 键保留、`/api/simulate/*` 仅作测试夹具。
+- `tests/unit/tiktok-ui.test.mjs` 新增：不同 TikTok room 不再被当成重复。
+
+### 2.0.2 真实平台 / EXE
+
+| 运行 | 结果 |
+| --- | --- |
+| `scripts/verify-exe.mjs` | **10/10** |
+| `scripts/verify-tiktok-exe.mjs @aljazeeraenglish` | **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| `scripts/verify-tiktok-multi-exe.mjs` | **17/17 passed，0 NOT-OBSERVED，0 failed** |
+
+真实双房间：`@aljazeeraenglish`（`7706695538414062349`）+ `@aljazeera`（`7706505863599508276`）；
+两场均 connected，A 收到 4 条、B 收到 1 条真实 chat；重复 A 409；停止 A 后 B 保持 connected 且消息 1→2；
+A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200。更早的 `@gbnews` B 运行 90 秒 0 条，
+未计为通过。礼物/连送/订阅仍 **NOT-OBSERVED**。
+
+其他平台真实回归（本轮）：Bilibili room `6`（真实 `7734200`）45 秒 **2 条 chat / 2 位可识别观众 /
+2/2 平台 UID**，停止 `ended`。YouTube / Twitch / 抖音本轮**未重跑真实直播采集**；其适配器、服务与
+会话隔离由 347 项集成测试覆盖，EXE 状态端点仍为 200，但不得写成真实采集通过。
+
+## 2.0 上一轮结果（2026-11-15，DOUYIN-M2M3 + Twitch 合并）
 
 ### 2.0.1 Twitch 合并后回归
 

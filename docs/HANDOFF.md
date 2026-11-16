@@ -1,11 +1,89 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · TIKTOK-M5：匿名本地 WebSocket 统一采集、删除登录与通道选择 · **真实 30 分钟 + EXE 已验收；礼物 NOT-OBSERVED；待人工复验**
+本轮：2026-11-16 · TIKTOK-M6：同一平台多个 TikTok 直播间并发 + 正式界面移除模拟直播 · **真实双房间 + EXE 17/17 已验收；礼物 NOT-OBSERVED；待人工复验**
 
-> TikTok 现在只有一条采集路径：匿名本地 webcast WebSocket（匿名 `ttwid`，无需登录、无需浏览器中继、不依赖任何签名服务）。本轮验证并接入这条路径，随后删除扫码登录、登录状态 UI、专用浏览器 Profile、免费社区签名通道与通道选择；旧 Profile 只清理 LiveMemory 自己创建的目录。**未合并 main、未 Push、未 Tag、未 Release。**
+> 根因不是后端单例：`SessionManager`/`TikTokLocalAdapter` 一直支持同平台多场；真正限制是 TikTok 面板
+> 用 `!tiktokActiveRecording()` 把「存在任意 TikTok 记录」当成「该房间已在记录」，从而全局禁用开始按钮。
+> 修复把判断收窄为同一 `platformRoomId`（handle 回退），同时新增逐场活动列表与独立停止。
+> 正式界面删除模拟直播标签/面板/顶部按钮；`MockLiveSource`、`/api/simulate/*` 与测试夹具**保留**。
+> **未合并 main、未 Push、未 Tag、未 Release。**
+
+## 0. 本轮（TIKTOK-M6）
+
+### 0.1 这一轮做了什么
+
+1. **定位真实限制**：逐项检查前端 `activeSession`/`tiktokActiveRecording`、`SessionManager.findDuplicate`、
+   `TikTokService`、`TikTokLocalAdapter`、WebSocket、SQLite schema、监控；确认服务端按
+   `(platform, platform_room_id)` 拒绝重复，不同房间已有独立 adapter/socket/session，问题只在前端全局判断。
+2. **修复多房间**：新增 `tiktokRecordingForRoom(room)` 与 `tiktokRecordings()`；只有同一 room 才禁用开始；
+   检查新 room 时显示「另有 N 个 TikTok 直播间在后台记录」，不阻止开始。
+3. **独立管理**：TikTok 面板与「新建记录」页都加入活动列表：主播、平台、采集状态、已记录消息数、
+   观众数、查看、停止；停止只调用该 session 的共享 stop 路由。
+4. **移除模拟直播**：删除「模拟直播」标签、模拟面板、顶部「开始模拟直播」按钮与 `handleStart()`；
+   默认平台改为 Bilibili；删除启动器每条命令都打印的模拟提示；清理三语专用文案。
+5. **保留测试基础设施**：`MockLiveSource`、`SessionManager.startSimulation()`、`/api/simulate/start|stop`、
+   fixtures、演示脚本全部保留；历史 `platform='mock'` 记录继续可读。
+6. **修正原始翻译键**：新建记录页的 `history.aiTitle` 改为 `history.detail.aiTitle`，
+   并新增静态测试扫描 `live.js` 全部字面 `t('...')` 键。
+7. **测试**：新增 TikTok 同平台并发、HTTP 并发、跨平台并发、零模拟 UI 测试；全量 **1034 passed**。
+8. **真实双房间 EXE**：新增 `scripts/verify-tiktok-multi-exe.mjs`，用真实
+   `@aljazeeraenglish` + `@aljazeera` 两场同时采集，**17/17 passed**。
+
+### 0.2 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 真实根因 | TikTok 前端全局单房间判断；后端一直按 `platform+room` 隔离 |
+| TikTok 同平台并发 | ✅ 两场独立 session / room / socket / 去重 / 重连 / 结束；停止 A 不影响 B |
+| 跨平台并发 | ✅ TikTok + Bilibili 独立生命周期（自动化） |
+| 五平台审查 | Bilibili / YouTube / Twitch / 抖音均无同平台全局限制，未做无意义重构 |
+| 模拟直播清理 | 标签、面板、顶部按钮、`handleStart`、启动器提示、三语专用键已删除 |
+| 保留 | Mock 测试夹具、`/api/simulate/*`、历史 mock 数据、AI/SQLite 兼容 |
+| 定向测试 | **26 passed / 0 failed**（新增文件 + 受影响既有测试） |
+| 全量 | **687 unit + 347 integration = 1034 passed / 0 failed / 0 skipped** |
+| 真实双房间 EXE | **17/17 passed，0 NOT-OBSERVED，0 failed**；A 4 条 / B 1 条真实 chat；停 A 后 B 1→2 |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe` | **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| EXE | `D:\LiveMemory\dist\LiveMemory.exe` / Build ID `e48016f19362` / commit `4224f7c` / `96,730,112` B / SHA-256 `02acd0b1…` / `requireAdministrator` |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+真实双房间运行：`@aljazeeraenglish`（room `7706695538414062349`）+ `@aljazeera`（room `7706505863599508276`），
+A session `ses_01M7H90WMS2MMC18X77V`，B session `ses_01M7H915E4VKBFGC34VF`；两场均 `connected`，
+同一窗口内 A 收到 4 条、B 收到 1 条真实 chat；重复 A 返回 409；停止 A 后 B 仍 `connected` 且 1→2；
+两场 AI report 均 200。
+更早的 `@gbnews` B 运行中 B 在 90 秒内 0 条，已如实排除，不计为通过。
+
+**真实礼物 / 连送 / 订阅：NOT-OBSERVED。** 不得把本轮聊天通过写成礼物通过。
+
+### 0.3 下一轮 / 人工验收必须先做
+
+1. 普通 Windows 桌面双击 `dist/LiveMemory.exe`，允许 UAC；确认 Build ID `e48016f19362`。
+2. 进入「直播记录」：确认顶部只有「新建记录」，**没有**「开始模拟直播」按钮；来源标签只有
+   Bilibili / YouTube / Twitch / 抖音 / TikTok，默认 Bilibili。
+3. TikTok → 输入正在直播的 A 链接 → 检查直播间 → 开始记录；确认显示已连接并出现真实弹幕。
+4. 点「＋ 新建记录」→ TikTok → 输入**不同的**正在直播的 B 链接 → 检查直播间；
+   确认开始按钮可用，并提示「另有 1 个直播间在后台记录」；开始 B。
+5. 确认「正在记录」卡片与 TikTok 活动列表同时显示 A、B：主播、平台、连接状态、消息数、
+   观众数、独立「查看/停止」。
+6. 等待两场都出现真实弹幕，分别记录消息数；确认两场 session 不同。
+7. 只停止 A：确认 B 仍在「已连接」，消息数继续增加；再停止 B。
+8. 历史页确认两场 TikTok 记录都在、room 不同、消息和观众数据可读；分别打开 AI 分析报告。
+9. 重复添加同一场 A：确认返回「该直播间已在记录中」并定位到已有记录，不创建第二个 A。
+10. 检查旧模拟历史：历史页仍显示「模拟」徽标与说明，数据可读；正式页面无任何模拟入口。
+11. 若房间有礼物：记录真实礼物/连送是否出现；没有就继续标 **NOT-OBSERVED**。
+12. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.4 边界与提交
+
+- 真实双房间样本只有每场 2 条弹幕，不能据此宣称长期高并发稳定性；资源与平台限流仍可能影响多开。
+- 停止 A 的验证是用户停止；真实网络断线/真实下播仅由自动化覆盖（A 断线重连、两次离线确认只结束 A）。
+- 模拟直播只从正式 UI 移除；`/api/simulate/*` 仍存在，仅供自动化/EXE 验收播种，不应在文档中描述为用户功能。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+> TikTok 现在只有一条采集路径：匿名本地 webcast WebSocket（匿名 `ttwid`，无需登录、无需浏览器中继、不依赖任何签名服务）。上一轮验证并接入这条路径，随后删除扫码登录、登录状态 UI、专用浏览器 Profile、免费社区签名通道与通道选择；旧 Profile 只清理 LiveMemory 自己创建的目录。**未合并 main、未 Push、未 Tag、未 Release。**
 > 实现：`docs/STATUS.md` §0.42；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C；日志：`log/2026-11-16-tiktok-m5-local-websocket.md`。
 
-## 0. 本轮（TIKTOK-M5）
+## 0-M5. 上一轮（TIKTOK-M5）
 
 ### 0.1 这一轮做了什么
 

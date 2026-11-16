@@ -1,8 +1,157 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（TIKTOK-M5：匿名本地 WebSocket 统一采集，删除登录与通道选择；1019 测试；EXE `9b63b0018235`）
+最后更新：2026-11-16（TIKTOK-M6：同一平台多个 TikTok 直播间并发；正式界面移除模拟直播；1034 测试；EXE `e48016f19362`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.43 TIKTOK-M6：TikTok 多直播间并发与模拟直播清理（2026-11-16）🟢（feature/tiktok，真实双房间 + EXE 已验收）
+
+范围：只修复「TikTok 只能记录一个直播间」与「正式界面仍提供模拟直播」两项产品问题。
+**未改数据库 schema（仍 16）、AI 结果 Schema、提示词、其他四个平台适配器或事件语义；未新增运行时依赖；
+未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.43.1 真实根因（不是后端单例）
+
+| 检查项 | 结论 |
+| --- | --- |
+| `SessionManager` | 已支持同平台多个独立 recording；`Map<sessionId, recording>`，每场独立 adapter/连接/停止 |
+| 重复保护 | `findDuplicate(platform, platformRoomId)` 只拒绝**同一平台 + 同一 room**，并不拒绝同平台其他房间 |
+| `TikTokService` | 每次 `connect` 创建新的 `TikTokLocalAdapter`，共享的只有匿名 `ttwid` 设备 Cookie（有意共享） |
+| `TikTokLocalAdapter` | 每个实例独立 socket、`seenIds`、`pendingGifts`、重连 timer、offline 观测、结束判断 |
+| SQLite | `sessions` 与 `events` 按 `session_id` 隔离；`UNIQUE(session_id, dedupe_key)` |
+| **前端（真实限制）** | `buildTikTokRoomMeta()` 使用 `!tiktokActiveRecording()`，把「存在任意 TikTok 记录」当成「该房间已在记录」；开始按钮被全局禁用并显示 `tiktokAlreadyRecordingHint` |
+| 页面展示 | `tiktokActiveRecording()` 只取第一条 TikTok 记录，第二场无法从面板区分/停止 |
+
+因此：后端本来支持并发，**限制来自 TikTok 面板的全局单房间判断**。修复没有取消重复保护，
+而是把判断收窄为同一个 `platformRoomId`（handle 作为回退），保留服务端 `SESSION_DUPLICATE_ROOM`。
+
+### 0.43.2 实现
+
+| 模块 | 内容 |
+| --- | --- |
+| `src/web/js/pages/live.js` | 新增 `tiktokRecordings()` / `tiktokRecordingForRoom(room)` / `tiktokPanelRecording()`；只有同一 room 才禁用开始；不同 room 显示「另有 N 个直播间在后台记录」 |
+| `live.js` | 新增 TikTok 活动列表：每个直播间显示主播、handle、采集状态、已记录消息数、独立「查看/停止」 |
+| `live.js` | 新建记录页新增「正在记录」卡片：主播、平台、连接状态、消息数、观众数、独立停止；数量为 0 时隐藏 |
+| `live.js` | 默认平台改为 `bilibili`；删除模拟直播标签、模拟面板、`handleStart()` 与顶部「开始模拟直播」按钮；同时修正 `history.aiTitle` 原始键为 `history.detail.aiTitle` |
+| `src/server/routes.mjs` | `/api/bootstrap` capabilities 只列出五个真实平台（移除 mock，补齐 Twitch/抖音/TikTok）；`/api/simulate/*` 保留为内部测试夹具并加注释 |
+| `src/launcher/launcher.mjs`、`cli-i18n.mjs` | 删除启动器每条命令都打印的「当前为模拟直播」提示 |
+| `src/web/i18n/*.json` | 三语更新新建记录/活动列表文案；删除 `mockTab`、`mockNote`、`live.hero.start`、`starting`、`startFailed`、`simulationTitle`；保留历史模拟场次徽标与说明 |
+| `src/web/styles/pages.css` | 新增 `.live-recording-row`、`.live-recording-meta`、`.live-recording-actions`、`.tiktok-active-recordings`；沿用设计 token |
+| `src/server/index.mjs` | 新增测试注入项 `tiktokTtwidProvider`（仅测试使用，生产不传） |
+
+**保留的测试基础设施**：`MockLiveSource`、`SessionManager.startSimulation()`、`/api/simulate/start|stop`、
+`tests/helpers/*`、演示/验收脚本均未删除。正式页面不再引用它们；历史 `platform='mock'` 数据仍可读取。
+
+### 0.43.3 五个平台并发审查
+
+| 平台 | 同平台多房间 | 跨平台 | 备注 |
+| --- | --- | --- | --- |
+| Bilibili | ✅ 每个房间独立 adapter；UI 只按开播状态限制 | ✅ | 未改适配器 |
+| YouTube | ✅ 每个视频独立 adapter/continuation；已有双场真实测试 | ✅ | 未改适配器 |
+| Twitch | ✅ 每个频道独立 IRC adapter；已有双频道测试 | ✅ | 未改适配器 |
+| 抖音 | ✅ `Map<sessionId, adapter>`；已有双房间测试 | ✅ | 未改适配器/登录 |
+| TikTok | ✅ 修复前仅前端全局限制；服务端一直支持 | ✅ | 本轮新增真实双房间 EXE 验收 |
+
+没有新增任何「最多 N 场」业务上限。
+
+### 0.43.4 自动化测试
+
+| 运行 | 结果 |
+| --- | --- |
+| 新增/定向（新增文件 + 受影响既有测试） | **26 passed / 0 failed** |
+| 全量单元 `tests/unit/*.test.mjs` | **687 passed / 0 failed / 0 skipped（31,958.09 ms，2026-11-16）** |
+| 全量集成 `tests/integration/*.test.mjs` | **347 passed / 0 failed / 0 skipped（445,550.52 ms，与单元测试并行运行，2026-11-16）** |
+| 合计 | **1034 passed / 0 failed / 0 skipped** |
+| `scripts/verify-exe.mjs` | **10/10**（Build ID `e48016f19362`，commit `4224f7c`） |
+| `scripts/verify-tiktok-exe.mjs @aljazeeraenglish` | **22/22 passed + 2 NOT-OBSERVED，0 failed**（真实 chat、稳定 UID、msgId、帧/事件分离、自动监听、SQLite、AI、重启、四平台回归） |
+| `scripts/verify-tiktok-multi-exe.mjs` | **17/17 passed，0 NOT-OBSERVED，0 failed**（真实双房间，见 §0.43.5） |
+
+新增测试文件：
+
+- `tests/integration/tiktok-concurrent.test.mjs`：同平台 A/B 并发；不同 room；两场各自事件；
+  同一 msgId 在两个 session 都保留；稳定 UID 归属；停止 A 不影响 B；A 断线重连只影响 A；
+  A 两次离线确认下播只结束 A；重复启动 A 被 409 拒绝且 session 数不增加。
+- `tests/integration/tiktok-live-api.test.mjs`：HTTP `/api/live/recordings` 同时列出两场、messageCount、
+  broadcaster、独立停止；重复 A 409；A 停止后 B 继续接收；两场 AI report 各自可读。
+- `tests/integration/tiktok-cross-platform.test.mjs`：TikTok + Bilibili 同时记录，独立生命周期。
+- `tests/unit/live-new-ui.test.mjs`：模拟入口彻底移除、五个真实平台、活动列表与独立停止、
+  三语字面键齐全、历史模拟数据键仍在、`/api/simulate/*` 仅作测试夹具。
+- `tests/unit/tiktok-ui.test.mjs`：新增「不同 TikTok room 不算重复」的结构断言。
+
+五平台回归口径：
+
+| 平台 | 本轮自动化 | 本轮真实直播 | 结论 |
+| --- | --- | --- | --- |
+| Bilibili | 集成/解析/会话/停止全绿 | `verify-bilibili.mjs 6 45`：room `6` → `7734200`，**2 条 chat / 2 位可识别观众**，停止 `ended` | ✅ 未回归 |
+| YouTube | 公开网页聊天 E2E（本地 fake web）+ 生命周期全绿 | 未重新做真实直播采样 | 🟡 真实采样 **NOT-OBSERVED（本轮未重跑）** |
+| Twitch | 匿名 IRC 适配器/服务/双频道隔离全绿 | 未重新做真实频道采样 | 🟡 真实采样 **NOT-OBSERVED（本轮未重跑）** |
+| 抖音 | 适配器/服务/双房间隔离/礼物解析全绿 | 未重新做真实直播间采样 | 🟡 真实采样 **NOT-OBSERVED（本轮未重跑）** |
+| TikTok | 并发/API/跨平台/UI 全绿 | 单房间 `verify-tiktok-exe` 22/22；双房间 `verify-tiktok-multi-exe` 17/17 | ✅ 真实双房间通过 |
+
+四个非 TikTok 平台的 EXE 状态端点在 `verify-tiktok-exe` 中仍为 200（Bilibili、YouTube `web`、
+Twitch `anonymous-irc`、抖音），说明路由与启动未被破坏；但**真实直播采集本轮只重跑了 Bilibili**，
+不得把自动化和状态端点写成四个平台的真实采集验收。
+
+### 0.43.5 真实 TikTok 双房间 EXE 验收
+
+脚本：`scripts/verify-tiktok-multi-exe.mjs`（新增）。正式 EXE 的 asInvoker 功能副本
+（`e48016f19362`，commit `4224f7c`）在隔离数据目录启动，通过真实 TikTok 公开接口解析两个不同直播间，
+再经匿名本地 WebSocket 同时连接。
+
+| 项目 | 结果 |
+| --- | --- |
+| 房间 A | `@aljazeeraenglish` / room `7706695538414062349` / 主播 Al Jazeera English |
+| 房间 B | `@aljazeera` / room `7706505863599508276` / 主播 الجزيرة |
+| 两场 session | `ses_01M7H90WMS2MMC18X77V` / `ses_01M7H915E4VKBFGC34VF`（不同） |
+| 连接 | 两场均 `connected`，独立 room id 与 socket |
+| 真实弹幕 | A **4 条**；B **1 条**（两场同一窗口内都收到真实 chat） |
+| 稳定 ID / 消息 ID | A 4/4 UID、4/4 msgId、4 个不同 msgId；B 2/2 UID、2/2 msgId、2 个不同 msgId |
+| 重复启动 A | HTTP 409 `SESSION_DUPLICATE_ROOM`，`recordings=2`，未创建第二个 A |
+| 停止 A | HTTP 200；B 仍 `connected`，消息数 **1 → 2** |
+| AI 读取 | A、B 的 `/api/ai/sessions/:id/report` 均 HTTP 200 |
+| 停止 B / 退出 | 均成功；SQLite 两场均为 `ended`，room id 不同、session id 不同 |
+| 脚本结果 | **17/17 passed，0 NOT-OBSERVED，0 failed** |
+| 运行时间 / 产物 | 2026-11-16 12:14–12:17（Asia/Shanghai）；`tests/.tmp/verify-tiktok-multi-2026-11-16T04-14-29-211Z`（临时目录，不提交） |
+
+说明：这是一次真实平台运行，两场确实同时收到了真实弹幕；但每场只有 1–4 条，样本很小。
+更早一次用 `@gbnews` 作 B 的尝试中，两场均 `connected`，A 收到 40 条真实弹幕，B 在 90 秒内
+**0 条**（该房间聊天不活跃/未投递）；该次未计为通过。礼物仍为 **NOT-OBSERVED**。
+
+### 0.43.6 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `e48016f19362` |
+| source hash | `e48016f193625e919be6dd2e744eac093aefb889144a5a8825edd2faba51dbdb` |
+| commit（构建时 HEAD） | `4224f7cb32852a4499518563456bbe1dfe2c9f00` |
+| 大小 / SHA-256 | `96,730,112` bytes / `02acd0b1fdd916edca65cff8423316153318b04435413b2ff741e4cde307f3db` |
+| builtAt | `2026-11-16T04:10:37.647Z` |
+| 资源 / 模块 | 226 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| 版本 | `0.13.3` |
+
+- 正式 EXE 构建于代码提交 `4224f7c` 之后；`build-info.commit` 等于该提交。
+  本轮最后的文档/脚本提交只改文档与验证脚本，不改变 `src/` 内容或 `buildId`。
+- asInvoker 功能副本用于自动化；正式 EXE 单独断言 `requireAdministrator`。真实双击 UAC 仍需人工确认。
+
+### 0.43.7 尚未解决 / NOT-OBSERVED / 人工验收
+
+- **真实两场同时收到弹幕**：**已通过**（§0.43.5，A 4 条 / B 1 条，样本较小）；
+  另一次 `@gbnews` 作为 B 的运行未收到 B 弹幕，已如实标为未计入通过。
+- **真实礼物 / 连送 / 订阅**：本轮仍未观测到 → **NOT-OBSERVED**。
+- **真实网卡断网、A 真实下播长跑**：未执行；自动化覆盖强制断线与两次离线确认。
+- **干净 Windows 账户 / 真实双击 UAC**：未验证。
+- TikTok 协议为非官方且无续传游标；多开不改变这一边界。
+
+### 0.43.8 Git / 交付
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/tiktok` |
+| 代码 / 测试提交 | `54934f60ac465b5f1cd9a1eba716279a027afe12`（`feat: allow concurrent TikTok rooms and remove the simulator UI`）；`4224f7cb32852a4499518563456bbe1dfe2c9f00`（`fix: refresh the TikTok room list in place`，正式 EXE 构建于此提交） |
+| 文档 / 验证脚本 / 构建记录 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
 
 ## 0.42 TIKTOK-M5：匿名本地 WebSocket 统一采集，删除登录与通道选择（2026-11-16）🟢（feature/tiktok，真实 30 分钟 + EXE 已验收）
 

@@ -2,6 +2,7 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> v0.13.3（2026-11-16，TIKTOK-M6）：允许同一平台多个**不同** TikTok 直播间并发记录。真实根因是 TikTok 面板把「存在任意 TikTok 记录」当成「该房间重复」，全局禁用开始按钮；后端 `SessionManager`/adapter 一直支持多场。修复收窄为同一 `platformRoomId`，新增逐场活动列表与独立停止；正式界面删除模拟直播标签/面板/顶部按钮，保留 `MockLiveSource` 与 `/api/simulate/*` 作为测试夹具。真实双房间 EXE `@aljazeeraenglish` + `@aljazeera` **17/17**（A 4 条 / B 1 条真实 chat，停 A 后 B 继续 1→2），全量 **1034 passed**；EXE `e48016f19362`（commit `4224f7c`，`96,730,112` B，requireAdministrator）。礼物仍 **NOT-OBSERVED**。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.43。
 > v0.13.3（2026-11-16，TIKTOK-M5）：TikTok 统一为**唯一匿名本地 webcast WebSocket 采集**：只使用任何访客都会获得的匿名 `ttwid`，不需要账号/扫码登录/Cookie 导入/浏览器中继，也不依赖付费或免费社区签名服务。新增 `webcast.mjs`、`local-adapter.mjs`、`state.mjs`、`legacy-cleanup.mjs`，重写 `service.mjs`；删除 TikTok 扫码登录、登录状态 UI、专用浏览器 Profile、浏览器中继、免费社区签名通道与通道选择；`/api/tiktok/login/*`、`/api/tiktok/transport` 现返回 404，`tiktokTransport` 设置被拒绝。UI 只保留链接/检查/开始/停止/自动监听与四项独立状态。真实 30 分钟长测与正式 EXE 验收通过；**真实礼物/连送/订阅 NOT-OBSERVED**（本轮在播房间无礼物）。协议为非官方、无续传游标。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.42。
 > v0.13.2（2026-11-16，TIKTOK-M4）：真实 Windows EXE 登录后 `room/enter` 403 调查。确认 403 来自官方直播页自身请求，不是本地映射；旧实现误判为登录失效并提前中止，且把 `PushFrame` 当 `WebcastResponse` 解析，真实事件恒为 0。M4 改为「真实帧优先、403 宽限、登录/直播间访问分离」；补齐 `captureState`/`lastCapture`、停止状态、三语键与监控映射。定向 TikTok **103 passed**；全量 **1050 passed / 0 failed / 0 skipped**；`verify-exe` **10/10**、`verify-tiktok-exe` **23/23**（真实 6 chat / 3 可识别观众）。真实登录后浏览器端到端仍 **BLOCKED**（DSH 终止 Chromium）。仅研究报告 `tiklive` 本地 unsigned webcast 方案（35 秒 469 chat / 19 gift），未接入。EXE `a463acfad051`（commit `ea950c0`，`97,893,888` B，`requireAdministrator`）。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.41。
 > v0.13.2（2026-11-15，TIKTOK-M3）：修复真实桌面验收的阻断问题。浏览器中继可用性误查 `relay.start`（真实类只有 `createAdapter`），导致登录和 room check 成功后仍返回 `TIKTOK_NOT_CONFIGURED` 503；已改为 `createAdapter` 并将显式 browser 从 signer 依赖中解耦。同步修复浏览器中继丢弃礼物、关闭登录窗口生命周期、`needs_room` 验证反馈与五项状态分离。新增 9 测试，全量 **1037 passed / 0 failed**；`verify-tiktok-exe` **23/23**（含 EXE 内 browser 通道识别与 6 条真实 chat）；真实登录后浏览器投递仍因沙箱终止 Chromium 而 **BLOCKED**，待人工验收。正式 EXE `e11f4008b9e3`（commit `1b9a38b`，`97,867,776` B，`requireAdministrator`）。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.40。
@@ -26,6 +27,25 @@
 > v0.13.2（2026-11-12）：观众身份专项审计；Bilibili 未登录打码/uid=0 被确认为平台风控，新增「可识别观众」统一口径与未识别消息警告；canonical 层拒绝 uid=0 建档。完整报告 `docs/AUDIT_VIEWER_IDENTITY_2026-11-12.md`。
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
+
+## P36 TIKTOK-M6：TikTok 多直播间并发与模拟直播清理（v0.13.3，2026-11-16）🟢 真实双房间 + EXE 已验收
+
+- ✅ 真实根因：不是 `SessionManager`/adapter 单例，而是 TikTok 面板用 `!tiktokActiveRecording()`
+  把「存在任意 TikTok 记录」当成「该房间重复」，全局禁用开始按钮
+- ✅ 重复判断收窄到同一 `platformRoomId`（handle 回退）；服务端 `SESSION_DUPLICATE_ROOM` 保留
+- ✅ 每场独立 session/room/WebSocket/连接状态/事件流/去重/重连/下播判断/SQLite/AI
+- ✅ 新建记录页与 TikTok 面板新增活动列表：主播、平台、状态、消息数、观众数、查看、独立停止
+- ✅ 正式 UI 删除模拟直播标签、面板、顶部按钮与启动器模拟提示；默认平台改为 Bilibili
+- ✅ 保留 `MockLiveSource`、`SessionManager.startSimulation()`、`/api/simulate/*` 与全部测试夹具
+- ✅ 历史 mock 数据、SQLite schema 16、AI 契约与提示词未变；修正 `history.aiTitle` 原始键
+- ✅ 五个平台审查：Bilibili / YouTube / Twitch / 抖音无同平台全局限制，未做无意义重构
+- ✅ 自动化 **1034 passed / 0 failed / 0 skipped**（687 unit + 347 integration）
+- ✅ 真实双房间 EXE：`@aljazeeraenglish` + `@aljazeera`，**17/17 passed**；A 4 条 / B 1 条真实 chat；
+  停 A 后 B 继续 1→2；重复 A 409；两场 AI report 200
+- ✅ `verify-exe` **10/10**；`verify-tiktok-exe` **22/22 + 2 NOT-OBSERVED**
+- ✅ EXE：`e48016f19362` / commit `4224f7c` / `96,730,112` B / SHA-256 `02acd0b1…` / requireAdministrator
+- 🟡 真实礼物/连送/订阅仍 **NOT-OBSERVED**；真实网卡断网、真实下播长跑、干净 Windows 账户与真实 UAC 双击待人工验收
+- ⬜ 未合并 main、未 Push、未 Tag、未 Release
 
 ## P35 TIKTOK-M5：匿名本地 WebSocket 统一采集（v0.13.3，2026-11-16）🟢 真实 30 分钟 + EXE 已验收
 

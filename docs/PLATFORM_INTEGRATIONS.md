@@ -1,6 +1,6 @@
 # 平台接入（PLATFORM_INTEGRATIONS）
 
-状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；v0.8.1 增加平台直播状态与下播检测（WebSocket `LIVE`/`PREPARING` + 定期 `live_status` 查询），已用真实房间验证状态查询与 4 房间 20 分钟并发，但真实“直播中→下播”端到端仍未捕获。礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。Twitch M1（2026-11-15）已完成匿名 IRC + 公开元数据的正式接入：真实公开频道 6 场并发 60 秒 418 条事件，418/418 带稳定 User ID 与消息 ID，订阅/续订通知已实测；Bits 与赠订仅完成解析，尚未观测到真实事件。** 模拟平台（mock）保持可用。
+状态：**Bilibili 最小真实闭环已实现并通过真实直播间验证（弹幕身份、平台表情元数据）；v0.8.1 增加平台直播状态与下播检测（WebSocket `LIVE`/`PREPARING` + 定期 `live_status` 查询），已用真实房间验证状态查询与 4 房间 20 分钟并发，但真实“直播中→下播”端到端仍未捕获。礼物 / SC / 大航海按参考实现映射但尚未在真实直播间观测到事件。YouTube 自 v0.5.0 起只保留公开网页聊天路径，不需要 API Key / OAuth / Cookie；该路径不是官方稳定 API。v0.6.0 已完成真实双场/三场并发验证（2 YouTube、YouTube+Bilibili、构建后 EXE），同一视频/房间重复启动会被拒绝。Twitch M1（2026-11-15）已完成匿名 IRC + 公开元数据的正式接入：真实公开频道 6 场并发 60 秒 418 条事件，418/418 带稳定 User ID 与消息 ID，订阅/续订通知已实测；Bits 与赠订仅完成解析，尚未观测到真实事件。TikTok M6（2026-11-16）允许同一平台多个不同直播间并发记录，并修复了前端全局单房间限制。** 模拟平台（mock）只保留为内部自动化测试夹具与历史数据兼容，正式界面不再提供。
 
 ## 1. 参考仓库分析（只读，不修改）
 
@@ -617,7 +617,7 @@ M5 产品决定（用户明确授权）：TikTok 面向普通用户**只有一�
 - 重连前重新解析房间：room id 变化（主播重新开播）或公开状态 `isLive=false` 作为一次离线观测；
   两次独立观测才结束同一 session，并标记 `platform_ended`。
 - 只有 socket-open 失败才刷新 `ttwid`；普通网络掉线复用缓存 Cookie，避免触发页面请求限流。
-- 多房间：每个 `tiktok` 录制拥有独立 adapter、socket、session 与停止操作；同一 `platform+room` 不允许重复启动。
+- 多房间：每个 `tiktok` 录制拥有独立 adapter、socket、session、去重集合、重连定时器与停止操作；同一 `platform+room` 不允许重复启动。**M6 根因修复**：旧前端把「存在任意 TikTok 记录」当成「该直播间重复」，按钮被全局禁用；真正限制来自 UI，而不是 `SessionManager`/adapter。现改为只比较 `platformRoomId`/handle；不同 room 可并发，服务端仍以 `(platform, platform_room_id)` 拒绝真正重复。
 - 每次中断/恢复记录 `disconnectedAt`、`recoveredAt`、`gapMs`、`lastEventAt`、`possibleMissed=true`，不声称补录。
 
 ### 3C.6 UI：四项状态分离
@@ -693,7 +693,7 @@ is_paid, source_quality, dedupe_key
 
 ## 5. 真实性标注
 
-- `mock` 平台永远 `source_quality=mock`，UI 显示「模拟」。
+- `mock` 平台永远 `source_quality=mock`；它只用于自动化测试夹具与历史数据，正式界面不再显示「模拟直播」入口。
 - Bilibili 真实会话 `source_quality=estimated`（会话级）；单条事件：弹幕/礼物/SC 身份完整时为 `verified`，身份缺失为 `unknown`，大航海为 `estimated`。
 - YouTube 事件 `source_quality=estimated`：字段来自官方文档，但**尚未在真实直播中采样**；`verified` 只在真实样本后使用。
 - Twitch：普通聊天与 `resub` 为 `verified`（真实公开频道观测）；`sub`、`subgift`、Bits/Cheer 为 `estimated`（标签已解析、真实事件未观测）。不得因为 Mock 通过就升级证据等级。
