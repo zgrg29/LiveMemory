@@ -70,7 +70,9 @@
 
 ### 0.7 Git
 
-- 分支 `main`（起始 clean，HEAD `25e6fbe`），本轮创建 1 个本地提交（仅文档）。
+- 分支 `main`（起始 clean，HEAD `25e6fbe`），本轮创建本地提交 **`338522a`**
+  `docs: plan ten-language i18n and platform admission`（10 files changed，+1308 / −12）。
+- 提交只含 `AGENTS.md`、`docs/*.md`、`log/*.md`，**无任何代码/测试/脚本/配置改动**。
 - **未 Push、未 Tag、未 Release。**
 
 ---
