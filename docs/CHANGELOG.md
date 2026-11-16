@@ -1,5 +1,36 @@
 # 版本变化（CHANGELOG）
 
+## 未发布 — 2026-11-16（P42 / I18N-M3：十语言最终综合验收）
+
+开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。
+
+### 验证
+
+- **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**。
+- 真实 DeepSeek `deepseek-flash`：单场 **10/10 语言**、长期画像 **10/10 语言**、
+  跨语言 zh→ko→de→zh **4/4**、阅读翻译 ko/zh-TW/es/fr/id **5/5** + 失败回退；
+  正式取证 31 次请求 / 100,487 input + 17,491 output tokens。**无母语签收**。
+- 真实 EXE：Build `5b9e355dccc7` / 99,200,512 B / SHA-256 `39450a23…` / `requireAdministrator`；
+  `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16。
+- 真实浏览器：源码 **440/440**、EXE 内服务 **440/440** 页面加载；十语言 × 1440/1024/820/390 × 明暗。
+- 旧 schema-15 真实数据升级到 16：计数/内容 hash 全一致、settings 未改写、旧报告可读、
+  备份→全新目录恢复计数一致。
+- 五平台：Bilibili 19 chat、YouTube 62 chat/62 稳定 ID、TikTok 10 chat/5 观众真实通过；
+  Twitch 本轮无在播频道、抖音无真实房间，均标未验证。
+
+### 修复
+
+- 十份字典 `help.sections.start.step1` 与 `help.sections.backup.step6` 的错误说明
+  「不需要管理员权限」改为准确的 UAC/`requireAdministrator` 说明；
+  `docs/WINDOWS_RUNTIME.md`、`docs/BACKUP_RESTORE.md` 同步修正。
+- 测试工具：中文报告引用 `ゆき` 导致的假阴性、短事实语言断言过严、
+  `verify-i18n-ui.mjs` 无法指向 EXE（新增 `--exe` / `--prefix`）。
+
+### 未改变
+
+- 数据库 Schema（仍 16）、五平台采集、金额/身份/去重、任务语言快照、翻译缓存语义、正式版本号。
+- 未 Push / Merge main / Tag / Release。
+
 ## 未发布 — 2026-11-16（P41 / I18N-M2：十语言 AI 输出与独立输出语言）
 
 开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。

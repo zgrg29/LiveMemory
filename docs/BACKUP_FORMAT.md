@@ -122,6 +122,10 @@ youtubeRawRetentionDays  YouTube 原文保留天数
 新增设置键必须同步这个白名单，否则备份/恢复会静默丢失。旧备份缺少 `aiOutputLocale` 时
 `settingsForBackup()` / `normalizeSettings()` 会补成 `follow-ui`，恢复不会失败；恢复后读取该键即生效。
 
+P42 用真实 schema-15 旧数据验证：升级到 schema 16 后备份 → 恢复到全新目录，场次/事件/观众/AI 结果/
+长期事实计数完全一致；旧 `settings.json` 不含 `aiOutputLocale` 时升级不会改写原文件，读取时按
+`follow-ui` 生效。
+
 ## 4. 完整性模型
 
 1. 创建：`VACUUM INTO` 生成一致快照 → `PRAGMA integrity_check` → 逐文件 SHA-256 + CRC-32 → 写入临时归档（写入时再次计算 CRC，检测源文件在两次读取之间变化）→ 重新打开临时归档做完整校验 → 原子改名。

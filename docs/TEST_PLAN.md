@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
-| 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
+| 启动冒烟 | 启动器真实启动、单实例、命令行十语、EXE | 手工 + `scripts/` |
 | UI 验证 | 三主题、十语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
 | 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；AI 单入口与报告只读 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
 | 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
@@ -25,6 +25,44 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 ```
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
+
+## 2.0-P42 P42 / I18N-M3 本轮结果（2026-11-16）
+
+### 2.0-P42.1 自动化
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 `tests/unit/*.test.mjs` | **747 passed / 0 failed / 0 skipped（18,920 ms）** |
+| 全量集成 `tests/integration/*.test.mjs` | **355 passed / 0 failed / 0 skipped（305,344 ms）** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 定向十语言字典/启动器 | **30 passed / 0 failed** |
+| `ai-i18n-locales.test.mjs` | **4/4**（十语全链路、混合语言、界面/AI 独立、暂停→重启→恢复） |
+
+### 2.0-P42.2 真实 Provider / 浏览器 / EXE
+
+| 运行 | 结果 |
+| --- | --- |
+| `scripts/verify-ai-i18n-live.mjs` 单场 | **10/10** 语言，10 次请求 / 40,852 input + 7,108 output |
+| `scripts/verify-ai-i18n-live.mjs` 画像 | **10/10** 语言，10 次请求 / 36,928 input + 4,576 output；`factLocaleRatio=1.0` |
+| `scripts/verify-ai-memory-crosslang.mjs` | **4/4** 轮（zh→ko→de→zh），4 次请求 / 15,640 + 1,441；5 条事实共存、0 删除、0 跨观众证据 |
+| `scripts/verify-ai-translation-live.mjs` | 5 语 **5/5** + 真实 401 失败回退；7 次请求 / 7,067 + 4,366；重复阅读 0 请求 |
+| `scripts/verify-i18n-ui.mjs`（源码服务） | **440/440** 页面加载 PASS；40 张截图 |
+| `scripts/verify-i18n-ui.mjs --exe` | **440/440** 页面加载 PASS；40 张截图 |
+| `verify-exe.mjs` | **11/11** |
+| `verify-help-exe.mjs` | **14/14** |
+| `verify-ai-token-exe.mjs` | **16/16** |
+| 旧 schema-15 → 16 升级 + 备份/恢复 | 计数/hash 全一致、settings 未改写、旧报告 200、恢复计数一致 |
+| Bilibili 真实房间 | 19 条 chat、连接/停止正常；未登录 UID 0 符合口径 |
+| YouTube 真实公开直播 | 62 条 chat、13 观众、62/62 稳定 channel id、3 条 gift 金额未知 |
+| TikTok 真实 `@aljazeeraenglish` | 10 条 chat、5 观众、uid/msgId/text 缺失 0、0 重连、礼物 NOT-OBSERVED |
+| Twitch | 12 个频道全离线 → 真实采集 **未验证**（EXE 7/9，2 项因无在播频道） |
+| 抖音 | 仅自动回归；真实采集 **未验证** |
+
+### 2.0-P42.3 未验证
+
+- 真实双击 UAC（同意/拒绝）、干净 Windows 账户、Windows 原生启动器。
+- 母语审校；十语言质量仅为机器判据 + 抽样阅读。
+- Twitch/抖音真实采集；长报告多块翻译；真实 429/限流。
 
 ## 2.0 M6 本轮结果（2026-11-16，TIKTOK-M6）
 

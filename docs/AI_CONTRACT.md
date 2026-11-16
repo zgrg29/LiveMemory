@@ -1,8 +1,9 @@
 # AI 分析协议（AI_CONTRACT）
 
-版本：**0.15.1（P41）** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.3-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
+版本：**0.15.2（P42 验收轮，协议未变）** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0；P42 未改任何字段/枚举/required） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.3-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
 AI 输出语言：**十种**（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`），由 `src/shared/locales.mjs` 的 `aiOutput` 能力位驱动；结果 Schema 的 `locale.enum` 是其协议镜像（测试强制同步）。
+P42 真实 Provider 验收：十语单场 10/10、十语画像 10/10、跨语言 zh→ko→de→zh 4/4、阅读翻译 5/5 + 失败回退；字段名、枚举、`viewer_id`、`message_id`、`seq`、原文弹幕与证据引用均未翻译/改写。详见 `docs/STATUS.md` §0.50。
 
 ## 1. 原则
 

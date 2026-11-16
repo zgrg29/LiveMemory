@@ -1,11 +1,154 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**P41 / I18N-M2 完成**：十语言 AI 分析、单场报告、长期画像、报告阅读翻译与
-任务恢复全部支持；新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`）；十份字典各 2,271 键；
-**1102 测试通过**（747 unit + 355 integration）；真实 DeepSeek Provider 验证 4 语报告 + ko/de 画像；
+最后更新：2026-11-16（**P42 / I18N-M3 完成**：十语言真实 AI 单场/画像/阅读翻译、跨语言方案 B、
+界面/AI 输出语言独立性、真实 EXE 十语言浏览器矩阵、旧数据升级与备份恢复、五平台回归；
+**1102 测试通过**（747 unit + 355 integration）；真实 DeepSeek `deepseek-flash` **31 次取证请求**；
 **未 Push / 未 Tag / 未 Release**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.50 P42 / I18N-M3 十语言最终综合验收（2026-11-16）✅ 未发布
+
+用户要求对 P39–P41 做十语言最终综合验收、修复真实缺陷，但不发布、不合并 main、不新增平台。
+本轮**新增真实 Provider 十语言证据、真实 EXE 浏览器矩阵、旧数据升级/备份恢复与五平台回归**；
+**未改平台协议、数据库 Schema（仍 16）、金额/身份/去重规则、任务语言快照语义与正式版本号（仍 `0.14.0`）**。
+分支从 `feature/p40-i18n-m1`（HEAD `3b75e8b`）新建 `feature/p42-i18n-m3`，P39–P41 提交完整保留。
+
+### 0.50.1 真实 AI Provider 十语言矩阵（DeepSeek `deepseek-flash`，用户本地凭证）
+
+| 验收 | 结果 | 真实请求 / Token |
+| --- | --- | --- |
+| 单场分析 10 语 | **10/10**：`zh-CN`/`en`/`ja`/`ko`/`es`/`pt-BR`/`zh-TW`/`fr`/`de`/`id`，任务与结果 locale 一致、目标文字命中、Schema 键完整、无未知字段、原文未改 | 10 次 / 40,852 input + 7,108 output |
+| 长期画像 10 语 | **10/10**：每语 3–7 条事实，事实脚本族与摘要语言全部匹配（`factLocaleRatio=1.0`），任务 `complete`，证据全部属于本观众，原文未改 | 10 次 / 36,928 input + 4,576 output |
+| 跨语言方案 B（zh→ko→de→zh） | **4/4**：5 条事实共存（中/韩/拉丁脚本），旧事实 0 删除，跨观众证据 0，Schema/唯一约束 0 冲突；德语任务复用韩语 piano topic 做确认、但摘要为德语；最终中文轮新增「养猫」中文事实 | 4 次 / 15,640 input + 1,441 output |
+| 阅读翻译（源报告 zh-CN → ko/zh-TW/es/fr/id） | **5/5**：目标语言正确、结构化字段/证据引用不变、原文报告不变、每语独立缓存、重复阅读 0 次 Provider 请求 | 5 次 + 1 次失败路径 / 7,067 input + 4,366 output |
+| 翻译失败回退 | 真实 401 失败后阅读仍返回中文原文（`summaryFallsBackToOriginal=true`），原文与证据不变 | 1 次 |
+| 合计（正式取证） | **31 次真实请求 / 100,487 input + 17,491 output tokens** | 未打印/复制/提交 Key |
+
+- 质量口径：只有机器判据（目标文字脚本/停用词、Schema、存储结果、证据归属）+ 逐条人工抽样阅读；
+  **无母语签收人**，不声称母语质量验收。
+- 另有探针与断言修正重跑约 17 次真实请求（首次 ko 探针、翻译断言修正、跨语言数据加强），
+  总计约 48 次；重跑 token 未全部单独记账，不把它计入上表正式取证。
+- 原始弹幕、`viewer_id`、`message_id`、`seq`、字段名与枚举均未翻译/改写；真实测试使用隔离目录
+  `tests/.tmp/p42-*`，用户数据目录 `E:\新建文件夹` 只读复制，未写入。
+
+### 0.50.2 界面语言 / AI 输出语言独立性
+
+| 界面 | AI 输出 | 结果 |
+| --- | --- | --- |
+| ko | ko | bootstrap 生效值 ko / ko |
+| ko | ja | ko / ja |
+| ja | de | ja / de |
+| en | pt-BR | en / pt-BR |
+| zh-CN | fr | zh-CN / fr |
+| zh-TW | es | zh-TW / es |
+| de | id | de / id |
+
+- 固定 `ja` 后切换界面 de→fr→zh-TW→id，AI 输出始终 `ja`；重启后 `es`+`id` 仍保留；
+  `follow-ui` 在 fr 界面下解析为 fr；非法 `th-TH` 返回 400。
+- 任务创建时写 `ai_jobs.locale`；已创建任务不受后续偏好变化影响（P41 真实 ko/de 任务 locale 未变）。
+- 中断恢复：`tests/integration/ai-i18n-locales.test.mjs` **4/4** 真实执行「韩语任务 → 暂停 → 改界面德语 →
+  AI 偏好西班牙语 → 关闭并重启 → 恢复」，恢复请求与最终报告仍为韩语，已完成批次不重发。
+
+### 0.50.3 真实 Windows EXE 十语言矩阵
+
+| 项目 | 值 |
+| --- | --- |
+| 构建 | `node scripts/build-windows.mjs`，Build ID `5b9e355dccc7`，commit 标记 `3b75e8b`（P42 工作树） |
+| 大小 / SHA-256 | `99,200,512` bytes / `39450a233eb8c64347a9cfadf0d3b88e71ed7df9e023b84ba53b90e282021778` |
+| builtAt / 资源 | `2026-11-16T14:55:09.547Z` / 237 files / 51 modules |
+| RT_MANIFEST | **`requireAdministrator`**（构建脚本断言） |
+| `verify-exe` | **11/11**（含共享注册表、十字典、十 AI 输出、动态语言控件） |
+| `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
+| `verify-ai-token-exe` | **16/16**（分批、失败归因、断点续跑不重发已完成批次） |
+| 源码服务器浏览器矩阵 | **440/440** 页面加载 PASS（10 语 × 1440/1024/820/390 × 明暗 × live/history/viewers/ai/settings/help + 详情） |
+| **EXE 内服务浏览器矩阵** | **440/440** 页面加载 PASS（同一矩阵，服务由 asInvoker 功能副本启动） |
+| 截图 | `docs/screenshots/i18n-p42-*` 40 张（源码）+ `i18n-p42-exe-*` 40 张（EXE） |
+
+- 布局断言：无横向溢出、无控件出视口、语言控件不遮挡主题按钮、`MUST_NOT_TRUNCATE` 标签不被省略号截断、
+  无未解析翻译键；十语言 × 明暗 × 四宽度全部通过。
+- 本会话非提权，**无法在自动化中接受真实 UAC**：正式 EXE 断言 `requireAdministrator`，运行场景使用同一
+  二进制打补丁的 **asInvoker 功能副本**。**真实双击 UAC、干净 Windows 账户仍未人工验证**，不得写成已通过。
+- 仅 EXE 功能副本测试，不等于「Windows 原生启动器双击」或「UAC 同意」测试。
+
+### 0.50.4 启动器与管理员权限说明修复
+
+- 真实行为核实：正式 EXE Manifest 为 `requireAdministrator`，双击由 Windows 显示 UAC；拒绝则取消启动。
+- 修复十份字典的两个错误键（原本写「不需要管理员权限」）：
+  - `help.sections.start.step1`：改为「Windows 显示 UAC → 选择是才启动；拒绝则取消」；
+  - `help.sections.backup.step6`：迁移到新电脑同样需要同意 UAC，只免旧用户名/旧路径。
+- 同步修正 `docs/WINDOWS_RUNTIME.md` §5.2 与 `docs/BACKUP_RESTORE.md`：备份逻辑本身不需额外提权，
+  但整个 EXE 仍按 `requireAdministrator` 启动。
+- `tests/unit/i18n.test.mjs` 等 **30/30** 通过；未改变管理员策略、启动流程或 UAC 行为。
+
+### 0.50.5 旧数据升级、备份与恢复（真实 schema-15 数据）
+
+使用 `tests/.tmp/prod32-copy`（schema **15**、9 场、53,042 事件、4,158 观众-场次、88 份 AI 结果、
+89 条长期事实、旧 `settings.json` 无 `aiOutputLocale`）复制到隔离目录执行：
+
+| 检查 | 结果 |
+| --- | --- |
+| 当前代码启动并迁移 | schema **15 → 16** |
+| 数据完整性 | 场次/事件/观众-场次/AI 结果/事实/任务数量、事件内容 hash、观众 hash、结果 hash、任务 locale hash、事实 hash **全部一致** |
+| 旧配置 | `settings.json` 字节与 mtime **未改写**；缺 `aiOutputLocale` 读作 `follow-ui`；旧 `locale=system` 正常解析 |
+| 旧报告 | `GET /api/ai/sessions/:id/report` **200**，摘要 202 字符可读 |
+| 备份 | 202 → job `completed`，生成 `.livememory` |
+| 恢复 | 恢复到全新目录 202 → `completed`，核心计数与升级后完全一致 |
+| 原始弹幕/观众身份 | 事件与 `viewer_sessions` hash 未变 |
+
+### 0.50.6 五平台回归（本轮真实执行）
+
+| 平台 | 结果 |
+| --- | --- |
+| Bilibili | 真实房间 `1731839361`（live=1）：连接成功、19 条真实 chat、停止/落库正常；未登录打码 UID 0/0，符合既有「未识别」口径 |
+| YouTube | 真实公开直播 `4t4AQ15yj1M`：62 条 chat、13 位活跃观众、62/62 有 channel id（100%）、3 条 gift（金额未知）、原文/停播正常 |
+| TikTok | `@aljazeeraenglish` 60 秒：10 条 chat、5 位观众、uid/msgId/text 缺失 0、0 重连、礼物 **NOT-OBSERVED** |
+| Twitch | EXE 状态/重启/保留策略检查通过；本轮 12 个频道全部离线，真实采集 **未验证**（7/9，2 项因无在播频道失败，不计为代码缺陷） |
+| 抖音 | 仅运行既有适配器/集成回归；本轮无真实在播房间，真实采集 **未验证** |
+
+- 平台链接解析、创建、连接状态、事件标准化、稳定身份、多直播间、断线重连、停止/恢复、历史与画像关联
+  由全量 355 integration 覆盖；本轮未改平台协议、未新增平台。
+
+### 0.50.7 全量自动化
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 定向 | 十语言字典 30/30；`ai-i18n-locales` 4/4；真实 Provider 脚本全部 exit 0 |
+| 真实浏览器 | 源码 440/440 + EXE 440/440 |
+
+### 0.50.8 本轮发现并修复的缺陷
+
+1. **P1 文档/界面不一致**：十语言 `help` 仍写「不需要管理员权限」，与 `requireAdministrator` 冲突。
+   已修十份字典 20 个值 + 两份文档；无产品逻辑改动。
+2. **测试工具假阴性（zh/zh-TW）**：真实中文报告引用了观众名 `ゆき`，旧断言「不得出现任何假名」误判；
+   改为剥离已知观众名 + 汉字/假名比例，并把繁体判据改为繁体标记占比。零成本 `--reuse` 复验 10/10。
+3. **事实语言断言过严**：短事实（3–8 词）用摘要级停用词阈值会误判；改为按脚本族检查事实、
+   按完整摘要检查目标语，并记录 `factLocaleRatio`；复验 10/10、比例 1.0。
+4. **浏览器脚本无法指向 EXE**：`verify-i18n-ui.mjs` 原先只启动源码服务器；新增 `--exe` 模式
+   （asInvoker 功能副本、独立 `LOCALAPPDATA`/`TEMP`、bootstrap 会话）与 `--prefix`，完成 440/440 EXE 矩阵。
+   这是测试基础设施，不是产品功能。
+5. **文档旧描述**：`WINDOWS_RUNTIME.md`、`BACKUP_RESTORE.md` 的「不需要管理员权限」已修正。
+
+### 0.50.9 未验证 / 风险
+
+- **P2（不阻断候选）**：真实双击 UAC 同意/拒绝、干净 Windows 账户、Windows 原生启动器；本会话无法接受 UAC。
+- **P2**：无母语审校人；十语言质量仅为机器判据 + 抽样阅读。
+- **P2**：Twitch 本轮无在播频道，抖音无真实在播房间；真实采集未验证，不得写成通过。
+- **P3**：翻译真实测试只覆盖单块短报告（每语 1 次请求），未覆盖超长多块报告与真实 429。
+- **P3**：版本标签存在历史文档不一致（ROADMAP 曾写 P42→v0.16.0，用户本轮目标为 v0.15.0）；
+  本轮未改 `package.json`/`app-info`（仍 0.14.0），版本决策留给发布轮。
+
+### 0.50.10 结论与 Git
+
+- **P42 结论：PASS（有条件）**。十语言真实 Provider、方案 B、语言独立性、EXE 十语言矩阵、
+  旧数据升级/备份恢复、五平台无代码回归均完成；无 P0/P1 阻断。
+- 条件：真实 UAC 双击与干净 Windows 账户需人工验收；Twitch/抖音真实采集待有在播房间时补验；
+  母语审校未做；版本号与 Tag/Release 未动。
+- 分支 `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建），提交见 `git log -1`；
+  **未 Push、未 Merge main、未 Tag、未 Release**。
 
 ## 0.49 P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）✅ 未发布
 
