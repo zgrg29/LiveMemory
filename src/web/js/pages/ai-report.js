@@ -8,6 +8,12 @@ import {
   formatInteger,
   formatTime
 } from '../ui.js';
+import {
+  AI_OUTPUT_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptor,
+  localeDescriptors
+} from '../../../shared/locales.mjs';
 
 /**
  * AI analysis report renderer.
@@ -317,10 +323,7 @@ function renderReportBody(ctx, report) {
 }
 
 function localeName(t, locale) {
-  if (locale === 'zh-CN') return t('settings.language.zh');
-  if (locale === 'ja') return t('settings.language.ja');
-  if (locale === 'en') return t('settings.language.en');
-  return t('ai.report.languageSourceUnknown');
+  return localeDescriptor(locale)?.nativeName ?? t('ai.report.languageSourceUnknown');
 }
 
 function formatCost(ctx, cost) {
@@ -503,15 +506,25 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
 
 function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
   const t = ctx.t;
-  const supported = ['zh-CN', 'ja', 'en'];
+  // Reading/translation targets are the `aiOutput` subset of the registry. Since
+  // P41 that is all ten shipped languages, and the list still comes from the one
+  // registry instead of a hand-maintained translation target list.
+  const installed = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
+    ? ctx.state.aiLocales
+    : localeDescriptors(AI_OUTPUT_LOCALES);
+  const supported = installed.map((entry) => entry.code);
+  const labels = new Map(installed.map((entry) => [entry.code, entry.nativeName || entry.code]));
   const source = payload.reportLocale ?? null;
+  const fallback = supported.includes(ctx.locale)
+    ? ctx.locale
+    : (supported.includes(DEFAULT_LOCALE) ? DEFAULT_LOCALE : supported[0]);
   const selected = supported.includes(payload.displayLocale)
     ? payload.displayLocale
-    : (supported.includes(source) ? source : ctx.locale);
+    : (supported.includes(source) ? source : fallback);
   const select = el('select', {
     className: 'select select--compact',
     attrs: {'aria-label': t('ai.report.languageTitle')}
-  }, supported.map((locale) => el('option', {value: locale, text: localeName(t, locale)})));
+  }, supported.map((locale) => el('option', {value: locale, text: labels.get(locale) ?? locale})));
   select.value = selected;
   select.addEventListener('change', () => onLocaleChange?.(select.value));
   const status = payload.translation?.status ?? 'unavailable';

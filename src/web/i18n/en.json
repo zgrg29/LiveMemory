@@ -1600,6 +1600,13 @@
       "headerHint": "The language control in the page header is the quickest way to switch; both use the same saved preference.",
       "note": "Chat messages are never translated; AI reports follow the analysis language you choose."
     },
+    "aiOutput": {
+      "title": "AI output language",
+      "desc": "Language used for AI analysis reports and long-term viewer profiles. It is independent of the interface language and of the language of the chat.",
+      "followUi": "Follow interface language",
+      "effective": "New AI analysis tasks will be written in {locale}",
+      "note": "Existing tasks and saved reports keep the language stored when they were created."
+    },
     "theme": {
       "title": "Appearance",
       "desc": "Light and dark are designed separately for comfortable contrast.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Saved",
     "language": "Language updated",
+    "aiOutputLanguage": "AI output language updated",
     "theme": "Theme updated",
     "copied": "Copied to clipboard",
     "exported": "Analysis package created",
@@ -2395,7 +2403,7 @@
       "start": {
         "title": "First launch and the basic flow",
         "lead": "Double-click LiveMemory.exe. The service starts on this computer and opens the console in your default browser.",
-        "step1": "Double-click LiveMemory.exe. Administrator rights are not required. If Windows shows \"Windows protected your PC\", choose More info, then Run anyway.",
+        "step1": "Double-click LiveMemory.exe. Windows shows the UAC administrator prompt; choose Yes to start. If you choose No, Windows cancels the launch. If Windows also shows \"Windows protected your PC\", choose More info, then Run anyway.",
         "step2": "The console opens automatically in your default browser. If it does not, run LiveMemory again instead of opening an old address by hand: a manually opened page cannot get this session.",
         "step3": "On first use, open Settings to choose the interface language and theme. Both can be changed from the top bar at any time and are remembered.",
         "step4": "Go to Live, click + New recording, paste the livestream link or room id and start recording. You can record several streams at the same time.",
@@ -2502,7 +2510,7 @@
         "step3": "Before restoring, select the backup file in Settings and review the summary, then type RESTORE to run the restore.",
         "step4": "The current data is snapshotted automatically before a restore. If the restore fails or the process is killed, the next start rolls back or completes it from the journal.",
         "step5": "After a restore, sign in to Bilibili again and re-enter your API keys. The YouTube public chat needs no login.",
-        "step6": "To move to a new PC, start LiveMemory there and restore from the same backup file. No old username, old path or administrator rights are required.",
+        "step6": "To move to a new PC, start LiveMemory there and restore from the same backup file. You do not need the old username or old path; the new PC also requires approving the UAC administrator prompt.",
         "note": "Backup files are not encrypted and contain viewer nicknames, chat and AI reports, so keep them safe. A restore replaces everything; it does not merge two computers. Downgrading from a newer version is not supported."
       },
       "faq": {

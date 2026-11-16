@@ -7,6 +7,8 @@
  * readable. The prompt version is recorded per job and per package so a user can
  * tell which instructions produced a given result.
  */
+import {AI_OUTPUT_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
+
 export const ANALYSIS_PROTOCOL = 'livememory-analysis-v1';
 export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 
@@ -14,8 +16,18 @@ export const RESULT_PROTOCOL = 'livememory-analysis-result-v1';
 export const RESULT_SCHEMA_VERSION = '1.3.0';
 export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0', '1.3.0']);
 
-export const PROMPT_VERSION = 'lm-prompt-m6.3';
-export const PROMPT_VERSION_V13 = 'lm-prompt-v13.2';
+/**
+ * Prompt revisions.
+ *
+ * P41 added an explicit output-language contract to every prompt surface (system
+ * prompt, packaged instructions, memory instructions, aggregate/digest rules and
+ * repair requests) and widened the language set to all ten AI output languages.
+ * The revision is bumped so a job created before and after the change can be
+ * told apart; old jobs keep the version stored on their row, and old results are
+ * never rewritten.
+ */
+export const PROMPT_VERSION = 'lm-prompt-m6.4';
+export const PROMPT_VERSION_V13 = 'lm-prompt-v13.3';
 
 export const ANALYSIS_MODE = Object.freeze({
   SESSION: 'session',
@@ -32,10 +44,21 @@ export const MEMORY_VIEWERS_PER_BATCH = 200;
 export const MAX_MEMORY_EXCERPT_MESSAGES = 3000;
 export const MAX_MESSAGES_PER_VIEWER_EXCERPT = 120;
 
-export const SUPPORTED_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
+/**
+ * Declared AI output languages.
+ *
+ * This is the interface-language registry narrowed to the entries whose prompt
+ * set, result schema and translation target name really exist (`aiOutput`).
+ * P41 gave every shipped language that support, so all ten are analysis output
+ * languages. The narrowing remains the capability gate: a language without
+ * `aiOutput: true` (or an unknown tag such as `th-TH`) can never reach a
+ * provider, and `promptVersionFor()` degrades to `DEFAULT_LOCALE` instead of
+ * inventing a locale.
+ */
+export const SUPPORTED_LOCALES = AI_OUTPUT_LOCALES;
 
 export function promptVersionFor(locale, mode = ANALYSIS_MODE.COMBINED) {
-  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
+  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE;
   const safeMode = Object.values(ANALYSIS_MODE).includes(mode) ? mode : ANALYSIS_MODE.COMBINED;
   if (safeMode === ANALYSIS_MODE.COMBINED) return `${PROMPT_VERSION}-${safeLocale}`;
   return `${PROMPT_VERSION_V13}-${safeMode}-${safeLocale}`;

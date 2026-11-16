@@ -2,7 +2,17 @@ import {createReadStream, existsSync, mkdirSync, statSync, statfsSync} from 'nod
 import {dirname, join, resolve} from 'node:path';
 import {sendJson, sendText, readJsonBody} from './http.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
-import {normalizeLocale, resolveLocale, SUPPORTED_LOCALES} from '../shared/locale.mjs';import {
+import {
+  AI_OUTPUT_LOCALES,
+  AVAILABLE_LOCALES,
+  aiOutputLocale,
+  defaultLocaleFor,
+  localeDescriptors,
+  normalizeLocale,
+  resolveAiOutputPreference,
+  resolveLocale
+} from '../shared/locale.mjs';
+import {
   serializeBatch,
   serializeBroadcasterRow,
   serializeEvent,
@@ -166,17 +176,66 @@ function statusPayload(deps) {
   };
 }
 
+function installedLocales(deps) {
+  return Array.isArray(deps.availableLocales) && deps.availableLocales.length > 0
+    ? deps.availableLocales
+    : AVAILABLE_LOCALES;
+}
+
+/** Language metadata for the selectors; it never contains a second list. */
+function localePayload(deps) {
+  const available = installedLocales(deps);
+  return {
+    default: defaultLocaleFor(available),
+    system: deps.systemLocale ?? null,
+    available: localeDescriptors(available),
+    // AI output/translation languages are a capability subset of the interface
+    // registry (`aiOutput`), not a second list: P40 shipped ten interface
+    // languages while prompts still exist for three.
+    aiOutput: localeDescriptors(AI_OUTPUT_LOCALES)
+  };
+}
+
 function effectiveSettings(deps) {
   const settings = deps.settingsStore.get();
+  const available = installedLocales(deps);
+  const uiLocale = resolveLocale(settings.locale, deps.systemLocale, {available});
   return {
     settings,
     effective: {
-      locale: resolveLocale(settings.locale, deps.systemLocale),
+      locale: uiLocale,
       systemLocale: deps.systemLocale,
       theme: settings.theme,
-      storageMode: settings.storageMode
+      storageMode: settings.storageMode,
+      // The AI output language is its own preference (L2). `follow-ui` resolves
+      // to the effective interface language; an explicit code stays fixed even
+      // when the interface language changes. It is only a *default for new
+      // tasks*: an existing task keeps the language stored on its job row.
+      aiOutputLocale: resolveAiOutputPreference(settings.aiOutputLocale, {
+        uiLocale,
+        systemLocale: deps.systemLocale
+      })
     }
   };
+}
+
+/**
+ * Concrete AI output language for a NEW task.
+ *
+ * An explicit request wins (validated against the AI output set), otherwise the
+ * stored preference is used, and `follow-ui` follows the effective interface
+ * language. Whatever the input, the result is a language with real prompts.
+ */
+function newTaskAiLocale(deps, requested) {
+  const normalized = normalizeLocale(requested);
+  if (normalized && normalized !== 'system') return aiOutputLocale(normalized);
+  const settings = deps.settingsStore.get();
+  const available = installedLocales(deps);
+  const uiLocale = resolveLocale(settings.locale, deps.systemLocale, {available});
+  return resolveAiOutputPreference(settings.aiOutputLocale, {
+    uiLocale,
+    systemLocale: deps.systemLocale
+  });
 }
 
 function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
@@ -613,6 +672,7 @@ export function buildRoutes() {
             } : null
           },
           ...effectiveSettings(deps),
+          locales: localePayload(deps),
           status: statusPayload(deps),
           capabilities: {
             // The product records the five real live platforms only. Simulation
@@ -1629,7 +1689,11 @@ export function buildRoutes() {
         if (summary.stats.messages === 0) {
           throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
         }
-        const locale = normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        // The interface language and the AI output language are independent.
+        // An explicit request wins; otherwise the persisted AI output preference
+        // decides (`follow-ui` by default). The value is snapshotted onto the job
+        // row by the runner, so later preference/UI changes cannot alter it.
+        const locale = newTaskAiLocale(deps, body.locale);
         try {
           const status = await deps.analysisRunner.start({
             sessionId,
@@ -1748,7 +1812,7 @@ export function buildRoutes() {
       handler: ({res, params, url, deps}) => {
         const requested = url.searchParams.get('locale');
         const locale = requested ? normalizeLocale(requested) : null;
-        if (requested && (!locale || !SUPPORTED_LOCALES.includes(locale))) {
+        if (requested && (!locale || !AI_OUTPUT_LOCALES.includes(locale))) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: requested},
@@ -1775,7 +1839,7 @@ export function buildRoutes() {
         }
         const requested = url.searchParams.get('locale');
         const locale = requested ? normalizeLocale(requested) : null;
-        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+        if (!locale || !AI_OUTPUT_LOCALES.includes(locale)) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: requested},
@@ -1801,7 +1865,7 @@ export function buildRoutes() {
         }
         const body = await readJsonBody(req);
         const locale = normalizeLocale(body.locale);
-        if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
+        if (!locale || !AI_OUTPUT_LOCALES.includes(locale)) {
           throw new AppError('TRANSLATION_LOCALE_INVALID', {
             messageKey: 'errors.translationLocaleInvalid',
             details: {locale: body.locale ?? null},
@@ -1933,10 +1997,10 @@ export function buildRoutes() {
         if (!sessionId) {
           throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
         }
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        const locale = requested && requested !== 'system'
-          ? requested
-          : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale);
+        // Same language resolution as session analysis: an explicit request
+        // wins, otherwise the persisted AI output preference decides. The memory
+        // job stores its own language snapshot, independent of the session job.
+        const locale = newTaskAiLocale(deps, body.locale);
         let created;
         try {
           created = await createMemoryUpdateJob({

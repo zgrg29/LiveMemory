@@ -1,4 +1,5 @@
 import {DAY} from '../shared/time.mjs';
+import {AI_OUTPUT_LOCALES, DEFAULT_LOCALE} from '../shared/locale.mjs';
 
 /**
  * Versioned constants for the long-term memory round trip (M7).
@@ -12,13 +13,28 @@ export const MEMORY_PROTOCOL = 'livememory-memory-update-v1';
 export const MEMORY_SCHEMA_VERSION = '1.0.0';
 export const ACCEPTED_MEMORY_SCHEMA_VERSIONS = Object.freeze(['1.0.0']);
 
-export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.1';
+/**
+ * Memory prompt revision. P41 replaced the "keep the source language" bullet
+ * with an explicit output-language contract (write memory prose in the task
+ * language, never translate the quoted chat) and widened the set to ten
+ * languages, so the revision moves with it. Jobs keep their stored value.
+ */
+export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.2';
 
 export function memoryPromptVersionFor(locale) {
-  return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : 'en'}`;
+  return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE}`;
 }
 
-export const SUPPORTED_MEMORY_LOCALES = Object.freeze(['zh-CN', 'ja', 'en']);
+/**
+ * AI memory-task output languages.
+ *
+ * Like the session-analysis list this is the interface registry narrowed to the
+ * languages that actually have a memory prompt and result schema (`aiOutput`).
+ * P41 added the memory rule and localized compact example for every shipped
+ * language; an unknown tag still falls back to `DEFAULT_LOCALE` instead of
+ * reaching a provider.
+ */
+export const SUPPORTED_MEMORY_LOCALES = AI_OUTPUT_LOCALES;
 
 /** Atomic knowledge kinds. Deliberately small: everything else is `other`. */
 export const MEMORY_KIND = Object.freeze({

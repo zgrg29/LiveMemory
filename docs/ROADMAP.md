@@ -33,6 +33,10 @@
 
 > v0.14.0 正式发布（2026-11-16，Multi-Platform Release）：五平台版本封版。产品版本 `0.13.3` → `0.14.0`，Tag `v0.14.0` 指向 `d268cf9`，GitHub Release 已发布。EXE Build ID `17f84b1956e1` / SHA-256 `6862079a…` / 97,769,984 bytes / `requireAdministrator`；发布包 `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`）。验收：**687 unit + 347 integration = 1034 passed**；`verify-exe` 10/10、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16。TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订仍 **NOT-OBSERVED**。**十语言、独立 AI 输出语言与 Kick 等新平台均为后续规划，不在本版。** 详见 `docs/STATUS.md` §0.46、`docs/RELEASE.md` §11。
 
+> v0.15.0 开发线（2026-11-16，P39 / I18N-M0）：**国际化基础架构整理完成，未新增语言、未发布。** 新增单一语言清单 `src/shared/locales.mjs`（Node 与浏览器同源），语言解析改为「用户偏好 / 系统检测 / 实际已安装资源」三层 + 语言族/script/region 逐级降级；`zh-HK` 当前安全降级 `zh-CN`，未来加入 `zh-TW` 后自动优先。Header 语言控件改为由 `/api/bootstrap` 动态生成：三种语言保持原三段按钮交互，>3 项或长名称自动使用原生下拉；删除 `max-width:132px/112px`。真实浏览器 **9/9** 布局截图通过（三语 1440/390 + 十语言夹具 1440/1024/820/390/黑暗），全量 **711 unit + 349 integration = 1060 passed / 0 failed**，三语 2,265 键/占位符零差异。P41 长期画像跨语言策略已由用户确定为**方案 B（允许混合并接受跨语言重复）**，仅记录文档，未改代码/DB/AI。**未 Push、未 Tag、未 Release。**
+
+> v0.15.1 开发线（2026-11-16，P41 / I18N-M2）：**十语言 AI 输出完成，未发布。** 注册表十条 `aiOutput: true`；新增 `src/ai/prompts/language.mjs` 作为输出语言规则的唯一来源（rule/guard/system/repair/example × 10），六个 prompt 面全部注入并带 `OUTPUT LANGUAGE (<code>)`；三套已验证指令正文保留，其余七语用英文正文 + 各自输出语言规则（单次请求仍只含当前语言）。新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`，`config/settings.json`，已同步备份白名单与设置页），任务创建写入 `ai_jobs.locale` 快照并在恢复时以 job 行为准；结果 Schema `locale.enum` 扩到十项，字段名/枚举/稳定标识不变。长期画像按方案 B 落地（跨语言事实共存、同字符 topic 仍去重、历史事实不翻译覆盖）。**747 unit + 355 integration = 1102 passed / 0 failed**；真实 DeepSeek Provider：4 语单场报告通过、`ko` 7 条韩语事实、`de` 7 条德语事实。**未 Push、未 Tag、未 Release。** 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49。
+
 ## P45 v0.14.0 五平台正式发布（2026-11-16）🚀
 
 - ✅ 版本决策：`0.14.0`（相对 `v0.13.2-rc.0` 新增 Twitch / 抖音 / TikTok 三平台，SemVer minor）
@@ -60,55 +64,84 @@
 - ✅ 更新 `AGENTS.md` §2/§4/§6.16/§6.17/§7/§10/§11（长期约束）
 - ⬜ 未新增语言、未接入平台、未改任何业务代码（本轮边界）
 
-## P39 I18N-M0：国际化架构整理（v0.15.0）⬜
+## P39 I18N-M0：国际化架构整理（v0.15.0 开发线，2026-11-16）✅ 完成，未发布
 
 目标：拆掉「三语假设」，**不新增语言**即可独立验收。
 
-- 前置：无；工作区 clean、`node --test` 全绿
-- 范围：单一语言清单来源（前端 + 后端 + 语言名）；可用性驱动的 `normalizeLocale()` 逐级降级
-  （`zh-HK`→`zh-TW`→`zh-CN`）；Header 语言控件改为可容纳 N 项；AI 中心与报告页语言下拉改为清单生成；
-  `LOCALE_NAME` / `promptVersionFor` 枚举抽为可扩展表；布局回归基线
-- 完成标准：三语行为与视觉完全不变；10 项假语言夹具下无截断；`zh-HK`/`pt-PT`/`in` 降级单测；
-  `grep` 证明无第二份语言清单；全量测试通过
-- 风险：Header 高可见区域回归；归一化行为变化；漏改路由白名单校验点
-- 详见 `docs/I18N.md` §5
+- ✅ 单一语言清单 `src/shared/locales.mjs`：语言码、原生名、英文名、语言族、script、regions、`available`、默认 `en`；
+  Node 与浏览器引用同一文件（`/shared/locales.mjs`）
+- ✅ 所有选择器/常量从清单派生：Header、设置页、AI 输出语言、报告阅读语言、`src/ai/constants.mjs`、
+  `src/memory/constants.mjs`、翻译 `LOCALE_NAME`
+- ✅ 可用性驱动降级：`resolveLocale(..., {available})` + `detectInstalledLocales()` 检查真实字典；
+  `zh-HK`→当前 `zh-CN`、未来 `zh-TW`；`pt-PT`→`pt-BR`（有资源时）；`in`→`id`；未知→`en`
+- ✅ 区分用户偏好 / 系统检测 / 实际资源；合法旧配置原样加载，不因资源缺失重写
+- ✅ Header 动态生成：3 项保持原三段按钮 + 系统按钮，>3 项或长名称自动原生下拉；≤860px 折叠行为不变
+- ✅ 布局：删除 `.language-select` 的 `max-width:132px` / `112px`；真实浏览器十语言无截断/重叠/横向溢出
+- ✅ 资源缺失：字典 404/损坏回退默认一次，默认失败显示既有错误页，不白屏
+- ✅ 测试：新增 `locale-registry` / `i18n-locale-api`，扩展 `locale` / `i18n` / `header-language` / `settings-store`；
+  十语言夹具 `tests/fixtures/locales-10.mjs` 与 `i18n-header-10.html`（不进入产品）
+- ✅ 全量 **711 unit + 349 integration = 1060 passed / 0 failed / 0 skipped**
+- ✅ 真实浏览器 UI **9/9**：`docs/screenshots/i18n-p39-*.png`
+- ✅ Windows EXE：Build ID `18df5c272a98`（commit `ba0ff26`，`97,788,416` B，SHA-256 `691c4f00…`，
+  `requireAdministrator`）；`verify-exe` **11/11**（新增 i18n 资源场景）
+- ⬜ 未新增七语言、未改 AI 输出语言设置（P41）、未改长期画像代码/DB、未发布
+- 详见 `docs/I18N.md` §2、`docs/STATUS.md` §0.47
 
-## P40 I18N-M1：新增七种语言资源（v0.15.0）⬜
+## P40 I18N-M1：十语言界面与启动器（v0.15.0）✅（2026-11-16，未发布）
 
-目标：`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七份字典 100% 对齐。
+目标：`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七份字典 100% 对齐，界面与启动器十语言。
 
-- 前置：P39 完成；`docs/i18n/GLOSSARY.md` 定稿；每语言有签收人
-- 范围：7 份字典（各约 2,265 键）；启动器文案扩语言或明确「控制台三语 + 回退」；
-  原生语言名表；语言控件 10 项排序；长文本布局修复
-- 完成标准：10 份字典键集/占位符零差异、无空串、无残留英文整句；10 语言 × 明暗 × 桌面/窄屏走查并归档截图；
-  `i18n.test.mjs` 改为遍历清单
-- 风险：约 15,855 条翻译量；德语/西语膨胀；`zh-TW` 不是简繁转换；EXE 体积
-- 详见 `docs/I18N.md` §5、§6
+- ✅ 术语表：`docs/i18n/GLOSSARY.md`（50 核心术语 × 10 语言 + 18 动作词 + 10 风格卡 + 不翻译清单 + 门禁）
+- ✅ 7 份新字典，各 **2,265** 叶子键；键集缺失 0 / 多余 0、占位符差异 0、空值 0、无整句英文残留
+- ✅ 注册表 10 条 + `aiOutput` 能力位；`AVAILABLE_LOCALES`（10）与 `AI_OUTPUT_LOCALES`（3）同源派生
+- ✅ 语言控件：3 项仍为分段按钮；十项自动原生下拉；设置页/AI 下拉同源；原生名只用自身文字
+- ✅ 降级：`zh-HK`/`zh-MO`/`zh-Hant`→`zh-TW`、`pt-PT`→`pt-BR`、`in`→`id`、未知→`en`；旧三语配置原样可用
+- ✅ 启动器：`cli-i18n.mjs` 十语（61 键/语言）、`{locales}` 由注册表填充、ASCII 安全回退；
+  SEA 引导器十语言失败消息
+- ✅ AI 安全收窄：分析/记忆任务 locale、报告/翻译只读接口、Schema `enum` 全部限定在 `AI_OUTPUT_LOCALES`，
+  未支持语言永不发往 Provider（**没有提前实现 P41**）
+- ✅ 真实浏览器：十语言 × 1440/1024/820/390 × 明暗 × 主要页面，见 `docs/I18N.md` §2.6.4
+- ⬜ 未做：`aiOutputLocale` 设置、十语提示词/结果 Schema/翻译目标（P41）；平台采集/DB/画像未改；未 Push/Tag/Release
+- 详见 `docs/I18N.md` §2.6、`docs/STATUS.md` §0.48、`log/2026-11-16-p40-i18n-m1.md`
 
-## P41 I18N-M2：AI 输出语言解耦与兼容性验证（v0.15.1）⬜
+
+## P41 I18N-M2：AI 输出语言解耦与十语言支持（v0.15.1）✅ 2026-11-16
 
 目标：L2 独立、持久、任务内不可变，跨语言不破坏长期画像。
 
-- 前置：P39 完成；**且用户必须先在三种长期画像跨语言策略中做决定**（见 `docs/I18N.md` §5 待决策）
-- 范围：`aiOutputLocale` 设置（默认 `follow-ui`）+ **备份设置白名单**；AI 中心默认值；
-  任务快照断言；三处提示词语言表扩到 10；`LOCALE_NAME` 与报告阅读语言扩到 10
-- 完成标准：「韩语界面 + 日语报告」端到端成立；切换界面语言/重启后任务 locale 与正文不变；
-  暂停→继续→重启语言不变；旧配置按 `follow-ui` 读取不写回；备份→恢复保留设置；
-  历史三语报告仍可读；画像行为符合已批准决策
-- 风险：合并键语言分叉、提示词体积/Token 成本、新语言 Provider JSON 遵循度
-- 详见 `docs/I18N.md` §5
+- ✅ 前置：P39/P40 完成；长期画像跨语言策略按**方案 B** 落地（允许混合语言事实、接受跨语言语义重复；
+  不锁首次语言、不做跨语言合并/别名表/DB 迁移；现有同语言去重不变）
+- ✅ 十语言 AI 输出：注册表十条 `aiOutput: true`；提示词/结果 Schema/翻译目标/LOCALE_NAME 全部十语
+- ✅ 提示词国际化：新模块 `src/ai/prompts/language.mjs`（rule/guard/system/repair/example）；
+  三套已验证完整正文保留，其余七语复用英文正文 + 各自输出语言规则；每个 prompt 面都可断言 `OUTPUT LANGUAGE (<code>)`
+- ✅ 独立设置 `aiOutputLocale`（默认 `follow-ui`）+ 备份白名单 + 设置页卡片 + bootstrap 原始/生效值 + 非法值 400
+- ✅ 任务语言快照：创建时写 `ai_jobs.locale`，恢复以 job 行为准，改界面/改偏好/暂停/重启都不改旧任务
+- ✅ 报告阅读翻译：9 个非源语言目标各自独立缓存行，原文/证据/结构化字段不变
+- ✅ 回归：**747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**
+- ✅ 真实 Provider（DeepSeek `deepseek-flash`）：单场报告 `ko`/`zh-TW`/`de`/`pt-BR` 4/4 通过；
+  长期画像 `ko` 7 条韩语事实、`de` 7 条德语事实；跨语言续写按 guard 复用原 topic（方案 B 成立）
+- ⬜ 未做：发布/Push/Tag；数据库 Schema（仍 16）；P42 的十语言 UI/EXE 全矩阵
+- 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49、`log/2026-11-16-p41-i18n-m2.md`
 
-## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.16.0）⬜
+## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.15.0 目标）✅ 2026-11-16，未发布
 
 目标：十语言在真实 Windows EXE 上完成整体验收。
 
-- 前置：P40、P41 完成
-- 范围：逐语言真实 EXE 启动与控制台字符；10×2×2 界面走查；真实采集 + 真实 AI（≥2 组「界面语言 ≠ 输出语言」）；
-  备份/恢复/迁移/多直播间/五平台/AI 恢复回归；文档全面对齐；建立「新键必须 10 语言同时落地」门禁
-- 完成标准：走查矩阵与截图归档；`verify-exe` 全项通过；控制台无乱码或明确记录降级；
-  旧三语数据库直接升级可用；全量测试真实数字入 STATUS
-- 风险：矩阵工作量大、容易被「抽查 2 语言即宣称通过」；多语言 Provider 输出质量；干净 Windows 环境仍未验证
-- 详见 `docs/I18N.md` §5
+- ✅ 真实 Provider：10 语单场 **10/10**、10 语画像 **10/10**、跨语言 zh→ko→de→zh **4/4**、
+  阅读翻译 5 语 **5/5** + 失败回退；正式取证 31 次请求 / 100,487 input + 17,491 output tokens
+- ✅ 方案 B：跨语言事实共存、旧事实 0 删除、跨观众证据 0、同语言去重不变
+- ✅ 语言独立性：7 组界面/AI 组合、固定输出不随界面变、重启保留、`follow-ui`、非法值 400
+- ✅ 任务恢复：韩语任务暂停 → 界面德语 + AI 西班牙语 → 重启 → 恢复仍韩语（`ai-i18n-locales` 4/4）
+- ✅ 真实 EXE：Build `5b9e355dccc7`、commit `310975e`、99,200,512 B、SHA-256 `7c3f3d3f…`、`requireAdministrator`；
+  `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16
+- ✅ 真实浏览器：源码 **440/440**、EXE 内服务 **440/440**；40 + 40 张截图
+- ✅ 旧 schema-15 数据升级到 16：计数/hash 全一致、settings 未改写、旧报告可读、备份→恢复计数一致
+- ✅ 五平台：Bilibili/YouTube/TikTok 真实采集通过；Twitch 无在播频道、抖音无真实房间，均如实标未验证
+- ✅ 修复：十语言 help 的「不需要管理员权限」说明、三处测试工具假阴性、浏览器脚本 EXE 模式
+- ✅ 全量 **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**
+- ⬜ 真实双击 UAC、干净 Windows 账户、母语审校、Twitch/抖音真实采集仍待人工/在播房间
+- ⬜ 未 Push / Merge main / Tag / Release；版本号仍 0.14.0，发布决策留给发布轮
+- 详见 `docs/STATUS.md` §0.50、`docs/I18N.md` §2.9、`log/2026-11-16-p42-i18n-m3.md`
 
 ## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.16.x）🟡 调查完成、未连接
 
@@ -905,11 +938,11 @@ M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 →
 所有 → M8 ⬜
 
 # 2026-11-16 起的两条主线（互不阻塞，可交替推进）
-P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P39 ⬜ → P40 ⬜ → P41 ⬜ → P42 ⬜
+P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P39 ✅（I18N-M0，2026-11-16）→ P40 ✅ → P41 ✅ → P42 ✅（2026-11-16，待发布决策）
 P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P43 🟡（Kick G0 完成，待 G1）→ P44 🟡（后续候选逐个 G0–G6）
 ```
 
-**主线排序原则**：国际化优先（P39–P42），完成后才开始第一个新平台的 G1 真实验证（P43）。
+**主线排序原则**：国际化优先（P39–P42）；P39–P42 已完成，下一步是 v0.15.0 发布决策与 P43 的第一个新平台 G1 真实验证。
 理由：平台适配器会新增大量用户可见文案，先扩语言再逐个平台开发，可避免「每接一个平台就要
 重新补 7 种语言」的重复工作；同时语言扩展不依赖任何新平台。
 

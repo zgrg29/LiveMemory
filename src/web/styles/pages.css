@@ -440,6 +440,13 @@
   white-space: nowrap;
 }
 
+/* The new-recording action is a primary control, not a room tab: it keeps its
+   full localised label and the tab strip scrolls instead of truncating it. */
+.recording-tab--new .recording-tab-label {
+  max-width: none;
+  overflow: visible;
+}
+
 .recording-tab-state {
   flex: none;
   font-size: 10.5px;

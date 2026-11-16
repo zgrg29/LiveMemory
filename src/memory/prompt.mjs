@@ -7,6 +7,7 @@ import {
   SUPPORTED_MEMORY_LOCALES
 } from './constants.mjs';
 import {isoFromEpochMs} from '../shared/time.mjs';
+import {languageRuleText, outputLanguage} from '../ai/prompts/language.mjs';
 
 /**
  * Localized instructions for the long-term memory update round trip.
@@ -14,6 +15,11 @@ import {isoFromEpochMs} from '../shared/time.mjs';
  * Written for a human who will paste this into any chat AI: the protocol rules
  * are explicit, the output is strict JSON, and every "do not do this" covers a
  * failure mode the importer rejects or the UI must never claim.
+ *
+ * The three verified bodies (Simplified Chinese, Japanese, English) are used
+ * as-is. The other AI output languages reuse the English body and prepend their
+ * own explicit output-language rule, so the document language and the memory
+ * language never get confused.
  */
 
 export function memoryInstructionVersion(locale) {
@@ -116,7 +122,9 @@ function header(locale, {session, broadcaster, batch, jobId}) {
   return lines.join('\n');
 }
 
-const ZH = ({context}) => `# LiveMemory 长期观众记忆更新
+const ZH = ({context, rule}) => `# LiveMemory 长期观众记忆更新
+
+${rule}
 
 你正在帮助一位主播维护「长期观众记忆」。软件已经把**现有记忆**和**本场新聊天**放进这个包，
 请只输出本次值得写入记忆的变化。
@@ -154,7 +162,7 @@ const ZH = ({context}) => `# LiveMemory 长期观众记忆更新
 - 不要输出金额、礼物数量、粉丝数或任何计数；这些由软件自己统计，AI 数字无效。
 - 不要推断敏感属性：健康、性取向、宗教、政治立场、财务状况、真实姓名、住址、联系方式、身份证件。
 - 礼物金额不代表经济能力、人格或忠诚度，不得据此生成任何记忆。
-- 语言保持原样：中文、日文、英文混排时按原语言记录，不要翻译成别的语言。
+- 语言：写入记忆用的 summary / statement / topic 等自然语言字段使用本次任务指定的输出语言；聊天原文与证据引用保持原样，不翻译、不改写。
 - 宁少勿多：证据不足就省略，或使用 \`uncertain\`。
 
 ## 4. 状态变化 vs 矛盾
@@ -186,7 +194,9 @@ ${context}
 
 如果本场没有任何值得写入记忆的内容，返回 \`"viewer_operations": []\`。`;
 
-const JA = ({context}) => `# LiveMemory 長期視聴者メモリの更新
+const JA = ({context, rule}) => `# LiveMemory 長期視聴者メモリの更新
+
+${rule}
 
 配信者のための「長期視聴者メモリ」を更新します。このパッケージには**既存のメモリ**と**今回の配信の新しいチャット**が入っています。
 今回書き込む価値のある変化だけを出力してください。
@@ -224,7 +234,7 @@ const JA = ({context}) => `# LiveMemory 長期視聴者メモリの更新
 - 金額・ギフト数・フォロワー数などの数値は出力しないでください。集計はソフト側が行います。
 - センシティブな属性（健康・性的指向・宗教・政治・経済状況・本名・住所・連絡先・身分証）を推測しないでください。
 - ギフト額から経済力・人格・忠誠心を推測しないでください。
-- 言語はそのまま：中国語・日本語・英語の混在は原文の言語で記録し、翻訳しないでください。
+- 言語：メモリに書き込む summary / statement / topic などの自然言語フィールドは、このタスクで指定された出力言語で書いてください。チャット原文と証拠の引用はそのまま保持し、翻訳・改写しないでください。
 - 少なすぎるくらいで構いません。根拠が弱ければ省略するか \`uncertain\` を使ってください。
 
 ## 4. 状態変化と矛盾
@@ -256,7 +266,9 @@ ${context}
 
 書き込む内容がなければ \`"viewer_operations": []\` を返してください。`;
 
-const EN = ({context}) => `# LiveMemory long-term viewer memory update
+const EN = ({context, rule}) => `# LiveMemory long-term viewer memory update
+
+${rule}
 
 You are maintaining the streamer's long-term memory of viewers. The package contains the
 **current memory** and the **new chat from this session**. Output only what is worth remembering.
@@ -294,7 +306,7 @@ For each viewer, compare the current memory with what they said this time and ou
 - Never output money amounts, gift counts, follower counts or any statistics — the app computes those locally.
 - Do not infer sensitive attributes: health, sexual orientation, religion, politics, finances, real name, address, contact details, ID documents.
 - Gift value says nothing about wealth, personality or loyalty; do not create memories from it.
-- Keep the original language: mixed Chinese/Japanese/English stays as written, never translated.
+- Write memory summary / statement / topic fields in the output language named above; keep the original chat and every evidence quote exactly as written, never translated.
 - Prefer fewer, well-supported items; omit weak ones or use \`uncertain\`.
 
 ## 4. State change vs contradiction
@@ -329,13 +341,18 @@ If nothing is worth remembering, return \`"viewer_operations": []\`.`;
 const BUILDERS = {'zh-CN': ZH, ja: JA, en: EN};
 
 /**
- * @param {'zh-CN'|'ja'|'en'} locale
+ * @param {string} locale one of `SUPPORTED_MEMORY_LOCALES`
  * @param {{session?:object, broadcaster?:object, batch?:object, jobId?:string}} options
  */
 export function buildMemoryInstructions(locale, options = {}) {
-  const builder = BUILDERS[SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : 'en'];
-  const context = header(locale, options);
-  return builder({context});
+  const code = SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : 'en';
+  const builder = BUILDERS[code] ?? EN;
+  const context = header(code, options);
+  const rule = [
+    `- output_language: ${code} (${outputLanguage(code).name})`,
+    `- ${languageRuleText(code)}`
+  ].join('\n');
+  return builder({context, rule});
 }
 
 export const __internal = {EXAMPLE, OP_TABLE, header, BUILDERS};

@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import {buildRoutes, createRouter} from './routes.mjs';
 import {
   isAllowedFetchSite,
@@ -74,6 +75,13 @@ export function createApp(deps) {
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       sendText(res, 405, 'Method not allowed');
+      return;
+    }
+    // The browser imports the same locale registry the Node server uses. Only
+    // this one shared module is exposed; the rest of src/shared stays internal.
+    if (url.pathname === '/shared/locales.mjs') {
+      const sharedRoot = deps.sharedRoot ?? fileURLToPath(new URL('../shared/', import.meta.url));
+      await serveStatic(req, res, {webRoot: sharedRoot, pathname: '/locales.mjs'});
       return;
     }
     await serveStatic(req, res, {webRoot: deps.webRoot, pathname: url.pathname});

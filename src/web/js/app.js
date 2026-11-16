@@ -1,6 +1,14 @@
 import {api} from './api.js';
 import {establishSession} from './auth.js';
-import {loadDictionary, createTranslator, localeDisplayName} from './i18n.js';
+import {loadDictionary, createTranslator} from './i18n.js';
+import {renderLanguageControl} from './language-control.js';
+import {
+  AI_OUTPUT_LOCALES,
+  AVAILABLE_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptors,
+  resolveLocaleTag
+} from '../../shared/locales.mjs';
 import {applyTheme} from './theme.js';
 import {
   clear,
@@ -30,13 +38,17 @@ const state = {
   systemLocale: 'en',
   dict: null,
   locale: 'en',
+  // AI output language (L2) is independent of the interface language (L1):
+  // `aiOutputPreference` is the persisted choice (`follow-ui` or a code) and
+  // `aiOutputLocale` is the concrete language a new task would use right now.
+  aiOutputPreference: 'follow-ui',
+  aiOutputLocale: DEFAULT_LOCALE,
   status: null,
   version: '0.1.0',
+  locales: [],
   pageCleanup: null,
   localePending: false
 };
-
-const LANGUAGE_CHOICES = Object.freeze(['zh-CN', 'ja', 'en']);
 
 let t = createTranslator({});
 let authErrorShown = false;
@@ -53,6 +65,17 @@ function on(name, handler) {
 
 const view = document.getElementById('view');
 const pageTitleEl = document.getElementById('page-title');
+
+/**
+ * The compact top bar repeats the page name above the content. In German or
+ * French that label is wider than the narrow-screen top bar can give it, so the
+ * element keeps an ellipsis but always carries the full text as its title (and
+ * the same string is rendered in full by the page header below).
+ */
+function setPageTitle(text) {
+  pageTitleEl.textContent = text;
+  pageTitleEl.title = text;
+}
 const connectionPill = document.getElementById('connection-pill');
 const connectionText = document.getElementById('connection-text');
 const toaster = createToaster(document.getElementById('toasts'));
@@ -67,12 +90,19 @@ const ctx = {
   get locale() {
     return state.locale;
   },
+  get aiOutputLocale() {
+    return state.aiOutputLocale;
+  },
+  get aiOutputPreference() {
+    return state.aiOutputPreference;
+  },
   emit,
   on,
   toast: (message, options) => toaster(message, options),
   navigate,
   refreshStatus,
   setLocale,
+  setAiOutputLocale,
   setTheme,
   describeError: (error) => describeError(error, t)
 };
@@ -138,7 +168,7 @@ async function renderRoute() {
   clear(view);
   if (!route) {
     setActiveNav(null);
-    pageTitleEl.textContent = 'LiveMemory';
+    setPageTitle('LiveMemory');
     view.append(emptyState({
       title: t('errors.notFound'),
       body: t('errors.generic'),
@@ -148,7 +178,7 @@ async function renderRoute() {
     return;
   }
   setActiveNav(route.nav);
-  pageTitleEl.textContent = t(route.page.titleKey);
+  setPageTitle(t(route.page.titleKey));
   document.title = `LiveMemory · ${t(route.page.titleKey)}`;
   try {
     const result = await route.page.render(view, ctx, params, query);
@@ -258,57 +288,26 @@ function renderShellMeta() {
 /**
  * Header language control.
  *
- * The three language names are always rendered in their own language so the
- * control stays usable when the current interface language is not readable.
- * Wide layouts expose all three choices plus a globe button for "follow the
- * system language"; narrow layouts collapse to one native <select>. Both
- * controls read and write the same persisted preference.
+ * Every option comes from the locale list returned by `/api/bootstrap`, which
+ * is generated from `src/shared/locales.mjs`. Native names are always rendered
+ * in their own language so the control stays usable when the current interface
+ * language is not readable. Narrow layouts collapse to one native <select>;
+ * large language sets use that same select at every width.
  */
-function languageChoiceLabel(value) {
-  return value === 'system' ? t('settings.language.system') : localeDisplayName(value);
-}
-
 function syncLanguageControls() {
   const preference = state.settings?.locale ?? 'system';
-  const segmented = document.getElementById('language-segmented');
-  if (segmented) {
-    segmented.setAttribute('aria-label', t('a11y.languageSelect'));
-    segmented.replaceChildren(...LANGUAGE_CHOICES.map((value) => el('button', {
-      type: 'button',
-      text: localeDisplayName(value),
-      attrs: {
-        'aria-pressed': String(preference === value),
-        'data-locale': value,
-        lang: value,
-        title: localeDisplayName(value)
-      },
-      onClick: () => chooseLocale(value)
-    })));
-  }
-
-  const systemButton = document.getElementById('language-system');
-  if (systemButton) {
-    systemButton.setAttribute('aria-pressed', String(preference === 'system'));
-    systemButton.setAttribute('aria-label', t('a11y.languageSystem'));
-    systemButton.title = t('a11y.languageSystem');
-    systemButton.onclick = () => chooseLocale('system');
-  }
-
-  const select = document.getElementById('language-select');
-  if (select) {
-    const choices = ['system', ...LANGUAGE_CHOICES];
-    select.replaceChildren(...choices.map((value) => el('option', {
-      value,
-      text: languageChoiceLabel(value),
-      attrs: value === 'system' ? null : {lang: value}
-    })));
-    select.value = preference;
-    select.setAttribute('aria-label', t('a11y.languageSelect'));
-    select.onchange = () => chooseLocale(select.value);
-  }
-
-  const control = document.querySelector('.language-control');
-  if (control) control.setAttribute('aria-label', t('a11y.languageSelect'));
+  renderLanguageControl({
+    root: document.querySelector('.language-control'),
+    segmented: document.getElementById('language-segmented'),
+    systemButton: document.getElementById('language-system'),
+    select: document.getElementById('language-select'),
+    locales: state.locales,
+    preference,
+    systemLabel: t('settings.language.system'),
+    systemAriaLabel: t('a11y.languageSystem'),
+    ariaLabel: t('a11y.languageSelect'),
+    onChange: chooseLocale
+  });
   for (const node of document.querySelectorAll('#language-segmented button, #language-system, #language-select')) {
     node.disabled = false;
   }
@@ -346,12 +345,35 @@ async function setLocale(preference) {
   const payload = await api.patch('/api/settings', {locale: preference});
   state.settings = payload.settings;
   state.effective = payload.effective;
+  // Changing the interface language may move the *default for new AI tasks*
+  // when the preference is `follow-ui`. Existing tasks and reports are not
+  // touched: their language lives on the job row.
+  state.aiOutputPreference = payload.settings?.aiOutputLocale ?? state.aiOutputPreference;
+  state.aiOutputLocale = payload.effective?.aiOutputLocale ?? state.aiOutputLocale;
   await applyLocale(payload.effective.locale);
   syncLanguageControls();
   toaster(t('toast.language'));
   emit('localechange', {locale: state.locale, preference});
   await renderRoute();
   syncLanguageControls();
+}
+
+/**
+ * Persist the AI output language preference (L2). It never changes the interface
+ * language and never rewrites an existing task or report.
+ */
+async function setAiOutputLocale(preference) {
+  const payload = await api.patch('/api/settings', {aiOutputLocale: preference});
+  state.settings = payload.settings;
+  state.effective = payload.effective;
+  state.aiOutputPreference = payload.settings?.aiOutputLocale ?? preference;
+  state.aiOutputLocale = payload.effective?.aiOutputLocale ?? state.aiOutputLocale;
+  emit('aioutputlocalechange', {
+    preference: state.aiOutputPreference,
+    locale: state.aiOutputLocale
+  });
+  toaster(t('toast.aiOutputLanguage'));
+  await renderRoute();
 }
 
 async function setTheme(preference) {
@@ -398,10 +420,8 @@ function wireShell() {
 
 /** Best-effort locale for the unauthenticated error page (no server data). */
 function initialLocale() {
-  const language = String(navigator.language ?? navigator.languages?.[0] ?? 'en').toLowerCase();
-  if (language.startsWith('zh')) return 'zh-CN';
-  if (language.startsWith('ja')) return 'ja';
-  return 'en';
+  const language = String(navigator.language ?? navigator.languages?.[0] ?? '');
+  return resolveLocaleTag(language) ?? DEFAULT_LOCALE;
 }
 
 /**
@@ -419,7 +439,7 @@ async function renderAuthError(auth) {
   const message = auth?.code === 'NETWORK'
     ? t('errors.network')
     : (auth?.code === 'AUTH_INVALID' ? t('auth.invalid') : t('auth.body'));
-  pageTitleEl.textContent = t('auth.title');
+  setPageTitle(t('auth.title'));
   connectionPill.dataset.state = 'idle';
   connectionText.textContent = t('status.idle');
   clear(view);
@@ -451,6 +471,21 @@ async function boot() {
     state.status = bootstrap.status;
     state.systemLocale = bootstrap.effective.systemLocale;
     state.version = bootstrap.app.version;
+    state.locales = Array.isArray(bootstrap.locales?.available) && bootstrap.locales.available.length > 0
+      ? bootstrap.locales.available
+      : localeDescriptors(AVAILABLE_LOCALES);
+    // AI output/translation languages are the `aiOutput` subset of the same
+    // registry: ten interface languages must not imply ten analysis languages.
+    state.aiLocales = Array.isArray(bootstrap.locales?.aiOutput) && bootstrap.locales.aiOutput.length > 0
+      ? bootstrap.locales.aiOutput
+      : localeDescriptors(AI_OUTPUT_LOCALES);
+    state.aiOutputPreference = bootstrap.settings?.aiOutputLocale === 'follow-ui' ||
+      typeof bootstrap.settings?.aiOutputLocale !== 'string'
+      ? 'follow-ui'
+      : bootstrap.settings.aiOutputLocale;
+    state.aiOutputLocale = typeof bootstrap.effective?.aiOutputLocale === 'string'
+      ? bootstrap.effective.aiOutputLocale
+      : DEFAULT_LOCALE;
     applyTheme(bootstrap.settings.theme);
     await applyLocale(bootstrap.effective.locale);
     wireShell();

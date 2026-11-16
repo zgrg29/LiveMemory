@@ -19,6 +19,7 @@ import {ReportTranslationService} from '../ai/translation/service.mjs';
 import {runRetention} from '../storage/retention.mjs';
 import {createApp} from './app.mjs';
 import {startHttpServer, resolveWebRoot} from './http.mjs';
+import {detectInstalledLocales} from './locale-resources.mjs';
 import {recoverRestoreJournal} from './backup/journal.mjs';
 import {BackupJobRegistry} from './backup-jobs.mjs';
 import {serializeEvent} from './serializers.mjs';
@@ -346,6 +347,8 @@ export async function startServer({
   const startedAt = now();
   const state = {port: 0, maintenance: false};
   const backupJobs = new BackupJobRegistry({now});
+  const resolvedWebRoot = webRoot ?? resolveWebRoot();
+  const availableLocales = detectInstalledLocales(resolvedWebRoot);
   const deps = {
     backupJobs,
     get paths() { return runtime.paths; },
@@ -368,9 +371,10 @@ export async function startServer({
     logger,
     startedAt,
     buildInfo,
-    webRoot: webRoot ?? resolveWebRoot(),
+    webRoot: resolvedWebRoot,
+    availableLocales,
     getPort: () => state.port,
-    systemLocale: systemLocale ?? detectSystemLocale(),
+    systemLocale: systemLocale ?? detectSystemLocale(process.env, {available: availableLocales}),
     env,
     relocation: {
       get current() { return runtime; },

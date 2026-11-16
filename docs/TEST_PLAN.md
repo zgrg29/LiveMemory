@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
-| 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
+| 启动冒烟 | 启动器真实启动、单实例、命令行十语、EXE | 手工 + `scripts/` |
+| UI 验证 | 三主题、十语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
 | 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；AI 单入口与报告只读 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
 | 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
 | 可移植备份 | 在线快照、格式/校验、ZIP 安全、事务化恢复、崩溃回滚、跨目录迁移 | `tests/unit/backup-format.test.mjs`、`tests/unit/backup-ui.test.mjs`、`tests/integration/backup-restore.test.mjs`、`scripts/verify-p0-2-exe.mjs` |
@@ -25,6 +25,45 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 ```
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
+
+## 2.0-P42 P42 / I18N-M3 本轮结果（2026-11-16）
+
+### 2.0-P42.1 自动化
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 `tests/unit/*.test.mjs` | **747 passed / 0 failed / 0 skipped（18,920 ms）** |
+| 全量集成 `tests/integration/*.test.mjs` | **355 passed / 0 failed / 0 skipped（305,344 ms）** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 定向十语言字典/启动器 | **30 passed / 0 failed** |
+| `ai-i18n-locales.test.mjs` | **4/4**（十语全链路、混合语言、界面/AI 独立、暂停→重启→恢复） |
+
+### 2.0-P42.2 真实 Provider / 浏览器 / EXE
+
+| 运行 | 结果 |
+| --- | --- |
+| `scripts/verify-ai-i18n-live.mjs` 单场 | **10/10** 语言，10 次请求 / 40,852 input + 7,108 output |
+| `scripts/verify-ai-i18n-live.mjs` 画像 | **10/10** 语言，10 次请求 / 36,928 input + 4,576 output；`factLocaleRatio=1.0` |
+| `scripts/verify-ai-memory-crosslang.mjs` | **4/4** 轮（zh→ko→de→zh），4 次请求 / 15,640 + 1,441；5 条事实共存、0 删除、0 跨观众证据 |
+| `scripts/verify-ai-translation-live.mjs` | 5 语 **5/5** + 真实 401 失败回退；7 次请求 / 7,067 + 4,366；重复阅读 0 请求 |
+| `scripts/verify-i18n-ui.mjs`（源码服务） | **440/440** 页面加载 PASS；40 张截图 |
+| `scripts/verify-i18n-ui.mjs --exe` | **440/440** 页面加载 PASS；40 张截图 |
+| `verify-exe.mjs` | **11/11** |
+| `verify-help-exe.mjs` | **14/14** |
+| `verify-ai-token-exe.mjs` | **16/16** |
+| 旧 schema-15 → 16 升级 + 备份/恢复 | 计数/hash 全一致、settings 未改写、旧报告 200、恢复计数一致 |
+| Bilibili 真实房间 | 19 条 chat、连接/停止正常；未登录 UID 0 符合口径 |
+| YouTube 真实公开直播 | 62 条 chat、13 观众、62/62 稳定 channel id、3 条 gift 金额未知 |
+| TikTok 真实 `@aljazeeraenglish` | 10 条 chat、5 观众、uid/msgId/text 缺失 0、0 重连、礼物 NOT-OBSERVED |
+| Twitch | 12 个频道全离线 → 真实采集 **未验证**（EXE 7/9，2 项因无在播频道） |
+| 抖音 | 仅自动回归；真实采集 **未验证** |
+
+### 2.0-P42.3 未验证
+
+- 真实双击 UAC（同意/拒绝）、干净 Windows 账户、Windows 原生启动器。
+- 母语审校；十语言质量仅为机器判据 + 抽样阅读。
+- Twitch/抖音真实采集；长报告多块翻译；真实 429/限流。
+- 错误/恢复界面未做专项十语言截图（API 错误与恢复逻辑由测试覆盖）。
 
 ## 2.0 M6 本轮结果（2026-11-16，TIKTOK-M6）
 
@@ -171,23 +210,24 @@ A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200�
 
 | 文件 | 覆盖 |
 | --- | --- |
-| `locale.test.mjs` | 语言别名、非法值、跟随系统回退英文、环境变量识别 |
+| `locale.test.mjs` | 语言别名、非法值、十语言族/地区/script 降级矩阵、`aiOutputLocale` 收窄、AI 输出子集 |
 | `theme.test.mjs` | 三种主题、系统解析、存储模式 |
 | `money.test.mjs` | 两位/零位小数币种、四舍五入、非法值、精确乘法 |
 | `events.test.mjs` | 规范化、身份命名空间、礼物金额、免费/未知金额、别名、时间秒/毫秒、去重键、非法输入、超长文本、Emoji 安全截断、emote 元数据与指纹 |
 | `emoticons.test.mjs` | Unicode Emoji / VS16 / 肤色 / ZWJ 保留、grapheme 截断、表情规范化/去重/上限、AI 可读文本、未知表情标记、括号文字不误判、字典/JSON 往返 |
 | `time.test.mjs` | ISO/秒/毫秒互转、非法值、时长格式 |
 | `hotness.test.mjs` | 桶大小、桶内计数/独立观众/支付、裁剪尾部、进行中桶、空场次、币种分账 |
-| `i18n.test.mjs` | 三语 JSON 键一致、非空、占位符一致；启动器三语键一致 |
+| `i18n.test.mjs` | 十份字典键集一致（各 2,265 键）、非空、占位符一致、无整句英文残留（逐语言白名单）、未解析键；启动器十语键集一致 |
 | `zip.test.mjs` | CRC32 参考值、读写、UTF-8 名、路径穿越拒绝、空归档 |
 | `settings-store.test.mjs` | 默认值、加载、损坏回退与备份、校验、原子持久化 |
 | `lock.test.mjs` | 获取/释放、存活进程拒绝、陈旧锁接管、损坏锁、PID 判定、runtime 文件 |
-| `launcher.test.mjs` | 参数解析、非法端口/语言、未知参数、状态行三语 |
+| `launcher.test.mjs` | 参数解析、非法端口/语言、未知参数、状态行；十语言码与地区变体（`pt-PT`、`zh-HK`）|
+| `launcher-console.test.mjs` | 控制台输出所选语言；无 Unicode 时英文 ASCII 回退并折叠非 ASCII；写入失败不中止启动 |
 | `data-dir.test.mjs` | Windows 目录顺序、显式目录、不可写报错、回退、临时目录兜底、默认目录只是偏好、写探测失败步骤 |
 | `startup-log.test.mjs` | JSONL 启动日志、临时目录回退、敏感值脱敏、迁入数据目录、失败报告 |
 | `instance.test.mjs` | 健康探测、不可达/外来服务/PID 不一致/缺少 runtime 的判定 |
 | `diagnostics.test.mjs` | 交互式等待按键、非 TTY 不阻塞、`--no-wait`、对话框禁用 |
-| `bootstrap.test.mjs` | 解压候选目录、标记校验、原子解压、路径穿越拒绝、三语失败文本、语言选择 |
+| `bootstrap.test.mjs` | 解压候选目录、标记校验、原子解压、路径穿越拒绝、十语失败文本、十语言族语言选择 |
 | `logger.test.mjs` | 敏感键脱敏、自由文本中的凭据、JSON 片段、无误伤 |
 | `bilibili-wbi.test.mjs` | 公开测试向量、mixin key、键提取、排序/编码 |
 | `bilibili-protocol.test.mjs` | 头布局、鉴权包、心跳、多包、zlib/brotli、人气、异常长度、命令归一化 |
@@ -206,7 +246,7 @@ A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200�
 | `youtube-anonymous-adapter.test.mjs` | continuation 失效重开、网络错误退避恢复、不结束场次、匿名快照 |
 | `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
 | `broadcaster.test.mjs` | YouTube channelId vs 视频 ID、Bilibili anchor uid/room fallback/unresolved、mock、质量排序、控制字符清洗 |
-| `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
+| `header-language.test.mjs` | 十种语言原生名称、Header 双控件、主题控件并存、十语语言/数据管理键、十语言自动下拉 |
 | `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
 | `history-ui.test.mjs` | 列表与详情共用 `session-actions`、搜索端点/筛选参数/不读 events 正文、删除确认字段与勾选、DELETE 客户端、无 innerHTML、共享 modal、响应式/菜单键盘 CSS、路由与事务守卫、三语键 |
 | `identity-labels.test.mjs` | 三语标签为「可识别观众」、未识别消息警告、直播/历史/AI 字段使用、CSS 类；禁止把可识别观众写成总观众 |
@@ -2210,3 +2250,55 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 - 真实第二直播间并发：未执行（本轮只有一个可确认在播房间）。
 - 真实断网（网卡/路由器）、真实下播长跑、干净 Windows 账户、真实 UAC 双击：未验证。
 - 协议为非官方 web 协议，可能随平台变化失效；无续传游标，重连期间可能漏消息。
+
+---
+
+## 58. P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）
+
+本轮验收重点不是 UI，而是 **AI 输出语言真的十语可用、并且与界面语言解耦**。
+
+### 58.1 自动化（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| `tests/unit/ai-prompt-locales.test.mjs`（新增 11 项） | 十语输出语言表完整；六个 prompt 面（系统 / 包内说明 / 记忆 / 分批汇总 / 分层摘要 / 修复）都含该语言规则；不串语言；Compact 示例本地化；受保护字段（viewer_id/message_id/seq/JSON）不被要求翻译；体积上限；Schema 十语接受、非法语言拒绝 |
+| `tests/unit/ai-output-ui.test.mjs`（新增 5 项） | 设置页 AI 输出卡片六个键在十字典存在；`ctx.setAiOutputLocale` 走 PATCH；`setLocale` 不发送 `aiOutputLocale`；AI 中心默认取 `ctx.aiOutputLocale`；报告阅读语言独立 |
+| `tests/unit/locale-registry.test.mjs`（更新） | `AI_OUTPUT_LOCALES` = 十码；三个 Schema 的 `locale.enum` 与注册表同步；未知语言降级 `en` |
+| `tests/unit/locale.test.mjs`（更新） | `aiOutputLocale` 十码恒等、地区变体解析（`zh-HK`→`zh-TW`、`pt-PT`→`pt-BR`）；`follow-ui` 与显式偏好矩阵；非法值 → `follow-ui` |
+| `tests/unit/settings-store.test.mjs`（更新） | `aiOutputLocale` 持久化、重启保留、界面语言变化不影响它、非法值 400；P41 前配置文件缺键 → `follow-ui` 且不写回 |
+| `tests/unit/backup-format.test.mjs`（更新） | 备份白名单含 `aiOutputLocale`；旧备份缺键恢复为 `follow-ui`；未知键仍拒绝 |
+| `tests/integration/ai-i18n-locales.test.mjs`（新增 4 项） | 10 语 session+memory 全链路（job/结果 locale、提示词语言、报告与事实正文、原文未变）；混合语言事实共存 + 同语言去重；界面/AI 独立矩阵；暂停→重启→恢复语言快照 |
+| `tests/integration/ai-i18n-translation.test.mjs`（新增 1 项） | 9 个目标语言各自独立缓存行、原文/证据/时间戳不变、同语言 409 |
+| `tests/integration/backup-restore.test.mjs`（更新） | `locale=ja` + `aiOutputLocale=ko` 备份→恢复后都在 |
+| `tests/integration/ai-hierarchy.test.mjs`（更新） | 批次阈值随提示词体积自然移动后改为 ±4；模拟响应改为按 schema 上限引用每个批次（原实现的缺口是模拟数据缺陷，不是产品缺陷） |
+
+### 58.2 真实 Provider（用户自己的 DeepSeek 配置，隔离目录）
+
+| 项目 | 结果 |
+| --- | --- |
+| Provider | `deepseek` / `deepseek-flash`（capability session+memory 已通过） |
+| 单场报告 | `ko` / `zh-TW` / `de` / `pt-BR` **4/4 通过**：job 与结果 locale 正确、目标文字脚本命中、协议键完整、0 未知字段、原始弹幕未变 |
+| 长期画像 | `ko` **7 条韩语事实**（기타 / 기타 코드 연습 / 기타 연습 의지 …）；`de` **7 条德语事实**（Gitarre lernen / Gitarrenfortschritt / Gitarre üben – Fortsetzung …） |
+| 跨语言续写 | 同一观众已有韩语事实时，德语任务按 `guard` 复用韩语 topic 做 confirm，摘要用德语 → 方案 B 行为在真实模型上成立 |
+| 请求与用量 | 共 **12 次真实请求**；可核对 usage **44,486 input / 4,450 output tokens**（另 1 次脚本 bug 造成的重跑未计入） |
+| 工具 | `scripts/verify-ai-i18n-live.mjs`（`--reuse` 零成本复验；报告写入 `tests/.tmp`，不含聊天/密钥） |
+| 质量口径 | 只做机器判据；**无母语签收人**，不得写成母语质量通过 |
+
+### 58.3 Windows EXE
+
+| 项目 | 结果 |
+| --- | --- |
+| 构建 | Build ID `ad32fe5cc7fb` / commit `b24f52f` / `99,198,976` bytes / SHA-256 `4434a20f…` / Manifest `requireAdministrator` |
+| `verify-exe` | **11/11**（含 i18n：十语字典 200、`locales.aiOutput` 十项、`aiOutputLocale=follow-ui`、`effective.aiOutputLocale` 有效） |
+| `verify-help-exe` | **14/14**（十语言 112 键 × 10） |
+| `verify-ai-token-exe` | **16/16**（分批、断点续跑、恢复不重发已完成批次） |
+
+### 58.4 未验证 / 不得写成 PASS
+
+- `es` / `fr` / `id` / `en` 的真实 Provider 输出：**未逐语言验证**（提示词与 Schema 由自动化覆盖）。
+- 翻译缓存的真实 Provider 运行：**未执行**。
+- 十语言母语人工审校、十语言真实浏览器截图矩阵、逐语言控制台 `chcp 65001`：**P42**。
+- 干净 Windows 账户、真实双击 UAC：**未执行**。

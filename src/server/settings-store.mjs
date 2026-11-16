@@ -1,21 +1,34 @@
 import {readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, copyFileSync} from 'node:fs';
 import {dirname} from 'node:path';
-import {normalizeLocalePreference, normalizeLocale} from '../shared/locale.mjs';
+import {
+  normalizeLocalePreference,
+  normalizeLocale,
+  normalizeAiOutputPreference,
+  parseAiOutputPreference
+} from '../shared/locale.mjs';
 import {normalizeTheme, THEMES} from '../shared/theme.mjs';
 import {STORAGE_MODES, normalizeStorageMode} from '../shared/storage-mode.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
 import {DEFAULT_YOUTUBE_RAW_RETENTION_DAYS, normalizeRetentionDays} from '../storage/retention.mjs';
 
 /**
- * Application preferences (language, theme, storage mode, preferred port).
+ * Application preferences (language, AI output language, theme, storage mode,
+ * preferred port).
  *
  * Stored as JSON instead of SQLite on purpose: the launcher must know the
  * language *before* the database exists (first run) or is migrated, and the
  * console must still speak the user's language if the database is broken.
+ *
+ * `locale` is the interface language (L1). `aiOutputLocale` is the AI analysis
+ * output language (L2) and is *independent*: `follow-ui` (the default) derives
+ * a new task's language from the effective interface language, while an explicit
+ * code keeps the interface free to change. Tasks snapshot the resolved language
+ * when they are created, so changing this value never rewrites an old report.
  */
 export const DEFAULT_SETTINGS = Object.freeze({
   version: 1,
   locale: 'system',
+  aiOutputLocale: 'follow-ui',
   theme: 'system',
   storageMode: 'compact',
   preferredPort: 47800,
@@ -26,6 +39,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 export const SETTINGS_KEYS = Object.freeze([
   'locale',
+  'aiOutputLocale',
   'theme',
   'storageMode',
   'preferredPort',
@@ -42,6 +56,9 @@ function validatePort(value) {
 
 export function normalizeSettings(input = {}) {
   const locale = normalizeLocalePreference(input.locale);
+  // An old settings file has no `aiOutputLocale`; it must read as `follow-ui`
+  // instead of losing the preference or defaulting to a hard-coded language.
+  const aiOutputLocale = normalizeAiOutputPreference(input.aiOutputLocale);
   const theme = normalizeTheme(input.theme);
   const storageMode = normalizeStorageMode(input.storageMode);
   const preferredPort = validatePort(input.preferredPort) ?? DEFAULT_SETTINGS.preferredPort;
@@ -49,6 +66,7 @@ export function normalizeSettings(input = {}) {
   return {
     version: 1,
     locale,
+    aiOutputLocale,
     theme,
     storageMode,
     preferredPort,
@@ -120,7 +138,22 @@ export class SettingsStore {
           next.locale = normalized;
           break;
         }
-        case 'theme':
+        case 'aiOutputLocale': {
+          // `follow-ui` or a language with real AI output support. An invalid
+          // value is rejected instead of silently falling back, so the console
+          // can explain the mistake; the stored file still normalizes on load.
+          const parsed = parseAiOutputPreference(value);
+          if (!parsed) {
+            throw new AppError(ERROR_CODES.SETTINGS_INVALID, {
+              messageKey: 'errors.settingsInvalid',
+              details: {field: 'aiOutputLocale'},
+              httpStatus: 400
+            });
+          }
+          next.aiOutputLocale = parsed;
+          break;
+        }
+        case 'theme': {
           if (!THEMES.includes(String(value))) {
             throw new AppError(ERROR_CODES.SETTINGS_INVALID, {
               messageKey: 'errors.settingsInvalid',
@@ -130,6 +163,7 @@ export class SettingsStore {
           }
           next.theme = String(value);
           break;
+        }
         case 'storageMode':
           if (!STORAGE_MODES.includes(String(value))) {
             throw new AppError(ERROR_CODES.SETTINGS_INVALID, {

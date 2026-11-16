@@ -35,7 +35,7 @@ LiveMemory.exe (Node SEA)
          ├─ src/ai/import/              解析、JSON Schema 子集、业务校验、事务导入
          ├─ src/ai/translation/         报告/长期画像的只读展示翻译、缓存与独立运行状态
          ├─ src/ai/tasks/               任务状态计算（从数据库事实）
-         ├─ src/ai/prompts/             三语提示词与提示词版本
+         ├─ src/ai/prompts/             AI 输出语言提示词（zh-CN / ja / en）与提示词版本
          ├─ src/ai/auto/                自动分析：匿名 provider 客户端、包内提示词、Runner、状态
          ├─ src/ai/providers/           多 Provider 目录、适配器、加密配置、能力检测、费用
          └─ src/ai/api/                 配置 Provider 运行器、单场/画像任务、预算与暂停恢复
@@ -48,7 +48,7 @@ LiveMemory.exe (Node SEA)
 createAnalysisJob()
   ├─ countSessionMessages() → 按 batchSize 计算批次
   ├─ 每批：listSessionMessagesAsc(offset/limit) → messages.jsonl（seq 从 1）
-  │        + 本批 viewer_context + 整场统计 + 三语 instructions + result.schema.json
+  │        + 本批 viewer_context + 整场统计 + 该语言 instructions + result.schema.json
   ├─ 写 ZIP + ai_packages
   └─ BEGIN IMMEDIATE
        ├─ ai_jobs（job_id、prompt_version、batch_total、total_messages）
@@ -611,14 +611,17 @@ src/server/backup/
 
 - `AppError` 携带稳定 `code`、i18n `messageKey`、`httpStatus`；API 返回 `{error:{code,messageKey,details}}`。
 - 控制台按 `messageKey` 本地化，不解析英文句子。
-- 启动器捕获致命错误 → 写 `runtime/last-error.json` → 三语提示 → 等待回车（TTY）→ 退出码 1。
+- 启动器捕获致命错误 → 写 `runtime/last-error.json` → 本地化提示（无法 UTF-8 时英文 ASCII 回退）→ 等待回车（TTY）→ 退出码 1。
 - 前端页面渲染异常 → 捕获并展示重试界面，同时写入 `window.__lmLastError` 便于诊断。
 
 ## 8. 前端结构
 
 - `js/app.js`：会话建立、bootstrap、hash 路由、Header 语言/主题切换、SSE、状态刷新。
-- `js/auth.js`：读取 URL fragment 中的一次性 token、交换 HttpOnly Cookie、清除 fragment；未授权时渲染三语“请从 LiveMemory 重新打开”页面。
-- Header 语言控件：宽屏 `#language-segmented`（三种原生语言名）+ `#language-system`；窄屏 `#language-select`；两者共享 `state.settings.locale`。
+- `js/auth.js`：读取 URL fragment 中的一次性 token、交换 HttpOnly Cookie、清除 fragment；未授权时渲染本地化的“请从 LiveMemory 重新打开”页面。
+- Header 语言控件：`js/language-control.js` 由 `/api/bootstrap` 的 `locales.available` 动态生成。
+  当前三种语言：宽屏 `#language-segmented`（原生语言名）+ `#language-system`，窄屏 `#language-select`；
+  语言数 > 3 或原生名过长时自动使用同一个原生下拉。两个控件共享 `state.settings.locale`。
+- `js/i18n.js` 从 `src/shared/locales.mjs` 取语言集合与原生名；字典缺失时回退默认语言一次。
 - `js/pages/*.js`：页面模块，`render(container, ctx, params, query)` 返回清理函数。
 - `js/pages/live.js`：多场标签页；每个 session 独立缓存 summary/feed/leaderboard；`viewToken` 防止串场；`/api/live/recordings` 恢复运行任务。
 - `js/pages/history.js`：服务端搜索/筛选/增量加载；列表与详情共用 `session-actions.js`；`?viewer=` 下钻；
@@ -630,7 +633,7 @@ src/server/backup/
 - `js/dialog.js`：共享原生 `<dialog>` modal（settings 与 history 共用）。
 - `js/ui.js`：DOM 构造（只用 `textContent`）、格式化、toast、空状态。
 - `js/chart.js`：Canvas 时间线图，DPR 适配、主题重绘、hover 提示。
-- `js/i18n.js`：按需加载 JSON 字典，`t(key, params)`。
+- `js/i18n.js`：按需加载 JSON 字典，`t(key, params)`；语言集合与原生名来自共享注册表。
 - `js/theme-boot.js`：样式表前同步设置 `data-theme`，避免闪烁。
 - `styles/tokens.css`：颜色/间距/圆角/阴影变量；明亮与黑暗分别定义。
 
@@ -659,6 +662,42 @@ node.exe (官方运行时，含 node:sqlite)
   仅追加版本与差异、本地合并、`livememory-memory-update-v1` 往返、删除与保留）。
   依赖方向仍为 `web → server → memory/analytics/storage → shared`；`src/memory` 复用
   `ai/import` 的解析/校验工具与 `shared/zip.mjs`，不改写 M6 的分析表。
+
+## 10.1 国际化单一语言清单与可用性降级（P39，2026-11-16）
+
+```text
+src/shared/locales.mjs（唯一语言清单；同构，无 Node API）
+├─ LOCALE_REGISTRY：code / nativeName / englishName / language / script / regions / available
+├─ AVAILABLE_LOCALES / DEFAULT_LOCALE
+├─ parseLocaleTag() / resolveLocaleTag() / localeDescriptors() / localeDisplayName()
+│
+├─ src/shared/locale.mjs        normalizeLocale / resolveLocale / detectSystemLocale
+│   └─ src/server/locale-resources.mjs  detectInstalledLocales(webRoot)
+│       └─ /api/bootstrap {locales:{available,default,system}, effective:{locale,...}}
+├─ src/web/js/i18n.js          浏览器 import 同一文件；字典加载 + 默认回退
+├─ src/web/js/language-control.js  动态选项：≤3 短名称用三段按钮，否则原生下拉
+├─ src/ai/constants.mjs         SUPPORTED_LOCALES = AVAILABLE_LOCALES
+├─ src/memory/constants.mjs     SUPPORTED_MEMORY_LOCALES = AVAILABLE_LOCALES
+└─ src/ai/translation/service.mjs  LOCALE_NAME 由注册表生成
+```
+
+关键约束：
+
+- 三层值严格区分：`settings.locale`（用户偏好）→ `systemLocale`（系统检测）→
+  `effective.locale`（实际安装资源）。资源缺失只降级生效值，不改写合法偏好。
+- 解析顺序为「精确码 → 同语言族 region/script 匹配 → 默认语言」；不得写死 `zh-* → zh-CN`。
+  `zh-HK` 当前降级 `zh-CN`，未来注册 `zh-TW` 后由同一算法优先选择 `zh-TW`。
+- 浏览器只额外暴露 `/shared/locales.mjs` 一个共享模块；其余 `src/shared` 不外泄。
+- 语言选择器不得再出现固定三项或固定像素宽度；新增语言只改注册表与字典。
+- 启动器控制台使用 `src/launcher/cli-i18n.mjs` 的独立消息表（十语，P40）；测试强制其语言码与注册表一致，
+  本轮不扩控制台语言，未来统一方案见 `docs/I18N.md` §2.5。
+- JSON Schema 的 `locale.enum` 是协议镜像，由 `tests/unit/locale-registry.test.mjs` 强制与注册表一致。
+
+**P41 正式设计依据（用户 2026-11-16 决定，方案 B）**：长期画像允许出现不同语言的事实，接受
+跨语言语义重复；不锁定首次分析语言、不自动跨语言合并、不引入别名表/语义归一化/DB 迁移；
+保留现有同语言去重；切换 AI 输出语言不得删除、覆盖或重新翻译已有事实；语言混合不得导致
+约束冲突、任务失败或历史数据损坏。**P39 未修改任何长期画像代码、数据库或 AI 分析逻辑。**
+
 
 ## 1.4 v0.13 单场 / 画像拆分与多 Provider（2026-11-11）
 

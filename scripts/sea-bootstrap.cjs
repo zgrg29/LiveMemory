@@ -25,41 +25,132 @@ const MARKER_NAME = '.livememory-app.json';
 const LOG_FILE_PREFIX = 'bootstrap';
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
 
+/*
+ * Startup-failure messages for the ten interface languages. This table is
+ * intentionally self-contained: the bootstrap runs before extraction, so it
+ * cannot import src/shared/locales.mjs. The language codes are still the exact
+ * registry codes (docs/I18N.md), and an unknown system language falls back to
+ * English rather than guessing.
+ */
 const MESSAGES = {
-  'zh-CN': {
-    title: 'LiveMemory 无法启动',
-    detail: '详细信息：{message}',
-    step: '失败步骤：{step}',
-    code: '错误代码：{code}',
-    logAt: '启动日志：{path}',
-    noLog: '启动日志：无法写入任何日志目录',
-    pressKey: '按任意键关闭此窗口。',
-    appDir: '应用文件目录：{path}',
-    dataDir: '数据目录：{path}'
+  "zh-CN": {
+    "title": "LiveMemory 无法启动",
+    "detail": "详细信息：{message}",
+    "step": "失败步骤：{step}",
+    "code": "错误代码：{code}",
+    "logAt": "启动日志：{path}",
+    "noLog": "启动日志：无法写入任何日志目录",
+    "pressKey": "按任意键关闭此窗口。",
+    "appDir": "应用文件目录：{path}",
+    "dataDir": "数据目录：{path}"
   },
-  ja: {
-    title: 'LiveMemory を起動できません',
-    detail: '詳細: {message}',
-    step: '失敗した手順: {step}',
-    code: 'エラーコード: {code}',
-    logAt: '起動ログ: {path}',
-    noLog: '起動ログ: 書き込み可能なフォルダーがありません',
-    pressKey: '任意のキーを押すとこのウィンドウを閉じます。',
-    appDir: 'アプリのフォルダー: {path}',
-    dataDir: 'データフォルダー: {path}'
+  "ja": {
+    "title": "LiveMemory を起動できません",
+    "detail": "詳細: {message}",
+    "step": "失敗した手順: {step}",
+    "code": "エラーコード: {code}",
+    "logAt": "起動ログ: {path}",
+    "noLog": "起動ログ: 書き込み可能なフォルダーがありません",
+    "pressKey": "任意のキーを押すとこのウィンドウを閉じます。",
+    "appDir": "アプリのフォルダー: {path}",
+    "dataDir": "データフォルダー: {path}"
   },
-  en: {
-    title: 'LiveMemory could not start',
-    detail: 'Details: {message}',
-    step: 'Failed step: {step}',
-    code: 'Error code: {code}',
-    logAt: 'Startup log: {path}',
-    noLog: 'Startup log: no writable log folder was found',
-    pressKey: 'Press any key to close this window.',
-    appDir: 'Application folder: {path}',
-    dataDir: 'Data folder: {path}'
+  "en": {
+    "title": "LiveMemory could not start",
+    "detail": "Details: {message}",
+    "step": "Failed step: {step}",
+    "code": "Error code: {code}",
+    "logAt": "Startup log: {path}",
+    "noLog": "Startup log: no writable log folder was found",
+    "pressKey": "Press any key to close this window.",
+    "appDir": "Application folder: {path}",
+    "dataDir": "Data folder: {path}"
+  },
+  "ko": {
+    "title": "LiveMemory를 시작할 수 없습니다",
+    "detail": "상세 정보: {message}",
+    "step": "실패한 단계: {step}",
+    "code": "오류 코드: {code}",
+    "logAt": "시작 로그: {path}",
+    "noLog": "시작 로그: 기록할 수 있는 로그 폴더가 없습니다",
+    "pressKey": "아무 키나 누르면 이 창이 닫힙니다.",
+    "appDir": "앱 파일 폴더: {path}",
+    "dataDir": "데이터 폴더: {path}"
+  },
+  "es": {
+    "title": "LiveMemory no pudo iniciarse",
+    "detail": "Detalles: {message}",
+    "step": "Paso fallido: {step}",
+    "code": "Código de error: {code}",
+    "logAt": "Registro de inicio: {path}",
+    "noLog": "Registro de inicio: no se encontró ninguna carpeta de registro escribible",
+    "pressKey": "Pulse cualquier tecla para cerrar esta ventana.",
+    "appDir": "Carpeta de la aplicación: {path}",
+    "dataDir": "Carpeta de datos: {path}"
+  },
+  "pt-BR": {
+    "title": "Não foi possível iniciar o LiveMemory",
+    "detail": "Detalhes: {message}",
+    "step": "Etapa com falha: {step}",
+    "code": "Código do erro: {code}",
+    "logAt": "Registro de inicialização: {path}",
+    "noLog": "Registro de inicialização: nenhuma pasta de registro gravável foi encontrada",
+    "pressKey": "Pressione qualquer tecla para fechar esta janela.",
+    "appDir": "Pasta do aplicativo: {path}",
+    "dataDir": "Pasta de dados: {path}"
+  },
+  "zh-TW": {
+    "title": "LiveMemory 無法啟動",
+    "detail": "詳細資訊：{message}",
+    "step": "失敗步驟：{step}",
+    "code": "錯誤代碼：{code}",
+    "logAt": "啟動記錄檔：{path}",
+    "noLog": "啟動記錄檔：找不到可寫入的記錄資料夾",
+    "pressKey": "按任意鍵關閉此視窗。",
+    "appDir": "應用程式資料夾：{path}",
+    "dataDir": "資料夾：{path}"
+  },
+  "fr": {
+    "title": "LiveMemory n’a pas pu démarrer",
+    "detail": "Détails : {message}",
+    "step": "Étape en échec : {step}",
+    "code": "Code d’erreur : {code}",
+    "logAt": "Journal de démarrage : {path}",
+    "noLog": "Journal de démarrage : aucun dossier de journal accessible en écriture",
+    "pressKey": "Appuyez sur une touche pour fermer cette fenêtre.",
+    "appDir": "Dossier de l’application : {path}",
+    "dataDir": "Dossier de données : {path}"
+  },
+  "de": {
+    "title": "LiveMemory konnte nicht gestartet werden",
+    "detail": "Details: {message}",
+    "step": "Fehlgeschlagener Schritt: {step}",
+    "code": "Fehlercode: {code}",
+    "logAt": "Startprotokoll: {path}",
+    "noLog": "Startprotokoll: kein beschreibbarer Protokollordner gefunden",
+    "pressKey": "Beliebige Taste drücken, um dieses Fenster zu schließen.",
+    "appDir": "Anwendungsordner: {path}",
+    "dataDir": "Datenordner: {path}"
+  },
+  "id": {
+    "title": "LiveMemory tidak dapat dimulai",
+    "detail": "Detail: {message}",
+    "step": "Langkah yang gagal: {step}",
+    "code": "Kode kesalahan: {code}",
+    "logAt": "Log mulai: {path}",
+    "noLog": "Log mulai: tidak ada folder log yang dapat ditulis",
+    "pressKey": "Tekan tombol apa pun untuk menutup jendela ini.",
+    "appDir": "Folder aplikasi: {path}",
+    "dataDir": "Folder data: {path}"
   }
 };
+
+/* An ASCII-only console gets the English set, folded, instead of mojibake. */
+let asciiOnly = false;
+
+function foldAscii(value) {
+  return String(value ?? '').replace(/[^\x20-\x7E\n\t]/g, '?');
+}
 
 function format(template, params = {}) {
   return String(template ?? '').replace(/\{(\w+)\}/g, (match, key) => (
@@ -68,11 +159,33 @@ function format(template, params = {}) {
 }
 
 function normalizeLocale(value) {
-  const text = String(value ?? '').toLowerCase();
-  if (text.startsWith('ja')) return 'ja';
-  if (text.startsWith('zh')) return 'zh-CN';
-  if (text.startsWith('en')) return 'en';
+  const text = String(value ?? '').trim().toLowerCase().replace(/_/g, '-').split('@')[0].split('.')[0];
+  if (!text) return null;
+  // Traditional Chinese variants (and the Hant script tag) prefer zh-TW.
+  if (text === 'zh' || text.startsWith('zh-')) {
+    if (/hant|tw|hk|mo/.test(text.replace(/^zh-?/, ''))) return 'zh-TW';
+    return 'zh-CN';
+  }
+  if (text === 'pt' || text.startsWith('pt-')) return 'pt-BR';
+  if (text === 'in' || text.startsWith('in-')) return 'id';
+  for (const code of ['ja', 'en', 'ko', 'es', 'fr', 'de', 'id']) {
+    if (text === code || text.startsWith(`${code}-`)) return code;
+  }
   return null;
+}
+
+/** Try to switch a Windows console to UTF-8; false means "render ASCII only". */
+function prepareConsole({platform = process.platform, stdout = process.stdout} = {}) {
+  if (platform !== 'win32') return true;
+  // Redirected or piped output carries UTF-8 bytes correctly, so the selected
+  // language is kept; only a real console that refused UTF-8 falls back.
+  if (!stdout.isTTY) return true;
+  try {
+    const result = require('node:child_process').spawnSync('cmd', ['/c', 'chcp 65001'], {stdio: 'ignore', windowsHide: true});
+    return !result.error && result.status === 0;
+  } catch {
+    return false;
+  }
 }
 
 function pickLocale({env = process.env, settingsText = null, intlLocale = null} = {}) {
@@ -90,6 +203,7 @@ function pickLocale({env = process.env, settingsText = null, intlLocale = null} 
 }
 
 function messagesFor(locale) {
+  if (asciiOnly) return MESSAGES.en;
   return MESSAGES[locale] ?? MESSAGES.en;
 }
 
@@ -440,7 +554,7 @@ function buildFatalText({locale, error, logFile, step, dataDir, appRoot}) {
   for (const failure of error?.failures ?? []) {
     lines.push(`  ${failure.path} (${failure.code})`);
   }
-  return lines.join('\n');
+  return asciiOnly ? foldAscii(lines.join('\n')) : lines.join('\n');
 }
 
 async function main() {
@@ -461,6 +575,7 @@ async function main() {
   } catch {
     /* ignore */
   }
+  asciiOnly = !prepareConsole();
   const locale = pickLocale({env, settingsText, intlLocale});
   const messages = messagesFor(locale);
   const sea = require('node:sea');
@@ -494,7 +609,7 @@ async function main() {
     process.stderr.write(`\n${text}\n\n`);
     const interactive = Boolean(process.stdin.isTTY);
     if (interactive && !hasFlag(argv, '--no-wait')) {
-      process.stdout.write(`  ${messages.pressKey}\n`);
+      process.stdout.write(`  ${asciiOnly ? foldAscii(messages.pressKey) : messages.pressKey}\n`);
       await pauseForUser({enabled: true});
     } else if (hasFlag(argv, '--error-dialog')) {
       await showErrorDialog(text, {title: 'LiveMemory'});
@@ -598,6 +713,8 @@ if (isSea) {
 
 module.exports = {
   MESSAGES,
+  normalizeLocale,
+  prepareConsole,
   MARKER_NAME,
   appRootCandidates,
   buildFatalText,

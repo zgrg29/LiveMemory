@@ -199,6 +199,7 @@ test('manifest validation rejects forged, future and credential-bearing manifest
 test('backup settings are sanitised and unknown keys are rejected', () => {
   const sanitised = settingsForBackup({
     locale: 'ja',
+    aiOutputLocale: 'ko',
     theme: 'dark',
     storageMode: 'full',
     preferredPort: 49999,
@@ -209,6 +210,7 @@ test('backup settings are sanitised and unknown keys are rejected', () => {
   assert.deepEqual(sanitised, {
     version: 1,
     locale: 'ja',
+    aiOutputLocale: 'ko',
     theme: 'dark',
     storageMode: 'full',
     onboardingCompleted: true,
@@ -216,6 +218,11 @@ test('backup settings are sanitised and unknown keys are rejected', () => {
   });
   assert.equal('preferredPort' in sanitised, false);
   assert.equal(parseBackupSettings(Buffer.from(JSON.stringify(sanitised))).locale, 'ja');
+  assert.equal(parseBackupSettings(Buffer.from(JSON.stringify(sanitised))).aiOutputLocale, 'ko');
+  // A backup created before P41 has no `aiOutputLocale`; restoring it must not
+  // fail and must fall back to `follow-ui` instead of inventing a language.
+  const legacy = {version: 1, locale: 'ja', theme: 'dark', storageMode: 'compact', onboardingCompleted: false};
+  assert.equal(parseBackupSettings(Buffer.from(JSON.stringify(legacy))).aiOutputLocale, 'follow-ui');
   assert.equal(
     errorCode(() => parseBackupSettings(Buffer.from(JSON.stringify({locale: 'en', dataDir: 'C:\\secret'})))),
     'BACKUP_SETTINGS_INVALID'

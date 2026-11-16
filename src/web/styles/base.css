@@ -147,9 +147,13 @@ ul, ol {
 .brand-tagline {
   font-size: 11px;
   color: var(--text-tertiary);
-  white-space: nowrap;
+  /* Ten languages: the tagline may need two lines in a 240px sidebar, and a
+     truncated product description is worse than a slightly taller brand row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .nav {

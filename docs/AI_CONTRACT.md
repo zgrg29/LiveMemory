@@ -1,7 +1,9 @@
 # AI 分析协议（AI_CONTRACT）
 
-版本：**0.13.2** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0） · 提示词版本 **`lm-prompt-v13.2-session-<locale>` / `lm-prompt-v13.2-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.3-<locale>`；v13.2 之前创建的 v13 任务保留原版本号）
+版本：**0.15.2（P42 验收轮，协议未变）** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0；P42 未改任何字段/枚举/required） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.3-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
+AI 输出语言：**十种**（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`），由 `src/shared/locales.mjs` 的 `aiOutput` 能力位驱动；结果 Schema 的 `locale.enum` 是其协议镜像（测试强制同步）。
+P42 真实 Provider 验收：十语单场 10/10、十语画像 10/10、跨语言 zh→ko→de→zh 4/4、阅读翻译 5/5 + 失败回退；字段名、枚举、`viewer_id`、`message_id`、`seq`、原文弹幕与证据引用均未翻译/改写。详见 `docs/STATUS.md` §0.50。
 
 ## 1. 原则
 
@@ -206,7 +208,9 @@ result.schema.json     livememory-analysis-result-v1（1.2.0）
 
 ### 2.7 instructions.md 与提示词版本
 
-按 `locale` 生成，三语分别完整本地化。包含：
+按 `locale` 生成。**三种语言（`zh-CN` / `ja` / `en`）有完整本地化正文**；其余七种 AI 输出语言
+复用英文正文，并在 intro 之后插入各自的 `## Output language` 段（`Locale: \`<code>\`` + 目标语言规则 +
+机器契约保护）。单次请求只包含当前语言。包含：
 
 1. 包内容说明（含 `content` / `content_ai` / `emote_refs` / `emote_dictionary` / `event_id` / `message_id`）。
 2. 分析任务：直播话题与变化、热点时段、争论、候看片段；观众兴趣、长期证据、新旧矛盾、证据不足；
@@ -924,13 +928,13 @@ Provider 返回 → extractJsonObject → assembleMemoryCompact
 - 未知/重复 ref 与缺失 ref 分别报告 `MEMORY_REF_UNKNOWN` / `MEMORY_REF_DUPLICATE` / `MEMORY_VIEWER_UPDATE_MISSING`。
 - 跨观众 evidence seq 继续由 `validateEmbeddedMemoryUpdates()` 以 `MEMORY_EVIDENCE_OTHER_VIEWER` 拒绝。
 
-### 20.3 三语与单一输出契约
+### 20.3 十语言与单一输出契约
 
 - Memory 的 Provider 提示词由**当前运行时**的 `buildMemoryInstructions()` 生成，不再直接使用旧包中的 `instructions.md`（旧文件仍保留在包内作为历史记录）。因此旧任务 Resume 也会使用新的语言与事实规则。
 - 旧 `instructions.md` 同时包含完整 Result 示例与 Compact 契约的问题不再影响 Provider 请求；当前请求只发送一个 Compact 契约与一个 Compact 示例。
-- 示例使用任务 locale 的自然语言（zh-CN / ja / en），不再固定 `"locale": "en"`，也不再展示 `viewer_id`。
+- 示例使用任务 locale 的自然语言（十种语言各一份，`src/ai/prompts/language.mjs`），不再固定 `"locale": "en"`，也不再展示 `viewer_id`。
 - `topic` 是去重/匹配的稳定短标识：续写已有事实时复用原 topic（不翻译）；新事实的 topic 使用当前语言。JSON 键名与枚举值保持英文。
-- 事实准确性规则写入三语提示词：`stated` 必须是观众本人明确说出并带本人证据；`inferred` 必须写成推断；证据不足用 `uncertain`/`no_semantics`；转述、玩笑、引用他人或给主播的建议不得当作观众个人事实；不得为填满每位观众而编造职业、年龄、地点、兴趣或经历。
+- 事实准确性规则写入三套完整指令正文：`stated` 必须是观众本人明确说出并带本人证据；`inferred` 必须写成推断；证据不足用 `uncertain`/`no_semantics`；转述、玩笑、引用他人或给主播的建议不得当作观众个人事实；不得为填满每位观众而编造职业、年龄、地点、兴趣或经历。
 - 仅有问候/表情/付费时允许 `no_new_information`；客观互动历史仍会更新，`no_semantics` 仍算已处理。
 
 ### 20.4 分批次错误与诊断
@@ -1004,22 +1008,33 @@ Provider 返回 → extractJsonObject → assembleMemoryCompact
 | 概念 | 存储/来源 | 说明 |
 | --- | --- | --- |
 | UI locale | `settings.locale` | 菜单、按钮、提示、导航 |
-| 分析输出 locale | `ai_jobs.locale` / 运行时任务状态 | Session 与 Memory 的自然语言正文；任务创建时确定，Resume 沿用 |
+| AI 输出偏好 | `settings.aiOutputLocale`（`follow-ui` 或语言码） | 决定**新建任务**的语言；`follow-ui` 时取生效界面语言 |
+| 分析输出 locale | `ai_jobs.locale` / 运行时任务状态 | Session 与 Memory 的自然语言正文；任务创建时确定，Resume 沿用；**不可变** |
 | 原始内容语言 | 弹幕/聊天实际语言 | 不由软件强制；Prompt 明确接受任意/混合语言 |
+| 阅读语言 | `?locale=` + `ai_translations.target_locale` | 只读展示缓存，不重跑分析、不改原文 |
 
 ### 22.2 功能 A：分析输出
 
-- `POST /api/ai/analyze/run` 的 `locale` 规范化为 zh-CN / ja / en；缺省使用当前 UI 语言。
-- Session 与 Memory 两个 Job 使用同一个任务 locale；`promptVersionFor(locale, mode)` 记录在 Job 与包 manifest。
-- 提示词 v13.2 明确：聊天/摘录可能是任意或混合语言，模型直接理解原意并用 locale 输出，不要求逐条翻译。
-- `GET /api/ai/analyze/status` 返回任务 `locale`（已随任务保存）；界面语言切换、暂停/恢复不会改写它。
+- `POST /api/ai/analyze/run` 与 `POST /api/memory/jobs` 的 `locale`：显式值优先，否则取
+  `settings.aiOutputLocale`（`follow-ui` → 生效界面语言），最后经 `aiOutputLocale()` 能力门禁降级；
+  非法/未知标签永不进入 Provider。
+- Session 与 Memory 两个 Job 使用同一个**新任务**语言；每个 Job 行保存自己的 `locale` 快照，
+  `promptVersionFor(locale, mode)` / `memoryPromptVersionFor(locale)` 记录在 Job 与包 manifest。
+- 提示词 v13.3（记忆 m7.2）明确：聊天/摘录可能是任意或混合语言，模型直接理解原意并用目标语言输出，
+  不要求逐条翻译；JSON 键名、枚举值、`viewer_id`、`message_id`、`seq`、时间戳与平台标识**不得翻译**；
+  续写事实复用原 `topic`。
+- 每个 prompt 面（系统提示词、包内 `instructions.md`、记忆任务、分批汇总、分层摘要、修复请求）
+  都带可断言的 `OUTPUT LANGUAGE (<code>)` 或等价的原生语言规则。
+- `GET /api/ai/analyze/status` 返回任务 `locale`（已随任务保存）；界面语言切换、修改 `aiOutputLocale`、
+  暂停/恢复/重启不会改写它。
 - 技术字段、JSON 键名、枚举值、稳定身份、证据编号、时间、金额、计数不随语言变化。
 
 ### 22.3 功能 B：已保存报告阅读语言
 
-- `GET /api/ai/sessions/:id/report?locale=<zh-CN|ja|en>`：只读。先在本地读取翻译缓存并应用到展示对象；**绝不调用 Provider**。
+- `GET /api/ai/sessions/:id/report?locale=<任一 AI 输出语言>`：只读。先在本地读取翻译缓存并应用到展示对象；**绝不调用 Provider**。
 - `GET /api/ai/sessions/:id/translation?locale=...`：返回状态、总数、已翻译/失败/缺失、运行进度、独立 usage 与可用 Provider 配置。
-- `POST /api/ai/sessions/:id/translation`：`{locale, configId, consent:true}`；只请求缺失/失败段落，已成功段落不重复请求。
+- `POST /api/ai/sessions/:id/translation`：`{locale, configId, consent:true}`；只请求缺失/失败段落，已成功段落不重复请求；
+  目标语言等于报告源语言时返回 409 `TRANSLATION_NOT_NEEDED`。
 - 报告新增 `reportLocale`、`displayLocale`、`translation`；`translation.status` 为 `original / missing / partial / complete / running / failed / unavailable`。
 
 ### 22.4 可翻译字段与不变量

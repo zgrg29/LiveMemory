@@ -611,7 +611,7 @@ test('a Japanese task keeps Japanese long-term facts and the compact contract', 
   const stored = server.db.prepare('SELECT locale FROM ai_results WHERE batch_index = 1').get();
   assert.equal(stored.locale, 'ja');
   assert.equal(prompts.length, 1);
-  assert.match(prompts[0], /自然で読みやすい日本語/);
+  assert.match(prompts[0], /自然な日本語/);
   assert.match(prompts[0], /ギターを始めました/);
   assert.doesNotMatch(prompts[0], /"locale": "en"/);
   assert.match(prompts[0], /## 出力例（コンパクト）/);

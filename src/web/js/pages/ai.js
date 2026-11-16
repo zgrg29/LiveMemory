@@ -14,6 +14,12 @@ import {renderAnalysisReport} from './ai-report.js';
 import {buildAnalysisProgress} from './ai-progress.js';
 import {providerConfigState} from './ai-config-state.js';
 import {chooseInitialSessionId} from './ai-selection.js';
+import {
+  AI_OUTPUT_LOCALES,
+  DEFAULT_LOCALE,
+  localeDescriptor,
+  localeDescriptors
+} from '../../../shared/locales.mjs';
 
 /**
  * AI analysis centre (v0.13.1).
@@ -48,10 +54,8 @@ function stepCard(index, title, desc) {
 }
 
 function localeLabel(t, locale) {
-  if (locale === 'zh-CN') return t('settings.language.zh');
-  if (locale === 'ja') return t('settings.language.ja');
-  if (locale === 'en') return t('settings.language.en');
-  return locale ?? '—';
+  const descriptor = localeDescriptor(locale);
+  return descriptor ? descriptor.nativeName : (locale ?? '—');
 }
 
 function consentDialog(ctx) {
@@ -195,7 +199,18 @@ export const aiPage = {
       stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
     let selectedId = chooseInitialSessionId(sessions, requestedId);
-    let locale = ctx.locale;
+    // The AI output language is its own persisted preference (`follow-ui` by
+    // default), not the interface language. The list is the `aiOutput` subset of
+    // the registry, so a language without prompts can never be sent to a
+    // provider, and the default pre-selects the configured preference.
+    const outputLocales = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
+      ? ctx.state.aiLocales
+      : localeDescriptors(AI_OUTPUT_LOCALES);
+    let locale = outputLocales.some((entry) => entry.code === ctx.aiOutputLocale)
+      ? ctx.aiOutputLocale
+      : outputLocales.some((entry) => entry.code === DEFAULT_LOCALE)
+        ? DEFAULT_LOCALE
+        : (outputLocales[0]?.code ?? ctx.locale);
     let runScope = 'session';
     let status = null;
     let timer = null;
@@ -218,9 +233,7 @@ export const aiPage = {
     sessionSelect.value = selectedId;
 
     const languageSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.languageLabel')}},
-      el('option', {value: 'zh-CN', text: t('settings.language.zh')}),
-      el('option', {value: 'ja', text: t('settings.language.ja')}),
-      el('option', {value: 'en', text: t('settings.language.en')}));
+      outputLocales.map((entry) => el('option', {value: entry.code, text: entry.nativeName || entry.code})));
     languageSelect.value = locale;
 
     const configSelect = el('select', {className: 'select', attrs: {'aria-label': t('ai.center.configLabel')}},

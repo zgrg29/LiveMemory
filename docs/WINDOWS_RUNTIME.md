@@ -141,7 +141,7 @@
 - 恢复：先完整验证，再冻结写入、停止采集与 AI、关闭数据库、保存 `backups/pre-restore-*.db`，然后在 `runtime/restore-*` 暂存、迁移、校验，最后在同一卷内两次原子改名。成功后 `buildRuntime()` 重新打开新库；失败自动回滚。
 - `runtime/restore-journal.json` 是崩溃恢复协议：下一次启动在打开数据库之前根据阶段与文件 SHA-256 回滚或提交。Windows 关闭命令窗口/强制结束进程后不会留下“半套数据”。
 - 恢复期间所有其他写 API 返回 503；未认证请求仍为 401；job 进度端点可读。恢复成功不要求重启 EXE，但界面会强制重新加载控制台。
-- 不需要管理员权限：备份目录、临时文件、`VACUUM INTO`、原生文件对话框、恢复改名都在当前用户可写目录内完成。恢复后 `secrets/` 为空，需要用户重新登录 Bilibili/填写 API Key。
+- 备份业务本身不需要额外提权：备份目录、临时文件、`VACUUM INTO`、原生文件对话框、恢复改名都在当前用户可写目录内完成。但正式 EXE 按 Manifest 为 `requireAdministrator` 启动，用户必须先同意 Windows 的 UAC 提示才能进入程序。恢复后 `secrets/` 为空，需要用户重新登录 Bilibili/填写 API Key。
 
 ## 6. 单实例与重复启动
 

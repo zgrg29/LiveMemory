@@ -492,7 +492,12 @@ test('restore into a fresh directory keeps sessions, viewers, AI reports and lon
   let target = null;
   try {
     const sessionId = await seed(source, 'Migrated broadcast');
-    await api(source.url, '/settings', {method: 'PATCH', body: {locale: 'ja', theme: 'dark'}});
+    // The AI output language is a user preference: it must survive a backup and
+    // restore even though it is independent of the interface language.
+    await api(source.url, '/settings', {
+      method: 'PATCH',
+      body: {locale: 'ja', aiOutputLocale: 'ko', theme: 'dark'}
+    });
     writeFileSync(join(source.paths.secrets, 'bilibili-cookies.json'), '{"fake":"cookie"}', 'utf8');
     const sourceCounts = tableCounts(source.db);
     const factRows = source.db.prepare('SELECT statement FROM memory_facts ORDER BY statement').all();
@@ -528,6 +533,8 @@ test('restore into a fresh directory keeps sessions, viewers, AI reports and lon
 
     const settings = await api(target.url, '/settings');
     assert.equal(settings.body.settings.locale, 'ja');
+    assert.equal(settings.body.settings.aiOutputLocale, 'ko');
+    assert.equal(settings.body.effective.aiOutputLocale, 'ko');
     assert.equal(settings.body.settings.theme, 'dark');
 
     // Credentials are not present in the restored folder.

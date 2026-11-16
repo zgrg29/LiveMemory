@@ -1,5 +1,71 @@
 # 版本变化（CHANGELOG）
 
+## 未发布 — 2026-11-16（P42 / I18N-M3：十语言最终综合验收）
+
+开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。
+
+### 验证
+
+- **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**。
+- 真实 DeepSeek `deepseek-flash`：单场 **10/10 语言**、长期画像 **10/10 语言**、
+  跨语言 zh→ko→de→zh **4/4**、阅读翻译 ko/zh-TW/es/fr/id **5/5** + 失败回退；
+  正式取证 31 次请求 / 100,487 input + 17,491 output tokens。**无母语签收**。
+- 真实 EXE：Build `5b9e355dccc7` / commit `310975e` / 99,200,512 B / SHA-256 `7c3f3d3f…` / `requireAdministrator`；
+  `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16。
+- 真实浏览器：源码 **440/440**、EXE 内服务 **440/440** 页面加载；十语言 × 1440/1024/820/390 × 明暗。
+- 旧 schema-15 真实数据升级到 16：计数/内容 hash 全一致、settings 未改写、旧报告可读、
+  备份→全新目录恢复计数一致。
+- 五平台：Bilibili 19 chat、YouTube 62 chat/62 稳定 ID、TikTok 10 chat/5 观众真实通过；
+  Twitch 本轮无在播频道、抖音无真实房间，均标未验证。
+
+### 修复
+
+- 十份字典 `help.sections.start.step1` 与 `help.sections.backup.step6` 的错误说明
+  「不需要管理员权限」改为准确的 UAC/`requireAdministrator` 说明；
+  `docs/WINDOWS_RUNTIME.md`、`docs/BACKUP_RESTORE.md` 同步修正。
+- 测试工具：中文报告引用 `ゆき` 导致的假阴性、短事实语言断言过严、
+  `verify-i18n-ui.mjs` 无法指向 EXE（新增 `--exe` / `--prefix`）。
+
+### 未改变
+
+- 数据库 Schema（仍 16）、五平台采集、金额/身份/去重、任务语言快照、翻译缓存语义、正式版本号。
+- 未 Push / Merge main / Tag / Release。
+
+## 未发布 — 2026-11-16（P41 / I18N-M2：十语言 AI 输出与独立输出语言）
+
+开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。
+
+### 新增
+
+- **十种 AI 输出语言**：`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`
+  现在都具备系统提示词、包内说明输出语言段、记忆规则、分批/汇总/摘要规则、修复标签与
+  Compact 示例，并全部通过结果 Schema 的 `locale.enum`。
+- **独立持久设置 `aiOutputLocale`**（默认 `follow-ui`）：设置页新增「AI 输出语言」卡片；
+  AI 中心默认预选该偏好；备份/恢复保留该键；旧配置/旧备份缺键安全读作 `follow-ui`。
+- **任务语言快照**：任务创建时写入 `ai_jobs.locale`，恢复时以 job 行为准；改界面语言、
+  改偏好、暂停、重启都不会改写已创建任务或已保存正文。
+
+### 变更
+
+- 提示词版本 `lm-prompt-m6.3 → m6.4`、`lm-prompt-v13.2 → v13.3`、`lm-prompt-m7.1 → m7.2`；
+  旧任务保留原版本号。
+- 报告阅读翻译目标扩到十语；每个目标语言独立缓存，源语言翻译返回 `TRANSLATION_NOT_NEEDED`。
+- 十份字典各 2,265 → **2,271** 键（AI 输出语言卡片 + 提示 toast）。
+
+### 未改变
+
+- 数据库 Schema（仍 16）、事件/观众/金额去重、翻译缓存表结构、五平台采集、调度与断点续跑算法。
+- 原始弹幕、证据、稳定 ID、时间戳、金额与计数：永不翻译、永不覆盖。
+- 长期画像按**方案 B**：不同语言事实共存，同语言去重不变，无 DB 迁移、无别名表。
+
+### 验证
+
+- **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**。
+- 真实 DeepSeek `deepseek-flash`：`ko`/`zh-TW`/`de`/`pt-BR` 单场报告通过；`ko` 7 条韩语事实、
+  `de` 7 条德语事实。**无母语签收**。
+- EXE `ad32fe5cc7fb`（commit `b24f52f`）：`verify-exe` 11/11、`verify-help-exe` 14/14、
+  `verify-ai-token-exe` 16/16。
+
 ## 0.14.0 — 2026-11-16（五平台正式发布：Twitch / 抖音 / TikTok，Multi-Platform Release）
 
 首个**正式稳定版**（非 RC）。产品版本从 `0.13.3` 升到 `0.14.0`：

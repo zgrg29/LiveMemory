@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createPaths, ensureDirectories} from '../server/paths.mjs';
 import {AppError} from '../shared/errors.mjs';
-import {detectSystemLocale, normalizeLocale} from '../shared/locale.mjs';
+import {AVAILABLE_LOCALES, detectSystemLocale, normalizeLocale} from '../shared/locale.mjs';
 import {APP_NAME, APP_VERSION} from '../shared/app-info.mjs';
 import {readBuildInfo, buildSummary, describeBuild} from '../shared/build-info.mjs';
 import {SettingsStore} from '../server/settings-store.mjs';
@@ -137,8 +137,8 @@ export function parseArguments(argv = []) {
 /**
  * Console language is independent from the web UI locale. It defaults to
  * English so double-clicking the EXE always yields readable, stable CLI text;
- * `--lang zh-CN|ja|en` still overrides it. The web console keeps its own
- * three-language setting and system detection.
+ * `--lang <any declared code>` still overrides it. The web console keeps its own
+ * interface-language setting and system detection.
  */
 function resolveConsoleLocale(options) {
   return options?.lang ?? 'en';
@@ -217,12 +217,21 @@ export async function runLauncher({
   const utf8 = enableUtf8Console({stdout});
   const systemLocale = detectSystemLocale(env);
   // The launcher console defaults to English and does not depend on the web
-  // console's saved locale. `--lang zh-CN|ja|en` still overrides it; the web UI
-  // keeps its own three-language setting and system detection.
+  // console's saved locale. `--lang <declared code>` still overrides it; the web
+  // UI keeps its own interface-language setting and system detection. A console
+  // that cannot be switched to UTF-8 falls back to the ASCII English message set.
   let locale = resolveConsoleLocale(options);
   const unicode = process.platform !== 'win32' || utf8.changed;
-  let ui = createConsole({locale, stdout, stderr, unicode});
-  startupLog.record('console.ready', {utf8: utf8.changed, reason: utf8.reason ?? null, locale});
+  // Only a real Windows console that refused UTF-8 needs the ASCII English
+  // fallback; redirected/piped output keeps the selected language as UTF-8.
+  const asciiOnly = process.platform === 'win32' && Boolean(stdout.isTTY) && !utf8.changed;
+  let ui = createConsole({locale, stdout, stderr, unicode, asciiOnly});
+  startupLog.record('console.ready', {
+    utf8: utf8.changed,
+    reason: utf8.reason ?? null,
+    locale,
+    asciiFallback: ui.asciiOnly === true
+  });
   let dataDirInfo = null;
   let paths = null;
   let logger = NOOP_LOGGER;
@@ -342,7 +351,11 @@ export async function runLauncher({
       return 0;
     }
     if (options.help) {
-      stdout.write(`\n${APP_NAME} ${APP_VERSION}\n\n${t(locale, 'helpTitle')}\n${t(locale, 'helpBody')}\n\n`);
+      // The supported language codes are never duplicated per language: the
+      // single registry fills `{locales}` in every translated help text.
+      stdout.write(`\n${APP_NAME} ${APP_VERSION}\n\n${t(locale, 'helpTitle')}\n${t(locale, 'helpBody', {
+        locales: AVAILABLE_LOCALES.join(' | ')
+      })}\n\n`);
       startupLog.record('help', {ok: true});
       return 0;
     }
@@ -497,7 +510,7 @@ export async function runLauncher({
       // Preferences are optional: never block startup because of them.
       startupLog.fail('settings.load', error, {degraded: true});
     }
-    ui = createConsole({locale, stdout, stderr, unicode});
+    ui = createConsole({locale, stdout, stderr, unicode, asciiOnly});
 
     logger = createSafeLogger({dir: paths.logs, startupLog});
     logger.info({

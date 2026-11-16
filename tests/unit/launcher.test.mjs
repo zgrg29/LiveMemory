@@ -23,7 +23,13 @@ test('parses the documented flags and their inline form', () => {
 test('rejects invalid ports and languages instead of guessing', () => {
   assert.throws(() => parseArguments(['--port', 'abc']), /INVALID_ARGUMENT/);
   assert.throws(() => parseArguments(['--port', '70000']), /INVALID_ARGUMENT/);
-  assert.throws(() => parseArguments(['--lang', 'fr']), /INVALID_ARGUMENT/);
+  assert.throws(() => parseArguments(['--lang', 'th-TH']), /INVALID_ARGUMENT/);
+  // P40: every shipped language code is accepted, and region variants resolve.
+  for (const code of ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id']) {
+    assert.equal(parseArguments(['--lang', code]).lang, code);
+  }
+  assert.equal(parseArguments(['--lang', 'pt-PT']).lang, 'pt-BR');
+  assert.equal(parseArguments(['--lang', 'zh-HK']).lang, 'zh-TW');
   assert.throws(() => parseArguments(['--lang', 'system']), /INVALID_ARGUMENT/);
   assert.throws(() => parseArguments(['--data-dir']), /INVALID_ARGUMENT/);
 });

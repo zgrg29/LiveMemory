@@ -13,7 +13,7 @@
     "broadcaster_id": {"type": ["string", "null"], "maxLength": 200},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 200},
     "session_id": {"type": "string", "minLength": 1, "maxLength": 100},
-    "locale": {"enum": ["zh-CN", "ja", "en"]},
+    "locale": {"enum": ["zh-CN","ja","en","ko","es","pt-BR","zh-TW","fr","de","id"]},
     "session_topics": {
       "type": "object",
       "additionalProperties": false,

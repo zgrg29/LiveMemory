@@ -128,7 +128,7 @@ function memoryProbeMessages() {
         'ref 3: viewer "C" has no chat excerpt (gift only).',
         'Return exactly one JSON object:',
         '{"viewers":[{"ref":1,"memory":{"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"guitar","statement":"started learning guitar","certainty":"stated","evidence":[1]}]}},{"ref":2,"memory":{"no_new_information":false,"operations":[{"op":"add","kind":"interest","topic":"drawing","statement":"enjoys drawing","certainty":"stated","evidence":[2]}]}},{"ref":3,"memory":{"no_new_information":true,"operations":[]}}]}',
-        'Rules: cover refs 1, 2 and 3 exactly once. Never invent a ref. Only use evidence seq 1 for ref 1 and seq 2 for ref 2; ref 3 has no evidence and must be no_new_information. Reply in the viewer language. JSON only.'
+        'Rules: cover refs 1, 2 and 3 exactly once. Never invent a ref. Only use evidence seq 1 for ref 1 and seq 2 for ref 2; ref 3 has no evidence and must be no_new_information. Write the natural-language values in English and keep JSON keys, enum values and ids unchanged. JSON only.'
       ].join('\n')
     }
   ];

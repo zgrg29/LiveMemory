@@ -1,6 +1,314 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · **v0.14.0 五平台正式发布** · 产品版本 `0.14.0` · Tag `v0.14.0` → `d268cf9` · EXE Build ID `17f84b1956e1` · 1034 测试通过 · **已 Push/Tag/Release**
+本轮：2026-11-16 · **P42 / I18N-M3 十语言最终综合验收完成** · **真实 Provider 31 次取证请求** ·
+源码与 EXE 各 **440/440** 真实浏览器页面通过 · **1102 测试通过** · **未发布**
+
+> P42 对 P39–P41 做了真实十语言 Provider、跨语言方案 B、界面/AI 语言独立性、真实 EXE 十语言矩阵、
+> 旧 schema-15 数据升级与备份恢复、五平台回归。修复了十语言 `help` 的「不需要管理员权限」错误说明
+> 与三个测试工具假阴性/覆盖缺口。**未改平台协议、数据库 Schema（16）、金额/身份/去重、任务语言快照；
+> 未 Push / Merge main / Tag / Release，版本仍 0.14.0。**
+
+## 0. 本轮（P42 / I18N-M3）
+
+### 0.1 验收结果（真实执行）
+
+| 验收 | 结果 |
+| --- | --- |
+| 真实单场分析 | **10/10 语言**：任务/结果 locale 一致、目标文字、Schema、证据、原文全部通过；10 次 / 40,852 input + 7,108 output |
+| 真实长期画像 | **10/10 语言**：每语 3–7 条事实、`factLocaleRatio=1.0`、证据归属 0 污染；10 次 / 36,928 input + 4,576 output |
+| 跨语言方案 B | zh→ko→de→zh **4/4**：5 条中/韩/拉丁事实共存、0 删除、0 跨观众证据、0 唯一约束冲突；4 次 / 15,640 + 1,441 |
+| 阅读翻译 | zh-CN → ko/zh-TW/es/fr/id **5/5**；缓存隔离、重复阅读 0 请求、原文/结构/证据不变；失败回退原文；7 次 / 7,067 + 4,366 |
+| 界面/AI 独立 | 7 组组合全部正确；固定输出不随界面变化；重启保留；`follow-ui` 正确；非法值 400 |
+| 中断恢复 | 韩语任务暂停 → 界面德语 + AI 西班牙语 → 重启 → 恢复仍韩语；`ai-i18n-locales` **4/4** |
+| 旧数据升级 | 真实 schema 15 → 16；9 场/53,042 事件/4,158 观众-场次/88 结果/89 事实 hash 全一致；settings 未改写；旧报告 200；备份→新目录恢复计数一致 |
+| 五平台 | Bilibili 19 chat；YouTube 62 chat/13 观众/62 稳定 ID；TikTok 10 chat/5 观众/字段缺失 0；Twitch 无在播频道未验证；抖音仅自动回归 |
+| 全量测试 | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped** |
+| 真实浏览器 | 源码 **440/440**；EXE 内服务 **440/440**；截图 40 + 40 张 |
+
+### 0.2 真实 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| Build ID / commit | `5b9e355dccc7` / `310975e`（asset hash `5b9e355dccc749bde6f2`） |
+| 大小 / SHA-256 | `99,200,512` bytes / `7c3f3d3f0bccd8d218dcbb560c82d7f7d89a7df6e0e35b8b9ccde054a4361830` |
+| Manifest | **`requireAdministrator`** |
+| `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` | **11/11 / 14/14 / 16/16** |
+| 启动器十语言 | **10/10** `--help --lang <code>` exit 0，十码选项与用法完整 |
+
+### 0.3 修复
+
+1. 十份字典 `help.sections.start.step1` + `help.sections.backup.step6` 的 UAC/管理员权限说明（20 个值）。
+2. `WINDOWS_RUNTIME.md`、`BACKUP_RESTORE.md` 的旧描述。
+3. 测试工具：真实中文报告引用 `ゆき` 导致假阴性；短事实语言断言过严；`verify-i18n-ui.mjs` 新增 `--exe` / `--prefix`。
+
+### 0.4 未验证 / 风险
+
+- 真实双击 UAC、干净 Windows 账户：**未验证**（本会话非提权，只能断言 Manifest + 运行 asInvoker 功能副本）。
+- 母语审校：**未做**；质量仅为机器判据 + 抽样阅读。
+- Twitch 本轮 12 个频道全离线；抖音无真实在播房间；真实采集 **未验证**。
+- 长报告多块翻译、真实 429/限流：未覆盖。
+- 错误/恢复界面未做专项十语言截图（API 错误与恢复逻辑由测试覆盖）。
+- 版本标签历史不一致：ROADMAP 曾写 P42→v0.16.0，用户本轮目标 v0.15.0；版本决策留给发布轮。
+
+### 0.5 下一轮
+
+1. 用户决定是否进入 v0.15.0 合并/Release；版本号、Tag、Release notes 由发布轮处理。
+2. 人工在普通 Windows 桌面完成真实双击 UAC（同意与拒绝各一次）与干净账户启动。
+3. 有在播 Twitch/抖音房间时补真实采集；长报告翻译与 429 可补验。
+4. **不要**改任务语言快照、Schema、平台协议；如修缺陷按最小改动 + 回归测试。
+
+### 0.6 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建，P39–P41 提交完整） |
+| 提交 | `2d6777e`（help/UAC）、`68f551e`（验收脚本）、`c74dbcd`（文档/截图）、`310975e`（最终 EXE 数字，也是 EXE 内嵌 commit）+ 最终 SHA-256 文档提交 |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+---
+
+上一轮：2026-11-16 · **P41 / I18N-M2 十语言 AI 输出完成** · 十份字典各 2,271 键 ·
+AI 输出十语 + 独立 `aiOutputLocale` · **1102 测试通过** · **未发布**
+
+> 本轮把 **AI 分析 / 单场报告 / 长期画像 / 报告阅读翻译 / 任务恢复** 全部扩到十种语言，
+> 并把「AI 输出语言」做成与界面语言**独立的持久设置**（`aiOutputLocale`，默认 `follow-ui`）。
+> 提示词采用「三套已验证指令正文 + 七种语言输出规则」的混合方案：新增唯一来源
+> `src/ai/prompts/language.mjs`，六个 prompt 面都注入可断言的 `OUTPUT LANGUAGE (<code>)`，
+> 单次请求仍只发当前语言。长期画像按**方案 B** 落地：跨语言事实共存、同字符 topic 仍去重、
+> 历史事实不被翻译覆盖。**未改五平台采集、数据库 Schema（仍 16）、事件/观众/金额去重、
+> 翻译缓存表结构与调度算法；未 Push / Tag / Release。**
+
+## 0. P41 / I18N-M2（上一轮，历史记录）
+
+### 0.1 完成内容
+
+| 目标 | 结果 |
+| --- | --- |
+| 十语言 AI 输出 | 注册表十条 `aiOutput: true`；`AI_OUTPUT_LOCALES` = 三个 `SUPPORTED_*` = `LOCALE_NAME` = Schema `locale.enum` = 10 |
+| 提示词 | **新增** `src/ai/prompts/language.mjs`（rule/guard/system/repair/example × 10）；系统/包内说明/记忆/汇总/摘要/修复六面全部注入；三套已验证正文保留，其余七语复用英文正文 + 输出规则 |
+| 版本 | `lm-prompt-m6.4` / `lm-prompt-v13.3` / `lm-prompt-m7.2`（旧任务保留原版本号） |
+| 设置 | `aiOutputLocale`（`follow-ui` 或语言码）；旧配置缺键 → `follow-ui` 且不写回；备份白名单已同步；设置页新增原生下拉卡片（11 项） |
+| 快照 | 创建任务写 `ai_jobs.locale`；恢复以 job 行为准；改界面/改偏好/暂停/重启都不改旧任务与旧正文 |
+| Schema | 只改 `locale.enum`；字段名/枚举/`required`/`additionalProperties:false`/稳定标识全部不变 |
+| 长期画像 | 方案 B：跨语言事实共存、同字符 topic 仍去重、无 DB 迁移、无别名表 |
+| 翻译 | 9 个非源语言目标各自独立缓存；原文/证据/结构化字段不变；同语言 409 |
+| 字典 | 每份 **2,271** 键（+6：`settings.aiOutput.*` × 5、`toast.aiOutputLanguage`），键集/占位符零差异 |
+
+### 0.2 测试与真实 Provider（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 真实 DeepSeek `deepseek-flash` | 单场报告 `ko`/`zh-TW`/`de`/`pt-BR` **4/4**；画像 `ko` **7 条韩语事实**、`de` **7 条德语事实**；共 12 次真实请求、可核对 44,486 input / 4,450 output tokens |
+| 真实语言质量 | 仅机器判据；**无母语签收人** |
+| Windows EXE | 本轮重建，见 §0.3 |
+
+**真实 Provider 的一条重要观察（方案 B）**：同一观众已有韩语事实时，德语任务按 `guard`
+**原样复用韩语 topic** 做 confirm/update，只在摘要与新事实里用德语 —— 这正是方案 B 的预期行为，
+不是缺陷；不同字符的 topic（`기타` vs `Gitarre`）会各自成为独立事实。
+
+### 0.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID / commit | `ad32fe5cc7fb` / `b24f52f` |
+| 大小 / SHA-256 | `99,198,976` bytes / `4434a20ff4705f10848a7874f641aa41850e0877c8654bd01f3b325765770926` |
+| builtAt | `2026-11-16T14:25:33.711Z` |
+| 资源 / 模块 | 237 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11** |
+| `verify-help-exe` | **14/14** |
+| `verify-ai-token-exe` | **16/16** |
+
+版本号仍为 `0.14.0`（本轮是开发里程碑，未做版本决策）。真实双击 UAC、干净 Windows 账户仍未人工验证。
+
+### 0.4 P42 计划（已在 P42 执行，保留为历史）
+
+1. 先读 `docs/I18N.md` §2.8（P41 实现）与 `docs/STATUS.md` §0.49。
+2. 十语言 × 亮/暗 × 1440/1024/820/390 的真实浏览器走查与截图归档；重点复核设置页新卡片与
+   AI 中心语言下拉在最长译文（德语/葡语）下的换行与不溢出。
+3. 逐语言真实 EXE 控制台（`chcp 65001`）字符检查；`verify-exe` / `verify-help-exe` /
+   `verify-ai-token-exe` 全项。
+4. 用真实 Provider 抽查 `es`/`fr`/`id`/`en` 与翻译缓存（P41 只验证了 4 语报告 + 2 语画像）。
+5. 旧三语数据库直接升级、备份/恢复/迁移、多直播间与五平台回归。
+6. **不要**在本轮改提示词结构、Schema、DB 或任务语言快照语义；如发现缺陷，按最小修复处理并记录。
+
+### 0.5 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p40-i18n-m1`（P41 直接在其上继续，未新建分支） |
+| 提交 | 代码/测试提交 + 文档提交（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+---
+
+上一轮：2026-11-16 · **P40 / I18N-M1 十语言界面与启动器完成** · 十份字典各 2,265 键 · AI 输出当时仍三语 ·
+**未发布**
+
+> 本轮新增 `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七种**界面**语言，并把 Windows
+> 启动器（控制台 + SEA 引导器）扩到十语。AI 分析输出语言当时仍是 `zh-CN` / `ja` / `en` 三种：
+> 注册表新增 `aiOutput` 能力位，分析/记忆任务与报告/翻译接口都在路由层收窄，未支持语言永远不会
+> 发往 Provider。**未改平台采集、AI 调度/恢复、长期画像合并去重、数据库 Schema、原始弹幕保存、
+> 翻译缓存语义；未提前实现 P41；未 Push / Tag / Release。**
+
+## 0. 上一轮（P40 / I18N-M1）
+
+### 0.1 完成内容
+
+| 目标 | 结果 |
+| --- | --- |
+| 术语表 | **新增** `docs/i18n/GLOSSARY.md`（50 核心术语 × 10 语言 + 18 动作词 + 10 风格卡 + 不翻译清单 + 门禁） |
+| 七份字典 | 每份 **2,265** 叶子键；键集缺失 0 / 多余 0、占位符差异 0、空值 0、无整句英文残留 |
+| 注册表 | 10 条 + `aiOutput` 位；`AVAILABLE_LOCALES`（10）与 `AI_OUTPUT_LOCALES`（3）同源派生 |
+| 选择器 | Header/设置页十语言；3 项仍分段按钮，10 项自动原生下拉；原生名只用自身文字 |
+| 降级 | `zh-HK`/`zh-MO`/`zh-Hant`→`zh-TW`、`pt-PT`→`pt-BR`、`in`→`id`、未知→`en`；旧三语配置原样可用 |
+| 启动器 | `cli-i18n.mjs` 十语（61 键/语言）；`--lang` 兼容十码与地区变体；`{locales}` 由注册表填充；ASCII 安全回退；SEA 引导器十语言 |
+| AI 安全 | 任务 locale、报告/翻译接口、结果 Schema `enum` 全部限定 `AI_OUTPUT_LOCALES` |
+
+### 0.2 测试与验收（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **727 passed / 0 failed / 0 skipped** |
+| 全量集成 | **350 passed / 0 failed / 0 skipped** |
+| 合计 | **1077 passed / 0 failed / 0 skipped** |
+| 字典门禁 | 10 份 × 2,265 键；键集/占位符/空值差异 0；未解析键 0；英文残留逐键审阅白名单 |
+| 真实浏览器 `verify-i18n-ui.mjs` | **380/380** 页面加载 PASS；40 张截图 `docs/screenshots/i18n-p40-*.png` |
+| `verify-exe` | **11/11**（十字典 + `aiOutput` 子集） |
+| `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
+
+**布局缺陷（实测发现并修复）**：统计卡标签（法/德/韩）被省略号截断 → 改换行；
+「＋ 新建记录」按钮德语被 145px 上限截断 → 取消该按钮限宽；侧栏标语改两行；
+390px 顶栏标题补 `title` 全文（正文标题始终完整）。
+
+**审校**：七种新语言各一轮原生读者审校，共修 **284** 键。**无母语签收人**，不声称母语终审。
+真实浏览器验收需一次性 `danger-full-access`（沙箱禁止 Chromium mojo），不代表产品需要提权。
+
+
+### 0.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `09014dc765e0` |
+| 构建 commit | `1a0303ea`（P40 代码/翻译提交） |
+| 大小 / SHA-256 | `99,160,576` bytes / `82f335c1f3d62e7a9b2fe179fecae6ae7829cddee08e88e97b5c636459b733c9` |
+| builtAt | `2026-11-16T12:51:20.167Z` |
+| 资源 / 模块 | 236 files（十份字典）/ 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11** |
+| `verify-help-exe` | **14/14** |
+
+真实双击 UAC、干净 Windows 账户仍未人工验证；不得写成已通过。
+
+
+### 0.4 下一轮（P41 / I18N-M2）
+
+1. **先读** `docs/I18N.md` §2.6.3（P40 已建立的 `aiOutput` 收窄）与 §6（方案 B），再读 `docs/STATUS.md` §0.48。
+2. 新增 `aiOutputLocale` 设置（默认 `follow-ui`）并**同步 `src/server/backup/settings.mjs` 白名单**。
+3. 把三处提示词语言表（`src/ai/prompts/*`、`src/memory/prompts`）、`LOCALE_NAME`、报告阅读语言扩到十语；
+   每扩一种语言就把注册表 `aiOutput` 改为 `true`，并把 JSON Schema `locale.enum` 同步（测试会强制）。
+4. 任务语言快照断言：切换界面语言 / 重启 / 暂停→继续 都不改 `ai_jobs.locale` 与已存正文。
+5. 长期画像按**方案 B**：不锁首次语言、不跨语言合并、不改 `dedupe_key`、不加 `locale` 列；
+   补「同一观众跨语言两次分析」集成测试。
+6. **不要**在本轮改平台采集、数据库 Schema 或翻译缓存语义。
+
+### 0.5 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p40-i18n-m1`（从 `feature/p39-i18n-m0` / `7c704bd`） |
+| 代码/翻译提交 | `1a0303e`（85 files） |
+| 文档/构建记录 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+
+---
+
+上一轮：2026-11-16 · **P39 / I18N-M0 国际化基础架构整理完成** · 仍三语 · 1060 测试 · EXE `18df5c272a98`（`verify-exe` 11/11）· **未发布**
+
+> 本轮把「三语假设」从代码结构中移除：新增单一语言清单 `src/shared/locales.mjs`（Node/浏览器同源）、
+> 可用性驱动降级、动态 Header/设置/AI/报告语言选择器，并修复 `max-width:132px` 等布局限制。
+> **未新增语言、未改 AI 输出语言设置、未改长期画像/数据库/平台采集、未 Push/Tag/Release。**
+> 长期画像跨语言策略已由用户确定为**方案 B**（允许混合语言事实、接受跨语言重复），只在文档记录。
+> 三语行为与视觉保持；十语言整体仍未完成，下一轮从 P40 开始。
+
+## 0. 本轮（P39 / I18N-M0）
+
+### 0.1 完成内容
+
+| 目标 | 结果 |
+| --- | --- |
+| 单一语言清单 | `src/shared/locales.mjs`：code/nativeName/englishName/language/script/regions/available/默认 `en`；删除前端/后端/AI/记忆/翻译/下拉的重复三语清单 |
+| 可用性驱动降级 | `resolveLocale(..., {available})` + `detectInstalledLocales()`；`zh-HK` 当前 `zh-CN`、未来 `zh-TW`；`pt-PT`→`pt-BR`、`in`→`id`、未知→`en` |
+| 偏好/系统/资源分离 | 合法旧配置原样加载；资源缺失只降级 effective，不改写保存值 |
+| 动态选择器 | `language-control.js` 由 `/api/bootstrap.locales.available` 生成；三语保持原三段按钮，>3 项/长名称自动下拉；设置/AI 输出/报告阅读同源 |
+| 布局 | 删除 `max-width:132px/112px`；真实浏览器十语言无截断/重叠/溢出 |
+| 资源缺失 | 字典 404/损坏回退默认一次；默认也失败显示既有错误页 |
+| 三语完整 | 每份字典仍 2,265 键，键集/占位符零差异 |
+
+### 0.2 测试与验收（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **711 passed / 0 failed / 0 skipped**（17,466.98 ms） |
+| 全量集成 | **349 passed / 0 failed / 0 skipped**（404,067.46 ms） |
+| 合计 | **1060 passed / 0 failed / 0 skipped** |
+| 真实浏览器 `verify-i18n-ui.mjs` | **9/9 PASS**：三语 1440/390；十语言 1440/1024/820/390/黑暗 |
+| `verify-exe` | **11/11**，含 i18n 资源场景 |
+
+截图：`docs/screenshots/i18n-p39-header-3lang-*.png`、`i18n-p39-header-10lang-*.png`。
+十语言仅测试夹具（`tests/fixtures/`），不在产品语言列表。
+
+**环境限制（如实记录）**：本机默认沙箱禁止 Chromium 的命名管道（mojo），真实浏览器验收需一次性
+`danger-full-access`；`verify-exe` 的 `LOCALAPPDATA` 重定向到 `tests/.tmp`，避免写入真实用户目录。
+这不代表产品需要提权，也不代表已在干净 Windows 账户验收。
+
+### 0.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `18df5c272a98` |
+| 构建 commit | `ba0ff26fbd45d68d536fd0e73542a455fc5bd3bc` |
+| 大小 / SHA-256 | `97,788,416` bytes / `691c4f002c2487f879d5a2a08ef5d3330c38e53834bbdd45509a59443527ef24` |
+| builtAt | `2026-11-16T09:36:30.079Z` |
+| 资源 / 模块 | 229 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11**；i18n 场景：`locales=zh-CN,ja,en`、三字典 200、`/shared/locales.mjs` 200、`language-control.js` 200 |
+
+真实双击 UAC、干净 Windows 账户仍未人工验证；不得写成已通过。
+
+### 0.4 P41 方案 B（仅文档）
+
+允许长期画像出现不同语言事实并接受跨语言语义重复；不锁首次语言、不自动跨语言合并、
+不引入别名表/语义归一化/DB 迁移；保留同语言去重；切换输出语言不得删除/覆盖/重译已有事实；
+语言混合不得导致约束冲突/任务失败/数据损坏。**P39 未改长期画像代码、DB 或 AI。**
+
+### 0.5 下一轮（P40 / I18N-M1）
+
+1. 先读 `docs/I18N.md` §3、§5、§7；建立 `docs/i18n/GLOSSARY.md`。
+2. 新增 `ko/es/pt-BR/zh-TW/fr/de/id` 七份字典（各 2,265 键），注册表追加 7 条并设 `available: true`。
+3. 决定启动器控制台：扩到十语，或明确「控制台三语 + 英文回退」。
+4. 十语言排序、长文本布局走查（其他页面 112–260px 标签）；`i18n.test.mjs` 已遍历注册表。
+5. 完成后才可进入 P41；P42 十语言 EXE 验收仍未开始。
+
+### 0.6 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p39-i18n-m0`（从 `main` / `a70321c`） |
+| 代码/测试提交 | `ba0ff26`（26 files，+1666/−146） |
+| 文档/截图提交 | 本轮最终 HEAD（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+---
+
+上一轮：2026-11-16 · **v0.14.0 五平台正式发布** · 产品版本 `0.14.0` · Tag `v0.14.0` → `d268cf9` · EXE Build ID `17f84b1956e1` · 1034 测试通过 · **已 Push/Tag/Release**
 
 > 用户明确授权本轮完成**阶段性正式 Release**。已发布：
 > `LiveMemory v0.14.0 — Multi-Platform Release`，Tag `v0.14.0`，
@@ -66,6 +374,7 @@ Build ID `17f84b1956e1` / commit `d268cf9` / builtAt `2026-11-16T06:51:04.013Z` 
 ### 0.5 下一轮
 
 **P39 / I18N-M0：国际化架构整理（v0.15.0）**，不新增语言。
+P39 已于 2026-11-16 完成，见本文件顶部；下一轮为 **P40 / I18N-M1（新增七种语言资源）**。
 `docs/ROADMAP.md` 已把 P39–P44 的版本标签顺延（P39/P40 → v0.15.0，P41 → v0.15.1，
 P42 → v0.16.0，P43 → v0.16.x），因为 `v0.14.0` 已被本次发布占用。
 
@@ -1263,7 +1572,7 @@ Token 为"按真实请求字节模拟"的值（无 tokenizer、无付费调用�
 
 1. 更新到 buildId `678e8d47b6c6`；设置页「关于」核对。
 2. 先创建一次完整备份；默认保存到 `%LOCALAPPDATA%\LiveMemory-Backups\`，可用 Windows 对话框另存。
-3. 换电脑：在新电脑启动 LiveMemory，设置 → 备份与恢复 → 选择备份文件 → 验证 → 恢复；不需要管理员权限、旧用户名或旧路径。
+3. 换电脑：在新电脑启动 LiveMemory，设置 → 备份与恢复 → 选择备份文件 → 验证 → 恢复；不需要旧用户名或旧路径；正式 EXE 在新电脑上同样需要同意 UAC 管理员权限。
 4. 恢复后重新登录 Bilibili、重新填写 AI API Key；YouTube 公开聊天不需要登录。
 5. 若恢复失败，程序会自动回滚；若 Windows 强制结束进程，下次启动按 journal 回滚或提交。不要删除数据目录。
 
