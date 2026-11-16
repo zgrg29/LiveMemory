@@ -1,8 +1,112 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（TIKTOK-M6：同一平台多个 TikTok 直播间并发；正式界面移除模拟直播；1034 测试；EXE `e48016f19362`）
+最后更新：2026-11-16（TIKTOK-M6 已由开发者人工验收并合并 main；Merge `980de0f`；1034 测试；EXE `e48016f19362`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.44 TIKTOK-M6 人工验收与合并 main（2026-11-16）🟢
+
+开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间人工验收，并明确批准将 `feature/tiktok`
+合并到本地 `main`。本轮只执行本地合并、回归验证、`main` 上重建 EXE 与文档记录；
+**未 Push、未创建 Tag、未发布 Release、未删除功能分支、未修改许可证。**
+
+### 0.44.1 合并前检查
+
+| 项目 | 结果 |
+| --- | --- |
+| 当前分支 | `feature/tiktok` |
+| 工作区 | clean |
+| merge-base | `410bfc3ffacc712b6fd56a9e63f4d5afcca4bcb7`（当时 `main` HEAD） |
+| 分叉关系 | `main...feature/tiktok` = `0 / 20`（main 无独立新提交） |
+| 功能提交 | `54934f6` `feat: allow concurrent TikTok rooms and remove the simulator UI` |
+| UI 修复 | `4224f7c` `fix: refresh the TikTok room list in place` |
+| 文档提交 | `e992534` `docs: record TikTok multi-room acceptance and simulator removal` |
+| 验收 EXE | Build ID `e48016f19362`，构建 commit `4224f7c` |
+
+`git diff feature/tiktok..main` 在合并前没有“仅 main 有”的功能文件；合并后
+`git diff --stat feature/tiktok main` 为空，说明 `main` 树与功能分支完全一致，
+Bilibili / YouTube / Twitch / 抖音 已合并成果未被覆盖。
+
+### 0.44.2 合并
+
+| 项目 | 值 |
+| --- | --- |
+| 合并方式 | `git merge --no-ff feature/tiktok` |
+| 合并提交 | `980de0f97a4b700c6c29aa569ca87cc734748021` |
+| 父提交 1 | `410bfc3ffacc712b6fd56a9e63f4d5afcca4bcb7`（原 main） |
+| 父提交 2 | `e9925348a514fb93877889e672bfec4c3a383299`（feature/tiktok） |
+| 结果 | 无冲突；67 files changed，+11,758 / −130 |
+| 合并后 main 树 | 与 `feature/tiktok` 完全一致 |
+
+### 0.44.3 合并后回归
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **687 passed / 0 failed / 0 skipped（17,701.12 ms）** |
+| 全量集成 | **347 passed / 0 failed / 0 skipped（270,438.05 ms）** |
+| 合计 | **1034 passed / 0 failed / 0 skipped** |
+| `git diff --check` | 通过 |
+| SQLite schema / AI / analytics diff | 相对合并前 main **无变更**（schema 仍 16） |
+| 五平台路由 | `/api/{bilibili,youtube,twitch,douyin,tiktok}/connect` 均存在 |
+| 五平台打包 | `build/manifest.json` 含五平台全部模块（Bilibili 9 / YouTube 7 / Twitch 7 / 抖音 14 / TikTok 10） |
+| 模拟入口 | `live.js` 无 `mockTab`、无 `/api/simulate/start`；历史 mock 键仍存在 |
+| 三语 i18n | 三语键集与占位符一致，无新增原始键 |
+
+### 0.44.4 合并后 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `e48016f19362`（`src/` 未变，故与验收 EXE 相同） |
+| 构建时 commit | `980de0f97a4b700c6c29aa569ca87cc734748021`（合并提交） |
+| source hash | `e48016f193625e919be6dd2e744eac093aefb889144a5a8825edd2faba51dbdb` |
+| 大小 | `96,730,112` bytes |
+| SHA-256 | `1b8cbe63181f97b74bf871ce9c3e2658bb715227a72d05f54691ca6aaca5909c` |
+| builtAt | `2026-11-16T05:05:58.502Z` |
+| 资源 / 模块 | 226 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe @aljazeeraenglish` | **22/22 passed + 2 NOT-OBSERVED，0 failed** |
+| `verify-tiktok-multi-exe` | **17/17 passed，0 NOT-OBSERVED，0 failed** |
+
+真实双房间（`main` 合并后，2026-11-16 13:08–13:11 Asia/Shanghai）：
+`@aljazeeraenglish` / room `7706695538414062349` + `@aljazeera` / room `7706505863599508276`；
+session A `ses_01M7HC2VBSFYPV4JBW1P`、B `ses_01M7HC33MSXWTZVR5JN6`。两场均 `connected`；
+同一窗口 A 收到 **1 条**、B 收到 **2 条**真实 chat；重复 A 409 `SESSION_DUPLICATE_ROOM`；
+停止 A 后 B 仍 `connected` 且消息 **2 → 3**；两场 AI report 均 200；SQLite 两场 ended、
+room/session 不同、UID/msgId 完整。产物 `tests/.tmp/verify-tiktok-multi-2026-11-16T05-08-00-619Z`
+（临时目录，不提交）。样本很小，**不代表长期压力测试**。
+
+### 0.44.5 五个平台状态（合并后）
+
+| 平台 | 状态 |
+| --- | --- |
+| Bilibili | 路由/适配器/打包存在；自动化全绿；EXE 状态 200 |
+| YouTube | 公开网页聊天路径存在；自动化 E2E 全绿；EXE 状态 200 |
+| Twitch | 匿名 IRC 适配器存在；自动化全绿；EXE 状态 200 |
+| 抖音 | 适配器/登录/打包存在；自动化全绿；EXE 状态 200 |
+| TikTok | 匿名本地 webcast；单房间与双房间真实 EXE 验收通过 |
+
+### 0.44.6 仍未完成 / NOT-OBSERVED（不得改成 PASS）
+
+- TikTok 真实礼物：**NOT-OBSERVED**。
+- TikTok 真实连送：**NOT-OBSERVED**。
+- TikTok 真实订阅：**NOT-OBSERVED**。
+- 长期多房间压力测试：**未执行**（真实双房间样本仅 A 4 条 / B 1 条）。
+- 真实网卡断线与真实下播长跑：**未执行**；仅自动化覆盖强制断线与两次离线确认。
+- 干净 Windows 账户、真实双击 UAC：仍需人工确认。
+
+### 0.44.7 Git 状态
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `main` |
+| 合并提交 | `980de0f` |
+| 最终 main HEAD | 本轮文档提交（见 `git log -1`） |
+| 工作区 | clean |
+| 远程 | `main` 领先 `origin/main`，**未 Push** |
+| Tag / Release | **未创建** |
+| 功能分支 | `feature/tiktok` 保留 |
 
 ## 0.43 TIKTOK-M6：TikTok 多直播间并发与模拟直播清理（2026-11-16）🟢（feature/tiktok，真实双房间 + EXE 已验收）
 

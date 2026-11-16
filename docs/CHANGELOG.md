@@ -1,5 +1,23 @@
 # 版本变化（CHANGELOG）
 
+## 0.13.3-r2 — 2026-11-16（TIKTOK-M6 人工验收通过并合并 main）
+
+### 合并
+
+- 开发者已在普通 Windows 桌面完成 TikTok 多直播间人工验收，正式批准合并。
+- `feature/tiktok` 以 `--no-ff` 合并到本地 `main`，合并提交 `980de0f`（父 `410bfc3` + `e992534`），
+  无冲突；合并后树与功能分支完全一致。
+
+### 验证
+
+- 合并后全量 **687 unit + 347 integration = 1034 passed / 0 failed / 0 skipped**。
+- 五平台路由/适配器/打包均存在；SQLite schema 16、AI/analytics 相对合并前 main 无 diff。
+- `main` 重建 EXE：Build ID `e48016f19362` / commit `980de0f` / SHA-256 `1b8cbe63…` /
+  requireAdministrator；`verify-exe` 10/10。
+- `verify-tiktok-exe` 22/22 + 2 NOT-OBSERVED；`verify-tiktok-multi-exe` 17/17
+  （A 1 条 / B 2 条真实 chat，停 A 后 B 2→3）。
+- 真实礼物/连送/订阅仍 **NOT-OBSERVED**；未 Push、未 Tag、未 Release、未删除功能分支。
+
 ## 0.13.3-r1 — 2026-11-16（TIKTOK-M6：多直播间并发 + 模拟直播清理）
 
 ### 修复 / 新增

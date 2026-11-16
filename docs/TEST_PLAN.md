@@ -66,6 +66,28 @@ A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200�
 2/2 平台 UID**，停止 `ended`。YouTube / Twitch / 抖音本轮**未重跑真实直播采集**；其适配器、服务与
 会话隔离由 347 项集成测试覆盖，EXE 状态端点仍为 200，但不得写成真实采集通过。
 
+### 2.0.3 合并 main 后回归（2026-11-16）
+
+| 运行 | 结果 |
+| --- | --- |
+| 合并方式 | `git merge --no-ff feature/tiktok`，合并提交 `980de0f`，无冲突 |
+| 合并后树 | 与 `feature/tiktok` 完全一致 |
+| 全量单元 | **687 passed / 0 failed / 0 skipped（17,701.12 ms）** |
+| 全量集成 | **347 passed / 0 failed / 0 skipped（270,438.05 ms）** |
+| 合计 | **1034 passed / 0 failed / 0 skipped** |
+| `git diff --check` | 通过 |
+| 五平台路由 | `/api/{bilibili,youtube,twitch,douyin,tiktok}/connect` 均存在 |
+| 五平台打包 | `build/manifest.json` 含五平台模块（Bilibili 9 / YouTube 7 / Twitch 7 / 抖音 14 / TikTok 10） |
+| SQLite / AI / analytics | 相对合并前 main 无变更；schema 16 |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe @aljazeeraenglish` | **22/22 + 2 NOT-OBSERVED** |
+| `verify-tiktok-multi-exe` | **17/17**；A 1 条 / B 2 条真实 chat；停 A 后 B 2→3 |
+| EXE | Build ID `e48016f19362` / commit `980de0f` / SHA-256 `1b8cbe63…` / requireAdministrator |
+
+真实双房间 session：A `ses_01M7HC2VBSFYPV4JBW1P`、B `ses_01M7HC33MSXWTZVR5JN6`；
+产物 `tests/.tmp/verify-tiktok-multi-2026-11-16T05-08-00-619Z`（不提交）。样本很小，
+不代表长期多房间压力测试；真实礼物/连送/订阅仍 **NOT-OBSERVED**。
+
 ## 2.0 上一轮结果（2026-11-15，DOUYIN-M2M3 + Twitch 合并）
 
 ### 2.0.1 Twitch 合并后回归

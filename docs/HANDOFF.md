@@ -1,14 +1,98 @@
 # 交接文档（HANDOFF）
 
+本轮：2026-11-16 · TIKTOK-M6 人工验收通过并合并 `main` · **合并 `980de0f`；1034 测试通过；main EXE `e48016f19362`；未 Push/Tag/Release**
+
+> 开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间采集验收，确认可同时创建并采集多个不同
+> TikTok LIVE，且不再出现只能记录一场的问题。据此正式批准将 `feature/tiktok` 合并到本地 `main`。
+> 本轮只做本地合并、回归、`main` 上重建 EXE 与文档记录；**未 Push、未创建 Tag、未发布 Release、
+> 未删除功能分支、未修改许可证。**
+
+## 0. 本轮（TIKTOK-M6 合并 main）
+
+### 0.1 合并前检查
+
+- 当前分支 `feature/tiktok`，工作区 clean。
+- merge-base = `410bfc3`（当时 `main` HEAD）；`main...feature/tiktok` = `0 / 20`，
+  main 没有独立于功能分支的新提交。
+- 功能/测试提交 `54934f6`、UI 修复 `4224f7c`、文档提交 `e992534` 均已在 `feature/tiktok`。
+- 验收 EXE：Build ID `e48016f19362`，构建 commit `4224f7c`。
+- `git diff main...feature/tiktok` 只显示 TikTok 功能新增与相关文档/测试，
+  不会覆盖此前合并的 Bilibili / YouTube / Twitch / 抖音。
+
+### 0.2 合并结果
+
+| 项目 | 值 |
+| --- | --- |
+| 合并方式 | `git merge --no-ff feature/tiktok` |
+| 合并提交 | `980de0f97a4b700c6c29aa569ca87cc734748021` |
+| 父 1 | `410bfc3`（原 main） |
+| 父 2 | `e992534`（feature/tiktok） |
+| 冲突 | 无 |
+| 合并后树 | 与 `feature/tiktok` 完全一致（`git diff --stat feature/tiktok main` 为空） |
+
+### 0.3 合并后验证
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量单元 | **687 passed / 0 failed / 0 skipped（17,701.12 ms）** |
+| 全量集成 | **347 passed / 0 failed / 0 skipped（270,438.05 ms）** |
+| 合计 | **1034 passed / 0 failed / 0 skipped** |
+| 五平台路由/适配器/打包 | Bilibili / YouTube / Twitch / 抖音 / TikTok 全部存在并打包 |
+| TikTok 多房间 | 自动化通过；真实双房间 EXE 见下 |
+| TikTok 重复保护 | 同 room 409，不同 room 正常并发 |
+| 模拟直播 UI | 标签/按钮/面板/API 调用已从正式页面移除 |
+| 历史模拟记录 | 仍可读取；徽标与说明保留 |
+| SQLite / AI / 长期画像 | schema 16 未变；AI/analytics 相对合并前 main 无 diff；全量测试通过 |
+| 三语 i18n | 键集与占位符一致 |
+| `git diff --check` | 通过 |
+| 工作区 | clean |
+
+### 0.4 main EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `e48016f19362` |
+| 构建 commit | `980de0f97a4b700c6c29aa569ca87cc734748021` |
+| source hash | `e48016f193625e919be6dd2e744eac093aefb889144a5a8825edd2faba51dbdb` |
+| 大小 / SHA-256 | `96,730,112` bytes / `1b8cbe63181f97b74bf871ce9c3e2658bb715227a72d05f54691ca6aaca5909c` |
+| builtAt | `2026-11-16T05:05:58.502Z` |
+| RT_MANIFEST | **`requireAdministrator`** |
+| 启动矩阵 | `verify-exe` **10/10** |
+| 真实 TikTok 单房间 | `verify-tiktok-exe` **22/22 + 2 NOT-OBSERVED，0 failed** |
+| 真实 TikTok 双房间 | `verify-tiktok-multi-exe` **17/17 passed** |
+
+启动矩阵包含：全新数据目录启动、重启保留、硬杀恢复、端口顺延、单实例、不可写目录、异目录运行、
+解包复用、CLI 三语与 `--diagnose`。
+
+真实双房间（合并后）：`@aljazeeraenglish` + `@aljazeera`，**17/17 passed**；A 1 条、B 2 条真实 chat；
+重复 A 409；停止 A 后 B 仍 connected 且 2→3；两场 AI report 200；A/B session 不同、room 不同。
+样本很小，不能替代长期压力测试。
+
+### 0.5 仍未完成 / NOT-OBSERVED
+
+- TikTok 真实礼物、真实连送、真实订阅：**NOT-OBSERVED**。
+- 长期多房间压力测试：**未执行**。
+- 真实网卡断线与真实下播长跑：**未执行**；自动化覆盖强制断线与两次离线确认。
+- 干净 Windows 账户、真实双击 UAC：仍需人工确认。
+
+### 0.6 Git / 发布限制
+
+- 分支 `main`，合并提交 `980de0f`，最终 HEAD 为本轮文档提交（见 `git log -1`）。
+- **未 Push、未创建 Tag、未发布 Release、未删除 `feature/tiktok`、未修改许可证。**
+- 提交身份保持匿名 noreply。
+
+## 0-M6. 上一轮（TIKTOK-M6 开发）
+
 本轮：2026-11-16 · TIKTOK-M6：同一平台多个 TikTok 直播间并发 + 正式界面移除模拟直播 · **真实双房间 + EXE 17/17 已验收；礼物 NOT-OBSERVED；待人工复验**
 
 > 根因不是后端单例：`SessionManager`/`TikTokLocalAdapter` 一直支持同平台多场；真正限制是 TikTok 面板
 > 用 `!tiktokActiveRecording()` 把「存在任意 TikTok 记录」当成「该房间已在记录」，从而全局禁用开始按钮。
 > 修复把判断收窄为同一 `platformRoomId`（handle 回退），同时新增逐场活动列表与独立停止。
 > 正式界面删除模拟直播标签/面板/顶部按钮；`MockLiveSource`、`/api/simulate/*` 与测试夹具**保留**。
-> **未合并 main、未 Push、未 Tag、未 Release。**
+> **当时未合并 main；本轮已完成人工验收与合并。**
 
-## 0. 本轮（TIKTOK-M6）
+## 0-M6A. TIKTOK-M6 开发记录（原始交接）
 
 ### 0.1 这一轮做了什么
 
