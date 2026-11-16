@@ -7,7 +7,7 @@
 | 单元测试 | 纯逻辑：语言、主题、金额、事件、Emoji/表情、去重、时间、分桶、ZIP、设置、锁、参数、数据目录、主播身份、语言控件 | `tests/unit/` |
 | 集成测试 | 迁移、落库与聚合、HTTP API、安全校验、SSE、分析包、目录迁移/回滚、清空/出厂、多主播范围 | `tests/integration/` |
 | 启动冒烟 | 启动器真实启动、单实例、命令行三语、EXE | 手工 + `scripts/` |
-| UI 验证 | 三主题、三语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
+| UI 验证 | 三主题、十语言、响应式、Header 语言、数据管理、主播范围、多直播标签、Top 100、历史搜索/归档/停止/删除、AI 五步入口/请求统计/报告 | 手工 + 无头 Chrome/Edge 截图 + `scripts/verify-live-ui.mjs` / `verify-history-ui.mjs` / `verify-ai-ui.mjs` |
 | 打包 EXE | 真实 v6→v8 升级、搜索、归档、停止、删除、重启保持；AI 单入口与报告只读 | `scripts/verify-exe-history.mjs` / `verify-exe-ai.mjs` |
 | 真实平台 | Bilibili 真实直播事件与表情元数据；YouTube 公开网页真实采样；v0.6.0 真实多场并发 | 已采样（见第 9/11/13 节）；v0.8.0 未新增 |
 | 可移植备份 | 在线快照、格式/校验、ZIP 安全、事务化恢复、崩溃回滚、跨目录迁移 | `tests/unit/backup-format.test.mjs`、`tests/unit/backup-ui.test.mjs`、`tests/integration/backup-restore.test.mjs`、`scripts/verify-p0-2-exe.mjs` |
@@ -171,23 +171,24 @@ A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200�
 
 | 文件 | 覆盖 |
 | --- | --- |
-| `locale.test.mjs` | 语言别名、非法值、跟随系统回退英文、环境变量识别 |
+| `locale.test.mjs` | 语言别名、非法值、十语言族/地区/script 降级矩阵、`aiOutputLocale` 收窄、AI 输出子集 |
 | `theme.test.mjs` | 三种主题、系统解析、存储模式 |
 | `money.test.mjs` | 两位/零位小数币种、四舍五入、非法值、精确乘法 |
 | `events.test.mjs` | 规范化、身份命名空间、礼物金额、免费/未知金额、别名、时间秒/毫秒、去重键、非法输入、超长文本、Emoji 安全截断、emote 元数据与指纹 |
 | `emoticons.test.mjs` | Unicode Emoji / VS16 / 肤色 / ZWJ 保留、grapheme 截断、表情规范化/去重/上限、AI 可读文本、未知表情标记、括号文字不误判、字典/JSON 往返 |
 | `time.test.mjs` | ISO/秒/毫秒互转、非法值、时长格式 |
 | `hotness.test.mjs` | 桶大小、桶内计数/独立观众/支付、裁剪尾部、进行中桶、空场次、币种分账 |
-| `i18n.test.mjs` | 三语 JSON 键一致、非空、占位符一致；启动器三语键一致 |
+| `i18n.test.mjs` | 十份字典键集一致（各 2,265 键）、非空、占位符一致、无整句英文残留（逐语言白名单）、未解析键；启动器十语键集一致 |
 | `zip.test.mjs` | CRC32 参考值、读写、UTF-8 名、路径穿越拒绝、空归档 |
 | `settings-store.test.mjs` | 默认值、加载、损坏回退与备份、校验、原子持久化 |
 | `lock.test.mjs` | 获取/释放、存活进程拒绝、陈旧锁接管、损坏锁、PID 判定、runtime 文件 |
-| `launcher.test.mjs` | 参数解析、非法端口/语言、未知参数、状态行三语 |
+| `launcher.test.mjs` | 参数解析、非法端口/语言、未知参数、状态行；十语言码与地区变体（`pt-PT`、`zh-HK`）|
+| `launcher-console.test.mjs` | 控制台输出所选语言；无 Unicode 时英文 ASCII 回退并折叠非 ASCII；写入失败不中止启动 |
 | `data-dir.test.mjs` | Windows 目录顺序、显式目录、不可写报错、回退、临时目录兜底、默认目录只是偏好、写探测失败步骤 |
 | `startup-log.test.mjs` | JSONL 启动日志、临时目录回退、敏感值脱敏、迁入数据目录、失败报告 |
 | `instance.test.mjs` | 健康探测、不可达/外来服务/PID 不一致/缺少 runtime 的判定 |
 | `diagnostics.test.mjs` | 交互式等待按键、非 TTY 不阻塞、`--no-wait`、对话框禁用 |
-| `bootstrap.test.mjs` | 解压候选目录、标记校验、原子解压、路径穿越拒绝、三语失败文本、语言选择 |
+| `bootstrap.test.mjs` | 解压候选目录、标记校验、原子解压、路径穿越拒绝、十语失败文本、十语言族语言选择 |
 | `logger.test.mjs` | 敏感键脱敏、自由文本中的凭据、JSON 片段、无误伤 |
 | `bilibili-wbi.test.mjs` | 公开测试向量、mixin key、键提取、排序/编码 |
 | `bilibili-protocol.test.mjs` | 头布局、鉴权包、心跳、多包、zlib/brotli、人气、异常长度、命令归一化 |
@@ -206,7 +207,7 @@ A/B session 不同、room 不同、UID/msgId 完整；两场 AI report 均 200�
 | `youtube-anonymous-adapter.test.mjs` | continuation 失效重开、网络错误退避恢复、不结束场次、匿名快照 |
 | `youtube-mapper.test.mjs` | 文本/Unicode Emoji/`:code:`、身份缺失、Super Chat 多币种、`amountMicros` BigInt 换算与半进位、Super Sticker、新会员/里程碑/赠送/收到赠送、`is_paid` 语义、忽略删除/封禁/未知事件 |
 | `broadcaster.test.mjs` | YouTube channelId vs 视频 ID、Bilibili anchor uid/room fallback/unresolved、mock、质量排序、控制字符清洗 |
-| `header-language.test.mjs` | 三种语言原生名称、Header 双控件、主题控件并存、三语语言/数据管理键 |
+| `header-language.test.mjs` | 十种语言原生名称、Header 双控件、主题控件并存、十语语言/数据管理键、十语言自动下拉 |
 | `live-multi-ui.test.mjs` | 直播页使用多场 API、停止路径、Top 100 接口、viewToken、标签/排行榜容器、无 innerHTML、无旧 livesummary 轮询 |
 | `history-ui.test.mjs` | 列表与详情共用 `session-actions`、搜索端点/筛选参数/不读 events 正文、删除确认字段与勾选、DELETE 客户端、无 innerHTML、共享 modal、响应式/菜单键盘 CSS、路由与事务守卫、三语键 |
 | `identity-labels.test.mjs` | 三语标签为「可识别观众」、未识别消息警告、直播/历史/AI 字段使用、CSS 类；禁止把可识别观众写成总观众 |
