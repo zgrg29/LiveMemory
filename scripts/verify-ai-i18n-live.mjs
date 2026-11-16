@@ -119,17 +119,77 @@ const MEMORY_KEYS = ['viewer_memory_updates', 'viewer_id', 'operations'];
 const MEMORY_OPERATION_KEYS = ['op', 'statement'];
 
 
+/**
+ * Viewer names from `REAL_CHAT` are quoted verbatim by the model when it
+ * introduces who said what. They are proper nouns and legitimately stay in the
+ * original script, so they must not make a Chinese report look "Japanese". The
+ * earlier strict `no kana at all` rule produced exactly that false negative on
+ * 2026-11-16 (P42); stripping the known names and measuring the script *ratio*
+ * is the correct assertion, not a relaxed one.
+ */
+const QUOTED_NAMES = /지민|ゆき|Alex/g;
+
+/** Count characters of one script family. */
+function scriptCounts(text) {
+  const han = (text.match(/[\u4E00-\u9FFF]/g) ?? []).length;
+  const kana = (text.match(/[\u3040-\u30FF]/g) ?? []).length;
+  const hangul = (text.match(/[\uAC00-\uD7A3]/g) ?? []).length;
+  return {han, kana, hangul};
+}
+
+/** Traditional-only vs simplified-only markers, for zh-TW wording. */
+const TRADITIONAL_ONLY = /[這觀眾說與時練習進態歡覺開學會話題們為對從個來後當國語錄]/g;
+const SIMPLIFIED_ONLY = /[这观众说与时练习进态欢觉开学会话题们为对从个来后当国语录]/g;
+
 const SCRIPT_TESTS = {
-  ko: (text) => /[\uAC00-\uD7A3]/.test(text),
-  ja: (text) => /[\u3040-\u30FF]/.test(text),
-  'zh-CN': (text) => /[\u4E00-\u9FFF]/.test(text) && !/[\u3040-\u30FF]/.test(text),
-  'zh-TW': (text) => /[\u4E00-\u9FFF]/.test(text) && !/[\u3040-\u30FF]/.test(text),
+  ko: (text) => scriptCounts(text).hangul >= 20,
+  ja: (text) => scriptCounts(text).kana >= 10,
+  'zh-CN': (text) => {
+    const {han, kana, hangul} = scriptCounts(text.replace(QUOTED_NAMES, ''));
+    return han >= 4 && kana <= Math.max(3, Math.floor(han * 0.02))
+      && hangul <= Math.max(3, Math.floor(han * 0.05));
+  },
+  'zh-TW': (text) => {
+    const cleaned = text.replace(QUOTED_NAMES, '');
+    const {han, kana, hangul} = scriptCounts(cleaned);
+    const traditional = (cleaned.match(TRADITIONAL_ONLY) ?? []).length;
+    const simplified = (cleaned.match(SIMPLIFIED_ONLY) ?? []).length;
+    return han >= 4 && kana <= Math.max(3, Math.floor(han * 0.02))
+      && hangul <= Math.max(3, Math.floor(han * 0.05))
+      && traditional >= 1 && simplified <= Math.max(1, Math.floor(traditional * 0.1));
+  },
   es: (text) => /\b(el|la|los|las|de|que|con|una|para)\b/i.test(text),
   'pt-BR': (text) => /\b(o|a|os|as|de|que|com|uma|para|não)\b/i.test(text),
   fr: (text) => /\b(le|la|les|des|de|que|avec|une|pour)\b/i.test(text),
   de: (text) => /\b(der|die|das|und|ist|mit|eine|für|nicht)\b/i.test(text),
   id: (text) => /\b(yang|dan|di|dengan|untuk|tidak|adalah)\b/i.test(text),
   en: (text) => /\b(the|and|with|that|for)\b/i.test(text)
+};
+
+/**
+ * Per-fact language check. A single fact is often 3–8 words ("Spielt jeden
+ * Sonntag Badminton"), which is too short for stop-word detection to be fair.
+ * For short facts we therefore assert the script family (Hangul / kana / Han /
+ * Latin); the *summary* above still asserts the exact language with a prose-sized
+ * sample. A Chinese fact inside a German memory would still fail here.
+ */
+const LATIN_ONLY = (text) => {
+  const c = scriptCounts(text);
+  const latin = (String(text).match(/[A-Za-zÀ-ÿ]/g) ?? []).length;
+  return latin >= 3 && c.han === 0 && c.hangul === 0 && c.kana === 0;
+};
+
+const FACT_TESTS = {
+  ko: (text) => scriptCounts(text).hangul >= 3,
+  ja: (text) => scriptCounts(text).kana >= 2,
+  'zh-CN': (text) => scriptCounts(text.replace(QUOTED_NAMES, '')).han >= 2,
+  'zh-TW': (text) => scriptCounts(text.replace(QUOTED_NAMES, '')).han >= 2,
+  es: LATIN_ONLY,
+  'pt-BR': LATIN_ONLY,
+  fr: LATIN_ONLY,
+  de: LATIN_ONLY,
+  id: LATIN_ONLY,
+  en: LATIN_ONLY
 };
 
 /**
@@ -476,9 +536,13 @@ async function main() {
         }
         entry.facts = facts.length;
         entry.factProseChars = facts.reduce((sum, fact) => sum + String(fact.statement ?? '').length, 0);
+        const factMatches = facts.filter((fact) => (
+          FACT_TESTS[locale]?.(`${fact.topic ?? ''} ${fact.statement ?? ''}`) ?? true
+        )).length;
+        entry.factLocaleRatio = facts.length === 0 ? null : factMatches / facts.length;
         entry.factScriptMatch = facts.length === 0
           ? null
-          : facts.some((fact) => SCRIPT_TESTS[locale]?.(`${fact.topic ?? ''} ${fact.statement ?? ''}`) ?? true);
+          : entry.factLocaleRatio >= 0.8;
         // Plan B: facts keep their own language. A cross-language duplicate is
         // accepted, so only "no crash / no loss" is asserted here.
         entry.factTopics = facts.map((fact) => String(fact.topic ?? '')).slice(0, 8);
@@ -497,6 +561,7 @@ async function main() {
           && (entry.unknownKeys?.length ?? 0) === 0
           && (entry.memoryLocale === undefined || entry.memoryLocale === locale)
           && (entry.memoryScriptMatch ?? true)
+          && (entry.factScriptMatch ?? true)
           && (entry.memoryKeysIntact ?? true)
           && (entry.viewerIdsResolvedLocally ?? true)
           && entry.chatUnchanged;
@@ -521,8 +586,8 @@ async function main() {
       entry.locale.padEnd(8),
       String(entry.status ?? entry.error ?? 'blocked').padEnd(9),
       String(entry.jobLocale ?? '-').padEnd(10),
-      entry.scriptMatch ? 'yes  ' : 'NO   ',
-      entry.sessionKeysIntact ? 'ok ' : 'NO ',
+      entry.scriptMatch ? 'yes  ' : (entry.scriptMatch === null ? 'n/a  ' : 'NO   '),
+      entry.sessionKeysIntact ? 'ok ' : (entry.sessionKeysIntact === null ? 'n/a ' : 'NO '),
       entry.memoryScriptMatch === null ? 'n/a ' : (entry.memoryScriptMatch ? 'yes ' : 'NO  '),
       String(entry.facts ?? 0).padEnd(5),
       entry.chatUnchanged ? 'ok' : 'NO',

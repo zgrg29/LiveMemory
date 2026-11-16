@@ -20,9 +20,10 @@
  * Usage:
  *   node scripts/verify-i18n-ui.mjs [--out docs/screenshots] [--report tests/.tmp/i18n-p40-ui-report.json] [--all-widths]
  */
-import {mkdirSync, existsSync} from 'node:fs';
+import {mkdirSync, existsSync, openSync, readFileSync} from 'node:fs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {spawn, spawnSync} from 'node:child_process';
+import {createServer} from 'node:net';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {openDatabase, closeDatabase} from '../src/storage/database/connection.mjs';
@@ -38,6 +39,7 @@ import {
   T0
 } from '../tests/helpers/ai-fixtures.mjs';
 import {createTempDir} from '../tests/helpers/temp-dir.mjs';
+import {prepareTestExe} from './test-exe-copy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
@@ -46,7 +48,9 @@ const argValue = (name, fallback) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 const outDir = resolve(root, argValue('out', 'docs/screenshots'));
-const reportFile = resolve(root, argValue('report', 'tests/.tmp/i18n-p40-ui-report.json'));
+const reportFile = resolve(root, argValue('report', 'tests/.tmp/i18n-p42-ui-report.json'));
+const PREFIX = argValue('prefix', 'i18n-p42');
+const EXE_PATH = argValue('exe', null);
 const ALL_WIDTHS = args.includes('--all-widths');
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 
@@ -321,7 +325,64 @@ async function main() {
   await mkdir(resolve(reportFile, '..'), {recursive: true});
   const temp = createTempDir();
   const sessionId = await seed(temp.dir);
-  const app = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'de-DE'});
+  let app;
+  let exeChild = null;
+  if (EXE_PATH) {
+    const exe = prepareTestExe({
+      source: resolve(root, EXE_PATH),
+      target: join(temp.dir, 'LiveMemory-asInvoker.exe')
+    });
+    const port = await new Promise((resolvePort, reject) => {
+      const probe = createServer();
+      probe.once('error', reject);
+      probe.listen(0, '127.0.0.1', () => {
+        const assigned = probe.address().port;
+        probe.close(() => resolvePort(assigned));
+      });
+    });
+    const bootstrapFile = join(temp.dir, 'bootstrap.url');
+    const logFd = openSync(join(temp.dir, 'exe.log'), 'w');
+    const exeLocalAppData = join(temp.dir, 'localappdata');
+    const exeTemp = join(temp.dir, 'temp');
+    mkdirSync(exeLocalAppData, {recursive: true});
+    mkdirSync(exeTemp, {recursive: true});
+    exeChild = spawn(exe, ['--no-open', '--port', String(port), '--data-dir', temp.dir], {
+      cwd: temp.dir,
+      env: {
+        ...process.env,
+        LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrapFile,
+        LOCALAPPDATA: exeLocalAppData,
+        TEMP: exeTemp,
+        TMP: exeTemp
+      },
+      stdio: ['ignore', logFd, logFd],
+      windowsHide: true
+    });
+    const deadline = Date.now() + 60000;
+    let browserUrl = '';
+    for (;;) {
+      try {
+        const health = await fetch(`http://127.0.0.1:${port}/api/health`, {signal: AbortSignal.timeout(1200)});
+        if (health.ok && existsSync(bootstrapFile)) {
+          browserUrl = readFileSync(bootstrapFile, 'utf8').trim();
+          if (browserUrl) break;
+        }
+      } catch {
+        /* not ready */
+      }
+      if (exeChild.exitCode !== null) {
+        throw new Error(`EXE exited early (${exeChild.exitCode}): ${readFileSync(join(temp.dir, 'exe.log'), 'utf8').slice(-1500)}`);
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`EXE did not become healthy within 60s: ${readFileSync(join(temp.dir, 'exe.log'), 'utf8').slice(-1500)}`);
+      }
+      await sleep(200);
+    }
+    app = {url: `http://127.0.0.1:${port}`, browserUrl};
+    console.log(`EXE service: ${app.url} (functional asInvoker copy of ${EXE_PATH})`);
+  } else {
+    app = await startServer({dataDir: temp.dir, port: 0, systemLocale: 'de-DE'});
+  }
   let browser = null;
   const results = [];
   try {
@@ -423,7 +484,7 @@ async function main() {
             width,
             height: HEIGHTS[width],
             dark: false,
-            name: `i18n-p40-${locale}-${route.id}-${width}`
+            name: `${PREFIX}-${locale}-${route.id}-${width}`
           });
         }
         await visit({
@@ -431,7 +492,7 @@ async function main() {
           width,
           height: HEIGHTS[width],
           dark: false,
-          name: `i18n-p40-${locale}-session-${width}`
+          name: `${PREFIX}-${locale}-session-${width}`
         });
         if (ALL_WIDTHS || width === 1440 || width === 390) {
           for (const route of ROUTES.filter((entry) => ['live', 'ai', 'settings'].includes(entry.id))) {
@@ -440,7 +501,7 @@ async function main() {
               width,
               height: HEIGHTS[width],
               dark: true,
-              name: `i18n-p40-${locale}-${route.id}-${width}-dark`
+              name: `${PREFIX}-${locale}-${route.id}-${width}-dark`
             });
           }
         }
@@ -448,19 +509,19 @@ async function main() {
       // Archived screenshots for the report (one per language).
       await visit({
         path: '#/live', width: 1440, height: 900, dark: false,
-        name: `i18n-p40-${locale}-live-1440-light`, screenshot: true
+        name: `${PREFIX}-${locale}-live-1440-light`, screenshot: true
       });
       await visit({
         path: '#/settings', width: 1440, height: 900, dark: true,
-        name: `i18n-p40-${locale}-settings-1440-dark`, screenshot: true
+        name: `${PREFIX}-${locale}-settings-1440-dark`, screenshot: true
       });
       await visit({
         path: '#/live', width: 390, height: 844, dark: false,
-        name: `i18n-p40-${locale}-live-390-light`, screenshot: true
+        name: `${PREFIX}-${locale}-live-390-light`, screenshot: true
       });
       await visit({
         path: '#/ai', width: 1440, height: 900, dark: false,
-        name: `i18n-p40-${locale}-ai-1440-light`, screenshot: true
+        name: `${PREFIX}-${locale}-ai-1440-light`, screenshot: true
       });
       console.log(`done ${locale}: ${results.filter((entry) => entry.name.includes(`-${locale}-`)).length} page loads`);
     }
@@ -504,7 +565,14 @@ async function main() {
       spawnSync('taskkill', ['/PID', String(browser.child.pid), '/T', '/F'], {stdio: 'ignore'});
       await sleep(400);
     }
-    try { await app.close(); } catch { /* ignore */ }
+    if (exeChild?.pid) {
+      exeChild.kill();
+      for (let attempt = 0; attempt < 40 && exeChild.exitCode === null; attempt += 1) await sleep(100);
+      if (exeChild.exitCode === null) spawnSync('taskkill', ['/PID', String(exeChild.pid), '/T', '/F'], {stdio: 'ignore'});
+    }
+    if (typeof app.close === 'function') {
+      try { await app.close(); } catch { /* ignore */ }
+    }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         temp.cleanup();
