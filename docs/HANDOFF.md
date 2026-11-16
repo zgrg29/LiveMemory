@@ -1,15 +1,94 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · **P40 / I18N-M1 十语言界面与启动器完成** · 十份字典各 2,265 键 · AI 输出仍三语 ·
+本轮：2026-11-16 · **P41 / I18N-M2 十语言 AI 输出完成** · 十份字典各 2,271 键 ·
+AI 输出十语 + 独立 `aiOutputLocale` · **1102 测试通过** · **未发布**
+
+> 本轮把 **AI 分析 / 单场报告 / 长期画像 / 报告阅读翻译 / 任务恢复** 全部扩到十种语言，
+> 并把「AI 输出语言」做成与界面语言**独立的持久设置**（`aiOutputLocale`，默认 `follow-ui`）。
+> 提示词采用「三套已验证指令正文 + 七种语言输出规则」的混合方案：新增唯一来源
+> `src/ai/prompts/language.mjs`，六个 prompt 面都注入可断言的 `OUTPUT LANGUAGE (<code>)`，
+> 单次请求仍只发当前语言。长期画像按**方案 B** 落地：跨语言事实共存、同字符 topic 仍去重、
+> 历史事实不被翻译覆盖。**未改五平台采集、数据库 Schema（仍 16）、事件/观众/金额去重、
+> 翻译缓存表结构与调度算法；未 Push / Tag / Release。**
+
+## 0. 本轮（P41 / I18N-M2）
+
+### 0.1 完成内容
+
+| 目标 | 结果 |
+| --- | --- |
+| 十语言 AI 输出 | 注册表十条 `aiOutput: true`；`AI_OUTPUT_LOCALES` = 三个 `SUPPORTED_*` = `LOCALE_NAME` = Schema `locale.enum` = 10 |
+| 提示词 | **新增** `src/ai/prompts/language.mjs`（rule/guard/system/repair/example × 10）；系统/包内说明/记忆/汇总/摘要/修复六面全部注入；三套已验证正文保留，其余七语复用英文正文 + 输出规则 |
+| 版本 | `lm-prompt-m6.4` / `lm-prompt-v13.3` / `lm-prompt-m7.2`（旧任务保留原版本号） |
+| 设置 | `aiOutputLocale`（`follow-ui` 或语言码）；旧配置缺键 → `follow-ui` 且不写回；备份白名单已同步；设置页新增原生下拉卡片（11 项） |
+| 快照 | 创建任务写 `ai_jobs.locale`；恢复以 job 行为准；改界面/改偏好/暂停/重启都不改旧任务与旧正文 |
+| Schema | 只改 `locale.enum`；字段名/枚举/`required`/`additionalProperties:false`/稳定标识全部不变 |
+| 长期画像 | 方案 B：跨语言事实共存、同字符 topic 仍去重、无 DB 迁移、无别名表 |
+| 翻译 | 9 个非源语言目标各自独立缓存；原文/证据/结构化字段不变；同语言 409 |
+| 字典 | 每份 **2,271** 键（+6：`settings.aiOutput.*` × 5、`toast.aiOutputLanguage`），键集/占位符零差异 |
+
+### 0.2 测试与真实 Provider（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 真实 DeepSeek `deepseek-flash` | 单场报告 `ko`/`zh-TW`/`de`/`pt-BR` **4/4**；画像 `ko` **7 条韩语事实**、`de` **7 条德语事实**；共 12 次真实请求、可核对 44,486 input / 4,450 output tokens |
+| 真实语言质量 | 仅机器判据；**无母语签收人** |
+| Windows EXE | 本轮重建，见 §0.3 |
+
+**真实 Provider 的一条重要观察（方案 B）**：同一观众已有韩语事实时，德语任务按 `guard`
+**原样复用韩语 topic** 做 confirm/update，只在摘要与新事实里用德语 —— 这正是方案 B 的预期行为，
+不是缺陷；不同字符的 topic（`기타` vs `Gitarre`）会各自成为独立事实。
+
+### 0.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID / commit | `c28eeb197446` / `9b7a511` |
+| 大小 / SHA-256 | `99,198,976` bytes / `4f43855254313e623b602073765cb43abf7d4c0e2c8591e1b46bcfb85bd8c9b2` |
+| builtAt | `2026-11-16T14:15:54.313Z` |
+| 资源 / 模块 | 237 files / 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11** |
+| `verify-help-exe` | **14/14** |
+| `verify-ai-token-exe` | **16/16** |
+
+版本号仍为 `0.14.0`（本轮是开发里程碑，未做版本决策）。真实双击 UAC、干净 Windows 账户仍未人工验证。
+
+### 0.4 下一轮（P42 / I18N-M3）
+
+1. 先读 `docs/I18N.md` §2.8（P41 实现）与 `docs/STATUS.md` §0.49。
+2. 十语言 × 亮/暗 × 1440/1024/820/390 的真实浏览器走查与截图归档；重点复核设置页新卡片与
+   AI 中心语言下拉在最长译文（德语/葡语）下的换行与不溢出。
+3. 逐语言真实 EXE 控制台（`chcp 65001`）字符检查；`verify-exe` / `verify-help-exe` /
+   `verify-ai-token-exe` 全项。
+4. 用真实 Provider 抽查 `es`/`fr`/`id`/`en` 与翻译缓存（P41 只验证了 4 语报告 + 2 语画像）。
+5. 旧三语数据库直接升级、备份/恢复/迁移、多直播间与五平台回归。
+6. **不要**在本轮改提示词结构、Schema、DB 或任务语言快照语义；如发现缺陷，按最小修复处理并记录。
+
+### 0.5 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/p40-i18n-m1`（P41 直接在其上继续，未新建分支） |
+| 提交 | 代码/测试提交 + 文档提交（见 `git log -1`） |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+---
+
+上一轮：2026-11-16 · **P40 / I18N-M1 十语言界面与启动器完成** · 十份字典各 2,265 键 · AI 输出当时仍三语 ·
 **未发布**
 
 > 本轮新增 `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七种**界面**语言，并把 Windows
-> 启动器（控制台 + SEA 引导器）扩到十语。**AI 分析输出语言仍然是 `zh-CN` / `ja` / `en` 三种**：
+> 启动器（控制台 + SEA 引导器）扩到十语。AI 分析输出语言当时仍是 `zh-CN` / `ja` / `en` 三种：
 > 注册表新增 `aiOutput` 能力位，分析/记忆任务与报告/翻译接口都在路由层收窄，未支持语言永远不会
 > 发往 Provider。**未改平台采集、AI 调度/恢复、长期画像合并去重、数据库 Schema、原始弹幕保存、
 > 翻译缓存语义；未提前实现 P41；未 Push / Tag / Release。**
 
-## 0. 本轮（P40 / I18N-M1）
+## 0. 上一轮（P40 / I18N-M1）
 
 ### 0.1 完成内容
 

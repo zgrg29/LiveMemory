@@ -35,6 +35,8 @@
 
 > v0.15.0 开发线（2026-11-16，P39 / I18N-M0）：**国际化基础架构整理完成，未新增语言、未发布。** 新增单一语言清单 `src/shared/locales.mjs`（Node 与浏览器同源），语言解析改为「用户偏好 / 系统检测 / 实际已安装资源」三层 + 语言族/script/region 逐级降级；`zh-HK` 当前安全降级 `zh-CN`，未来加入 `zh-TW` 后自动优先。Header 语言控件改为由 `/api/bootstrap` 动态生成：三种语言保持原三段按钮交互，>3 项或长名称自动使用原生下拉；删除 `max-width:132px/112px`。真实浏览器 **9/9** 布局截图通过（三语 1440/390 + 十语言夹具 1440/1024/820/390/黑暗），全量 **711 unit + 349 integration = 1060 passed / 0 failed**，三语 2,265 键/占位符零差异。P41 长期画像跨语言策略已由用户确定为**方案 B（允许混合并接受跨语言重复）**，仅记录文档，未改代码/DB/AI。**未 Push、未 Tag、未 Release。**
 
+> v0.15.1 开发线（2026-11-16，P41 / I18N-M2）：**十语言 AI 输出完成，未发布。** 注册表十条 `aiOutput: true`；新增 `src/ai/prompts/language.mjs` 作为输出语言规则的唯一来源（rule/guard/system/repair/example × 10），六个 prompt 面全部注入并带 `OUTPUT LANGUAGE (<code>)`；三套已验证指令正文保留，其余七语用英文正文 + 各自输出语言规则（单次请求仍只含当前语言）。新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`，`config/settings.json`，已同步备份白名单与设置页），任务创建写入 `ai_jobs.locale` 快照并在恢复时以 job 行为准；结果 Schema `locale.enum` 扩到十项，字段名/枚举/稳定标识不变。长期画像按方案 B 落地（跨语言事实共存、同字符 topic 仍去重、历史事实不翻译覆盖）。**747 unit + 355 integration = 1102 passed / 0 failed**；真实 DeepSeek Provider：4 语单场报告通过、`ko` 7 条韩语事实、`de` 7 条德语事实。**未 Push、未 Tag、未 Release。** 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49。
+
 ## P45 v0.14.0 五平台正式发布（2026-11-16）🚀
 
 - ✅ 版本决策：`0.14.0`（相对 `v0.13.2-rc.0` 新增 Twitch / 抖音 / TikTok 三平台，SemVer minor）
@@ -103,19 +105,23 @@
 - 详见 `docs/I18N.md` §2.6、`docs/STATUS.md` §0.48、`log/2026-11-16-p40-i18n-m1.md`
 
 
-## P41 I18N-M2：AI 输出语言解耦与兼容性验证（v0.15.1）⬜
+## P41 I18N-M2：AI 输出语言解耦与十语言支持（v0.15.1）✅ 2026-11-16
 
 目标：L2 独立、持久、任务内不可变，跨语言不破坏长期画像。
 
-- 前置：P39 完成；**长期画像跨语言策略已由用户确定为方案 B**（允许混合语言事实、接受跨语言语义重复；
-  不锁首次语言、不做跨语言合并/别名表/DB 迁移；现有同语言去重不变；切换输出语言不得删除/覆盖/重译历史事实）
-- 范围：`aiOutputLocale` 设置（默认 `follow-ui`）+ **备份设置白名单**；AI 中心默认值；
-  任务快照断言；三处提示词语言表扩到 10；`LOCALE_NAME` 与报告阅读语言扩到 10
-- 完成标准：「韩语界面 + 日语报告」端到端成立；切换界面语言/重启后任务 locale 与正文不变；
-  暂停→继续→重启语言不变；旧配置按 `follow-ui` 读取不写回；备份→恢复保留设置；
-  历史三语报告仍可读；同一观众跨语言两次分析不产生约束冲突/任务失败/数据损坏，行为符合方案 B
-- 风险：提示词体积/Token 成本、新语言 Provider JSON 遵循度、已接受的跨语言事实重复
-- 详见 `docs/I18N.md` §5、§6
+- ✅ 前置：P39/P40 完成；长期画像跨语言策略按**方案 B** 落地（允许混合语言事实、接受跨语言语义重复；
+  不锁首次语言、不做跨语言合并/别名表/DB 迁移；现有同语言去重不变）
+- ✅ 十语言 AI 输出：注册表十条 `aiOutput: true`；提示词/结果 Schema/翻译目标/LOCALE_NAME 全部十语
+- ✅ 提示词国际化：新模块 `src/ai/prompts/language.mjs`（rule/guard/system/repair/example）；
+  三套已验证完整正文保留，其余七语复用英文正文 + 各自输出语言规则；每个 prompt 面都可断言 `OUTPUT LANGUAGE (<code>)`
+- ✅ 独立设置 `aiOutputLocale`（默认 `follow-ui`）+ 备份白名单 + 设置页卡片 + bootstrap 原始/生效值 + 非法值 400
+- ✅ 任务语言快照：创建时写 `ai_jobs.locale`，恢复以 job 行为准，改界面/改偏好/暂停/重启都不改旧任务
+- ✅ 报告阅读翻译：9 个非源语言目标各自独立缓存行，原文/证据/结构化字段不变
+- ✅ 回归：**747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**
+- ✅ 真实 Provider（DeepSeek `deepseek-flash`）：单场报告 `ko`/`zh-TW`/`de`/`pt-BR` 4/4 通过；
+  长期画像 `ko` 7 条韩语事实、`de` 7 条德语事实；跨语言续写按 guard 复用原 topic（方案 B 成立）
+- ⬜ 未做：发布/Push/Tag；数据库 Schema（仍 16）；P42 的十语言 UI/EXE 全矩阵
+- 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49、`log/2026-11-16-p41-i18n-m2.md`
 
 ## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.16.0）⬜
 

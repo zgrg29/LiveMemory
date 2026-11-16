@@ -1,11 +1,76 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**P40 / I18N-M1 完成**：新增七种界面语言，完成**十语言界面 + 启动器**；
-十份字典各 2,265 键、键集/占位符零差异；**1077 测试通过**（727 unit + 350 integration）；
-真实浏览器 **380/380** 页面加载通过、40 张截图；EXE Build ID `09014dc765e0`、`verify-exe` 11/11；
-**AI 输出语言仍三种**；**未 Push / 未 Tag / 未 Release**）
+最后更新：2026-11-16（**P41 / I18N-M2 完成**：十语言 AI 分析、单场报告、长期画像、报告阅读翻译与
+任务恢复全部支持；新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`）；十份字典各 2,271 键；
+**1102 测试通过**（747 unit + 355 integration）；真实 DeepSeek Provider 验证 4 语报告 + ko/de 画像；
+**未 Push / 未 Tag / 未 Release**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.49 P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）✅ 未发布
+
+用户要求「P41：让 AI 分析、单场报告、长期画像、报告阅读翻译及任务恢复完整支持现有十种语言，
+并实现 AI 输出语言与界面语言独立；长期画像正式采用方案 B」。本轮完成真实开发、自动化回归与
+真实 Provider 验证。**未改五平台采集、数据库 Schema（仍 16）、事件/观众/金额去重、
+翻译缓存表结构、调度/重试/断点续跑算法；未发布、未 Push、未 Tag。**
+
+### 0.49.1 本轮实际完成
+
+| 目标 | 结果 |
+| --- | --- |
+| 十语言 AI 输出 | 注册表十条 `aiOutput: true`；`AI_OUTPUT_LOCALES` = `SUPPORTED_LOCALES` = `SUPPORTED_MEMORY_LOCALES` = `LOCALE_NAME` = 结果 Schema `locale.enum` = 10 |
+| 提示词唯一来源 | **新增** `src/ai/prompts/language.mjs`：十语 `rule/guard/system/repair/example`；`nativeInstructions` 标记保留三套已验证正文 |
+| 六个 prompt 面 | 系统提示词、包内 `instructions.md`、记忆任务、分批汇总、分层摘要、修复请求全部注入输出语言契约，并统一带 `OUTPUT LANGUAGE (<code>)` |
+| 提示词体积 | 单次请求只发当前语言；新增语言规则使 session 指令增长 < 2,000 字符（测试断言） |
+| 结果 Schema | 三个 Schema 只改 `locale.enum`（十项）；字段名、枚举、`required`、`additionalProperties:false` 全部未变 |
+| 独立设置 | `config/settings.json` 的 `aiOutputLocale`（默认 `follow-ui`）；旧配置缺键读作 `follow-ui` 且不写回；非法值 400 |
+| 备份白名单 | `BACKUP_SETTING_KEYS` 增加 `aiOutputLocale`；旧备份缺键恢复为 `follow-ui`；新备份恢复保留显式语言 |
+| 任务语言快照 | 创建时写 `ai_jobs.locale`；恢复时以 job 行为准回填运行时 `locale`；改界面/改偏好/暂停/重启均不改旧任务 |
+| 界面 | 设置页新增「AI 输出语言」卡片（原生 `<select>`，11 项）；AI 中心默认预选偏好；新增 6 个字典键 × 10 语（每份 2,271） |
+| 报告阅读翻译 | 9 个非源语言目标各自独立缓存行；原文/证据/结构化字段不变；源语言翻译返回 409 `TRANSLATION_NOT_NEEDED` |
+| 长期画像（方案 B） | 未加 `locale` 列、未加别名表、未改 `dedupe_key`；`吉他`+`기타` 共存；同字符 topic 仍去重；历史事实不翻译覆盖 |
+| 提示词版本 | `lm-prompt-m6.3→m6.4`、`lm-prompt-v13.2→v13.3`、`lm-prompt-m7.1→m7.2`（旧任务保留原版本号） |
+
+### 0.49.2 测试与真实 Provider 证据
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| 十语言提示词门禁 | `tests/unit/ai-prompt-locales.test.mjs`（11 项）：六面 × 十语、`rule/guard/example`、跨语言不串、体积上限、Schema 十语接受/非法拒绝 |
+| 十语言端到端（模拟 Provider） | `tests/integration/ai-i18n-locales.test.mjs`（4 项）：10 语 session+memory、混合语言事实共存、同语言去重、界面/AI 独立、中断→重启→恢复语言快照 |
+| 十语言翻译 | `tests/integration/ai-i18n-translation.test.mjs`：9 个目标各独立缓存、原文与证据不变、同语言 409 |
+| 备份/恢复 | `tests/integration/backup-restore.test.mjs`：`locale=ja` + `aiOutputLocale=ko` 恢复后保留 |
+| 真实 Provider（DeepSeek `deepseek-flash`） | 单场报告 `ko`/`zh-TW`/`de`/`pt-BR` **4/4 通过**；画像 `ko` **7 条韩语事实**、`de` **7 条德语事实**；跨语言续写按 guard 复用原 topic。**12 次真实请求**，可核对 usage 44,486 input / 4,450 output tokens（用户自己的 Key、隔离目录、未打印密钥） |
+| 真实语言质量 | 仅机器判据（文字脚本/停用词 + Schema 校验）；**无母语签收人**，不声称母语质量验收 |
+| Windows EXE | 见 §0.49.3 |
+
+### 0.49.3 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `c28eeb197446` |
+| 构建 commit | `9b7a511`（P41 代码/测试提交） |
+| 大小 / SHA-256 | `99,198,976` bytes / `4f43855254313e623b602073765cb43abf7d4c0e2c8591e1b46bcfb85bd8c9b2` |
+| builtAt | `2026-11-16T14:15:54.313Z` |
+| 资源 / 模块 | 237 files（含十份字典与新 `language.mjs`）/ 51 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+| `verify-exe` | **11/11**（含 i18n 场景：十语字典 200、`locales.aiOutput` 十项、`aiOutputLocale=follow-ui`、`effective.aiOutputLocale` 有效） |
+| `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
+| `verify-ai-token-exe` | **16/16**（分批、断点续跑、恢复不重发已完成批次） |
+
+真实双击 UAC、干净 Windows 账户仍未人工验证；不得写成已通过。本轮未改版本号（仍 `0.14.0`），
+因为这是 P41 开发里程碑，正式版本决策留给后续发布轮。
+
+### 0.49.4 未验证 / 不得写成 PASS
+
+- 十种语言的**母语人工审校**：未做；真实 Provider 只覆盖 `ko`/`zh-TW`/`de`/`pt-BR` 报告与 `ko`/`de` 画像。
+- `es`/`fr`/`id`/`en` 的真实 Provider 输出：**未逐语言验证**（提示词与 Schema 由自动化覆盖）。
+- 翻译缓存真实 Provider：**未执行**（模拟 Provider 覆盖机制）。
+- 十语言 UI 全矩阵（每语言截图、真实浏览器走查）：**P42**。
+- 干净 Windows 账户、真实双击 UAC：**未执行**。
 
 ## 0.48 P40 / I18N-M1 十语言界面与启动器（2026-11-16）✅ 未发布
 

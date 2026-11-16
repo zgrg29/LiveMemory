@@ -1,10 +1,11 @@
 # LiveMemory 十语言术语表（GLOSSARY）
 
-状态：**P40 / I18N-M1 定稿（2026-11-16）**。本表是十份界面字典（`src/web/i18n/*.json`）
+状态：**P41 补充（2026-11-16）**。P40 定稿的 50 个核心术语与 18 个动作词保持不变，
+P41 追加 A19/A20 两个 AI 输出语言术语。本表是十份界面字典（`src/web/i18n/*.json`）
 与启动器控制台（`src/launcher/cli-i18n.mjs`）翻译的**唯一术语依据**。任何新增或修改的文案
 都必须先查本表；表里没有的词，先补表再翻译。
 
-相关文档：`AGENTS.md` §6.16、§7；`docs/I18N.md` §3、§7；`docs/UI_DESIGN.md`。
+相关文档：`AGENTS.md` §6.16、§7；`docs/I18N.md` §2.8、§3、§7；`docs/UI_DESIGN.md`。
 
 ---
 
@@ -108,6 +109,11 @@
 | A16 | Progress | 进度 | 進捗 | 진행률 | progreso | progresso | 進度 | progression | Fortschritt | kemajuan |
 | A17 | Done / Failed / Pending | 完成 / 失败 / 待处理 | 完了 / 失敗 / 待機 | 완료 / 실패 / 대기 | hecho / fallido / pendiente | concluído / falhou / pendente | 完成 / 失敗 / 待處理 | terminé / échec / en attente | fertig / fehlgeschlagen / ausstehend | selesai / gagal / tertunda |
 | A18 | Settings | 设置 | 設定 | 설정 | ajustes | configurações | 設定 | paramètres | Einstellungen | pengaturan |
+| A19 | AI output language（P41） | AI 输出语言 | AI 出力言語 | AI 출력 언어 | idioma de salida de la IA | idioma de saída da IA | AI 輸出語言 | langue de sortie de l'IA | KI-Ausgabesprache | bahasa keluaran AI |
+| A20 | Follow interface language（P41） | 跟随界面语言 | インターフェースの言語に合わせる | 인터페이스 언어 따르기 | seguir el idioma de la interfaz | seguir o idioma da interface | 跟隨介面語言 | suivre la langue de l'interface | Oberflächensprache folgen | ikuti bahasa antarmuka |
+
+> A19/A20 是 P41 新增设置卡片的术语。**注意**：`AI 输出语言` 指 L2（报告/画像正文），
+> 不是 `界面语言`（L1）。两者不得互换、不得合并成一个开关；译文里也不能写成「显示语言」。
 
 ---
 

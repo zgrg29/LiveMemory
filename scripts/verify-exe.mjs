@@ -546,14 +546,17 @@ async function scenarioI18nAssets() {
     const indexResponse = await fetch(new URL('/', info.url), {headers});
     const indexText = await indexResponse.text();
     const codes = available.map((entry) => entry.code);
-    // P40: ten interface languages; the AI output subset stays separate.
+    // P41: every shipped language is a real AI output language, and the
+    // bootstrap lists (interface + AI output) must match the shared registry.
     const expected = ['zh-CN', 'ja', 'en', 'ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id'];
     const passed = bootstrap.status === 200
       && JSON.stringify(codes) === JSON.stringify(expected)
       && available.every((entry) => typeof entry.nativeName === 'string' && entry.nativeName.length > 0)
       && bootstrap.json?.locales?.default === 'en'
       && expected.includes(bootstrap.json?.effective?.locale)
-      && JSON.stringify((bootstrap.json?.locales?.aiOutput ?? []).map((entry) => entry.code)) === JSON.stringify(['zh-CN', 'ja', 'en'])
+      && JSON.stringify((bootstrap.json?.locales?.aiOutput ?? []).map((entry) => entry.code)) === JSON.stringify(expected)
+      && bootstrap.json?.settings?.aiOutputLocale === 'follow-ui'
+      && expected.includes(bootstrap.json?.effective?.aiOutputLocale)
       && dictionaries.every((entry) => entry.status === 200 && entry.native === '简体中文')
       && sharedResponse.status === 200
       && /text\/javascript/.test(sharedResponse.headers.get('content-type') ?? '')
@@ -563,12 +566,13 @@ async function scenarioI18nAssets() {
       && indexResponse.status === 200
       && /id="language-segmented"/.test(indexText)
       && /id="language-select"/.test(indexText);
-    record('i18n assets: shared registry, ten dictionaries, AI output subset, dynamic language control', passed, [
+    record('i18n assets: shared registry, ten dictionaries, ten AI output languages, dynamic language control', passed, [
       `locales: ${codes.join(', ')}`,
       `native names: ${available.map((entry) => entry.nativeName).join(' / ')}`,
       `default: ${bootstrap.json?.locales?.default}, effective: ${bootstrap.json?.effective?.locale}`,
       `dictionaries: ${dictionaries.map((entry) => `${entry.code}=${entry.status}`).join(', ')}`,
       `ai output: ${(bootstrap.json?.locales?.aiOutput ?? []).map((entry) => entry.code).join(', ')}`,
+      `ai output preference: ${bootstrap.json?.settings?.aiOutputLocale}, effective: ${bootstrap.json?.effective?.aiOutputLocale}`,
       `shared registry: ${sharedResponse.status}, ${sharedResponse.headers.get('content-type')}`,
       `language-control.js: ${controlResponse.status}`,
       `header controls in index.html: ${/id="language-segmented"/.test(indexText) && /id="language-select"/.test(indexText)}`

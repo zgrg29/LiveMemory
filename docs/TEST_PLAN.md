@@ -2211,3 +2211,55 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 - 真实第二直播间并发：未执行（本轮只有一个可确认在播房间）。
 - 真实断网（网卡/路由器）、真实下播长跑、干净 Windows 账户、真实 UAC 双击：未验证。
 - 协议为非官方 web 协议，可能随平台变化失效；无续传游标，重连期间可能漏消息。
+
+---
+
+## 58. P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）
+
+本轮验收重点不是 UI，而是 **AI 输出语言真的十语可用、并且与界面语言解耦**。
+
+### 58.1 自动化（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **747 passed / 0 failed / 0 skipped** |
+| 全量集成 | **355 passed / 0 failed / 0 skipped** |
+| 合计 | **1102 passed / 0 failed / 0 skipped** |
+| `tests/unit/ai-prompt-locales.test.mjs`（新增 11 项） | 十语输出语言表完整；六个 prompt 面（系统 / 包内说明 / 记忆 / 分批汇总 / 分层摘要 / 修复）都含该语言规则；不串语言；Compact 示例本地化；受保护字段（viewer_id/message_id/seq/JSON）不被要求翻译；体积上限；Schema 十语接受、非法语言拒绝 |
+| `tests/unit/ai-output-ui.test.mjs`（新增 5 项） | 设置页 AI 输出卡片六个键在十字典存在；`ctx.setAiOutputLocale` 走 PATCH；`setLocale` 不发送 `aiOutputLocale`；AI 中心默认取 `ctx.aiOutputLocale`；报告阅读语言独立 |
+| `tests/unit/locale-registry.test.mjs`（更新） | `AI_OUTPUT_LOCALES` = 十码；三个 Schema 的 `locale.enum` 与注册表同步；未知语言降级 `en` |
+| `tests/unit/locale.test.mjs`（更新） | `aiOutputLocale` 十码恒等、地区变体解析（`zh-HK`→`zh-TW`、`pt-PT`→`pt-BR`）；`follow-ui` 与显式偏好矩阵；非法值 → `follow-ui` |
+| `tests/unit/settings-store.test.mjs`（更新） | `aiOutputLocale` 持久化、重启保留、界面语言变化不影响它、非法值 400；P41 前配置文件缺键 → `follow-ui` 且不写回 |
+| `tests/unit/backup-format.test.mjs`（更新） | 备份白名单含 `aiOutputLocale`；旧备份缺键恢复为 `follow-ui`；未知键仍拒绝 |
+| `tests/integration/ai-i18n-locales.test.mjs`（新增 4 项） | 10 语 session+memory 全链路（job/结果 locale、提示词语言、报告与事实正文、原文未变）；混合语言事实共存 + 同语言去重；界面/AI 独立矩阵；暂停→重启→恢复语言快照 |
+| `tests/integration/ai-i18n-translation.test.mjs`（新增 1 项） | 9 个目标语言各自独立缓存行、原文/证据/时间戳不变、同语言 409 |
+| `tests/integration/backup-restore.test.mjs`（更新） | `locale=ja` + `aiOutputLocale=ko` 备份→恢复后都在 |
+| `tests/integration/ai-hierarchy.test.mjs`（更新） | 批次阈值随提示词体积自然移动后改为 ±4；模拟响应改为按 schema 上限引用每个批次（原实现的缺口是模拟数据缺陷，不是产品缺陷） |
+
+### 58.2 真实 Provider（用户自己的 DeepSeek 配置，隔离目录）
+
+| 项目 | 结果 |
+| --- | --- |
+| Provider | `deepseek` / `deepseek-flash`（capability session+memory 已通过） |
+| 单场报告 | `ko` / `zh-TW` / `de` / `pt-BR` **4/4 通过**：job 与结果 locale 正确、目标文字脚本命中、协议键完整、0 未知字段、原始弹幕未变 |
+| 长期画像 | `ko` **7 条韩语事实**（기타 / 기타 코드 연습 / 기타 연습 의지 …）；`de` **7 条德语事实**（Gitarre lernen / Gitarrenfortschritt / Gitarre üben – Fortsetzung …） |
+| 跨语言续写 | 同一观众已有韩语事实时，德语任务按 `guard` 复用韩语 topic 做 confirm，摘要用德语 → 方案 B 行为在真实模型上成立 |
+| 请求与用量 | 共 **12 次真实请求**；可核对 usage **44,486 input / 4,450 output tokens**（另 1 次脚本 bug 造成的重跑未计入） |
+| 工具 | `scripts/verify-ai-i18n-live.mjs`（`--reuse` 零成本复验；报告写入 `tests/.tmp`，不含聊天/密钥） |
+| 质量口径 | 只做机器判据；**无母语签收人**，不得写成母语质量通过 |
+
+### 58.3 Windows EXE
+
+| 项目 | 结果 |
+| --- | --- |
+| 构建 | Build ID `c28eeb197446` / commit `9b7a511` / `99,198,976` bytes / SHA-256 `4f438552…` / Manifest `requireAdministrator` |
+| `verify-exe` | **11/11**（含 i18n：十语字典 200、`locales.aiOutput` 十项、`aiOutputLocale=follow-ui`、`effective.aiOutputLocale` 有效） |
+| `verify-help-exe` | **14/14**（十语言 112 键 × 10） |
+| `verify-ai-token-exe` | **16/16**（分批、断点续跑、恢复不重发已完成批次） |
+
+### 58.4 未验证 / 不得写成 PASS
+
+- `es` / `fr` / `id` / `en` 的真实 Provider 输出：**未逐语言验证**（提示词与 Schema 由自动化覆盖）。
+- 翻译缓存的真实 Provider 运行：**未执行**。
+- 十语言母语人工审校、十语言真实浏览器截图矩阵、逐语言控制台 `chcp 65001`：**P42**。
+- 干净 Windows 账户、真实双击 UAC：**未执行**。
