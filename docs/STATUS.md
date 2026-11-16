@@ -1,10 +1,97 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（TIKTOK-M6 已由开发者人工验收并合并 main；Merge `980de0f`；1034 测试；EXE `e48016f19362`）
+最后更新：2026-11-16（I18N/PLATFORM 规划轮：只做调查与文档，未改业务代码；三语字典 2,265 键零差异；687 unit passed；新增 `docs/I18N.md`、`docs/PLATFORM_ADMISSION.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
-## 0.44 TIKTOK-M6 人工验收与合并 main（2026-11-16）🟢
+## 0.45 I18N/PLATFORM 规划轮：国际化十语言与平台准入（2026-11-16）📝 只规划，无代码改动
+
+本轮任务性质：**项目规划、技术可行性调查与开发文档更新**。
+**未修改任何正式业务代码、未新增语言包、未新增平台适配器、未改五平台采集逻辑、
+未改 AI 分析/长期画像/保存/恢复逻辑、未安装依赖、未打包、未发布、未 Push/Tag/Release。**
+
+### 0.45.1 本轮实际核实的事实（全部实测，不是推测）
+
+| 项目 | 实测结果 |
+| --- | --- |
+| 工作区起始状态 | `main...origin/main`，**clean**，无未提交的用户改动 |
+| HEAD | `25e6fbe docs: record TikTok M6 human acceptance and merge into main` |
+| 当前语言 | `zh-CN` / `ja` / `en` 三语（`src/web/i18n/`），无其他字典 |
+| 字典规模 | 每份 **2,265 个叶子键**（与 `tests/unit/i18n.test.mjs` 相同扁平化规则）；字节 160,172 / 208,639 / 168,688 |
+| 键集一致性 | 三份**缺失 0、多余 0** |
+| 占位符一致性 | 三份**差异 0 处** |
+| 前端语言清单 | `src/web/js/i18n.js:7` `SUPPORTED_LOCALES = ['zh-CN','ja','en']` |
+| 后端语言清单 | `src/shared/locale.mjs:8` 同名常量（**两份清单**） |
+| 归一化 | `zh*`→`zh-CN`、`ja*`→`ja`、`en*`→`en`，其他 → `null` → `system` → `en` |
+| Header 语言控件 | `LANGUAGE_CHOICES` 3 项三段按钮（`app.js:39`）+ 系统按钮；≤860px 折叠为 `<select>` |
+| 语言选择器宽度 | `.language-select { max-width: 132px }`（`styles/components.css:665`） |
+| 截断风险 | `white-space:nowrap` 25 处、`text-overflow` 13 处、固定标签宽度 112/132/145/260px |
+| AI 输出语言默认值 | **`let locale = ctx.locale`**（`src/web/js/pages/ai.js:198`）→ 默认等于界面语言 |
+| AI 输出语言持久设置 | **不存在**（无 `aiOutputLocale` 类设置；关页重开会重置为界面语言） |
+| 任务语言快照 | 已存在：`POST /api/ai/analyze/run` 解析后写入 `ai_jobs.locale`（Session+Memory 同 locale）；Resume 复用已存任务（`runner.mjs:1690,1849`） |
+| 提示词语言 | `SYSTEM` / `MEMORY_LANGUAGE_RULE` / `TEXT` / `MEMORY_SHAPE_TEXT` 各仅 3 个键 |
+| 翻译目标语言名 | `LOCALE_NAME` 仅 3 个键（`src/ai/translation/service.mjs`） |
+| 报告阅读语言 | `GET /api/ai/sessions/:id/report?locale=…` 只读、只应用缓存、不调用 Provider |
+| 原始弹幕 | `events.content` 原文；提示词明确「不逐行预翻译」；`content` 不被替换 |
+| 长期画像合并键 | `dedupeKeyFor() = kind:normalizeTopic(topic)`；`normalizeTopic()` 只做 NFKC/小写/去标点，**不翻译**（`src/memory/model.mjs:47-76`） |
+| `memory_facts` 语言列 | **不存在**（只有 `source_job_id` 可回溯生成任务的语言） |
+| 界面硬编码文案 | 对 `src/web/**` CJK 扫描仅命中 5 行：`i18n.js:42-43` 语言自身名称 + `ai.js` 3 行中文**注释** |
+| 启动器 UTF-8 | `enableUtf8Console()` 执行 `chcp 65001`；失败（`not-tty`/`chcp-failed`）降级 ASCII |
+| 备份设置白名单 | **显式枚举**（`src/server/backup/settings.mjs:15` 仅 `locale`）→ 新增语言设置键必须同步 |
+| EXE 打包 | `build-windows.mjs` 递归遍历 `src/`，新增字典文件自动包含；`REQUIRED_MODULES` 为独立必需清单 |
+| 静态服务 | `.json` 以 `application/json; charset=utf-8` 下发，无语言白名单 → 新增字典无需改代码 |
+
+### 0.45.2 平台侧调查结论
+
+| 项目 | 结论 |
+| --- | --- |
+| 现有平台 | 仍是五个：Bilibili / YouTube / Twitch / 抖音 / TikTok（未新增、未改动） |
+| Kick 候选 1 `achrafthedev/kixo` | 存在；MIT；创建 2026-10-17、最后推送 **2026-10-25**；1 star；JS（Electron+React）；**唯一在 2026 年跟踪 Kick 实时协议演进的参考** |
+| Kick 候选 2 `LOX-X/Kick-Live-Connector` | 存在；MIT；最后推送 **2024-11-01**（停更约 2 年）；TypeScript；README 给出完整消息结构（含 `sender.id`） |
+| Kick 候选 3 `Landy-Dev/kick-api` | 存在；Apache-2.0；**Rust**；最后推送 2026-04-10；官方 API 客户端，**技术栈与用途均不适配** |
+| Kick 官方 API 能力 | **无读取聊天的 scope/端点**（只有 `chat:write`、`events:subscribe` webhook、moderation）；使用官方 API 需应用+OAuth → 违反「免登录」条件 |
+| Kick 免登录读聊天 | 公开 web 端点 + 匿名 guest token（Centrifugo）/ 公开 Pusher app key；**文档+源码级证据成立，本仓库未实测** |
+| Kick 字段 | `sender.username`、`sender.id`（稳定 ID 候选）、消息 UUID `id`、`created_at`、`identity.badges`、内容含 `[emote:id:name]` |
+| Kick 状态 | **G0 有条件通过，G1 未做**（本轮未连接 Kick）。界面/文档不得出现「已支持 Kick」 |
+| 其余 9 平台 | 仅到调查清单深度：虎牙/斗鱼/快手有可参考实现（MIT Java 反向 WebSocket）；CHZZK 官方 API 需密钥、非官方库 2024-08 停更；SOOP 有 2026-04 更新的 Go 聊天库；Niconico 两个实现均已归档/停更且很可能需登录；小红书/YY 本轮未发现维护中实现；Facebook Live 预判不满足免登录 |
+
+### 0.45.3 新增与更新的文档
+
+| 文件 | 类型 | 主要内容 |
+| --- | --- | --- |
+| `docs/I18N.md` | **新增** | 三层语言模型与三条不变式；当前实现的实测矩阵；8 项技术调查结论；BCP-47 语言码与降级规则；M-I18N-0..3 里程碑（前置/范围/完成标准/风险）；AI 辅助翻译流程与机器门禁；12 项未解决风险 |
+| `docs/PLATFORM_ADMISSION.md` | **新增** | 三准入条件与判定方法；字段最低要求表；登录方案优先序；G0–G6 七阶段门禁；证据等级与表述口径；8 条暂停条件；MIT/Apache/BSD/AGPL 许可证策略；每平台交付物清单 |
+| `docs/PLATFORM_EXPANSION_RESEARCH.md` | **新增** | 调查方法与证据来源；10 个候选的顺序与初判；Kick 三个候选项目核实表；Kick 官方 API 边界；非官方实时通道技术轮廓与消息结构；Kick 设计要点与 6 项风险；其余平台线索与待验证清单 |
+| `AGENTS.md` | 更新 | §2 阅读顺序加入三份新文档；§4 目录说明；**§6.16 国际化三层分离（长期约束）**；**§6.17 新平台三准入条件（长期约束）**；§7 三语→清单驱动 + 布局容忍译文；§10 新增 5 条禁止事项；§11 自检清单 |
+| `docs/ROADMAP.md` | 更新 | 顶部本轮摘要；新增 P38（本轮规划 ✅）、P39–P42（I18N-M0..M3 ⬜）、P43（KICK-M0 🟡）、P44（平台扩展调查 🟡）；`依赖关系` 增加两条主线与排序原则 |
+| `docs/ARCHITECTURE.md` | 更新 | §10 未来扩展点：平台适配器前置门禁、国际化三层与「清单单一来源 + 降级」要求 |
+| `docs/PLATFORM_INTEGRATIONS.md` | 更新 | §10 末尾指向新的准入规范，声明目前无新平台通过 G1 |
+| `docs/STATUS.md` | 更新 | 本节（§0.45） |
+
+### 0.45.4 测试结果（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| `node --test tests/unit` | ❌ 不可用：`[exit code: 1]` `spawn EPERM`（沙箱禁止带管道 stdio 的子进程；见 AGENTS.md §5 受限环境说明） |
+| `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **687 passed / 0 failed / 0 skipped**（13,993.61 ms）— 与 §0.44 的 687 unit 完全一致 |
+| 定向 `i18n.test.mjs` + `help-ui` + `ai-ui` + `ai-translation-ui` | **20 passed / 0 failed** |
+| 集成测试 | **本轮未运行**：只改 Markdown 文档，无代码路径变化；不据此宣称集成通过 |
+
+### 0.45.5 本轮明确未做
+
+- 未新增 `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 任何字典文件或语言设置。
+- 未新增 `src/platforms/<新平台>/`；未连接 Kick 或任何新平台。
+- 未修改五平台采集逻辑、AI 分析、长期画像、数据保存/恢复、备份格式、数据库 schema。
+- 未改 `src/web/js/i18n.js`、`locale.mjs`、任何 CSS 或 `ai.js`。
+- 未安装依赖、未引入第三方代码、未复制任何开源实现代码。
+- 未构建 EXE、未打包、未发布、未 Push、未 Merge、未 Tag。
+
+### 0.45.6 Git 状态
+
+- 分支 `main`，本轮只新增/修改 `docs/*.md`、`AGENTS.md` 与 `log/*.md`，创建 1 个本地提交。
+- 未 Push、未打 Tag、未发布 Release。
+
+### 0.44 TIKTOK-M6 人工验收与合并 main（2026-11-16）🟢
 
 开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间人工验收，并明确批准将 `feature/tiktok`
 合并到本地 `main`。本轮只执行本地合并、回归验证、`main` 上重建 EXE 与文档记录；

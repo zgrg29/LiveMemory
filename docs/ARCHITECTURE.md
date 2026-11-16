@@ -648,6 +648,11 @@ node.exe (官方运行时，含 node:sqlite)
 ## 10. 未来扩展点
 
 - 平台适配器：实现 `PlatformAdapter.start({onEvent,onStateChange})`，产出 canonical event，即可复用全部统计、UI 与 AI 导出。
+  **新增平台必须先满足 `docs/PLATFORM_ADMISSION.md` 的三个准入条件并通过 G0–G6 门禁**；
+  门禁未通过不得开始写适配器。候选平台调查记录见 `docs/PLATFORM_EXPANSION_RESEARCH.md`。
+- 国际化：界面语言（L1）、AI 输出语言（L2）、原始弹幕语言（L3）三者必须独立。
+  当前实现（三语）与十语言实施路线见 `docs/I18N.md`。扩展语言不需要改架构，
+  但必须先完成「语言清单单一来源 + 可用性驱动降级」，否则字典缺失时会白屏。
 - 备份：复用 `shared/zip.mjs`，加入 `manifest.json` → `checksums.json` → `database/` → `settings/`。
 - AI 导入：M6 已实现 `src/ai/import/`（JSON 校验 → 事务写入 `ai_results`/`ai_result_evidence`）与报告。
 - 长期记忆：M7 已实现 `src/memory/`（`broadcaster × viewer` 记忆、原子事实、事实级证据、

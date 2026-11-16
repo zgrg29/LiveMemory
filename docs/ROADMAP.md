@@ -29,6 +29,98 @@
 > v0.13.2（2026-11-12）：构建标识、缓存逐文件校验、默认 24k 分批、aggregate/repair/单观众请求上限。
 > 仍未完成：P0-3 的**其他 Provider** 真实付费验收。DeepSeek `deepseek-flash` 已完成 L3 验收（能力检测、单场 + 画像、100 观众 Resume、日语；50 次请求、估算 $0.2553）；OpenAI / Anthropic / DashScope / OpenRouter / MiniMax / 自定义仍为 L2/L4，必须分别授权。20 人批次因真实事实保留率仅 73%/51% 已回退为默认 10。真实官方账单、取消请求计费、真实 EXE Key 流程、真实 YouTube 断网/429、真实浏览器点击/关闭窗口、登录后是否 100% 解除 Bilibili 打码仍未实测。P0-1/P0-2/P0-4/P0-5 与 RC0-AI-EFFICIENCY 代码级与正式 EXE 级已关闭。
 
+> v0.14.0 规划轮（2026-11-16，I18N/PLATFORM）：**只做规划、调查与文档，不改业务代码、不新增语言、不接入新平台、不打包、不发布。** 核实当前国际化真实结构（三语、每份字典 2,265 键、键集与占位符零差异），确认「界面语言」与「AI 输出语言」目前是默认耦合且无独立持久设置；定位到真实缺口（两份语言清单、3 项 Header 语言控件、`max-width:132px`、`LOCALE_NAME` 三语、`dedupe_key` 语言相关）。调查 Kick 三个候选开源项目（kixo / Kick-Live-Connector / kick-api）并确认官方 API 无「读取聊天」能力。新增 `docs/I18N.md`、`docs/PLATFORM_ADMISSION.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md`。详见 `docs/STATUS.md` §0.45。
+
+## P38 I18N/PLATFORM 规划：十语言与平台准入规范（v0.14.0 规划，2026-11-16）✅
+
+- ✅ 只读调查：`src/web/i18n/*.json`（三语、2,265 键/份）、`src/web/js/i18n.js`、`src/shared/locale.mjs`、
+  `src/launcher/cli-i18n.mjs`、`src/ai/prompts/*`、`src/ai/api/prompts.mjs`、`src/ai/translation/*`、
+  `src/memory/model.mjs`、`src/server/settings-store.mjs`、`src/server/backup/settings.mjs`
+- ✅ 实测三份字典键集完全一致、占位符差异 0（`node` 脚本比对，未落盘）
+- ✅ 定位 L2 缺口：`src/web/js/pages/ai.js:198` 默认 `ctx.locale`；无 `aiOutputLocale` 设置
+- ✅ 定位合并键风险：`dedupeKeyFor()` = `kind:normalizeTopic(topic)`，`normalizeTopic()` 不翻译
+- ✅ 定位布局风险：`components.css:665` `max-width:132px`；`app.js:39` 三段按钮仅 3 项
+- ✅ 新增 `docs/I18N.md`（三层语言模型、8 项技术调查结论、M-I18N-0..3 里程碑、翻译流程与门禁）
+- ✅ 新增 `docs/PLATFORM_ADMISSION.md`（三准入条件、字段最低要求、登录优先序、G0–G6 门禁、暂停条件、许可证策略）
+- ✅ 新增 `docs/PLATFORM_EXPANSION_RESEARCH.md`（候选顺序、Kick 深度预研、其他平台调查清单、待验证清单）
+- ✅ 更新 `AGENTS.md` §2/§4/§6.16/§6.17/§7/§10/§11（长期约束）
+- ⬜ 未新增语言、未接入平台、未改任何业务代码（本轮边界）
+
+## P39 I18N-M0：国际化架构整理（v0.14.0）⬜
+
+目标：拆掉「三语假设」，**不新增语言**即可独立验收。
+
+- 前置：无；工作区 clean、`node --test` 全绿
+- 范围：单一语言清单来源（前端 + 后端 + 语言名）；可用性驱动的 `normalizeLocale()` 逐级降级
+  （`zh-HK`→`zh-TW`→`zh-CN`）；Header 语言控件改为可容纳 N 项；AI 中心与报告页语言下拉改为清单生成；
+  `LOCALE_NAME` / `promptVersionFor` 枚举抽为可扩展表；布局回归基线
+- 完成标准：三语行为与视觉完全不变；10 项假语言夹具下无截断；`zh-HK`/`pt-PT`/`in` 降级单测；
+  `grep` 证明无第二份语言清单；全量测试通过
+- 风险：Header 高可见区域回归；归一化行为变化；漏改路由白名单校验点
+- 详见 `docs/I18N.md` §5
+
+## P40 I18N-M1：新增七种语言资源（v0.14.0）⬜
+
+目标：`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id` 七份字典 100% 对齐。
+
+- 前置：P39 完成；`docs/i18n/GLOSSARY.md` 定稿；每语言有签收人
+- 范围：7 份字典（各约 2,265 键）；启动器文案扩语言或明确「控制台三语 + 回退」；
+  原生语言名表；语言控件 10 项排序；长文本布局修复
+- 完成标准：10 份字典键集/占位符零差异、无空串、无残留英文整句；10 语言 × 明暗 × 桌面/窄屏走查并归档截图；
+  `i18n.test.mjs` 改为遍历清单
+- 风险：约 15,855 条翻译量；德语/西语膨胀；`zh-TW` 不是简繁转换；EXE 体积
+- 详见 `docs/I18N.md` §5、§6
+
+## P41 I18N-M2：AI 输出语言解耦与兼容性验证（v0.14.1）⬜
+
+目标：L2 独立、持久、任务内不可变，跨语言不破坏长期画像。
+
+- 前置：P39 完成；**且用户必须先在三种长期画像跨语言策略中做决定**（见 `docs/I18N.md` §5 待决策）
+- 范围：`aiOutputLocale` 设置（默认 `follow-ui`）+ **备份设置白名单**；AI 中心默认值；
+  任务快照断言；三处提示词语言表扩到 10；`LOCALE_NAME` 与报告阅读语言扩到 10
+- 完成标准：「韩语界面 + 日语报告」端到端成立；切换界面语言/重启后任务 locale 与正文不变；
+  暂停→继续→重启语言不变；旧配置按 `follow-ui` 读取不写回；备份→恢复保留设置；
+  历史三语报告仍可读；画像行为符合已批准决策
+- 风险：合并键语言分叉、提示词体积/Token 成本、新语言 Provider JSON 遵循度
+- 详见 `docs/I18N.md` §5
+
+## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.15.0）⬜
+
+目标：十语言在真实 Windows EXE 上完成整体验收。
+
+- 前置：P40、P41 完成
+- 范围：逐语言真实 EXE 启动与控制台字符；10×2×2 界面走查；真实采集 + 真实 AI（≥2 组「界面语言 ≠ 输出语言」）；
+  备份/恢复/迁移/多直播间/五平台/AI 恢复回归；文档全面对齐；建立「新键必须 10 语言同时落地」门禁
+- 完成标准：走查矩阵与截图归档；`verify-exe` 全项通过；控制台无乱码或明确记录降级；
+  旧三语数据库直接升级可用；全量测试真实数字入 STATUS
+- 风险：矩阵工作量大、容易被「抽查 2 语言即宣称通过」；多语言 Provider 输出质量；干净 Windows 环境仍未验证
+- 详见 `docs/I18N.md` §5
+
+## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.15.x）🟡 调查完成、未连接
+
+- ✅ G0 调查完成（2026-11-16）：三个候选项目存在性/维护状态/许可证已核实
+  （kixo MIT，2026-10 活跃；Kick-Live-Connector MIT，2024-11 停更；kick-api Apache-2.0，Rust，不适配）
+- ✅ 确认官方 Public API **没有**读取聊天的 scope/端点（只有 `chat:write`、`events:subscribe` webhook）
+- ✅ 确认免登录路径的技术轮廓（公开房间端点取 `chatroom.id`；`web.kick.com/api/v1/realtime/*` 取匿名配置；
+  Centrifugo guest token 或公开 Pusher app key；topic `chatrooms.<id>.v2`）
+- ✅ 确认消息字段含 `sender.id`（稳定 ID 候选）、`sender.username`、消息 UUID `id`、`created_at`
+- ⬜ **G1 真实连接未做**：未连接 Kick、未取任何真实样本；界面/文档不得出现「已支持 Kick」
+- 下一步单一任务：真实公开直播间只读连接 15 分钟，记录成功率/条数/字段完整率（详见 `docs/PLATFORM_EXPANSION_RESEARCH.md` §4）
+- 风险：非官方端点一年内已迁移过一次（Pusher → Centrifugo）；guest token TTL 与限流；无续传游标
+- 详见 `docs/PLATFORM_EXPANSION_RESEARCH.md` §2
+
+## P44 PLATFORM-EXPANSION：候选平台调查与准入评估（持续）🟡
+
+调查优先级（**不是无条件开发承诺**，命中暂停条件即跳过）：
+
+1. Kick 🟡 G0 通过、待 G1｜2. 虎牙 ⬜｜3. 斗鱼 ⬜｜4. CHZZK ⬜（官方 API 违反条件一）｜
+5. SOOP ⬜｜6. 快手 ⬜｜7. Niconico ⬜（很可能需登录）｜8. 小红书 ⬜（未发现维护中实现）｜
+9. YY 直播 ⬜（未发现维护中实现）｜10. Facebook Live ⬜（预判不满足条件一）
+
+- 每个平台必须顺序通过 G0–G6，门禁与暂停条件见 `docs/PLATFORM_ADMISSION.md`
+- 礼物、打赏、订阅是**可选增强**，不得因缺少礼物否决一个能取到用户名与实时聊天的平台
+- 未验证一律标「待验证」，未观测事件一律标 `NOT-OBSERVED`
+
 ## P37 TIKTOK-M6 人工验收与合并 main（v0.13.3，2026-11-16）🟢
 
 - ✅ 开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间人工验收：可同时创建并采集多个不同
@@ -797,7 +889,15 @@
 M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 → P7 ✅ → P8 ✅ → P9 ✅ → P10 ✅ → P11 ✅ → P12 ✅ → P13 ✅ → P14 ✅ → P15 ✅ → P16 ✅ → P17 ✅
                      ↘ M5 ⬜（可与 M3/M4 并行设计）
 所有 → M8 ⬜
+
+# 2026-11-16 起的两条主线（互不阻塞，可交替推进）
+P38 ✅（规划/文档）→ P39 ⬜ → P40 ⬜ → P41 ⬜ → P42 ⬜
+P38 ✅（规划/文档）→ P43 🟡（Kick G0 完成，待 G1）→ P44 🟡（后续候选逐个 G0–G6）
 ```
+
+**主线排序原则**：国际化优先（P39–P42），完成后才开始第一个新平台的 G1 真实验证（P43）。
+理由：平台适配器会新增大量用户可见文案，先扩语言再逐个平台开发，可避免「每接一个平台就要
+重新补 7 种语言」的重复工作；同时语言扩展不依赖任何新平台。
 
 M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路径的条款合规评估与长期稳定性。P7 的真实浏览器界面验证与真实平台长时间运行仍需在允许网络与浏览器的环境补验。P8 的统一记忆仍需真实 AI 样本与真实大场覆盖验证；P9 已补上一条真实匿名接口样本，但只有一个 provider、受 2 请求/分钟限制，且未做 EXE/浏览器验收。M6 已完成文件协议与结果 Schema 的兼容性扩展；M5 备份与 M7 画像应继续沿用版本化、可校验的格式。
 

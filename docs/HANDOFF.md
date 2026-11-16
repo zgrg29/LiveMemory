@@ -1,6 +1,81 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · TIKTOK-M6 人工验收通过并合并 `main` · **合并 `980de0f`；1034 测试通过；main EXE `e48016f19362`；未 Push/Tag/Release**
+本轮：2026-11-16 · I18N/PLATFORM 规划轮 · **只调查与写文档；未改业务代码；687 unit passed；未新增语言/平台；未 Push/Tag/Release**
+
+> 本轮是**规划轮**：核实国际化的真实结构、五平台适配器结构、调查 Kick 等候选开源项目，
+> 建立十二层语言模型与平台准入规范。**没有新增任何语言、没有接入任何新平台、
+> 没有修改采集/AI/画像/保存恢复逻辑。** 所有「已支持」类表述一律未放宽。
+> 下一轮应从 `docs/ROADMAP.md` P39（I18N-M0）开始。
+
+## 0. 本轮（I18N/PLATFORM 规划轮）
+
+### 0.1 本轮任务边界（严格遵守）
+
+- 只读代码/配置/文档；只做公开资料与开源项目调查；只更新规划文档。
+- **未**修改任何正式业务代码；**未**新增语言包或平台适配器；**未**改五平台采集逻辑；
+  **未**改 AI 分析/长期画像/数据保存/恢复；**未**安装依赖或引入第三方代码；
+  **未**打包/发布；**未** Push/Merge/Tag/Release。
+
+### 0.2 核实的真实情况（要点）
+
+| 主题 | 结论 |
+| --- | --- |
+| 当前语言 | 三语 `zh-CN` / `ja` / `en`，每份 **2,265** 个叶子键，键集与占位符**零差异** |
+| 语言清单 | **两份**（`src/web/js/i18n.js:7` 与 `src/shared/locale.mjs:8`），需合并为单一来源 |
+| 界面语言控件 | 3 项三段按钮 + 系统按钮；`.language-select` 写死 `max-width:132px` → 10 语言必改 |
+| AI 输出语言 | 默认取 `ctx.locale`（`ai.js:198`）；**无独立持久设置**；任务 locale 已正确快照进 `ai_jobs.locale` |
+| 提示词语言 | `SYSTEM` / `MEMORY_LANGUAGE_RULE` / `TEXT` / `MEMORY_SHAPE_TEXT` 各 3 个键；`LOCALE_NAME` 3 个键 |
+| 原始弹幕 | 原文保留、提示词明确不预翻译 → **L3 已合规，无需改数据结构** |
+| 长期画像合并键 | `dedupeKeyFor = kind:normalizeTopic(topic)`，**语言相关**；`memory_facts` 无 locale 列 → 跨语言会产生重复事实（**最高优先级风险**） |
+| 备份兼容 | 设置白名单是显式枚举 → 新增语言设置键必须同步，否则静默丢失 |
+| 五平台结构 | `link.mjs` 解析 → `client`/`webcast`/`irc` 传输 → `mapper`/`messages` 解析 → `adapter` 状态机 → `service` 装配；`createAdapter` 由各平台 service 注入，`SessionManager` 与 `ingest` 完全平台无关 |
+| Kick | 三候选中仅 `kixo`（MIT，2026-10 活跃）有 2026 年协议参考价值；官方 API **无读聊天能力**；免登录路径成立但**未实测**；G0 有条件通过、G1 未做 |
+
+### 0.3 新增文档与更新
+
+- **新增** `docs/I18N.md`：三层语言模型 + 三条不变式 + 实测矩阵 + 8 项技术调查结论 +
+  BCP-47 与降级规则 + **M-I18N-0..3 里程碑** + AI 翻译流程/机器门禁 + 12 项风险。
+- **新增** `docs/PLATFORM_ADMISSION.md`：三准入条件 + 字段最低要求 + 登录优先序 +
+  **G0–G6 门禁** + 证据等级口径 + 8 条暂停条件 + 许可证策略 + 每平台交付物清单。
+- **新增** `docs/PLATFORM_EXPANSION_RESEARCH.md`：10 候选顺序 + Kick 三项目核实表 +
+  官方 API 边界 + 非官方实时通道轮廓 + 消息结构 + Kick 设计要点/风险 + 其余平台线索 + 待验证清单。
+- **更新** `AGENTS.md`（§2/§4/§6.16/§6.17/§7/§10/§11）、`docs/ROADMAP.md`（P38–P44 + 依赖关系）、
+  `docs/ARCHITECTURE.md` §10、`docs/PLATFORM_INTEGRATIONS.md` §10、`docs/STATUS.md` §0.45、
+  `log/2026-11-16-i18n-platform-planning.md`。
+
+### 0.4 测试（真实结果）
+
+| 运行 | 结果 |
+| --- | --- |
+| `node --test tests/unit` | ❌ `spawn EPERM`（沙箱限制，符合 `AGENTS.md` §5 已知情形） |
+| `node --test --test-isolation=none "tests/unit/*.test.mjs"` | **687 passed / 0 failed / 0 skipped**（13.99 s） |
+| 定向 i18n / help / ai / ai-translation UI | **20 passed / 0 failed** |
+| 集成 | **未运行**（纯文档改动） |
+
+### 0.5 下一轮唯一推荐任务
+
+**P39 / I18N-M0：国际化架构整理（不新增语言）。**
+理由：它是后续七语言、AI 输出语言解耦、十语言 EXE 验收的**唯一共同前置**；
+不改语义、可独立验收与回滚；能立刻消除「两份语言清单 / 3 项选择器 / 132px 写死」这三个已定位的结构债。
+
+**不要**在 P39 之前接 Kick：G1 只是只读验证，且平台文案一旦落地就会被迫立刻补 7 种语言。
+
+### 0.6 未解决 / 待用户决策
+
+1. **长期画像跨语言策略（必须先决策）**：同一观众记忆锁定首次语言 / 允许混合并提示 /
+   引入 `topic_aliases` 迁移。默认建议「锁定首次语言」，不破坏 `dedupe_key` 稳定性。
+2. 启动器控制台是否也要扩到 10 语言，或保持三语 + 回退英文。
+3. 十语言的翻译来源与审校人力（约 15,855 条）。
+4. Windows 控制台 `chcp 65001` 在真实多语言宿主下的表现未逐语言实测。
+
+### 0.7 Git
+
+- 分支 `main`（起始 clean，HEAD `25e6fbe`），本轮创建 1 个本地提交（仅文档）。
+- **未 Push、未 Tag、未 Release。**
+
+---
+
+上一轮：2026-11-16 · TIKTOK-M6 人工验收通过并合并 `main` · **合并 `980de0f`；1034 测试通过；main EXE `e48016f19362`；未 Push/Tag/Release**
 
 > 开发者已在普通 Windows 桌面亲自完成 TikTok 多直播间采集验收，确认可同时创建并采集多个不同
 > TikTok LIVE，且不再出现只能记录一场的问题。据此正式批准将 `feature/tiktok` 合并到本地 `main`。
