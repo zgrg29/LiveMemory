@@ -1,8 +1,60 @@
 # 版本变化（CHANGELOG）
 
+## 0.15.0 — 2026-11-17（十语言国际化正式发布：10-Language Internationalization）
+
+**正式稳定版**，Tag `v0.15.0`。相对 `v0.14.0` 新增七种界面语言、十语言 AI 输出、独立 AI 输出语言、
+十语言报告阅读翻译、跨语言长期画像共存与十语言启动器/帮助，属 SemVer minor。
+**未新增直播平台**，五平台采集、金额/身份/去重、数据库 Schema（仍 16）、任务语言快照语义均未改变。
+
+### 发布
+
+| 项目 | 值 |
+| --- | --- |
+| Release Title | `LiveMemory v0.15.0 — 10-Language Internationalization` |
+| Release Tag | `v0.15.0` |
+| 类型 | 正式稳定版（非 Pre-release） |
+| EXE Build ID | `945bee868455` |
+| EXE SHA-256 | `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| EXE 大小 | `99,200,512` bytes |
+| Manifest | `requireAdministrator` |
+
+### 新增
+
+- **七种新界面语言**，界面语言从三种扩到十种：`ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`；
+  十份字典各 **2,271** 叶子键，键集缺失 0 / 多余 0、占位符差异 0、空值 0。
+- **十语言 AI 输出**：单场报告、长期画像、分批/汇总/摘要、修复提示与结果 Schema 全部十语
+  （提示词版本 `lm-prompt-m6.4` / `v13.3` / `m7.2`）。
+- **独立持久设置 `aiOutputLocale`**（默认 `follow-ui`）：界面语言与 AI 输出语言互不影响，
+  已创建任务的语言快照不可变；备份白名单已同步。
+- **十语言报告阅读翻译**：只生成展示层译文，原文/结构化字段/证据/`viewer_id`/事实状态不变；
+  每目标语言独立缓存，重复阅读 0 次 Provider 请求，失败回退原文。
+- **跨语言长期画像（方案 B）**：不同语言事实共存（`吉他` + `기타`），同语言去重不变，
+  切换输出语言不删除/覆盖/重译已有事实。
+- **十语言 Windows 启动器与内置使用说明**（112 个 help 键 × 10 语言）；语言名始终用自身文字显示。
+
+### 验证
+
+- **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms）
+- 十语言字典门禁、十语言 Schema 门禁、`ai-i18n-locales` / `ai-i18n-translation` 集成测试全部通过。
+- 真实 DeepSeek `deepseek-flash`（复用 P42 已验收证据，未重复消耗 Token）：单场 **10/10**、
+  画像 **10/10**、跨语言 zh→ko→de→zh **4/4**、阅读翻译 5 语 **5/5** + 失败回退。
+- Windows EXE：Build ID `945bee868455`、`99,200,512` bytes、
+  SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`、Manifest `requireAdministrator`；
+  `verify-exe` / `verify-help-exe` / `verify-ai-token-exe`：`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
+- 启动器十语言 `--help --lang <code>` 10/10 exit 0。
+
+### 未改变 / 限制
+
+- 数据库 Schema（仍 16）、五平台采集与协议、事件/观众/金额去重、原始弹幕、翻译缓存表结构。
+- **未新增直播平台**（Kick/虎牙/斗鱼/CHZZK/SOOP/快手/Niconico/小红书/YY/Facebook 仍未实现）。
+- Twitch、抖音真实采集本轮**未重新验证**；TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订
+  仍为 **NOT-OBSERVED**。
+- **无母语审校签收人**；真实双击 UAC、干净 Windows 账户**未人工验证**。
+
 ## 未发布 — 2026-11-16（P42 / I18N-M3：十语言最终综合验收）
 
-开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。
+> 历史记录：P42 当时为「尚未发布」的开发里程碑，版本号仍为 `0.14.0`；
+> 该里程碑已随 **v0.15.0** 正式发布，见上方 0.15.0 条目。
 
 ### 验证
 
@@ -34,6 +86,7 @@
 ## 未发布 — 2026-11-16（P41 / I18N-M2：十语言 AI 输出与独立输出语言）
 
 开发里程碑，**尚未发布**，版本号仍为 `0.14.0`。
+（历史记录：该里程碑已随 **v0.15.0** 正式发布，见上方 0.15.0 条目。）
 
 ### 新增
 

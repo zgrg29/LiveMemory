@@ -26,6 +26,42 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
+## 2.0-V015 v0.15.0 发布回归（2026-11-17）
+
+发布状态为 `main` 上 `0.15.0` 的提交，使用受限环境的单进程模式运行。
+
+### 2.0-V015.1 自动化
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 + 集成 `--test-isolation=none` | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms） |
+| 十语言字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × 2,271 键；缺失 0 / 多余 0 / 占位符差异 0 / 空值 0 |
+| 十语言注册表与 Schema 门禁 | `locale-registry` 与 `ai-prompt-locales` 通过；三个 Schema `locale.enum` = 10 |
+| 国际化关键集成 | `ai-i18n-locales` 4/4、`ai-i18n-translation` 全部通过 |
+
+### 2.0-V015.2 Windows EXE
+
+| 运行 | 结果 |
+| --- | --- |
+| `node scripts/build-windows.mjs` | Build ID `945bee868455`、`99,200,512` B、SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| Manifest | `requireAdministrator`（构建断言 + 注入后复读） |
+| `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` | `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| 启动器十语言 | `--help --lang <code>` 10/10 exit 0 |
+| EXE 资源完整性 | 十份字典、`/shared/locales.mjs`、`language-control.js`、十语提示词与三个 Schema 全部打包 |
+
+> **功能副本来源**：本机应用控制策略（Smart App Control 强制模式）阻止事后打补丁的 asInvoker 副本，
+> 因此上述三个 `verify-*-exe` 使用同一源码、同一 buildId `945bee868455` 的**单独 asInvoker 构建**
+> 作为功能副本（`LOCALAPPDATA`/`TEMP` 指向 `tests/.tmp`）。`scripts/test-exe-copy.mjs` 断言正式 EXE
+> 为 `requireAdministrator`、副本为 `asInvoker`、两者嵌入同一 buildId；正式 EXE 未被改动。
+> EXE 资源完整性另经静态验证：`dist/LiveMemory.exe` 逐字节包含 `build/sea.blob`（5,493,959 B，
+> 偏移 93,704,802），而该 blob 来自 `build/manifest.json` 的 237 个资源（含十份字典、版本 `0.15.0`、
+> commit `e07233c`）。
+
+### 2.0-V015.3 未验证（沿用 P42 结论）
+
+- 真实双击 UAC（同意/拒绝）、干净 Windows 账户、Windows 原生启动器。
+- 母语审校；Twitch/抖音真实采集；长报告多块翻译与真实 429。
+
 ## 2.0-P42 P42 / I18N-M3 本轮结果（2026-11-16）
 
 ### 2.0-P42.1 自动化

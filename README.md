@@ -14,10 +14,10 @@ Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douy
 
 LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留言与大航海事件，按场次统计热度与收入，并为每一位观众建立以**平台稳定 ID** 为基础的长期档案。v0.13.2 起，AI 分析只有一个入口：选择直播、选择你配置的 API 模型、选择分析范围，点击「开始 AI 分析」。不再提供匿名免费 AI，也不再要求复制提示词或粘贴 JSON。
 
-### 现在能做什么（v0.14.0）
+### 现在能做什么（v0.15.0）
 
 - **双击启动请求管理员权限（v0.13.2 RC0-ADMIN）**：正式 EXE 使用 `requireAdministrator`，双击时 Windows 显示标准 UAC 确认；同意后以管理员权限启动，拒绝则由 Windows 取消启动。不需要右键“以管理员身份运行”，程序不会绕过或关闭 UAC。
-- **内置三语使用说明（v0.13.2 RC0 封版）**：侧栏新增「使用说明」，用简体中文 / 日本語 / English 说明首次启动、Bilibili 与 YouTube 连接、记录与观众数据、AI Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移和常见问题。页面只读，不修改设置、不弹确认、不新增任何使用限制。
+- **内置十语言使用说明（v0.15.0）**：侧栏「使用说明」用简体中文 / 日本語 / English / 한국어 / Español / Português (Brasil) / 繁體中文 / Français / Deutsch / Bahasa Indonesia 说明首次启动、五个平台的连接、记录与观众数据、AI Provider 与 API Key、单场分析与长期画像、长期记忆与证据、进度与失败继续、备份/恢复/迁移和常见问题。页面只读，不修改设置、不弹确认、不新增任何使用限制。
 - **单一 AI 分析入口**：五步完成——选择直播 → 选择 API 配置 → 选择内容（单场 / 长期画像 / 两者）→ 确认任务规模 → 开始分析。单场报告与长期画像独立保存，画像失败不会删除已完成的单场报告。
 - **长期画像可靠性（v0.13.2）**：模型的 Compact 回答必须经过完整 Schema/身份/证据/覆盖校验；ref 覆盖完整不再等于合法。可修复错误最多自动修复一次，修复后仍须重新完整校验。模型不能改写稳定 `viewer_id`；跨观众证据被拒绝。日语任务使用日语语义事实（示例不再固定英文）。
 - **观众级容错（v0.13.2）**：Prompt 的 excerpt 行同时标注 `ref` 与 `seq`，避免不同观众的证据编号混淆；一名观众证据错误时，合法观众仍独立保存，错误观众进入 `failed` 并自动尝试一次仅针对该观众的修复；Resume 只请求未完成观众，一个观众的错误不再拖累整批或整场。
@@ -47,7 +47,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 
 - 入口：控制台左侧「使用说明」，或直接使用地址 `#/help`。
 - 内容：9 个章节 —— 首次启动与基本流程；连接 Bilibili / YouTube 直播；直播记录、观众数据与历史场次；配置 AI Provider 与 API Key；启动单场 AI 分析与长期观众画像；理解长期记忆、事实可信度与原始证据；查看分析进度、处理失败任务和继续分析；备份、恢复与迁移数据；常见问题（8 条）。
-- 三语：简体中文 / 日本語 / English，内容来自 `src/web/i18n/*.json` 的 `help.*`；切换界面语言后整页随之切换。
+- 十语：简体中文 / 日本語 / English / 한국어 / Español / Português (Brasil) / 繁體中文 / Français / Deutsch / Bahasa Indonesia，内容来自 `src/web/i18n/*.json` 的 `help.*`；切换界面语言后整页随之切换。
 - 布局：桌面为左侧粘性目录 + 右侧章节；≤1000px 目录变为顶部胶囊行、章节单列；≤700px 术语表单列；窄屏无横向溢出。
 - 只读：不调用本地 API、不写数据、不弹出确认；不会因为 AI 画像内容限制操作。说明中会客观提示 AI 画像可能不准确，但只作为提示，不要求审核。
 
@@ -213,7 +213,7 @@ LiveMemory は、配信のチャット・ギフト・スーパーチャット・
 
 - **管理者権限での起動（v0.13.2 RC0-ADMIN）**: 正式 EXE は `requireAdministrator` で、ダブルクリック時に Windows の標準 UAC 確認が表示されます。承認すると管理者として起動し、拒否すると Windows が起動をキャンセルします。右クリックで「管理者として実行」を選ぶ必要はなく、プログラムが UAC を回避・無効化することもありません。
 - **単一の AI 分析センター（v0.13.1）**: 配信を選択 → API 設定を選択 → 内容（単一配信／長期プロフィール／両方）→ 費用・予算の確認 → 開始。単一配信レポートと長期プロフィールは別々に保存され、プロフィール失敗でレポートは消えません。プロバイダーごとに独立した同時実行（1–8、既定 3）、429 は `Retry-After`、5xx/タイムアウトは指数バックオフ＋ジッター。匿名無料の 2 リクエスト/分制限はありません。
-- **内蔵の三言語ガイド（v0.13.2 RC0）**: サイドバーの「使い方」で、初回起動、Bilibili / YouTube への接続、記録と視聴者データ、AI プロバイダーと API キー、単一配信の分析と長期プロフィール、長期メモリと根拠、進捗と失敗からの再開、バックアップ／復元／移行、よくある質問を説明します。ページは読み取り専用で、設定を変更せず、確認ダイアログも出さず、利用制限も追加しません。
+- **内蔵の十言語ガイド（v0.15.0）**: サイドバーの「使い方」で、初回起動、五つのプラットフォームへの接続、記録と視聴者データ、AI プロバイダーと API キー、単一配信の分析と長期プロフィール、長期メモリと根拠、進捗と失敗からの再開、バックアップ／復元／移行、よくある質問を説明します。ページは読み取り専用で、設定を変更せず、確認ダイアログも出さず、利用制限も追加しません。
 - **長期プロフィールの検証・言語・復旧（v0.13.2）**: Compact 回答は Schema・身元・証拠・カバレッジの完全検証を通ります。ref が揃っていても合法とは限りません。修復可能な誤りは最大 1 回だけ自動修復し、再検証後にのみ保存します。モデルは安定した `viewer_id` を書き換えられません。日本語タスクは日本語の意味的事実を生成し、固定英語例は使いません。失敗はバッチ単位で理由と技術情報を保持し、成功した兄弟バッチが消しません。「続行」は未完了バッチだけを実行し、再起動後も回復できます。
 - **実規模の信頼性（v0.12.1 の成果を継続）**: モデルにはローカル `ref` だけを返させ、安定した視聴者 ID はプログラムが割り当てます。JSON Schema structured output、打ち切りの記録、欠落視聴者への 1 回だけの限定補完を維持します。
 - **履歴（v0.12.0–v0.12.1）**: 匿名無料のワンクリック分析は v0.13.1 で削除しました。当時の調査は `docs/ANONYMOUS_AI_RESEARCH.md` に歴史資料として残しています。
@@ -253,7 +253,9 @@ LiveMemory records chat, gifts, Super Chats and membership events **on your own 
 
 **v0.13.2 RC0-ADMIN restores the administrator manifest**: double-clicking the EXE shows the standard Windows UAC prompt; accepting starts it with administrator rights, and declining simply cancels the launch. Users do not need to right-click and choose Run as administrator, and the program never bypasses or disables UAC.
 
-**v0.13.2 RC0 adds a built-in trilingual guide**: the sidebar's User guide (`#/help`) explains first launch, connecting Bilibili and YouTube, recordings and viewer data, AI providers and API keys, single-session analysis and long-term profiles, long-term memory and evidence, analysis progress and recovery, backup/restore/migration and common questions. The page is read-only: it changes no settings, shows no confirmation dialogs and adds no usage limits.
+**v0.15.0 ships ten interface languages**: 简体中文, 日本語, English, 한국어, Español, Português (Brasil), 繁體中文, Français, Deutsch and Bahasa Indonesia cover the whole console, the built-in user guide and the Windows launcher. The AI output language is a **separate** persisted setting (default: follow the interface language), and the ten languages are supported for session reports, long-term profiles and report reading translation.
+
+**v0.15.0 upgrades the built-in guide to ten languages**: the sidebar's User guide (`#/help`) explains first launch, connecting the five platforms, recordings and viewer data, AI providers and API keys, single-session analysis and long-term profiles, long-term memory and evidence, analysis progress and recovery, backup/restore/migration and common questions. The page is read-only: it changes no settings, shows no confirmation dialogs and adds no usage limits.
 
 Current build (v0.13.1) delivers the Windows administrator-manifest launcher, tri-language Apple-style console with a header language switch, theme system, persistent settings, a real five-platform recording pipeline backed by SQLite, **concurrent recording of multiple Bilibili/YouTube broadcasts with browser-style tabs and per-stream state**, **Bilibili platform-live detection with automatic stop on `PREPARING`/`live_status` confirmation while other broadcasts keep recording**, **a scrollable Top 100 current-session leaderboard with search and broadcaster-aware viewer links**, **per-broadcast stop / archive / permanent delete managed from one shared implementation**, **history search by broadcaster, title or viewer with platform/status/date/archive filters and match reasons**, real Bilibili chat with Unicode emoji and platform emotes, and **one** YouTube path: the public live web chat, with no Google login, API key, OAuth or cookie. That mechanism is not an official stable API and may stop working; the UI explains it once in settings/privacy instead of showing a mode selector on every connection. All platforms feed one canonical pipeline, per-currency totals, a 30-day retention policy, session history, viewer profiles and AI analysis. **v0.13.1 replaces the manual/anonymous AI entry points with one API-key analysis centre**: choose a broadcast, provider/model, scope, review price and budget, then start. Session and long-term memory jobs are saved separately; memory batches run with bounded concurrency; 429 respects `Retry-After`; retries use exponential backoff with jitter; request statistics separate model time from local queue and throttle waits. Deleting one session runs in a single transaction, removes its AI tasks/results/evidence and packages, and recomputes the remaining viewer/broadcaster aggregates. A stable platform account can appear for multiple broadcasters while its interaction context stays per broadcaster (schema v13). The data folder can be moved with verification and rollback, and users can clear recorded data or restore factory settings with confirmation and an off-folder database snapshot. Real paid-provider verification remains blocked on this machine because no API key is configured; see [docs/STATUS.md](docs/STATUS.md) and [docs/AI_SCHEDULER_AUDIT.md](docs/AI_SCHEDULER_AUDIT.md).
 

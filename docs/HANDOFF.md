@@ -1,12 +1,72 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-16 · **P42 / I18N-M3 十语言最终综合验收完成** · **真实 Provider 31 次取证请求** ·
+本轮：2026-11-17 · **v0.15.0 十语言国际化正式发布完成** · P39–P42 合并 `main` ·
+版本统一 `0.15.0` · Tag `v0.15.0` · GitHub Release 已发布 · **未新增平台**
+
+> 本轮按用户明确授权把 P39–P42 的十语言国际化完整合并到 `main`，统一版本号为 `0.15.0`，
+> 在 `main` 上重跑回归、重建正式 Windows EXE 并完成 `verify-exe` / `verify-help-exe` /
+> `verify-ai-token-exe` 与 Manifest/SHA-256 核对，然后 Push、打 Tag 并发布 GitHub Release
+> `LiveMemory v0.15.0 — 10-Language Internationalization`。
+> **未改平台协议、数据库 Schema（16）、金额/身份/去重、任务语言快照；未新增语言、未新增直播平台。**
+
+## 0. 本轮（v0.15.0 发布）
+
+### 0.1 基线
+
+| 项目 | 值 |
+| --- | --- |
+| 起始分支 | `feature/p42-i18n-m3`（`07cfaf1`），工作区 clean |
+| 与 `main` 关系 | `main..feature/p42-i18n-m3` = 16 个提交；`main` 无独立新提交 |
+| 上一正式发布 | `v0.14.0` → `d268cf9`（Release id `446701465`） |
+| 发布前版本 | `0.14.0`；十语言代码已验收但未发布 |
+
+### 0.2 发布动作（真实执行结果）
+
+| 步骤 | 结果 |
+| --- | --- |
+| 合并 | `git merge --no-ff feature/p42-i18n-m3` → `37a075e1f0e726742c9133dad8a4dad232effc6b`；无冲突；树与功能分支一致 |
+| 版本 | `package.json` / `APP_VERSION` / EXE / 启动器 / 文档全部 `0.15.0` |
+| 全量回归 | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms） |
+| 十语言门禁 | 字典 10 × 2,271 键零差异；Schema 十语；`ai-i18n-locales` / `ai-i18n-translation` 通过 |
+| 正式 EXE | Build ID `945bee868455`、`99,200,512` B、SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`、`requireAdministrator` |
+| EXE 验收 | `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**（功能副本为同一源码、同一 buildId `945bee868455` 的单独 asInvoker 构建：本机应用控制策略阻止事后打补丁副本；正式 EXE 单独断言 `requireAdministrator`） |
+| Tag / Release | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338`；Release id `RELEASE_ID_PLACEHOLDER`；资产 `LiveMemory.exe` + `SHA256SUMS.txt` |
+
+### 0.3 未验证 / 仍然存在的限制
+
+- 真实双击 UAC（同意与拒绝）、干净 Windows 账户、Windows 原生启动器：**未人工验证**。
+- 十语言母语审校：**未做**；质量仅为机器门禁 + 真实浏览器布局 + 抽样阅读。
+- Twitch（本轮无在播频道）、抖音（无真实在播房间）真实采集：**未验证**；
+  Bilibili / YouTube / TikTok 已在 P42 真实房间通过。
+- TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订：**NOT-OBSERVED**。
+- 长报告多块翻译、真实 429：未覆盖。
+- EXE 未签名，SmartScreen 可能提示未知发布者。
+
+### 0.4 下一轮（等待用户指令）
+
+1. 在普通 Windows 桌面完成真实双击 UAC 的「同意」与「拒绝」两条路径，以及干净账户启动。
+2. 有在播频道/房间时补 Twitch 与抖音真实采集；有礼物的事件时更新 `NOT-OBSERVED` 结论。
+3. 如需继续语言质量工作：安排母语审校，但**不要**改任务语言快照、Schema 或历史结果正文。
+4. **不要**自动开始 v0.16.0 或任何新直播平台开发（Kick 仍停在 G0/G1 之间）。
+
+### 0.5 Git
+
+| 项目 | 值 |
+| --- | --- |
+| `main` | 合并提交 `37a075e1f0e726742c9133dad8a4dad232effc6b` + 版本/文档提交 |
+| Tag | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338`（annotated） |
+| 工作区 | clean |
+| Push | `main` 与 `v0.15.0` 已推送 `origin` |
+
+---
+
+上一轮：2026-11-16 · **P42 / I18N-M3 十语言最终综合验收完成** · **真实 Provider 31 次取证请求** ·
 源码与 EXE 各 **440/440** 真实浏览器页面通过 · **1102 测试通过** · **未发布**
 
 > P42 对 P39–P41 做了真实十语言 Provider、跨语言方案 B、界面/AI 语言独立性、真实 EXE 十语言矩阵、
 > 旧 schema-15 数据升级与备份恢复、五平台回归。修复了十语言 `help` 的「不需要管理员权限」错误说明
 > 与三个测试工具假阴性/覆盖缺口。**未改平台协议、数据库 Schema（16）、金额/身份/去重、任务语言快照；
-> 未 Push / Merge main / Tag / Release，版本仍 0.14.0。**
+> 未 Push / Merge main / Tag / Release，版本当时仍 0.14.0；P42 已随 v0.15.0 发布。**
 
 ## 0. 本轮（P42 / I18N-M3）
 
@@ -375,8 +435,10 @@ Build ID `17f84b1956e1` / commit `d268cf9` / builtAt `2026-11-16T06:51:04.013Z` 
 
 **P39 / I18N-M0：国际化架构整理（v0.15.0）**，不新增语言。
 P39 已于 2026-11-16 完成，见本文件顶部；下一轮为 **P40 / I18N-M1（新增七种语言资源）**。
-`docs/ROADMAP.md` 已把 P39–P44 的版本标签顺延（P39/P40 → v0.15.0，P41 → v0.15.1，
+`docs/ROADMAP.md` 当时把 P39–P44 的版本标签顺延（P39/P40 → v0.15.0，P41 → v0.15.1，
 P42 → v0.16.0，P43 → v0.16.x），因为 `v0.14.0` 已被本次发布占用。
+**该顺延方案后来未采用**：P39–P42 实际作为一次 **v0.15.0** 发布（2026-11-17），
+P41/P42 的「v0.15.1」「v0.16.0」标签已修正，见本文件顶部与 `docs/STATUS.md` §0.51。
 
 ### 0.6 Git
 

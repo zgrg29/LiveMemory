@@ -35,7 +35,30 @@
 
 > v0.15.0 开发线（2026-11-16，P39 / I18N-M0）：**国际化基础架构整理完成，未新增语言、未发布。** 新增单一语言清单 `src/shared/locales.mjs`（Node 与浏览器同源），语言解析改为「用户偏好 / 系统检测 / 实际已安装资源」三层 + 语言族/script/region 逐级降级；`zh-HK` 当前安全降级 `zh-CN`，未来加入 `zh-TW` 后自动优先。Header 语言控件改为由 `/api/bootstrap` 动态生成：三种语言保持原三段按钮交互，>3 项或长名称自动使用原生下拉；删除 `max-width:132px/112px`。真实浏览器 **9/9** 布局截图通过（三语 1440/390 + 十语言夹具 1440/1024/820/390/黑暗），全量 **711 unit + 349 integration = 1060 passed / 0 failed**，三语 2,265 键/占位符零差异。P41 长期画像跨语言策略已由用户确定为**方案 B（允许混合并接受跨语言重复）**，仅记录文档，未改代码/DB/AI。**未 Push、未 Tag、未 Release。**
 
-> v0.15.1 开发线（2026-11-16，P41 / I18N-M2）：**十语言 AI 输出完成，未发布。** 注册表十条 `aiOutput: true`；新增 `src/ai/prompts/language.mjs` 作为输出语言规则的唯一来源（rule/guard/system/repair/example × 10），六个 prompt 面全部注入并带 `OUTPUT LANGUAGE (<code>)`；三套已验证指令正文保留，其余七语用英文正文 + 各自输出语言规则（单次请求仍只含当前语言）。新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`，`config/settings.json`，已同步备份白名单与设置页），任务创建写入 `ai_jobs.locale` 快照并在恢复时以 job 行为准；结果 Schema `locale.enum` 扩到十项，字段名/枚举/稳定标识不变。长期画像按方案 B 落地（跨语言事实共存、同字符 topic 仍去重、历史事实不翻译覆盖）。**747 unit + 355 integration = 1102 passed / 0 failed**；真实 DeepSeek Provider：4 语单场报告通过、`ko` 7 条韩语事实、`de` 7 条德语事实。**未 Push、未 Tag、未 Release。** 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49。
+> v0.15.0 开发线（2026-11-16，P41 / I18N-M2）：**十语言 AI 输出完成，未发布。** 注册表十条 `aiOutput: true`；新增 `src/ai/prompts/language.mjs` 作为输出语言规则的唯一来源（rule/guard/system/repair/example × 10），六个 prompt 面全部注入并带 `OUTPUT LANGUAGE (<code>)`；三套已验证指令正文保留，其余七语用英文正文 + 各自输出语言规则（单次请求仍只含当前语言）。新增独立持久设置 `aiOutputLocale`（默认 `follow-ui`，`config/settings.json`，已同步备份白名单与设置页），任务创建写入 `ai_jobs.locale` 快照并在恢复时以 job 行为准；结果 Schema `locale.enum` 扩到十项，字段名/枚举/稳定标识不变。长期画像按方案 B 落地（跨语言事实共存、同字符 topic 仍去重、历史事实不翻译覆盖）。**747 unit + 355 integration = 1102 passed / 0 failed**；真实 DeepSeek Provider：4 语单场报告通过、`ko` 7 条韩语事实、`de` 7 条德语事实。**未 Push、未 Tag、未 Release。** 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49。
+
+> v0.15.0 正式发布（2026-11-17，10-Language Internationalization）：十语言国际化正式封版并发布。
+> P39–P42 全部合并到 `main`，产品版本 `0.14.0` → **`0.15.0`**，Tag `v0.15.0`，GitHub Release 已发布；
+> 十份字典各 **2,271** 键、十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；
+> 五平台与数据库 Schema（16）未变，**未新增直播平台**。详见 `docs/STATUS.md` §0.51。
+
+## P46 v0.15.0 十语言正式发布（2026-11-17）🚀
+
+- ✅ 合并：`feature/p42-i18n-m3` 以 `--no-ff` 合并到 `main`（合并提交 `37a075e1f0e726742c9133dad8a4dad232effc6b`），
+  合并后 `main` 树与功能分支完全一致，P39–P42 共 16 个提交全部包含
+- ✅ 版本统一：`package.json` / `APP_VERSION` / EXE 版本信息 / 启动器 / 应用内版本信息 /
+  CHANGELOG / ROADMAP / STATUS / 发布说明全部为 **`0.15.0`**；
+  修正历史文档中 P41「v0.15.1」与 P42「v0.16.0」的版本标签不一致
+- ✅ 发布前检查：EXE Manifest `requireAdministrator`、十语言启动器、十份字典与十语言 AI 能力、
+  版本号与资源完整（真实双击 UAC 与干净账户仍需人工验收）
+- ✅ 回归：**747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms）；十语言字典 / Schema / `ai-i18n-locales` / `ai-i18n-translation` 全部通过
+- ✅ 正式 EXE：Build ID `945bee868455`、`99,200,512` bytes、
+  SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`、Manifest `requireAdministrator`；
+  `verify-exe` / `verify-help-exe` / `verify-ai-token-exe`：`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**
+- ✅ Release：`LiveMemory v0.15.0 — 10-Language Internationalization`，
+  https://github.com/zgrg29/LiveMemory/releases/tag/v0.15.0
+- ⬜ 真实双击 UAC（同意/拒绝）、干净 Windows 账户、母语审校、Twitch/抖音真实采集：仍需人工或在播房间
+- ⬜ **不启动** v0.16.0 规划与任何新直播平台开发，等待用户下一步指令
 
 ## P45 v0.14.0 五平台正式发布（2026-11-16）🚀
 
@@ -105,7 +128,7 @@
 - 详见 `docs/I18N.md` §2.6、`docs/STATUS.md` §0.48、`log/2026-11-16-p40-i18n-m1.md`
 
 
-## P41 I18N-M2：AI 输出语言解耦与十语言支持（v0.15.1）✅ 2026-11-16
+## P41 I18N-M2：AI 输出语言解耦与十语言支持（v0.15.0）✅ 2026-11-16
 
 目标：L2 独立、持久、任务内不可变，跨语言不破坏长期画像。
 
@@ -123,7 +146,7 @@
 - ⬜ 未做：发布/Push/Tag；数据库 Schema（仍 16）；P42 的十语言 UI/EXE 全矩阵
 - 详见 `docs/I18N.md` §2.8、`docs/STATUS.md` §0.49、`log/2026-11-16-p41-i18n-m2.md`
 
-## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.15.0 目标）✅ 2026-11-16，未发布
+## P42 I18N-M3：十语言 UI/EXE 与回归验收（v0.15.0）✅ 2026-11-16，已随 v0.15.0 发布
 
 目标：十语言在真实 Windows EXE 上完成整体验收。
 
@@ -140,7 +163,8 @@
 - ✅ 修复：十语言 help 的「不需要管理员权限」说明、三处测试工具假阴性、浏览器脚本 EXE 模式
 - ✅ 全量 **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**
 - ⬜ 真实双击 UAC、干净 Windows 账户、母语审校、Twitch/抖音真实采集仍待人工/在播房间
-- ⬜ 未 Push / Merge main / Tag / Release；版本号仍 0.14.0，发布决策留给发布轮
+- ✅ 已随 **v0.15.0** 合并 `main`、打 Tag 并发布（原「未 Push / Merge main / Tag / Release」状态已结束；
+  版本号已由发布轮的 0.14.0 更新为 0.15.0）
 - 详见 `docs/STATUS.md` §0.50、`docs/I18N.md` §2.9、`log/2026-11-16-p42-i18n-m3.md`
 
 ## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.16.x）🟡 调查完成、未连接
@@ -938,11 +962,12 @@ M0 ✅ → M1 ✅ → M2 🟡 → M3 🟡 → M4 🟡 → M6 ✅ → M7 🟡 →
 所有 → M8 ⬜
 
 # 2026-11-16 起的两条主线（互不阻塞，可交替推进）
-P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P39 ✅（I18N-M0，2026-11-16）→ P40 ✅ → P41 ✅ → P42 ✅（2026-11-16，待发布决策）
+P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P39 ✅（I18N-M0，2026-11-16）→ P40 ✅ → P41 ✅ → P42 ✅ → **P46 ✅（v0.15.0 正式发布，2026-11-17）**
 P45 ✅（v0.14.0 正式发布）→ P38 ✅（规划/文档）→ P43 🟡（Kick G0 完成，待 G1）→ P44 🟡（后续候选逐个 G0–G6）
 ```
 
-**主线排序原则**：国际化优先（P39–P42）；P39–P42 已完成，下一步是 v0.15.0 发布决策与 P43 的第一个新平台 G1 真实验证。
+**主线排序原则**：国际化优先（P39–P42）已于 v0.15.0 发布完成；P43 的第一个新平台 G1 真实验证**尚未开始**，
+且按用户指令本轮不启动 v0.16.0 或新平台开发，等待下一步指令。
 理由：平台适配器会新增大量用户可见文案，先扩语言再逐个平台开发，可避免「每接一个平台就要
 重新补 7 种语言」的重复工作；同时语言扩展不依赖任何新平台。
 

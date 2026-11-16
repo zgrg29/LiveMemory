@@ -1,11 +1,104 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-16（**P42 / I18N-M3 完成**：十语言真实 AI 单场/画像/阅读翻译、跨语言方案 B、
-界面/AI 输出语言独立性、真实 EXE 十语言浏览器矩阵、旧数据升级与备份恢复、五平台回归；
-**1102 测试通过**（747 unit + 355 integration）；真实 DeepSeek `deepseek-flash` **31 次取证请求**；
-**未 Push / 未 Tag / 未 Release**）
+最后更新：2026-11-17（**v0.15.0 十语言国际化正式发布**：P39–P42 全部合并到 `main`，
+版本统一为 **`0.15.0`**，Tag `v0.15.0`，GitHub Release
+`LiveMemory v0.15.0 — 10-Language Internationalization` 已发布；十份字典各 2,271 键、
+十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；五平台与 Schema（16）未变，
+**未新增直播平台**）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.51 v0.15.0 十语言国际化正式发布（2026-11-17）🚀
+
+用户明确授权本轮完成 **v0.15.0 合并与正式发布**，不新增开发里程碑、不扩展语言或直播平台。
+本轮只做：发布前检查 → 合并 `main` → 版本统一 → 全量回归 → 正式 EXE 构建与验收 →
+Push / Tag / GitHub Release → 发布后核对。**未改平台协议、数据库 Schema（仍 16）、
+金额/身份/去重、任务语言快照语义、翻译缓存表结构，未新增直播平台。**
+
+### 0.51.1 发布基线（发布前实测）
+
+| 项目 | 值 |
+| --- | --- |
+| 起始分支 / 工作区 | `feature/p42-i18n-m3`（HEAD `07cfaf1`），clean |
+| P39–P42 提交 | 16 个，`main..feature/p42-i18n-m3` 全部包含；`main` 无独立新提交（`0 / 16`） |
+| merge-base | `a70321c`（`main` = `origin/main`，v0.14.0 发布后的文档提交） |
+| 上一正式 Tag / Release | `v0.14.0` → `d268cf9`（Release id `446701465`，2026-11-16） |
+| 发布前版本 | `0.14.0`（`package.json` / `APP_VERSION`），十语言代码已验收但未发布 |
+| P42 基线 EXE | Build `5b9e355dccc7`、99,200,512 B、SHA-256 `7c3f3d3f…`、`requireAdministrator` |
+| P42 残留风险 | 真实双击 UAC、干净 Windows 账户、母语审校、Twitch/抖音真实采集、长报告多块翻译 |
+
+### 0.51.2 合并
+
+| 项目 | 值 |
+| --- | --- |
+| 合并方式 | `git merge --no-ff feature/p42-i18n-m3` |
+| 合并提交 | `37a075e1f0e726742c9133dad8a4dad232effc6b` |
+| 父提交 | `a70321c`（原 `main`）+ `07cfaf1`（`feature/p42-i18n-m3`） |
+| 冲突 | 无 |
+| 合并后树 | 与 `feature/p42-i18n-m3` 完全一致（`git diff --stat feature/p42-i18n-m3 main` 为空） |
+| 遗漏检查 | P39–P42 的 16 个提交全部在 `main` 历史中 |
+
+### 0.51.3 版本统一（0.15.0）
+
+| 位置 | 结果 |
+| --- | --- |
+| `package.json` → `version` | `0.15.0` |
+| `src/shared/app-info.mjs` → `APP_VERSION` | `0.15.0` |
+| Windows EXE 版本信息 / 启动器横幅 / `--version` / 设置「关于」/ `/api/health` / `/api/bootstrap` | 由 `APP_VERSION` 与 `build-info.json` 派生，均为 `0.15.0` |
+| 构建元数据 | `build/build-info.json` / `build/manifest.json` 的 `version` 为 `0.15.0`，`commit` 为发布提交 |
+| CHANGELOG / ROADMAP / STATUS / HANDOFF / release notes / README | 已统一；新增 `docs/release-notes/v0.15.0.md` |
+| 历史不一致修正 | P41「v0.15.1」→「v0.15.0」；P42「v0.16.0」的旧标签已注明未采用，实际统一为 `v0.15.0` |
+| 历史 Release 记录 | `v0.13.2-rc.0` / `v0.14.0` 的 tag、资产、SHA-256、Release id **未修改** |
+
+### 0.51.4 发布前与发布后验证
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量单元 + 集成 | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms） |
+| 十语言字典门禁 | 10 份 × 2,271 键，缺失/多余/占位符/空值差异 0 |
+| 十语言 AI Schema 门禁 | 三个结果 Schema 接受十语、拒绝未支持语言 |
+| 国际化关键集成 | `ai-i18n-locales` 4/4、`ai-i18n-translation` 通过 |
+| 真实 Provider 证据 | 复用 P42 已验收的 DeepSeek 证据（10/10 单场、10/10 画像、4/4 跨语言、5/5 翻译 + 回退），本轮未改提示词/Schema/Provider 行为，未重复消耗 Token |
+| Windows EXE 构建 | Build ID `945bee868455`，`99,200,512` bytes，SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| EXE Manifest | `requireAdministrator`（构建断言 + 注入后复读） |
+| `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` | `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| EXE 资源完整性 | 十份字典 + `/shared/locales.mjs` + `language-control.js` + 十语 AI 提示词/Schema 全部在包内 |
+| 启动器十语言 | `--help --lang <code>` 10/10 exit 0 |
+| 工作区 | 发布提交后 clean，无 `tests/.tmp`、`dist/`、`build/`、凭据或用户数据进入提交 |
+
+> **EXE 验收方式（如实记录）**：本机 Windows 启用了应用控制策略（Smart App Control 强制模式），
+> 会阻止**事后打补丁**的 asInvoker 副本（`An Application Control policy has blocked this file`）。
+> 因此本轮改用**同一源码、同一 buildId `945bee868455` 单独构建的 asInvoker 二进制**作为功能副本，
+> 并把 `LOCALAPPDATA` / `TEMP` 重定向到 `tests/.tmp`。`scripts/test-exe-copy.mjs` 会断言
+> 正式 EXE 仍为 `requireAdministrator`、副本为 `asInvoker`、且两者嵌入同一 `buildId`。
+> **正式 EXE 未被修改、未降低 UAC**；官方二进制单独断言 Manifest。
+> 真实双击 UAC（同意/拒绝）仍为人工待办，未在本轮自动化中通过。
+>
+> **PE 版本资源说明**：`LiveMemory.exe` 的 PE `VERSIONINFO` 资源沿用其内嵌的 Node 运行时
+> （`24.21.0`，与 v0.14.0 及更早版本一致）；LiveMemory 自身的版本以 `build-info.json`、
+> `--version`、启动器横幅、设置页「关于」、`/api/health`、`/api/bootstrap` 为准，均为 `0.15.0`。
+
+### 0.51.5 已知限制（P2/P3，允许发布）
+
+- **P2**：真实双击 UAC 的「同意」与「拒绝」两条路径、干净 Windows 账户、Windows 原生启动器
+  仍未人工验证；自动化只能断言 Manifest 并运行 asInvoker 功能副本。**不得写成已通过。**
+- **P2**：十种语言均无母语审校签收人；质量由机器门禁 + 真实浏览器布局检查 + 抽样阅读保证。
+- **P2**：Twitch 本轮无在播频道、抖音无真实在播房间，真实采集未验证；Bilibili/YouTube/TikTok
+  已在 P42 真实房间验证。
+- **P3**：错误/恢复界面未做专项十语言截图；长报告多块翻译与真实 429 未覆盖。
+- **P3**：TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订仍为 `NOT-OBSERVED`。
+- **P3**：EXE 未签名，SmartScreen 可能提示未知发布者。
+
+### 0.51.6 发布结果与 Git
+
+| 项目 | 值 |
+| --- | --- |
+| Tag | `v0.15.0` → `e07233cc1dababc138830bcd63d76f5eb5269338` |
+| Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `RELEASE_ID_PLACEHOLDER`） |
+| Release URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.15.0 |
+| 资产 | `LiveMemory.exe`（`99,200,512` B，SHA-256 `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e`）、`SHA256SUMS.txt` |
+| 资产一致性 | 上传后再下载/按大小与 SHA-256 核对，与本地构建字节一致 |
+| 重复发布 | 发布前断言无既有 `v0.15.0` Tag/Release，未创建重复对象 |
 
 ## 0.50 P42 / I18N-M3 十语言最终综合验收（2026-11-16）✅ 未发布
 
@@ -144,8 +237,9 @@
 - **P2**：Twitch 本轮无在播频道，抖音无真实在播房间；真实采集未验证，不得写成通过。
 - **P3**：错误/恢复界面未做专项十语言截图；API 错误码、回退与恢复逻辑由测试覆盖，帮助页已进矩阵。
 - **P3**：翻译真实测试只覆盖单块短报告（每语 1 次请求），未覆盖超长多块报告与真实 429。
-- **P3**：版本标签存在历史文档不一致（ROADMAP 曾写 P42→v0.16.0，用户本轮目标为 v0.15.0）；
-  本轮未改 `package.json`/`app-info`（仍 0.14.0），版本决策留给发布轮。
+- **P3**：版本标签存在历史文档不一致（ROADMAP 曾写 P42→v0.16.0，当时目标为 v0.15.0）；
+  **已由 v0.15.0 发布轮解决**：版本统一为 `0.15.0`，P41 的「v0.15.1」与 P42 的「v0.16.0」
+  标签已修正，历史 Release 记录未被改写（见 §0.51）。
 
 ### 0.50.10 结论与 Git
 

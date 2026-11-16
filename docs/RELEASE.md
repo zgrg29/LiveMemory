@@ -238,3 +238,70 @@ Bootstrap 解压阶段以 `EPERM` 中止（`no writable application folder`）�
 | 下载验证 | zip Range 请求 `206`、总长 35,977,845；`SHA256SUMS.txt` 返回 `200` 且内容正确 |
 | 页面可访问 | 是（`HTTP 200`，标题为 `LiveMemory v0.14.0 — Multi-Platform Release`） |
 | 重复检查 | 发布前断言该 Tag 无既有 Release；未创建重复 Tag/Release |
+
+---
+
+## 12. 正式发布 v0.15.0（2026-11-17，用户明确授权）
+
+十语言国际化正式封版。与 v0.14.0 相同为**正式稳定版**；不同点是本次发布资产为**裸 `LiveMemory.exe`**
+加 `SHA256SUMS.txt`，发布资产与最终验证的二进制字节一致。
+
+### 12.1 命名与依据
+
+| 项目 | 值 | 依据 |
+| --- | --- | --- |
+| 产品版本 | `0.15.0`（`package.json` 与 `APP_VERSION` 同步） | 相对 `v0.14.0` 新增七种界面语言、十语言 AI 输出、独立 AI 输出语言、十语言阅读翻译与启动器，属 SemVer minor |
+| Release Tag | `v0.15.0` | 仓库已有 `v0.13.2-rc.0` 与 `v0.14.0`，无重复 Tag |
+| Release Title | `LiveMemory v0.15.0 — 10-Language Internationalization` | 与本轮范围一致 |
+| 类型 | 正式稳定版（非 Pre-release） | 无 RC 后缀 |
+| Tag Target | `e07233cc1dababc138830bcd63d76f5eb5269338`（版本与文档发布提交） | 该提交的 `src/` 内容即 EXE 的 `build-info.commit` 与 `sourceHash` 来源 |
+
+### 12.2 发布资产
+
+| 文件 | 大小 | SHA-256 |
+| --- | --- | --- |
+| `LiveMemory.exe` | `99,200,512` | `b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| `SHA256SUMS.txt` | `81` | `ea3f61201ff2c8c63b1c988eec8d0f5762c3addedd848ec7841028e461e3421a` |
+
+- `SHA256SUMS.txt` 覆盖 `LiveMemory.exe`；下载后再校验一次。
+- 资产不含 API Key、Token、Cookie、数据库、聊天记录、`secrets/`、缓存或日志（EXE 不打包这些目录）。
+- EXE 内嵌版本 `0.15.0`、Build ID `945bee868455`、commit 与 Tag 指向的提交一致；
+  Manifest 为 `requireAdministrator`（构建断言 + 注入后复读）。
+
+### 12.3 发布前检查（本轮真实结果）
+
+- [x] 工作区在合并前 clean；`main` 无独立新提交（`0 / 16`）
+- [x] P39–P42 的 16 个提交全部在 `main` 历史中，合并后树与功能分支一致
+- [x] 版本一致：`package.json` = `APP_VERSION` = `0.15.0`，EXE 与文档同版本
+- [x] 全量自动化：**747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms）
+- [x] 十语言字典 / Schema / `ai-i18n-locales` / `ai-i18n-translation` 全部通过
+- [x] `verify-exe` / `verify-help-exe` / `verify-ai-token-exe`：`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**
+- [x] EXE Manifest `requireAdministrator`（构建断言 + 注入后复读）
+- [x] 发布资产 SHA-256 与本地构建一致；上传后再次核对
+- [ ] 真实 Windows 双击与 UAC 点击（同意/拒绝）：**仍需人工确认**，自动化不能代替
+- [ ] 干净 Windows 环境、母语审校、Twitch/抖音真实采集：**未执行 / 未验证**
+
+> **EXE 功能验收的构建来源**：本机应用控制策略（Smart App Control 强制模式）会阻止事后打补丁的
+> asInvoker 副本，因此 `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` 使用**同一源码、
+> 同一 buildId `945bee868455` 单独构建的 asInvoker 二进制**作为功能副本（`LOCALAPPDATA`/`TEMP`
+> 重定向到 `tests/.tmp`）。`scripts/test-exe-copy.mjs` 断言正式 EXE 为 `requireAdministrator`、
+> 副本为 `asInvoker`、两者嵌入同一 buildId。正式 EXE 本身未被修改，UAC 级别未被降低。
+> 真实双击 UAC（同意/拒绝）仍未人工验证。
+>
+> **PE `VERSIONINFO` 资源**沿用内嵌 Node 运行时（`24.21.0`，与 v0.14.0 相同）；
+> LiveMemory 版本由 `build-info.json`、`--version`、关于页、`/api/health`、`/api/bootstrap` 提供，
+> 均为 `0.15.0`。这是既有发布形态，本轮未改动 PE 版本资源。
+
+### 12.4 发布结果
+
+| 项目 | 值 |
+| --- | --- |
+| GitHub Release | `LiveMemory v0.15.0 — 10-Language Internationalization`（id `RELEASE_ID_PLACEHOLDER`） |
+| URL | https://github.com/zgrg29/LiveMemory/releases/tag/v0.15.0 |
+| 类型 | `draft=false`、`prerelease=false` |
+| Tag | `v0.15.0`（annotated）→ `e07233cc1dababc138830bcd63d76f5eb5269338` |
+| Push | `main` 与 `v0.15.0` 已推送 |
+| 资产 1 | `LiveMemory.exe`，`99,200,512` bytes，`sha256:b8458ab75704ebedc44fc64ebe000ddf97828687bf1af7896266b219469c826e` |
+| 资产 2 | `SHA256SUMS.txt`，`81` bytes，`sha256:ea3f61201ff2c8c63b1c988eec8d0f5762c3addedd848ec7841028e461e3421a` |
+| Release body | 与 `docs/release-notes/v0.15.0.md` 字节一致 |
+| 重复检查 | 发布前断言 `v0.15.0` 无既有 Tag/Release；未创建重复对象 |
