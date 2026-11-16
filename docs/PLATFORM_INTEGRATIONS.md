@@ -551,7 +551,7 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 传输 | 说明 | 默认 |
 | --- | --- | --- |
 | `signer` | 免费社区签名通道 `GET /webcast/rooms/<id>/connect`；无 API Key、无付费、不要求 Business；匿名约 130 秒/请求（见 §3C.6）；`baseUrl` 可换自建/兼容服务 | ✅ |
-| `browser` | 本机 Chrome/Edge 专用资料目录 + 页面级 CDP，读取官方直播页自身的 WebSocket 帧；必须先完成官方登录；匿名 `room/enter 403` → `TIKTOK_LOGIN_REQUIRED` | 可选（实验性） |
+| `browser` | 本机 Chrome/Edge 专用资料目录 + 页面级 CDP，读取官方直播页自身的 WebSocket 帧；先完成官方登录；`room/enter` 403 只作为直播间访问警告，真实帧优先；无帧宽限期后报 `TIKTOK_ROOM_REFUSED`，不改变登录状态 | 可选（实验性） |
 
 - 无 Key/无付费；**不得**把免费社区签发描述成官方 API。
 - 匿名免费通道实际有 **30 次/小时** 账号/IP 上限；只在用尽后通过 429 暴露。M1 的 15 秒轮询（240/h）会在约 7.5 分钟后耗尽，是频繁重连的根因。M2 改为共享预算 + 130 秒节奏，并完整遵守 `Retry-After`/`ratelimit-reset`。
@@ -604,6 +604,10 @@ Bilibili WebSocket 连接成功**不代表主播仍在直播**：下播后服务
 | 浏览器中继 | 登录入口、状态机、单窗口复用已实现并单元测试；**真实浏览器启动在本 DSH 沙箱 BLOCKED**，登录后真实弹幕投递待人工验收 |
 | 浏览器中继可用性（M3） | 真实 `TikTokBrowserRelay` 只暴露 `createAdapter`；`transport()` 已改为按此判断。打包 EXE `verify-tiktok-exe` 断言 `requested=browser / browserAvailable=true / active=browser`，并可无重启切回 signer |
 | 浏览器中继数据路径（M3） | 合成帧已验证 chat/gift → `EventIngest` → SQLite：原文、昵称、`tiktok:<user.id>`、`msgId`、事件时间、连送最终数量；**真实登录后投递仍 BLOCKED** |
+| 浏览器中继 403（M4） | 真实桌面 EXE 在登录后对 `@freefirelatino` 得到 `room/enter` **HTTP 403**；旧实现把它当成登录失效并立即中止。M4 将其改为直播间访问警告：真实 PushFrame 事件优先，宽限期无帧才报 `platform_refused`，登录仍保持 `logged_in`（Cookie 仍有效时） |
+| 浏览器中继帧格式（M4） | 旧代码把 WebSocket `PushFrame` 当成事件批次解析，真实帧恒为 0 条事件。M4 先解 `PushFrame.payloadType='msg'` / field 8，再解 gzip `ProtoMessageFetchResult`；用当前 TikTok web 协议结构做了单测与 SQLite 回归 |
+| 免费本地方案调查（M4，仅研究） | `talkaboutdesign/tiklive`（MIT，2026-10 新项目）声明无登录、无签名服务、本地运行；源码使用匿名 `ttwid` + `webcast-ws.tiktok.com` PushFrame。只读探针在同一台机器 35 秒收到 **469 chat / 19 gift / 78 msg 帧**；未接入产品，待产品/合规决策 |
+| 浏览器中继真实登录后端到端 | **仍未验证**：DSH 沙箱终止 Chromium（`TIKTOK_BROWSER_FAILED / launch_failed`），必须由开发者在普通 Windows 桌面人工验收；不得写成 PASS |
 
 ### 3C.6 免费通道预算与重连状态机
 
@@ -637,19 +641,24 @@ retry-after: 2708
 | `waiting` | 官方登录页已打开，等待用户完成二维码/手机/邮箱/用户名登录 |
 | `verifying` | 检测到官方 Cookie，正在验证 |
 | `logged_in` | 官方登录状态已识别（`verifiedBy` 标明 cookie/页面/直播间） |
-| `expired` | Cookie 过期或被移除 |
-| `refused` | 有登录状态但官方 `room/enter` 仍 403，平台拒绝访问 |
+| `expired` | Cookie 过期/被移除，或直播页明确要求重新登录；需要重新登录 |
+| `refused` | 平台拒绝该账号的登录会话（不是普通的直播间 `room/enter` 403）；需要重新登录/换账号 |
 | `unavailable` | 本机没有 Chrome/Edge 或无法使用专用 profile |
 | `error` | 启动/导航失败 |
+
+**登录与直播间访问是两件事**：`roomAccess` 单独记录 `ok/refused/unknown` 与 HTTP 状态。`room/enter` 403 不再把 `login.state` 改成 `refused`；只有页面/Cookie 明确要求登录才进入 `expired`/`refused`。UI 必须同时显示「账号已登录」和「该直播间访问被拒绝」。
 
 - 只使用 `<data>/browser/tiktok/account` 专用 profile（`.livememory-owned` 标记）；不读取/清理用户日常浏览器资料。
 - 登录与采集分开：`logged_in` 不等于收到弹幕；`verify` 返回 `events_received` / `connected_no_events` / `login_required` / `platform_refused`；M3 增加 `needs_room`（未填写直播间，不改变登录状态）。
 - 同一登录任务单飞行；重复点击只聚焦已有窗口；关闭窗口后状态可恢复；采集停止只关闭自己创建的 tab。
 - **M3 可用性判断**：`TikTokBrowserRelay` 没有 `start()`，可用性必须检查 `createAdapter()`。旧代码检查 `start` 导致显式 browser 时 `active=null`，最终返回 `TIKTOK_NOT_CONFIGURED` 503。
-- **M3 持久会话验证**：磁盘上的 `logged_in` 只是提示；profile 仍存在时允许中继实际打开直播页，真实 200/事件回写 `logged_in`，真实 403 回写 `refused`，不再信任旧标记。
+- **M3/M4 持久会话验证**：磁盘上的 `logged_in` 只是提示；profile 仍存在时允许中继实际打开直播页，真实 200/事件回写 `logged_in`，真实 `room/enter` 403 回写 `roomAccess=refused`（登录状态不变），只有页面明确要求登录才回写 `expired`。
 - **M3 关闭窗口**：关闭登录页保留 `logged_in`，设置 `loginWindowClosedAt` 与 `revalidationRequired`；正在采集时只关闭登录 tab，不终止专用浏览器；采集中拒绝退出登录（`TIKTOK_CAPTURE_ACTIVE`）。
 - **M3 礼物**：浏览器适配器按 `groupKey` 合并连送，最终态或 10 秒超时写一条 `gift`；钻石只写 `amount_display`，`amount_minor=null`、`value_kind=unknown`。
 - **M3 验证反馈**：`verify` 返回 `reason`、`eventsReceived`、`roomEnterStatus`、`timedOut`、`uniqueId`、`liveUrl`、`checkedAt`；UI 将登录/直播间/连接/事件/记录五项分开显示。
+- **M4 403 根因与语义**：`room/enter` 403 来自官方页面自身的网络请求（`Network.responseReceived`，域名 `tiktok.com`/`webcast.tiktok.com`），不是本地映射错误。它可能只是页面的一次入房 HTTP 调用被拒，而事件 WebSocket 仍可用；旧代码在 403 时立即中止且把登录标成 `refused`，造成「登录成功但平台拒绝访问 / 无事件」。M4 等待真实帧；有帧则正常采集并保留警告，无帧宽限期后才报 `TIKTOK_ROOM_REFUSED`。
+- **M4 PushFrame**：当前 TikTok web 播放器的二进制帧是 `PushFrame`（field 6 encoding、7 payloadType、8 payload），事件批次在其 field 8 内且通常 gzip。旧实现直接解 `WebcastResponse`，真实帧永远不会产生事件；M4 先解 PushFrame 再解批次，并保留旧格式兼容。
+- **M4 状态一致性**：`capture.captureState` 区分 `events_received` / `connected_no_events` / `room_unconfirmed` / `platform_refused` / `error` / `login_required` / `stopped`；连接 `state` 与采集结果分开。开始记录失败时 `lastCapture` 显示失败原因，停止后显示 `stopped`，不再退回 `tiktokCaptureStateIdle` 原始键。
 
 ## 4. 统一事件模型
 

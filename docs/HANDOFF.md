@@ -1,14 +1,62 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-15 · TIKTOK-M3：浏览器中继「采集尚未配置」修复 · **等待人工验收**
+本轮：2026-11-16 · TIKTOK-M4：真实桌面 403 调查、PushFrame 解码、登录/采集/直播间访问分离 · **真实登录后端到端仍 BLOCKED，等待人工验收**
 
-> 在 `feature/tiktok` 继续修复真实 Windows 桌面验收问题：登录与 room check 成功后，
-> 点击「开始记录」提示「TikTok 采集尚未配置」。
-> **未合并 main、未 Push、未 Tag、未 Release。**
-> 根因与实现：`log/2026-11-15-tiktok-m3-browser-relay-start.md`；状态：`docs/STATUS.md` §0.40；
-> 平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C。
+> 真实 Windows EXE 在登录后对 `@freefirelatino` 得到 `room/enter` HTTP 403。M4 证明这是官方页面的直播间进入响应，不是本地映射；旧实现把它误判为登录失效并提前中止，同时用错帧格式解 PushFrame，导致真实事件恒为 0。已修复状态分离、PushFrame 解码、403 宽限与 UI 五项状态。**未合并 main、未 Push、未 Tag、未 Release。**
+> 根因与实现：`docs/STATUS.md` §0.41；平台细节：`docs/PLATFORM_INTEGRATIONS.md` §3C；日志：`log/2026-11-15-tiktok-m4-browser-relay-403.md`。
 
-## 0. 本轮（TIKTOK-M3）
+## 0. 本轮（TIKTOK-M4）
+
+### 0.1 根因
+
+1. **403 来源**：官方直播页自身的 `/webcast/room/enter/` 请求返回 403；中继通过 CDP `Network.responseReceived` 观察到。不是本地错误，也不是登录页错误。
+2. **误判**：`waitForReady()` 见到 403 立即返回 `loginRequired`，适配器抛 `TIKTOK_LOGIN_REQUIRED`；`markCaptureLoginRequired` 把登录改成 `refused`，即使 Cookie 仍有效、事件 WebSocket 仍可能工作。
+3. **帧格式**：当前 TikTok web 播放器的二进制帧是 `PushFrame`，事件批次在 field 8（gzip）；旧代码直接解 `WebcastResponse`，真实帧永远解出 0 条。旧测试用已经是批次的合成帧，掩盖了缺陷。
+4. **状态混用**：开始记录失败后 `status.capture=null`，UI 显示 `tiktokCaptureStateIdle` 原始键；「开始记录」只看 session，不看真实事件/拒绝状态。
+
+### 0.2 修复
+
+- 新增 `PushFrame` 解码：field 6/7/8 → gzip → `ProtoMessageFetchResult`；非 `msg` 控制帧忽略；保留旧 `WebcastResponse` 兼容。
+- 403 后给 6 秒宽限：真实帧优先；有帧正常采集并保留 `roomAccess=refused` 警告；无帧才 `TIKTOK_ROOM_REFUSED`。
+- 登录状态与直播间访问分离：403 不再改登录；`roomAccess` 单独记录；只有页面/Cookie 明确要求登录才 `expired`。
+- 新增 `captureState`、`lastCapture`、`captureSource`；停止后显示 `stopped`；记录中采集失败/未确认分别显示。
+- 补全三语键，包括 `tiktokCaptureStateIdle`、`tiktokCaptureStateRoomRefused`、`tiktokCaptureStateRoomUnconfirmed`；错误提示直接显示在登录/采集卡。
+- 监控把 `TIKTOK_ROOM_REFUSED` 映射为 `BLOCKED`。
+
+### 0.3 结果
+
+| 项目 | 结果 |
+| --- | --- |
+| 定向 TikTok | **103 passed / 0 failed / 0 skipped** |
+| 全量 | **1050 passed / 0 failed / 0 skipped** |
+| `verify-exe` | **10/10** |
+| `verify-tiktok-exe` | **23/23**（`@aljazeeraenglish`：真实 6 chat / 3 可识别观众；自动监听 6；SQLite/AI/重启） |
+| 真实浏览器登录 | **1/9 passed，0 failed，8 BLOCKED**（DSH 终止 Chromium） |
+| 真实浏览器中继投递 | **BLOCKED**，未验证；不得写成 PASS |
+| EXE | `D:\LiveMemory\dist\LiveMemory.exe` / Build ID `a463acfad051` / commit `ea950c0` / `97,893,888` B / SHA-256 `fecf18ce…` / `requireAdministrator` |
+| main | **未合并、未 Push、未 Tag、未 Release** |
+
+### 0.4 下一轮 / 人工验收必须先做
+
+1. 普通 Windows 桌面双击新 EXE，允许 UAC。
+2. TikTok → 浏览器中继 → 打开官方登录并完成登录；确认状态仍为「已登录」。
+3. 输入真实直播链接 → 点「验证直播连接」：
+   - 若显示「已收到真实事件」→ 记录事件数、UID、礼物；这是浏览器中继首次真实通过。
+   - 若显示「平台拒绝该直播间访问」但账号仍「已登录」→ 说明 `room/enter` 403 是房间级；换一个直播间再试，并保留截图/日志（不含 Cookie）。
+   - 若显示「未确认」→ 页面没有进入响应也没有事件，不能算通过。
+4. 点「开始记录」：失败时不得出现「正在记录」；确认 SQLite 有 `tiktok:<uid>`、原文、`msgId`、时间。
+5. 关闭浏览器窗口：确认同一 recording 自动重连或明确失败；停止记录后确认显示「已停止」，不再出现 `live.source.tiktokCaptureStateIdle`。
+6. 若真实登录后仍收不到帧，**不要继续改状态提示掩盖问题**；改为评估本地 unsigned webcast 方案（需产品/合规决策，见 `docs/STATUS.md` §0.41.4）。
+7. **未获明确授权不要合并 main、Push、Tag、Release。**
+
+### 0.5 边界与提交
+
+- DSH 不能启动 Chromium；真实浏览器验证必须人工完成。
+- 免费社区签名通道仍是 130 秒级轮询，不是实时；本轮未改预算。
+- 本地 unsigned 方案使用 TikTok 非公开协议，未接入产品；不得默认启用。
+- 提交身份匿名；**未 Push / 未 Tag / 未发布**。
+
+## 0-A. 上一轮（TIKTOK-M3）
 
 ### 0.1 根因
 

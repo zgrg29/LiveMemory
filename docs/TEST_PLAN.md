@@ -2050,3 +2050,39 @@ SQLite 6/6 external_id；自动监听目标 check → recording → 真实 chat 
 - 真实礼物/连送/订阅：未观测。
 - 真实网络中断、真实“直播中→下播”长跑、多房间真实并发：未执行；自动化覆盖状态机。
 - 真实 UAC 双击、干净 Windows 账户：未验证。
+
+## 51. TIKTOK-M4：真实 403、PushFrame 与状态一致性（2026-11-16）
+
+### 51.1 新增/更新的自动化
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `tests/unit/tiktok-ui.test.mjs` | 真实 `PushFrame`（gzip/未压缩/控制帧）→ `decodeFramePayload`；`waitForReady` 在 403 后等待帧；三语键静态扫描（含 `tiktokCaptureStateIdle`） |
+| `tests/unit/tiktok-browser-relay.test.mjs` | 运行中 403 无事件 → `platform_refused`；晚到 403 后收到帧 → 正常 + 警告；浏览器关闭 → 同 recording 重连 |
+| `tests/unit/tiktok-browser-login.test.mjs` | 403 保持 `logged_in` + `roomAccess=refused`；403+事件优先；未确认房间；重新登录清除 `expired`；`markCaptureRefused/Stopped` |
+| `tests/integration/tiktok-session.test.mjs` | 403 无事件 → `TIKTOK_ROOM_REFUSED`、无 recording、`lastCapture`；403+事件 → SQLite；无确认 → `room_unconfirmed`；登录过期阻止启动；通道切换清除旧失败；PushFrame → SQLite |
+| 全量 | `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` |
+
+### 51.2 结果
+
+| 运行 | 结果 |
+| --- | --- |
+| 定向 TikTok（unit+integration） | **103 passed / 0 failed / 0 skipped** |
+| 全量 | **1050 passed / 0 failed / 0 skipped（561,359.30 ms，2026-11-16）** |
+| `scripts/verify-exe.mjs` | **10/10**（Build ID `a463acfad051`，commit `ea950c0`） |
+| `scripts/verify-tiktok-exe.mjs @aljazeeraenglish` | **23/23**（真实 6 chat / 3 可识别观众；自动监听 6；SQLite/AI/重启/四平台回归） |
+| `scripts/verify-tiktok-browser-login.mjs` | **1/9 passed，0 failed，8 BLOCKED**（Chromium 被 DSH 作业对象终止） |
+| 真实浏览器中继端到端 | **BLOCKED**，未验证 |
+
+### 51.3 真实只读研究探针（不属于产品测试）
+
+- 使用 `talkaboutdesign/tiklive` 同类的匿名 `ttwid` + `webcast-ws.tiktok.com` 协议，独立脚本（`tests/.tmp`，不提交）在 `@freefirelatino` 直播中 35 秒收到 **82 帧 / 78 msg 帧 / 469 chat / 19 gift / 1 enter response**。
+- 这证明 TikTok webcast 事件通道在测试机器上可用且不要求登录；**不等于**浏览器中继真实登录验收，也不代表 LiveMemory 已接入该方案。
+- 后续重复运行时 TikTok 未再签发 `ttwid`，说明该通道存在平台侧限流/变化；只记录首次成功证据。
+
+### 51.4 未验证 / 不得宣称
+
+- 真实登录后浏览器中继收到弹幕/礼物：BLOCKED。
+- `room/enter` 403 的服务端具体原因（地区/账号/房间/请求上下文）：未确认。
+- 真实断网、下播长跑、干净 Windows 账户、真实 UAC 双击、真实礼物投递：未验证。
+- 免费本地方案未接入、未做 ToS/合规结论。

@@ -1,8 +1,100 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-15（TIKTOK-M3：修复浏览器中继「采集尚未配置」；登录/窗口/采集状态分离；浏览器中继礼物；1037 测试；EXE `e11f4008b9e3`）
+最后更新：2026-11-16（TIKTOK-M4：真实桌面 403 调查、PushFrame 解码、登录/采集/直播间访问分离；1050 测试；EXE `a463acfad051`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.41 TIKTOK-M4：真实 403 调查与浏览器中继链路审计（2026-11-16）🟡（feature/tiktok，真实登录后端到端仍 BLOCKED）
+
+范围：只处理真实 Windows EXE 人工验收暴露的问题——登录后 `room/enter` HTTP 403、登录/采集状态矛盾、无真实事件、停止后原始 i18n 键。**未改数据库 schema、AI 结果 Schema、提示词、其他平台适配器；未新增运行时依赖；未合并 main、未 Push、未 Tag、未 Release。**
+
+### 0.41.1 403 具体来源与根因
+
+| 项目 | 结论 |
+| --- | --- |
+| 来源 | 官方直播页自身发出的 `POST /webcast/room/enter/` 网络响应；`BrowserSession.#onEvent()` 的 `Network.responseReceived` 观察到，状态 **403**。该请求不是本地中继构造的，也不是本地映射出来的错误 |
+| 域名/阶段 | `www.tiktok.com` / `webcast.tiktok.com` 的直播间进入阶段（页面导航后、事件 WebSocket 之外）；不是登录页、不是 `room/info`、不是事件帧 |
+| 是否官方返回 | 是。TikTok 返回 403；中继只读取浏览器网络事件，没有伪造、重放或绕过 |
+| 是否复用登录上下文 | 是。登录与采集都使用 `<data>/browser/tiktok/account` 专用 profile；采集在同一浏览器中新建/复用 tab，Cookie 由 profile 共享 |
+| 登录是否真的失效 | **不能由这个 403 单独判定**。旧代码把「直播间进入 403」直接映射为登录 `refused`，这是错误的；账号会话 Cookie 仍可能存在 |
+| 页面可看直播但程序 403 | **可能**：`room/enter` 是一个 HTTP 进入调用，事件 WebSocket 可能仍独立投递。只读探针证明同一网络/机器上 TikTok webcast 事件通道可匿名收到真实事件（见 0.41.4），因此不能把该 403 当成「事件通道不可用」 |
+| 平台明确拒绝自动化 | **没有证据**证明是平台针对自动化的明确拒绝；也没有证据证明是地区/账号/房间限制。可确认的是：该房间的进入调用返回 403。不得据此伪造成功，也不得绕过 |
+
+本轮确认的产品根因不是「TikTok 永久封禁浏览器中继」，而是三个可验证的本地缺陷：
+
+1. **403 误判并提前中止**：`waitForReady()` 看到 403 立即返回 `loginRequired`，适配器抛 `TIKTOK_LOGIN_REQUIRED`，并把登录标成 `refused`；即使页面 WebSocket 正在投递也会被放弃。
+2. **帧格式错误**：中继把 WebSocket `PushFrame` 直接当 `WebcastResponse` 解析。当前 TikTok web 播放器的事件批次在 `PushFrame.payloadType='msg'` 的 field 8 内（通常 gzip），所以真实帧恒解出 0 条消息。旧测试用「已经是批次」的合成帧，掩盖了该缺陷。
+3. **登录/直播间访问/采集状态混用**：`login.state='refused'` 同时表示「账号拒绝」和「直播间 403」；开始记录失败后 `status.capture` 为空，UI 退回原始 `tiktokCaptureStateIdle`；「开始记录」只看 session 连接，不看是否收到事件/是否被拒。
+
+### 0.41.2 修复
+
+| 模块 | 内容 |
+| --- | --- |
+| `browser-relay.mjs` | 新增真实的 `PushFrame` 解码路径（field 6/7/8 → gzip 批次）；保留旧 `WebcastResponse` 兼容；非 `msg` 控制帧忽略 |
+| `browser-relay.mjs` | 403 不再立即失败：`waitForReady` 在 403 后给 6 秒宽限，真实帧优先；无帧才返回 `roomRefused`。适配器抛 `TIKTOK_ROOM_REFUSED`，不抛 `LOGIN_REQUIRED` |
+| `browser-relay.mjs` | 新增 `roomAccess`、`captureState`、`roomUnconfirmed`；运行中 403 无事件时宽限后进入 `FAILED/platform_refused` 并结束 session；有事件则保持 `normal` 并保留警告 |
+| `browser-login.mjs` | 登录态与直播间访问分离：403 保持 `logged_in`，只写 `roomAccess='refused'`；只有 Cookie/页面明确要求登录才 `expired`/`login_required`。新增 `markCaptureRefused`、`markCaptureUnconfirmed`、`markCaptureStopped`；重新登录可清除 `expired` |
+| `service.mjs` | 新增 `lastCapture`（失败/停止后仍显示准确状态）；`captureSource`；浏览器 403 抛 `TIKTOK_ROOM_REFUSED`（HTTP 403，`errors.tiktokRoomRefused`）；`EXPIRED`/`REFUSED` 登录不再尝试启动；切换通道不显示另一通道的旧失败 |
+| `live.js` + 三语 | 五项状态独立；连接行区分「记录中 / 记录但采集失败 / 记录但未确认事件 / 未开始（采集失败）」；登录卡显示「账号仍可能已登录，直播间访问被拒绝」；补 `tiktokCaptureStateIdle`、`tiktokCaptureStateRoomRefused`、`tiktokCaptureStateRoomUnconfirmed` 等键；停止后显示「已停止」 |
+| `monitoring/detectors/tiktok.mjs` | `TIKTOK_ROOM_REFUSED` 映射为 `BLOCKED` |
+
+### 0.41.3 自动化测试
+
+新增/更新：
+
+- 真实 `PushFrame`（gzip）→ `decodeFramePayload` → `mapTikTokMessage` → SQLite（`tiktok:<uid>`、原文、`msgId`）。
+- 403 + 有真实事件：启动成功、`events_received`、`roomAccess=refused`、登录仍 `logged_in`。
+- 403 + 无事件：`TIKTOK_ROOM_REFUSED`、无 recording、`capture.platform_refused`、登录不变。
+- 运行中 403：宽限后失败并结束，不显示正常采集；有事件则保持正常。
+- 无进入响应/无事件：`room_unconfirmed`，不显示正常采集。
+- 登录过期：阻止启动，无 recording。
+- 重新登录：`expired` → `logged_in`。
+- 浏览器关闭：同一 recording 自动重连到新 tab。
+- 通道切换：browser 失败不显示为 signer 状态。
+- 停止记录：`captureState=stopped`，不出现原始 i18n 键。
+- 三语：新增键齐全；静态扫描所有 `live.source.tiktok*`/`errors.tiktok*` 字面量键。
+
+结果：
+
+| 运行 | 结果 |
+| --- | --- |
+| 定向 TikTok（unit+integration） | **103 passed / 0 failed / 0 skipped** |
+| 全量 `node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"` | **1050 passed / 0 failed / 0 skipped（561,359.30 ms，2026-11-16）** |
+| `verify-exe` | **10/10**（Build ID `a463acfad051`，commit `ea950c0`） |
+| `verify-tiktok-exe @aljazeeraenglish` | **23/23**：真实 6 chat / 3 可识别观众；自动监听 6 条；SQLite/AI/重启/四平台回归通过 |
+| 真实浏览器登录脚本 | **1/9 passed，0 failed，8 BLOCKED**（DSH 作业对象终止 Chromium；`launch_failed`） |
+
+### 0.41.4 免费本地方案调查（仅研究，未接入）
+
+- `talkaboutdesign/tiklive`：MIT，2026-10 新项目（7 stars，活跃）；无登录、无签名服务、本地 Node/Bun；源码使用匿名 `ttwid` + `webcast-ws.tiktok.com` 的 `PushFrame` 协议。
+- 只读探针（不属于产品，未写入仓库）在同一台机器、同一网络、无登录条件下，35 秒收到 **82 帧 / 78 个 msg 帧 / 469 条 chat / 19 条 gift / 1 个进入响应**；证明 TikTok 的 webcast 事件通道本身可用，且不要求账号登录。
+- 该方案使用 TikTok 非公开 web 协议，不是官方 API，可能受 ToS/平台变更影响；**未接入 LiveMemory**。按 AGENTS §10，改用未公开接口需要开发者明确的产品/合规决策。
+- 其他：`wshook-extension`（MIT，浏览器扩展，需安装扩展，不适合 EXE）；`isaackogan/TikTokLive`（AGPL-3.0，Python，通常依赖第三方签名）；`TikTokLiveSharp`（NOASSERTION，C#，41 open issues）。均未采用。
+- 现有免费社区签名通道不受影响，仍是 130 秒级轮询，**不得描述为实时**。
+
+### 0.41.5 尚未解决 / BLOCKED
+
+- **真实登录后浏览器中继端到端投递仍 BLOCKED**：DSH 无法启动 Chromium，无法扫码/登录并观察页面自身 WebSocket。必须由开发者在普通 Windows 桌面用新 EXE 验收。
+- 无法证明 `@freefirelatino` 的 `room/enter` 403 的具体服务端原因（地区/账号/房间/请求上下文）；只能确认是 TikTok 返回，且不应与登录失效混为一谈。
+- 若真实浏览器页面自身 WebSocket 也收不到帧，则浏览器中继在该房间/账号/地区仍不可用；下一步应选择人工验收后再决定是否采用本地 unsigned transport，不得强行宣称已通过。
+- 未验证：真实断网、下播长跑、干净 Windows 账户、真实 UAC 双击、真实礼物在登录浏览器中的投递。
+
+### 0.41.6 Git / EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/tiktok` |
+| EXE | `D:\LiveMemory\dist\LiveMemory.exe` |
+| Build ID | `a463acfad051` |
+| source hash | `a463acfad051f8af6914c1c1ef20058dcac6358421595d701614197d19edea82` |
+| commit（构建时 HEAD） | `ea950c040e96aa5a81f767918e2314ba6d084580` |
+| 大小 / SHA-256 | `97,893,888` bytes / `fecf18ce7cb858770dbffda7d08e3373ecb63a613a1f29c74a8f11e8d5a84b77` |
+| builtAt | `2026-11-16T02:05:12.347Z` |
+| 资源 / 模块 | 229 files / 53 required modules |
+| RT_MANIFEST | **`requireAdministrator`** |
+
+- 代码与测试提交：`ea950c0`（`fix: decode TikTok PushFrame and separate room access from login`）；文档与构建记录为本轮最终 HEAD（见 `git log -1`）。
+- **未合并 main、未 Push、未创建 Tag、未发布 Release。**
 
 ## 0.40 TIKTOK-M3：浏览器中继「采集尚未配置」修复（2026-11-15）🟡（feature/tiktok，等待人工验收）
 
