@@ -61,6 +61,7 @@
 | `verify-exe` | **11/11**（含共享注册表、十字典、十 AI 输出、动态语言控件） |
 | `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
 | `verify-ai-token-exe` | **16/16**（分批、失败归因、断点续跑不重发已完成批次） |
+| 启动器十语言 | **10/10** `--help --lang <code>` exit 0；`--lang` 列表与十码、`--data-dir/--port/--diagnose` 均在；无乱码/截断 |
 | 源码服务器浏览器矩阵 | **440/440** 页面加载 PASS（10 语 × 1440/1024/820/390 × 明暗 × live/history/viewers/ai/settings/help + 详情） |
 | **EXE 内服务浏览器矩阵** | **440/440** 页面加载 PASS（同一矩阵，服务由 asInvoker 功能副本启动） |
 | 截图 | `docs/screenshots/i18n-p42-*` 40 张（源码）+ `i18n-p42-exe-*` 40 张（EXE） |

@@ -33,6 +33,7 @@
 | 大小 / SHA-256 | `99,200,512` bytes / `7c3f3d3f0bccd8d218dcbb560c82d7f7d89a7df6e0e35b8b9ccde054a4361830` |
 | Manifest | **`requireAdministrator`** |
 | `verify-exe` / `verify-help-exe` / `verify-ai-token-exe` | **11/11 / 14/14 / 16/16** |
+| 启动器十语言 | **10/10** `--help --lang <code>` exit 0，十码选项与用法完整 |
 
 ### 0.3 修复
 
