@@ -47,9 +47,9 @@ AI 输出十语 + 独立 `aiOutputLocale` · **1102 测试通过** · **未发�
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| Build ID / commit | `c28eeb197446` / `9b7a511` |
-| 大小 / SHA-256 | `99,198,976` bytes / `4f43855254313e623b602073765cb43abf7d4c0e2c8591e1b46bcfb85bd8c9b2` |
-| builtAt | `2026-11-16T14:15:54.313Z` |
+| Build ID / commit | `ad32fe5cc7fb` / `b24f52f` |
+| 大小 / SHA-256 | `99,198,976` bytes / `4434a20ff4705f10848a7874f641aa41850e0877c8654bd01f3b325765770926` |
+| builtAt | `2026-11-16T14:25:33.711Z` |
 | 资源 / 模块 | 237 files / 51 required modules |
 | RT_MANIFEST | **`requireAdministrator`** |
 | `verify-exe` | **11/11** |

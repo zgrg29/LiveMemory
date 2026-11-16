@@ -51,10 +51,10 @@
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `D:\LiveMemory\dist\LiveMemory.exe` |
-| Build ID | `c28eeb197446` |
-| 构建 commit | `9b7a511`（P41 代码/测试提交） |
-| 大小 / SHA-256 | `99,198,976` bytes / `4f43855254313e623b602073765cb43abf7d4c0e2c8591e1b46bcfb85bd8c9b2` |
-| builtAt | `2026-11-16T14:15:54.313Z` |
+| Build ID | `ad32fe5cc7fb` |
+| 构建 commit | `b24f52f`（P41 实现 + 注释修正；其后的提交只改文档） |
+| 大小 / SHA-256 | `99,198,976` bytes / `4434a20ff4705f10848a7874f641aa41850e0877c8654bd01f3b325765770926` |
+| builtAt | `2026-11-16T14:25:33.711Z` |
 | 资源 / 模块 | 237 files（含十份字典与新 `language.mjs`）/ 51 required modules |
 | RT_MANIFEST | **`requireAdministrator`** |
 | `verify-exe` | **11/11**（含 i18n 场景：十语字典 200、`locales.aiOutput` 十项、`aiOutputLocale=follow-ui`、`effective.aiOutputLocale` 有效） |

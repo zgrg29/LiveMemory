@@ -2252,7 +2252,7 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 
 | 项目 | 结果 |
 | --- | --- |
-| 构建 | Build ID `c28eeb197446` / commit `9b7a511` / `99,198,976` bytes / SHA-256 `4f438552…` / Manifest `requireAdministrator` |
+| 构建 | Build ID `ad32fe5cc7fb` / commit `b24f52f` / `99,198,976` bytes / SHA-256 `4434a20f…` / Manifest `requireAdministrator` |
 | `verify-exe` | **11/11**（含 i18n：十语字典 200、`locales.aiOutput` 十项、`aiOutputLocale=follow-ui`、`effective.aiOutputLocale` 有效） |
 | `verify-help-exe` | **14/14**（十语言 112 键 × 10） |
 | `verify-ai-token-exe` | **16/16**（分批、断点续跑、恢复不重发已完成批次） |

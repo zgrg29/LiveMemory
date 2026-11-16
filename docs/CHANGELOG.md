@@ -32,7 +32,7 @@
 - **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**。
 - 真实 DeepSeek `deepseek-flash`：`ko`/`zh-TW`/`de`/`pt-BR` 单场报告通过；`ko` 7 条韩语事实、
   `de` 7 条德语事实。**无母语签收**。
-- EXE `c28eeb197446`（commit `9b7a511`）：`verify-exe` 11/11、`verify-help-exe` 14/14、
+- EXE `ad32fe5cc7fb`（commit `b24f52f`）：`verify-exe` 11/11、`verify-help-exe` 14/14、
   `verify-ai-token-exe` 16/16。
 
 ## 0.14.0 — 2026-11-16（五平台正式发布：Twitch / 抖音 / TikTok，Multi-Platform Release）
