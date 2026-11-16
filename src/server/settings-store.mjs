@@ -5,7 +5,6 @@ import {normalizeTheme, THEMES} from '../shared/theme.mjs';
 import {STORAGE_MODES, normalizeStorageMode} from '../shared/storage-mode.mjs';
 import {AppError, ERROR_CODES} from '../shared/errors.mjs';
 import {DEFAULT_YOUTUBE_RAW_RETENTION_DAYS, normalizeRetentionDays} from '../storage/retention.mjs';
-import {TIKTOK_DEFAULT_TRANSPORT, normalizeTikTokTransport} from '../platforms/tiktok/transports.mjs';
 
 /**
  * Application preferences (language, theme, storage mode, preferred port).
@@ -22,7 +21,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   preferredPort: 47800,
   onboardingCompleted: false,
   youtubeRawRetentionDays: DEFAULT_YOUTUBE_RAW_RETENTION_DAYS,
-  tiktokTransport: TIKTOK_DEFAULT_TRANSPORT,
   updatedAt: null
 });
 
@@ -32,8 +30,7 @@ export const SETTINGS_KEYS = Object.freeze([
   'storageMode',
   'preferredPort',
   'onboardingCompleted',
-  'youtubeRawRetentionDays',
-  'tiktokTransport'
+  'youtubeRawRetentionDays'
 ]);
 
 function validatePort(value) {
@@ -57,7 +54,6 @@ export function normalizeSettings(input = {}) {
     preferredPort,
     onboardingCompleted,
     youtubeRawRetentionDays: normalizeRetentionDays(input.youtubeRawRetentionDays),
-    tiktokTransport: normalizeTikTokTransport(input.tiktokTransport) ?? TIKTOK_DEFAULT_TRANSPORT,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : null
   };
 }
@@ -169,18 +165,6 @@ export class SettingsStore {
             });
           }
           next.youtubeRawRetentionDays = normalizeRetentionDays(days);
-          break;
-        }
-        case 'tiktokTransport': {
-          const transport = normalizeTikTokTransport(value);
-          if (!transport) {
-            throw new AppError(ERROR_CODES.SETTINGS_INVALID, {
-              messageKey: 'errors.settingsInvalid',
-              details: {field: 'tiktokTransport'},
-              httpStatus: 400
-            });
-          }
-          next.tiktokTransport = transport;
           break;
         }
         default:

@@ -12,7 +12,6 @@ import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {TwitchService} from '../platforms/twitch/service.mjs';
 import {DouyinService} from '../platforms/douyin/service.mjs';
 import {TikTokService} from '../platforms/tiktok/service.mjs';
-import {TikTokBrowserRelay} from '../platforms/tiktok/browser-relay.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -96,11 +95,9 @@ export async function startServer({
   douyinWebSocketImpl = null,
   douyinFetchImpl = null,
   tiktokClient = null,
-  tiktokSigner = null,
-  tiktokBrowserRelay = null,
-  tiktokBrowserLogin = null,
   tiktokAdapterOptions = null,
   tiktokFetchImpl = null,
+  tiktokWebSocketImpl = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -192,15 +189,9 @@ export async function startServer({
       ...(douyinWebSocketImpl ? {WebSocketImpl: douyinWebSocketImpl} : {}),
       ...(douyinAdapterOptions ? {adapterOptions: douyinAdapterOptions} : {})
     });
-    // TikTok has two transports: the free community signer (default) and an
-    // experimental browser relay over the official live page. Both go through
-    // the same SessionManager/EventIngest path; the relay keeps a dedicated
-    // Chrome profile under the user's data directory.
-    const tiktokRelay = tiktokBrowserRelay ?? new TikTokBrowserRelay({
-      dataDir: paths.root,
-      logger,
-      now
-    });
+    // TikTok has one capture path: the anonymous local WebSocket. No login, no
+    // paid signing service and no dedicated browser profile. It uses the same
+    // SessionManager/EventIngest pipeline as every other platform.
     const tiktok = new TikTokService({
       sessionManager,
       db,
@@ -210,9 +201,7 @@ export async function startServer({
       dataDir: paths.root,
       ...(tiktokFetchImpl ? {fetchImpl: tiktokFetchImpl} : {}),
       ...(tiktokClient ? {client: tiktokClient} : {}),
-      ...(tiktokSigner ? {signer: tiktokSigner} : {}),
-      browserRelay: tiktokRelay,
-      ...(tiktokBrowserLogin ? {browserLogin: tiktokBrowserLogin} : {}),
+      ...(tiktokWebSocketImpl ? {WebSocketImpl: tiktokWebSocketImpl} : {}),
       ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
     });
     const monitoring = new MonitoringManager({
@@ -459,6 +448,20 @@ export async function startServer({
   // Restore persisted automatic-monitoring targets. Checks are staggered, so a
   // restart with many channels does not produce a request burst.
   runtime.monitoring.start();
+
+  // TikTok startup work: restore the cached anonymous device cookie and remove
+  // the retired browser-relay profile/login marker. Best-effort and off the
+  // critical path: a failure here must not stop the server.
+  runtime.tiktok?.startup?.()
+    .then((result) => {
+      const cleanup = result?.legacyCleanup ?? null;
+      if (cleanup?.removed?.length) {
+        logger?.info({event: 'tiktok.legacy.cleanup.applied', removed: cleanup.removed.length});
+      }
+    })
+    .catch((error) => {
+      logger?.warn({event: 'tiktok.startup.failed', code: error?.code ?? 'unknown'});
+    });
 
   // Historical rows abandoned by a crash/shutdown are probed after the server
   // is available so a slow/blocked platform cannot delay startup. The probe is

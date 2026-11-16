@@ -1769,8 +1769,7 @@
   line-height: 1.5;
 }
 
-.tiktok-verification,
-.tiktok-verify-result {
+.tiktok-verification {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1779,14 +1778,9 @@
   border-top: 1px solid var(--hairline);
 }
 
-.tiktok-verification .source-status,
-.tiktok-verify-result .source-status {
+.tiktok-verification .source-status {
   justify-content: space-between;
   gap: 12px;
-}
-
-.tiktok-verify-result .source-note {
-  margin-top: 0;
 }
 
 .source-meta {

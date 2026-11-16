@@ -7,11 +7,12 @@ import {TikTokService} from '../../src/platforms/tiktok/service.mjs';
 import {MonitoringManager} from '../../src/monitoring/manager.mjs';
 import {getSession} from '../../src/storage/repositories/sessions.mjs';
 import {listMonitorTargets} from '../../src/storage/repositories/monitor-targets.mjs';
-import {chatMessage} from '../helpers/tiktok-frames.mjs';
+import {FakeWebSocket} from '../helpers/tiktok-ws-fake.mjs';
 
 /**
  * Automatic TikTok discovery: public room resolution -> target state machine ->
- * SessionManager -> adapter. Fake client/signer, real database and manager.
+ * SessionManager -> anonymous local WebSocket adapter. Fake client/socket, real
+ * database and manager.
  */
 
 const T0 = 1700000000000;
@@ -42,29 +43,27 @@ function room(uniqueId, roomId, nickname, isLive = true) {
   };
 }
 
-class FakeSigner {
-  constructor(messages) {
-    this.messages = messages;
-    this.mode = 'community-signer';
-  }
+function fakeTtwid() {
+  return {
+    get: async () => 'anon-device-cookie-value',
+    snapshot: () => ({cached: true, fetchCount: 1, retryCount: 0})
+  };
+}
 
-  async connect({cursor = null} = {}) {
-    return {
-      fetchResult: {
-        messages: cursor ? [] : this.messages.map((entry) => ({
-          method: entry.method,
-          payload: entry.payload,
-          envelopeMsgId: null
-        })),
-        cursor: 'monitor-cursor',
-        internalExt: 'ext',
-        fetchInterval: 0,
-        pushServer: null,
-        routeParams: new Map(),
-        needsAck: false
-      }
-    };
+/** Run one monitor tick, completing the fake socket handshake it opens. */
+async function tickWithSocket(manager) {
+  FakeWebSocket.reset();
+  let settled = false;
+  const running = manager.tick().finally(() => {
+    settled = true;
+  });
+  while (!settled) {
+    for (const ws of FakeWebSocket.instances) {
+      if (ws.readyState === 0) ws.open();
+    }
+    await sleep(5);
   }
+  await running;
 }
 
 function harness(rooms) {
@@ -104,16 +103,14 @@ function harness(rooms) {
       return new Map();
     }
   };
-  const signer = new FakeSigner([
-    {method: 'WebcastChatMessage', payload: chatMessage({msgId: '7771', userId: '4242', nickname: 'Alice', content: 'auto hello'})}
-  ]);
   const tiktok = new TikTokService({
     sessionManager,
     db,
     client,
-    signer,
+    ttwidProvider: fakeTtwid(),
+    WebSocketImpl: FakeWebSocket,
     now,
-    adapterOptions: {pollIntervalMs: 10, statusIntervalMs: 100000, watchdogCheckMs: 100000, streakFlushMs: 100000}
+    adapterOptions: {statusIntervalMs: 100000, statusCheckDelayMs: 100000, streakFlushMs: 100000, maxBackoffMs: 30}
   });
   const manager = new MonitoringManager({
     db,
@@ -135,7 +132,7 @@ test('a detected live TikTok creator starts a normal recording session', async (
     assert.equal(target.platformUid, 'anchor-7700000000000000777');
 
     db.prepare('UPDATE monitor_targets SET next_check_at = 0 WHERE id = ?').run(target.id);
-    await manager.tick();
+    await tickWithSocket(manager);
 
     const updated = manager.getTarget(target.id);
     assert.equal(updated.state, 'recording');
@@ -147,7 +144,7 @@ test('a detected live TikTok creator starts a normal recording session', async (
     assert.equal(session.status, 'live');
 
     db.prepare('UPDATE monitor_targets SET next_check_at = 0 WHERE id = ?').run(target.id);
-    await manager.tick();
+    await tickWithSocket(manager);
     assert.equal(manager.getTarget(target.id).state, 'recording', 'a recording target is not re-checked');
 
     await sessionManager.shutdown();
@@ -162,7 +159,7 @@ test('an offline TikTok creator stays waiting and never creates a session', asyn
   try {
     const target = await manager.createTarget({platform: 'tiktok', input: '@creator'});
     db.prepare('UPDATE monitor_targets SET next_check_at = 0 WHERE id = ?').run(target.id);
-    await manager.tick();
+    await tickWithSocket(manager);
     const updated = manager.getTarget(target.id);
     assert.equal(updated.state, 'waiting');
     assert.equal(updated.activeSessionId, null);

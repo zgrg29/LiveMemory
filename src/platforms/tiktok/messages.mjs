@@ -120,7 +120,14 @@ export function decodeFetchResult(buffer) {
     const payloadEntry = field(messageFields, 2, 2);
     const envelopeMsgId = readEnvelopeId(messageFields);
     if (!method || !payloadEntry) continue;
-    messages.push({method, payload: payloadEntry.bytes, envelopeMsgId});
+    // Field 6 marks recent comments TikTok replays on join. They are real
+    // messages but predate the capture, so the transport decides to skip them.
+    messages.push({
+      method,
+      payload: payloadEntry.bytes,
+      envelopeMsgId,
+      isHistory: field(messageFields, 6, 0)?.value === 1n
+    });
   }
   return {
     messages,

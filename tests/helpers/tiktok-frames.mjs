@@ -115,11 +115,12 @@ export function controlMessage({msgId = '7001', action = 3} = {}) {
 }
 
 /** One `ProtoMessageFetchResult.Message` entry (method + payload + int64 id). */
-export function envelopeEntry({method, payload, msgId = null}) {
+export function envelopeEntry({method, payload, msgId = null, isHistory = false}) {
   return messageFields([
     encodeBytesField(1, method),
     encodeBytesField(2, payload),
-    encodeId(3, msgId)
+    encodeId(3, msgId),
+    isHistory ? encodeVarintField(6, 1n) : null
   ]);
 }
 

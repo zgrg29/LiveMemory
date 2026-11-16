@@ -1,6 +1,6 @@
 # LiveMemory 直播记忆
 
-本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live** 与 **TikTok Live**（抖音为 `feature/douyin` 阶段交付：匿名弹幕/稳定 UID/自动监听已真实接入；礼物需登录。扫码登录已改为本机 Chrome/Edge 官方页面，真实手机扫码与真实礼物尚未验证。TikTok 为 `feature/tiktok` 阶段交付：房间/礼物目录完全本地免费，聊天走免费社区签名通道或实验性浏览器中继，真实聊天已在正式 EXE 验证）。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live** 与 **TikTok Live**（抖音为 `feature/douyin` 阶段交付：匿名弹幕/稳定 UID/自动监听已真实接入；礼物需登录。扫码登录已改为本机 Chrome/Edge 官方页面，真实手机扫码与真实礼物尚未验证。TikTok 为 `feature/tiktok` M5 阶段交付：统一为匿名本地 webcast WebSocket 采集，不需要登录、不需要选择采集通道，也不依赖付费签名服务；非官方协议，实验性）。
 
 Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douyin Live and TikTok Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
 
@@ -88,7 +88,7 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
 - **Twitch 直播（M1）**：匿名 IRC 公开聊天 + 公开频道元数据，无需 Twitch 登录、OAuth、API Key 或 Cookie；粘贴频道链接/账号即可，支持多频道并发与自动开播监听。真实公开频道已实测稳定 User ID、消息 ID、Unicode、平台表情 ID 与订阅/续订；**Bits 与赠订已解析但尚未观测到真实事件**。Bits/Tier/月数不换算收入，金额保持未知
 - **抖音直播（M2/M3，`feature/douyin`）**：公开直播间网页 + 签名的匿名 WebSocket；昵称、稳定 UID `douyin:<user.id>`、弹幕原文、Unicode/Emoji、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播。礼物需登录：连送只在 `repeatEnd=1` 写一条，钻石只作展示价值，`amount_minor=null`，不冒充收入；匿名连接真实观测到 0 礼物。扫码登录通过本机 Chrome/Edge 打开官方页面并显示同一二维码（不绕过验证码/风控）；可展开的中/日/英 12 步 Cookie 教程作为备用；Cookie 仅加密保存在本机。**真实手机扫码、真实 Cookie 正向与真实礼物尚未验证**。签名组件为 AGPL-3.0，见许可证说明
-- **TikTok 直播（M1，`feature/tiktok`）**：房间识别、开播状态、主播稳定 ID、标题与礼物目录（809 个）由 TikTok 公开接口**完全本地免费**读取，无需登录、Cookie、API Key 或签名服务。聊天与礼物事件有两种传输：默认**免费社区签名通道**（无 Key、无付费、不要求 Business 计划；适配器 15 秒轮询并按平台 5 次/分钟突发限制退避），可在设置中切换为**浏览器中继**（本机 Chrome/Edge 专用资料目录 + CDP 读取官方直播页自身数据；TikTok 网页端要求登录才能进入房间，未登录会如实显示“需要登录”，不伪造事件）。稳定身份为 `tiktok:<user.id>`，消息 `msgId` 去重，连送只在最终态计一次；钻石只作展示价值（`amount_minor=null`、`value_kind=unknown`），不换算主播收入。**真实聊天/稳定 ID 已在源码服务器与正式 EXE 验证；礼物/连送/订阅事件与登录后浏览器中继尚未验证**。第三方签名服务为可选运行时依赖，不是代码依赖，主项目许可证未改变。
+- **TikTok 直播（M5，`feature/tiktok`，统一为匿名本地采集）**：房间识别、开播状态、主播稳定 ID、标题与礼物目录由 TikTok 公开接口**完全本地免费**读取。弹幕与礼物事件走 TikTok 自身的 **webcast WebSocket**，只需要任何访客都会获得的匿名 `ttwid` 设备 Cookie：**不需要登录、不需要 Cookie 导入、不需要浏览器中继、不需要 API Key，也不依赖付费或免费社区签名服务**。稳定身份为 `tiktok:<user.id>`，消息 `msgId` 去重，连送只在最终态计一次；钻石只作展示价值（`amount_minor=null`、`value_kind=unknown`），不换算主播收入。**这不是 TikTok 官方 API，而是其非公开 web 协议**：可能随平台变更失效，连接没有续传游标（重连期间可能漏消息，不补录），界面始终标注「非官方/实验性」。M5 已删除浏览器扫码登录、登录状态与专用浏览器资料目录，并在启动时安全清理旧版本遗留的专用 Profile（只删除带 LiveMemory 所有权标记的目录，绝不影响 Chrome/Edge 日常资料）。真实弹幕/稳定 ID/消息 ID 与断线重连已在 30 分钟真实长测与正式 EXE 验证；礼物是否观测到以每次运行的实际证据为准（未观测到即标 NOT-OBSERVED）。
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
 - **M6：AI 文件协议（历史）**：v0.13.1 已删除用户可见的“导出 ZIP / 复制提示词 / 粘贴 JSON”流程；内部包格式、严格 Schema、证据/身份/批次校验、事务导入与历史结果读取保留。
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用

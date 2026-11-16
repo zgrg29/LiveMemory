@@ -4,25 +4,30 @@ import {SOURCE_QUALITY} from '../../shared/events.mjs';
 import {resolveBroadcasterIdentity} from '../../shared/broadcaster.mjs';
 import {retentionStatus, runRetention} from '../../storage/retention.mjs';
 import {TikTokClient} from './client.mjs';
-import {TikTokSigner} from './signer.mjs';
-import {TikTokAdapter} from './adapter.mjs';
-import {TikTokBrowserLogin, TIKTOK_LOGIN_STATES} from './browser-login.mjs';
+import {TikTokLocalAdapter} from './local-adapter.mjs';
 import {parseTikTokInput} from './link.mjs';
 import {TIKTOK_ERRORS, TikTokError} from './errors.mjs';
-import {TIKTOK_TRANSPORTS, normalizeTikTokTransport} from './transports.mjs';
+import {TtwidProvider} from './webcast.mjs';
+import {createTtwidStore} from './state.mjs';
+import {cleanupLegacyTikTokArtifacts} from './legacy-cleanup.mjs';
 
 /**
- * Glue between HTTP routes, the public TikTok metadata client, the signed
- * poll transport (or the experimental browser relay) and SessionManager.
+ * Glue between HTTP routes, the public TikTok metadata client, the anonymous
+ * local WebSocket capture and SessionManager.
  *
- * Two transports are available and both feed the same `EventIngest` pipeline:
- *   - `signer`  (default): free community signing endpoint. No key, no payment.
- *   - `browser` (experimental): a real Chrome session that reads the official
- *     live page. TikTok gates live chat behind login on the web page, so this
- *     transport reports `TIKTOK_LOGIN_REQUIRED` until the user is logged in.
+ * One capture path only: `local`. It connects to TikTok's webcast WebSocket with
+ * an anonymous `ttwid` device cookie — no account, no OAuth, no cookie jar, no
+ * paid signing service and no browser automation. Room metadata and the gift
+ * catalog come from TikTok's public HTTP endpoints.
  *
- * Room metadata and the gift catalog always work locally and never require the
- * signed transport.
+ * This uses TikTok's private web protocol, not an official API: it is labelled
+ * "unofficial / experimental" everywhere it is user-visible, can stop working
+ * when TikTok changes the protocol, and has no resume cursor (events during a
+ * reconnect can be missed; duplicates are removed by message id).
+ *
+ * The retired browser relay, login and free community signer paths were removed
+ * after the local path passed real acceptance; `legacyCleanup` below removes the
+ * leftover dedicated browser profile and login marker from older installs.
  */
 
 export const TIKTOK_RAW_RETENTION_DAYS = 30;
@@ -32,17 +37,12 @@ const HTTP_BY_CODE = new Map([
   [TIKTOK_ERRORS.ROOM_NOT_FOUND, [404, 'errors.tiktokRoomNotFound']],
   [TIKTOK_ERRORS.ROOM_OFFLINE, [409, 'errors.tiktokRoomOffline']],
   [TIKTOK_ERRORS.ROOM_UNAVAILABLE, [403, 'errors.tiktokRoomUnavailable']],
-  [TIKTOK_ERRORS.ROOM_REFUSED, [403, 'errors.tiktokRoomRefused']],
-  [TIKTOK_ERRORS.LOGIN_REQUIRED, [403, 'errors.tiktokLoginRequired']],
   [TIKTOK_ERRORS.RATE_LIMITED, [429, 'errors.tiktokRateLimit']],
   [TIKTOK_ERRORS.NETWORK, [502, 'errors.tiktokNetwork']],
   [TIKTOK_ERRORS.PROTOCOL, [502, 'errors.tiktokProtocol']],
   [TIKTOK_ERRORS.CONNECT_TIMEOUT, [504, 'errors.tiktokConnectTimeout']],
-  [TIKTOK_ERRORS.SIGNER_UNAVAILABLE, [502, 'errors.tiktokSignerUnavailable']],
-  [TIKTOK_ERRORS.SIGNER_PREMIUM_REQUIRED, [403, 'errors.tiktokSignerPremiumRequired']],
+  [TIKTOK_ERRORS.SOCKET_FAILED, [502, 'errors.tiktokSocketFailed']],
   [TIKTOK_ERRORS.NOT_CONFIGURED, [503, 'errors.tiktokNotConfigured']],
-  [TIKTOK_ERRORS.BROWSER_UNAVAILABLE, [503, 'errors.tiktokBrowserUnavailable']],
-  [TIKTOK_ERRORS.BROWSER_FAILED, [502, 'errors.tiktokBrowserFailed']],
   [TIKTOK_ERRORS.STOPPED, [409, 'errors.tiktokStopped']]
 ]);
 
@@ -90,11 +90,10 @@ export class TikTokService {
     now = Date.now,
     fetchImpl = globalThis.fetch,
     client = null,
-    signer = null,
-    browserRelay = null,
-    browserLogin = null,
+    ttwidProvider = null,
     dataDir = null,
-    adapterOptions = null
+    adapterOptions = null,
+    WebSocketImpl = globalThis.WebSocket
   } = {}) {
     this.sessionManager = sessionManager;
     this.db = db;
@@ -102,37 +101,45 @@ export class TikTokService {
     this.logger = logger;
     this.now = now;
     this.fetchImpl = fetchImpl;
+    this.dataDir = dataDir;
+    this.WebSocketImpl = WebSocketImpl;
     this.client = client ?? new TikTokClient({fetchImpl, now});
-    this.signer = signer ?? new TikTokSigner({fetchImpl, now});
-    this.browserRelay = browserRelay;
-    this.browserLogin = browserLogin ?? (dataDir
-      ? new TikTokBrowserLogin({
-        dataDir,
-        logger,
-        now,
-        fetchImpl,
-        isCaptureActive: () => this.#hasActiveCapture()
-      })
-      : null);
-    // An injected login module (tests, future transports) still needs to know
-    // whether a capture is using the same dedicated browser profile. Closing
-    // the login window must not terminate a live capture.
-    if (this.browserLogin?.setCaptureActiveProvider) {
-      this.browserLogin.setCaptureActiveProvider(() => this.#hasActiveCapture());
-    }
+    // One anonymous device cookie for every room in this process: fewer page
+    // requests, and TikTok throttles bursts of them.
+    this.ttwidProvider = ttwidProvider ?? new TtwidProvider({
+      fetchImpl,
+      now,
+      logger,
+      store: dataDir ? createTtwidStore(dataDir) : null
+    });
     this.adapterOptions = adapterOptions;
     this.lastEnd = null;
-    // The last capture result that is no longer backed by an active recording.
-    // Without it, a failed start looked identical to "idle" in the UI.
+    // The last capture result no longer backed by an active recording, so a
+    // failed or stopped start does not look identical to "idle".
     this.lastCapture = null;
+    this.legacyCleanup = null;
+    this.startedAt = null;
   }
 
-  #hasActiveCapture() {
+  /**
+   * One-time startup work: restore the cached anonymous cookie and remove
+   * retired browser-relay artifacts from older installs. Both are best-effort
+   * and never block the server from starting.
+   */
+  async startup() {
+    this.startedAt = this.now();
     try {
-      return this.#recordings().length > 0;
-    } catch {
-      return false;
+      await this.ttwidProvider.load?.();
+    } catch (error) {
+      this.logger?.warn({event: 'tiktok.ttwid.restore_failed', code: error?.code ?? 'unknown'});
     }
+    try {
+      this.legacyCleanup = cleanupLegacyTikTokArtifacts(this.dataDir, {logger: this.logger});
+    } catch (error) {
+      this.legacyCleanup = {removed: [], skipped: [], errors: [{reason: error?.code ?? 'cleanup_failed'}]};
+      this.logger?.warn({event: 'tiktok.legacy.cleanup.failed', code: error?.code ?? 'unknown'});
+    }
+    return {ttwid: this.ttwidProvider.snapshot?.() ?? null, legacyCleanup: this.legacyCleanup};
   }
 
   #recordings() {
@@ -152,66 +159,21 @@ export class TikTokService {
     return TIKTOK_RAW_RETENTION_DAYS;
   }
 
-  /** Which transport is configured, and whether it can be used right now. */
+  /**
+   * The single capture transport. Kept as a method because routes and the UI
+   * show it; it no longer offers a choice, and never silently switches.
+   */
   transport() {
-    const configured = String(this.settings?.get?.().tiktokTransport ?? 'auto');
-    const requested = normalizeTikTokTransport(configured) ?? 'auto';
-    const signerAvailable = Boolean(this.signer?.connect);
-    // `TikTokBrowserRelay` exposes `createAdapter`, not `start`. Checking the
-    // wrong member made an explicitly selected browser relay look
-    // unconfigured, which is the real reason `connect` answered
-    // TIKTOK_NOT_CONFIGURED after a successful login and room check.
-    const browserAvailable = Boolean(this.browserRelay?.createAdapter);
-    const active = requested === 'signer'
-      ? (signerAvailable ? 'signer' : null)
-      : requested === 'browser'
-        ? (browserAvailable ? 'browser' : null)
-        : (signerAvailable ? 'signer' : (browserAvailable ? 'browser' : null));
-    const login = this.browserLogin?.status?.() ?? null;
-    const profileOwned = Boolean(login?.profile?.owned);
     return {
-      requested,
-      active,
-      signerAvailable,
-      browserAvailable,
-      browserRelayAvailable: browserAvailable,
-      browserLoginState: login?.state ?? 'unavailable',
-      browserReady: Boolean(login && login.state === TIKTOK_LOGIN_STATES.LOGGED_IN),
-      profileOwned,
-      captureActive: this.#hasActiveCapture(),
-      revalidationRequired: Boolean(login?.revalidationRequired)
-    };
-  }
-
-  /** Fresh login/capture view that never conflates login with event delivery. */
-  #loginView() {
-    const login = this.browserLogin?.status?.() ?? {
-      state: 'unavailable',
-      supported: false,
-      browserOpen: false,
-      error: null,
-      capture: null
-    };
-    const recording = this.#recordings().at(-1) ?? null;
-    return {
-      ...login,
-      verification: {
-        account: {
-          state: login?.state ?? 'unavailable',
-          loggedIn: login?.state === TIKTOK_LOGIN_STATES.LOGGED_IN,
-          browserOpen: Boolean(login?.browserOpen),
-          verifiedAt: login?.verifiedAt ?? null,
-          verifiedBy: login?.verifiedBy ?? null,
-          revalidationRequired: Boolean(login?.revalidationRequired)
-        },
-        room: login?.room ?? null,
-        capture: login?.capture ?? null,
-        events: Number(login?.capture?.eventsReceived ?? 0),
-        recording: {
-          state: recording?.connection?.state ?? 'idle',
-          sessionId: recording?.sessionId ?? null
-        }
-      }
+      requested: 'local',
+      active: 'local',
+      protocol: 'webcast-ws',
+      unofficial: true,
+      requiresLogin: false,
+      requiresPaidService: false,
+      requiresBrowser: false,
+      captureActive: this.#recordings().length > 0,
+      ttwid: this.ttwidProvider.snapshot?.() ?? null
     };
   }
 
@@ -231,14 +193,26 @@ export class TikTokService {
     });
     const latest = recordings.at(-1) ?? null;
     const transport = this.transport();
-    const login = this.#loginView();
-    const rateLimit = this.signer?.availability?.() ?? null;
+    // A recording can also be stopped through the shared live/history stop
+    // action, which bypasses `disconnect()`. Reflect that end so the capture
+    // card never falls back to "not started" right after a real recording.
+    const lastEndCapture = (!latest && !this.lastCapture && this.lastEnd?.transport === 'local')
+      ? {
+        transport: 'local',
+        state: 'stopped',
+        category: this.lastEnd.reason === 'platform_ended' ? 'ended' : 'stopped',
+        captureState: this.lastEnd.reason === 'platform_ended' ? 'platform_ended' : 'stopped',
+        reason: this.lastEnd.reason,
+        eventsReceived: 0,
+        eventsVerified: false,
+        checkedAt: this.lastEnd.at
+      }
+      : null;
+    const lastCapture = this.lastCapture ?? lastEndCapture;
     return {
       available: true,
-      mode: transport.active ?? 'unavailable',
+      mode: 'local',
       transport,
-      login,
-      rateLimit,
       connection: latest
         ? {
           state: latest.connection.state,
@@ -250,11 +224,10 @@ export class TikTokService {
           lastEnd: this.lastEnd
         }
         : {state: 'idle', detail: null, uniqueId: null, roomId: null, title: null, viewers: null, lastEnd: this.lastEnd},
-      capture: latest?.capture
-        ?? (this.lastCapture && (this.lastCapture.transport ?? 'browser') === transport.active ? this.lastCapture : null),
+      capture: latest?.capture ?? lastCapture,
       captureSource: latest?.capture
         ? 'recording'
-        : (this.lastCapture && (this.lastCapture.transport ?? 'browser') === transport.active ? 'last_attempt' : null),
+        : (lastCapture ? 'last_attempt' : null),
       recordings,
       recording: latest?.connection.state ?? 'idle',
       session: latest
@@ -274,23 +247,23 @@ export class TikTokService {
           policy: 'tiktok-raw-content'
         })
         : null,
+      ttwid: this.ttwidProvider.snapshot?.() ?? null,
+      legacyCleanup: this.legacyCleanup,
       capabilities: {
         requiresApiKey: false,
         requiresLogin: false,
-        browserRequiresLogin: true,
-        requiresPaidPlan: false,
         requiresCookie: false,
+        requiresPaidPlan: false,
+        requiresSigningService: false,
+        requiresBrowser: false,
         liveOnly: true,
         stableUserId: true,
         messageId: true,
         roomMetadata: 'verified-public',
         giftCatalog: 'verified-public',
         chat: 'verified-real-sample',
-        gifts: 'parsed-not-observed',
-        giftStreak: 'parsed-not-observed',
-        transportSigner: 'free-community-no-key',
-        transportBrowser: 'experimental-login-required',
-        loginRequiredForChat: transport.active === 'browser'
+        gifts: 'observed-or-not-observed-per-run',
+        giftStreak: 'merged-by-group'
       }
     };
   }
@@ -309,115 +282,16 @@ export class TikTokService {
         details: {uniqueId: room?.uniqueId ?? null}
       });
     }
-    const transport = this.transport();
-    let adapter;
-    if (!transport.active) {
-      // A requested transport that exists but is unusable must not be reported
-      // as "capture is not configured": that message told the user their login
-      // and room check were meaningless. Keep the actionable cause instead.
-      if (transport.requested === 'browser') {
-        throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-          messageKey: 'errors.tiktokBrowserUnavailable',
-          httpStatus: 503,
-          details: {reason: 'relay_not_available'}
-        });
-      }
-      if (transport.requested === 'signer') {
-        throw new TikTokError(TIKTOK_ERRORS.SIGNER_UNAVAILABLE, {
-          messageKey: 'errors.tiktokSignerUnavailable',
-          httpStatus: 502,
-          details: {reason: 'signer_not_available'}
-        });
-      }
-      throw new TikTokError(TIKTOK_ERRORS.NOT_CONFIGURED, {
-        messageKey: 'errors.tiktokNotConfigured',
-        httpStatus: 503,
-        details: {requested: transport.requested, signerAvailable: transport.signerAvailable, browserAvailable: transport.browserAvailable}
-      });
-    }
-    if (transport.active === 'browser') {
-      if (!this.browserRelay?.createAdapter) {
-        throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-          messageKey: 'errors.tiktokBrowserUnavailable',
-          httpStatus: 503,
-          details: {reason: 'relay_not_available'}
-        });
-      }
-      const login = this.browserLogin?.status?.() ?? null;
-      const loginState = login?.state ?? TIKTOK_LOGIN_STATES.UNAVAILABLE;
-      const profileOwned = Boolean(login?.profile?.owned);
-      if (!this.browserLogin) {
-        throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-          messageKey: 'errors.tiktokBrowserUnavailable',
-          httpStatus: 503,
-          details: {reason: 'login_not_configured'}
-        });
-      }
-      if (loginState === TIKTOK_LOGIN_STATES.UNAVAILABLE) {
-        throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-          messageKey: 'errors.tiktokBrowserUnavailable',
-          httpStatus: 503,
-          details: {reason: 'login_unavailable'}
-        });
-      }
-      if ([
-        TIKTOK_LOGIN_STATES.OPENING,
-        TIKTOK_LOGIN_STATES.WAITING,
-        TIKTOK_LOGIN_STATES.VERIFYING
-      ].includes(loginState)) {
-        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
-          messageKey: 'errors.tiktokLoginRequired',
-          httpStatus: 403,
-          details: {reason: 'login_in_progress', loginState}
-        });
-      }
-      if (loginState === TIKTOK_LOGIN_STATES.REFUSED) {
-        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
-          messageKey: 'errors.tiktokLoginRequired',
-          httpStatus: 403,
-          details: {reason: 'login_refused', loginState}
-        });
-      }
-      if (loginState === TIKTOK_LOGIN_STATES.EXPIRED) {
-        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
-          messageKey: 'errors.tiktokLoginRequired',
-          httpStatus: 403,
-          details: {reason: 'session_expired', loginState}
-        });
-      }
-      // A persisted `logged_in` marker is only a hint. When the dedicated
-      // profile still exists the relay is allowed to try: a stale cookie is
-      // then reported as a real platform refusal instead of being trusted.
-      if (loginState !== TIKTOK_LOGIN_STATES.LOGGED_IN && !profileOwned) {
-        throw new TikTokError(TIKTOK_ERRORS.LOGIN_REQUIRED, {
-          messageKey: 'errors.tiktokLoginRequired',
-          httpStatus: 403,
-          details: {reason: 'login_required', loginState}
-        });
-      }
-      adapter = this.browserRelay.createAdapter({
-        uniqueId: room.uniqueId,
-        roomId: room.roomId,
-        liveUrl: room.liveUrl,
-        logger: this.logger,
-        now: this.now
-      });
-    } else if (transport.active === 'signer') {
-      adapter = new TikTokAdapter({
-        uniqueId: room.uniqueId,
-        roomId: room.roomId,
-        client: this.client,
-        signer: this.signer,
-        logger: this.logger,
-        now: this.now,
-        ...(this.adapterOptions ? this.adapterOptions : {})
-      });
-    } else {
-      throw new TikTokError(TIKTOK_ERRORS.NOT_CONFIGURED, {
-        messageKey: 'errors.tiktokNotConfigured',
-        httpStatus: 503
-      });
-    }
+    const adapter = new TikTokLocalAdapter({
+      uniqueId: room.uniqueId,
+      roomId: room.roomId,
+      client: this.client,
+      ttwidProvider: this.ttwidProvider,
+      WebSocketImpl: this.WebSocketImpl,
+      logger: this.logger,
+      now: this.now,
+      ...(this.adapterOptions ? this.adapterOptions : {})
+    });
     const identity = resolveBroadcasterIdentity({
       platform: 'tiktok',
       platformRoomId: room.roomId,
@@ -441,98 +315,30 @@ export class TikTokService {
           room: {...room},
           uniqueId: room.uniqueId,
           roomId: room.roomId,
-          transport: transport.active,
+          transport: 'local',
+          protocol: 'webcast-ws',
           broadcasterIdentity: identity.identity,
           input: input ?? null
         },
         onEnded: ({reason}) => {
-          this.lastEnd = {reason, at: this.now(), transport: transport.active};
+          this.lastEnd = {reason, at: this.now(), transport: 'local'};
           this.#applyRetention();
         }
       });
     } catch (error) {
-      // The adapter is the only component that actually talks to the logged-in
-      // official page. Mirror its evidence back into the login badge, but keep
-      // login state and room-access state separate: a room-entry 403 does not
-      // mean the account logged out.
-      const reason = error?.details?.reason ?? null;
-      const roomEnterStatus = error?.details?.roomEnterStatus ?? null;
-      if (transport.active === 'browser') {
-        this.lastCapture = {
-          transport: transport.active,
-          state: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
-            ? 'platform_refused'
-            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'login_required' : 'error'),
-          category: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
-            ? 'platform_refused'
-            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'user_action' : 'failed'),
-          reason: reason ?? error?.code ?? 'connect_failed',
-          eventsReceived: 0,
-          eventsVerified: false,
-          captureState: error?.code === TIKTOK_ERRORS.ROOM_REFUSED
-            ? 'platform_refused'
-            : (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED ? 'login_required' : 'error'),
-          roomEnterStatus,
-          roomAccess: roomEnterStatus === 403 ? {state: 'refused', status: 403, at: this.now()} : null,
-          uniqueId: room.uniqueId,
-          liveUrl: room.liveUrl ?? null,
-          checkedAt: this.now()
-        };
-        if (this.browserLogin) {
-          if (error?.code === TIKTOK_ERRORS.LOGIN_REQUIRED) {
-            this.browserLogin.markCaptureLoginRequired?.({
-              roomEnterStatus,
-              reason: reason ?? 'login_required',
-              uniqueId: room.uniqueId
-            });
-          } else if (error?.code === TIKTOK_ERRORS.ROOM_REFUSED) {
-            this.browserLogin.markCaptureRefused?.({
-              roomEnterStatus: roomEnterStatus ?? 403,
-              reason: reason ?? 'room_enter_403',
-              uniqueId: room.uniqueId,
-              liveUrl: room.liveUrl ?? null
-            });
-          } else if ([TIKTOK_ERRORS.BROWSER_FAILED, TIKTOK_ERRORS.BROWSER_UNAVAILABLE].includes(error?.code)) {
-            this.browserLogin.markCaptureFailed?.({
-              reason: reason ?? error?.code,
-              uniqueId: room.uniqueId
-            });
-          }
-        }
-      }
+      this.lastCapture = {
+        transport: 'local',
+        state: error?.code === TIKTOK_ERRORS.ROOM_OFFLINE ? 'platform_ended' : 'error',
+        category: error?.code === TIKTOK_ERRORS.ROOM_OFFLINE ? 'ended' : 'failed',
+        captureState: error?.code === TIKTOK_ERRORS.ROOM_OFFLINE ? 'platform_ended' : 'error',
+        reason: error?.code ?? 'connect_failed',
+        eventsReceived: 0,
+        eventsVerified: false,
+        uniqueId: room.uniqueId,
+        liveUrl: room.liveUrl ?? null,
+        checkedAt: this.now()
+      };
       throw error;
-    }
-    if (transport.active === 'browser') {
-      this.lastCapture = null;
-      let capture = null;
-      try {
-        capture = adapter.capture?.() ?? adapter.snapshot?.()?.capture ?? null;
-      } catch {
-        capture = null;
-      }
-      if (capture && (capture.eventsVerified === true || capture.roomEnterStatus === 200)) {
-        this.browserLogin?.markCaptureVerified?.({
-          eventsReceived: Number(capture.counters?.messages ?? 0),
-          roomEnterStatus: capture.roomEnterStatus ?? null,
-          roomAccess: capture.roomAccess ?? null,
-          uniqueId: room.uniqueId,
-          liveUrl: room.liveUrl ?? null
-        });
-      } else if (capture?.roomEnterStatus === 403) {
-        this.browserLogin?.markCaptureRefused?.({
-          roomEnterStatus: 403,
-          reason: 'room_enter_403',
-          uniqueId: room.uniqueId,
-          liveUrl: room.liveUrl ?? null
-        });
-      } else if (capture) {
-        this.browserLogin?.markCaptureUnconfirmed?.({
-          reason: 'room_not_confirmed',
-          uniqueId: room.uniqueId,
-          liveUrl: room.liveUrl ?? null,
-          roomEnterStatus: capture.roomEnterStatus ?? null
-        });
-      }
     }
     if (!result.started) {
       try {
@@ -542,12 +348,13 @@ export class TikTokService {
       }
       throw duplicateRoomError(result.duplicate);
     }
+    this.lastCapture = null;
     this.logger?.info({
       event: 'tiktok.session.started',
       sessionId: result.session.id,
       uniqueId: room.uniqueId,
       roomId: room.roomId,
-      transport: transport.active,
+      transport: 'local',
       monitorTargetId: monitorTargetId ?? null
     });
     return {
@@ -597,9 +404,8 @@ export class TikTokService {
     });
     if (result.stopped) this.#applyRetention();
     if (result.stopped && !this.#recordings().length) {
-      const activeTransport = this.transport().active ?? 'browser';
       this.lastCapture = {
-        transport: activeTransport,
+        transport: 'local',
         state: 'stopped',
         category: 'stopped',
         captureState: 'stopped',
@@ -608,7 +414,6 @@ export class TikTokService {
         eventsVerified: false,
         checkedAt: this.now()
       };
-      if (activeTransport === 'browser') this.browserLogin?.markCaptureStopped?.({reason: 'user'});
     }
     return result;
   }
@@ -638,99 +443,9 @@ export class TikTokService {
     };
   }
 
-  /** Login lifecycle for the browser transport. */
-  loginStatus() {
-    if (!this.browserLogin) {
-      return {
-        state: 'unavailable',
-        supported: false,
-        browserOpen: false,
-        error: {code: TIKTOK_ERRORS.BROWSER_UNAVAILABLE, reason: 'login_not_configured'},
-        capture: null,
-        verification: {
-          account: {state: 'unavailable', loggedIn: false, browserOpen: false, verifiedAt: null, verifiedBy: null, revalidationRequired: false},
-          room: null,
-          capture: null,
-          events: 0,
-          recording: {state: this.#recordings().at(-1)?.connection?.state ?? 'idle', sessionId: this.#recordings().at(-1)?.sessionId ?? null}
-        }
-      };
-    }
-    return this.#loginView();
-  }
-
-  async loginStart({input = null, uniqueId = null} = {}) {
-    if (!this.browserLogin) {
-      throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-        messageKey: 'errors.tiktokBrowserUnavailable',
-        httpStatus: 503
-      });
-    }
-    let handle = uniqueId ? String(uniqueId).replace(/^@/, '') : null;
-    if (input) handle = parseTikTokInput(input).uniqueId;
-    return this.browserLogin.start({uniqueId: handle});
-  }
-
-  async loginVerify({input = null, uniqueId = null, timeoutMs = null} = {}) {
-    if (!this.browserLogin) {
-      throw new TikTokError(TIKTOK_ERRORS.BROWSER_UNAVAILABLE, {
-        messageKey: 'errors.tiktokBrowserUnavailable',
-        httpStatus: 503
-      });
-    }
-    let handle = uniqueId ? String(uniqueId).replace(/^@/, '') : null;
-    if (input) handle = parseTikTokInput(input).uniqueId;
-    const login = await this.browserLogin.verify({
-      uniqueId: handle,
-      ...(Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0 ? {timeoutMs: Number(timeoutMs)} : {})
-    });
-    return this.#mergeLoginView(login);
-  }
-
-  #mergeLoginView(login) {
-    const base = this.#loginView();
-    return {
-      ...base,
-      ...login,
-      verification: {
-        ...base.verification,
-        account: {
-          state: login?.state ?? base.state,
-          loggedIn: (login?.state ?? base.state) === TIKTOK_LOGIN_STATES.LOGGED_IN,
-          browserOpen: Boolean(login?.browserOpen),
-          verifiedAt: login?.verifiedAt ?? base.verifiedAt ?? null,
-          verifiedBy: login?.verifiedBy ?? base.verifiedBy ?? null,
-          revalidationRequired: Boolean(login?.revalidationRequired)
-        },
-        room: login?.room ?? base.verification.room,
-        capture: login?.capture ?? base.verification.capture,
-        events: Number(login?.capture?.eventsReceived ?? base.verification.events ?? 0)
-      }
-    };
-  }
-
-  async loginCancel() {
-    if (!this.browserLogin) return this.loginStatus();
-    return this.#mergeLoginView(await this.browserLogin.cancel());
-  }
-
-  async loginLogout() {
-    if (!this.browserLogin) return this.loginStatus();
-    return this.#mergeLoginView(await this.browserLogin.logout());
-  }
-
+  /** No background browser/login process exists for TikTok any more. */
   async shutdown() {
-    try {
-      await this.browserRelay?.stop?.();
-    } catch (error) {
-      this.logger?.warn({event: 'tiktok.relay.shutdown.failed', code: error?.code ?? 'unknown'});
-    }
-    try {
-      if (this.browserLogin) await this.browserLogin.shutdown();
-      else await this.browserRelay?.closeBrowser?.();
-    } catch (error) {
-      this.logger?.warn({event: 'tiktok.login.shutdown.failed', code: error?.code ?? 'unknown'});
-    }
+    return true;
   }
 }
 

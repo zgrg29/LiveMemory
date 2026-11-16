@@ -25,17 +25,14 @@ export function tiktokMonitorError(error) {
     case TIKTOK_ERRORS.RATE_LIMITED:
       return monitorError(MONITOR_ERROR.RATE_LIMITED, {cause: error, details: {causeCode: code}});
     case TIKTOK_ERRORS.ROOM_UNAVAILABLE:
-    case TIKTOK_ERRORS.ROOM_REFUSED:
       return monitorError(MONITOR_ERROR.BLOCKED, {cause: error, details: {causeCode: code}});
-    case TIKTOK_ERRORS.LOGIN_REQUIRED:
-      return monitorError(MONITOR_ERROR.CHAT_UNAVAILABLE, {cause: error, details: {causeCode: code}});
     case TIKTOK_ERRORS.NETWORK:
     case TIKTOK_ERRORS.CONNECT_TIMEOUT:
       return monitorError(MONITOR_ERROR.NETWORK, {cause: error, details: {causeCode: code}});
     case TIKTOK_ERRORS.PROTOCOL:
-    case TIKTOK_ERRORS.SIGNER_UNAVAILABLE:
+    case TIKTOK_ERRORS.SOCKET_FAILED:
       return monitorError(MONITOR_ERROR.PROTOCOL, {cause: error, details: {causeCode: code}});
-    case TIKTOK_ERRORS.SIGNER_PREMIUM_REQUIRED:
+    case TIKTOK_ERRORS.NOT_CONFIGURED:
       return monitorError(MONITOR_ERROR.NOT_CONFIGURED, {cause: error, details: {causeCode: code}});
     default:
       break;

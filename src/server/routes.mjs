@@ -2661,79 +2661,12 @@ export function buildRoutes() {
       }
     },
     {
-      method: 'GET',
-      path: '/api/tiktok/login/status',
-      handler: ({res, deps}) => {
-        sendJson(res, 200, {login: deps.tiktok.loginStatus()});
-      }
-    },
-    {
       method: 'POST',
-      path: '/api/tiktok/login/start',
-      handler: async ({req, res, deps}) => {
-        const body = await readOptionalJson(req);
-        try {
-          const login = await deps.tiktok.loginStart({
-            input: body.url ?? body.input ?? null,
-            uniqueId: body.uniqueId ?? null
-          });
-          sendJson(res, 200, {login});
-        } catch (error) {
-          throw tiktokError(error);
-        }
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/tiktok/login/verify',
-      handler: async ({req, res, deps}) => {
-        const body = await readOptionalJson(req);
-        try {
-          const login = await deps.tiktok.loginVerify({
-            input: body.url ?? body.input ?? null,
-            uniqueId: body.uniqueId ?? null,
-            timeoutMs: body.timeoutMs ?? null
-          });
-          sendJson(res, 200, {login});
-        } catch (error) {
-          throw tiktokError(error);
-        }
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/tiktok/login/cancel',
+      path: '/api/tiktok/cleanup',
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
-        try {
-          const login = await deps.tiktok.loginCancel();
-          sendJson(res, 200, {login});
-        } catch (error) {
-          throw tiktokError(error);
-        }
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/tiktok/login/logout',
-      handler: async ({req, res, deps}) => {
-        await readOptionalJson(req);
-        try {
-          const login = await deps.tiktok.loginLogout();
-          sendJson(res, 200, {login});
-        } catch (error) {
-          throw tiktokError(error);
-        }
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/tiktok/transport',
-      handler: async ({req, res, deps}) => {
-        const body = await readOptionalJson(req);
-        const transport = String(body.transport ?? '').trim();
-        deps.settingsStore.update({tiktokTransport: transport});
-        sendJson(res, 200, {settings: effectiveSettings(deps), tiktok: deps.tiktok.status()});
+        const result = await deps.tiktok.startup();
+        sendJson(res, 200, result);
       }
     },
     {

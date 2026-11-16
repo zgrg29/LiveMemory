@@ -6,20 +6,20 @@ import {manifestLevel} from './pe-manifest.mjs';
 import {prepareTestExe} from './test-exe-copy.mjs';
 
 /**
- * Real packaged-EXE acceptance for TikTok M1.
+ * Real packaged-EXE acceptance for the unified TikTok capture.
  *
  * Usage: node scripts/verify-tiktok-exe.mjs [exe] [live-url]
  *
  * The shipped EXE is requireAdministrator, so this script asserts that manifest
- * and runs the identical packaged binary as an asInvoker test copy. It uses the
- * real TikTok public live page through the free community signing transport (no
- * key, no payment), a fresh isolated data folder, the same one-time bootstrap
- * token exchange as the browser, and SQLite checks after a clean shutdown.
+ * and runs the identical packaged binary as an asInvoker test copy. It captures
+ * a real TikTok live room through the anonymous local WebSocket (no account, no
+ * login, no paid signing service), with a fresh isolated data folder, the same
+ * one-time bootstrap token exchange as the browser, and SQLite checks after a
+ * clean shutdown.
  *
- * It never prints chat bodies or credentials. The anonymous free signer has a
- * discovered 30 requests/hour account ceiling, so LiveMemory paces requests at
- * about one every two minutes; the script allows for that pacing instead of
- * assuming a 15 s poll.
+ * It never prints chat bodies or credentials. Gift events are reported as
+ * NOT-OBSERVED when the room produced none during the run: that is evidence,
+ * not a pass.
  */
 
 const distExe = resolve(process.argv[2] ?? 'dist/LiveMemory.exe');
@@ -38,9 +38,10 @@ function log(message) {
   process.stdout.write(`${message}\n`);
 }
 
-function record(name, passed, details = []) {
-  results.push({name, passed, details});
-  log(`${passed ? 'PASS' : 'FAIL'}  ${name}`);
+function record(name, passed, details = [], {notObserved = false} = {}) {
+  const status = notObserved ? "NOT-OBSERVED" : (passed ? "PASS" : "FAIL");
+  results.push({name, passed, details, status});
+  log(`${status}  ${name}`);
   for (const line of details) log(`      ${line}`);
 }
 
@@ -183,7 +184,16 @@ function inspectDatabase(dataDir, sessionId) {
         FROM events WHERE session_id = ?
     `).get(sessionId);
     const viewers = db.prepare(`SELECT COUNT(*) AS count FROM viewers WHERE platform = 'tiktok'`).get();
-    return {events, viewers: Number(viewers?.count ?? 0)};
+    const gifts = db.prepare(`
+      SELECT COUNT(*) AS count, COALESCE(SUM(gift_quantity), 0) AS quantity
+        FROM events WHERE session_id = ? AND event_type = 'gift'
+    `).get(sessionId);
+    return {
+      events,
+      viewers: Number(viewers?.count ?? 0),
+      gifts: Number(gifts?.count ?? 0),
+      giftQuantity: Number(gifts?.quantity ?? 0)
+    };
   } finally {
     db.close();
   }
@@ -216,56 +226,56 @@ try {
     ]);
 
     const status = await httpJson(new URL('/api/tiktok/status', info.url).href);
-    record('TikTok status is exposed with an honest capability matrix', status.status === 200
-      && status.json?.capabilities?.requiresPaidPlan === false
-      && status.json?.capabilities?.roomMetadata === 'verified-public'
-      && status.json?.capabilities?.gifts === 'parsed-not-observed'
-      && status.json?.capabilities?.transportBrowser === 'experimental-login-required'
-      && status.json?.login?.state, [
+    record('TikTok status exposes one anonymous capture path with no login', status.status === 200
+      && status.json?.mode === 'local'
+      && status.json?.transport?.active === 'local'
+      && status.json?.transport?.protocol === 'webcast-ws'
+      && status.json?.transport?.requiresLogin === false
+      && status.json?.transport?.requiresPaidService === false
+      && status.json?.transport?.requiresBrowser === false
+      && status.json?.capabilities?.requiresLogin === false
+      && status.json?.capabilities?.requiresSigningService === false
+      && status.json?.login === undefined, [
       `HTTP ${status.status}, mode ${status.json?.mode ?? 'missing'}`,
-      `login state ${status.json?.login?.state ?? 'missing'}`,
-      `rateLimit hourly ${status.json?.rateLimit?.hourlyLimit ?? 'missing'}`
+      `transport ${status.json?.transport?.active ?? 'missing'}/${status.json?.transport?.protocol ?? 'missing'}`,
+      `login key ${status.json?.login === undefined ? 'absent' : 'present'}`
     ]);
 
-    const loginStatus = await httpJson(new URL('/api/tiktok/login/status', info.url).href);
-    record('TikTok browser login status is exposed separately from capture', loginStatus.status === 200
-      && typeof loginStatus.json?.login?.state === 'string', [
-      `HTTP ${loginStatus.status}, state ${loginStatus.json?.login?.state ?? 'missing'}`
-    ]);
+    // The retired channel picker and login routes must be gone, not merely
+    // unused: a stale client has to get a 404 instead of a working transport.
+    const removedRoutes = [
+      ['GET', '/api/tiktok/login/status'],
+      ['POST', '/api/tiktok/login/start'],
+      ['POST', '/api/tiktok/login/verify'],
+      ['POST', '/api/tiktok/login/cancel'],
+      ['POST', '/api/tiktok/login/logout'],
+      ['POST', '/api/tiktok/transport']
+    ];
+    const removedResults = [];
+    for (const [method, path] of removedRoutes) {
+      const response = await httpJson(new URL(path, info.url).href, {
+        method,
+        ...(method === 'POST' ? {body: {}} : {})
+      });
+      removedResults.push(`${method} ${path} -> ${response.status}`);
+    }
+    record('retired TikTok login and transport routes are gone from the packaged EXE',
+      removedResults.every((line) => line.endsWith('-> 404')), removedResults);
 
-    // Regression for the M2 acceptance bug: selecting the browser relay used
-    // to leave `transport.active = null` because the service probed a
-    // non-existent `relay.start` member. The packaged EXE must recognize the
-    // transport without launching a browser, and must not depend on the signer.
-    const browserTransport = await httpJson(new URL('/api/tiktok/transport', info.url).href, {
-      method: 'POST',
-      body: {transport: 'browser'}
-    });
-    record('the packaged EXE recognizes the selected browser relay as an available transport',
-      browserTransport.status === 200
-        && browserTransport.json?.tiktok?.transport?.requested === 'browser'
-        && browserTransport.json?.tiktok?.transport?.browserAvailable === true
-        && browserTransport.json?.tiktok?.transport?.active === 'browser', [
-        `HTTP ${browserTransport.status}`,
-        `requested ${browserTransport.json?.tiktok?.transport?.requested ?? 'missing'}`,
-        `browserAvailable ${browserTransport.json?.tiktok?.transport?.browserAvailable ?? 'missing'}`,
-        `active ${browserTransport.json?.tiktok?.transport?.active ?? 'missing'}`
-      ]);
-    const signerTransport = await httpJson(new URL('/api/tiktok/transport', info.url).href, {
-      method: 'POST',
-      body: {transport: 'signer'}
-    });
-    record('switching back to the signing transport takes effect without a restart',
-      signerTransport.status === 200 && signerTransport.json?.tiktok?.transport?.active === 'signer', [
-        `HTTP ${signerTransport.status}`,
-        `active ${signerTransport.json?.tiktok?.transport?.active ?? 'missing'}`
-      ]);
-
-    const roomResponse = await httpJson(new URL('/api/tiktok/room', info.url).href, {
-      method: 'POST',
-      body: {url: liveUrl},
-      timeoutMs: 25000
-    });
+    // TikTok throttles bursts of public page requests with a 403/empty body.
+    // That is not an EXE defect, so retry the single metadata read a few times
+    // with a pause instead of reporting a false failure.
+    let roomResponse = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      roomResponse = await httpJson(new URL('/api/tiktok/room', info.url).href, {
+        method: 'POST',
+        body: {url: liveUrl},
+        timeoutMs: 25000
+      });
+      if (roomResponse.status === 200) break;
+      log(`      room check attempt ${attempt} -> HTTP ${roomResponse.status} (${roomResponse.json?.error?.code ?? 'unknown'}); waiting`);
+      await sleep(20000);
+    }
     liveRoom = roomResponse.json?.room ?? null;
     record('a real public TikTok room is parsed (room id, live state, anchor, stable id)', roomResponse.status === 200
       && Boolean(liveRoom?.roomId)
@@ -285,13 +295,16 @@ try {
         timeoutMs: 60000
       });
       sessionId = connected.json?.session?.id ?? null;
-      record('the packaged EXE connects to TikTok through the free signing transport', connected.status === 201
+      record('the packaged EXE connects through the anonymous local WebSocket (no login)', connected.status === 201
         && sessionId
         && connected.json?.session?.platform === 'tiktok'
+        && connected.json?.connection?.transport === 'local'
+        && connected.json?.connection?.protocol === 'webcast-ws'
         && ['connected', 'reconnecting', 'rate_limited'].includes(connected.json?.connection?.state), [
         `HTTP ${connected.status}`,
         `session ${sessionId ?? 'missing'}`,
-        `connection ${connected.json?.connection?.state ?? 'missing'}`,
+        `connection ${connected.json?.connection?.state ?? 'missing'} (${connected.json?.connection?.transport ?? '?'})`,
+        `ws host ${connected.json?.connection?.wsHost ?? 'missing'}`,
         `error ${connected.json?.error?.code ?? 'none'}`
       ]);
 
@@ -306,17 +319,34 @@ try {
           `unique identifiable viewers ${recordings.uniqueViewerCount}`,
           `connection ${recordings.connection?.state}`
         ]);
+        const captureCounters = recordings.capture?.counters ?? recordings.connection?.detail?.counters ?? {};
+        record('decoded frames are reported separately from real events', Number(captureCounters.frames ?? 0) > 0
+          && Number(captureCounters.chats ?? 0) > 0
+          && Number(captureCounters.frames ?? 0) >= Number(captureCounters.batchFrames ?? 0), [
+          `frames ${captureCounters.frames ?? 0}, event batches ${captureCounters.batchFrames ?? 0}, chats ${captureCounters.chats ?? 0}`,
+          `messages ${captureCounters.messages ?? 0}, history skipped ${captureCounters.historySkipped ?? 0}`
+        ]);
 
         const events = await httpJson(new URL(`/api/events?sessionId=${encodeURIComponent(sessionId)}&limit=100`, info.url).href);
         const rows = events.json?.events ?? [];
-        const identified = rows.filter((event) => event.viewerId && String(event.viewerId).startsWith('tiktok:'));
+        const chatRows = rows.filter((event) => event.type === 'chat');
+        const identified = chatRows.filter((event) => event.viewerId && String(event.viewerId).startsWith('tiktok:'));
         record('TikTok events carry stable tiktok:<user.id> identity, nickname and original text', identified.length > 0
           && identified.every((event) => event.displayName)
           && identified.every((event) => typeof event.content === 'string' && event.content.length > 0), [
           `events ${rows.length}`,
+          `chats ${chatRows.length}`,
           `with tiktok:<id> ${identified.length}`,
           `distinct ids ${new Set(identified.map((event) => event.viewerId)).size}`
         ]);
+
+        const giftRows = rows.filter((event) => event.type === 'gift');
+        record('real TikTok gift events observed in this run (NOT-OBSERVED is evidence, not a pass)',
+          giftRows.length > 0,
+          giftRows.length > 0
+            ? [`gifts ${giftRows.length}`, `quantities ${giftRows.map((event) => event.giftQuantity).join(',')}`]
+            : ['NOT-OBSERVED: no WebcastGiftMessage arrived for this room during the run'],
+          {notObserved: giftRows.length === 0});
 
         const stopped = await httpJson(new URL(`/api/live/recordings/${encodeURIComponent(sessionId)}/stop`, info.url).href, {
           method: 'POST'
@@ -326,10 +356,10 @@ try {
         ]);
       }
 
-      // Automatic monitoring through the packaged EXE. The anonymous free
-      // signer has a 30/hour account ceiling; the shared budget may delay the
-      // second capture until the next ~130 s slot, so allow for that.
-      await sleep(13000);
+      // Automatic monitoring through the packaged EXE. The local WebSocket has
+      // no shared request budget; the short pause only lets the stopped session
+      // finish its retention pass before a second capture starts.
+      await sleep(3000);
       const created = await httpJson(new URL('/api/monitoring', info.url).href, {
         method: 'POST',
         body: {platform: 'tiktok', input: liveUrl}
@@ -391,6 +421,11 @@ try {
       `with content ${events.with_content}`,
       `tiktok viewers ${before?.viewers ?? 0}`
     ]);
+    record('SQLite gift rows after the run (NOT-OBSERVED when the room sent none)', Number(before?.gifts ?? 0) > 0, [
+      Number(before?.gifts ?? 0) > 0
+        ? `gift rows ${before.gifts}, total quantity ${before.giftQuantity}`
+        : 'NOT-OBSERVED: no gift event was persisted for this room during the run'
+    ], {notObserved: Number(before?.gifts ?? 0) === 0});
   }
 
   const restart = launch({dataDir, port: 49411});
@@ -444,9 +479,10 @@ try {
   record('unexpected failure during EXE acceptance', false, [String(error?.stack ?? error)]);
 } finally {
   const passed = results.filter((item) => item.passed).length;
-  const failed = results.length - passed;
+  const notObserved = results.filter((item) => item.status === 'NOT-OBSERVED').length;
+  const failed = results.length - passed - notObserved;
   log('');
-  log(`RESULT ${passed}/${results.length} passed, ${failed} failed`);
+  log(`RESULT ${passed}/${results.length - notObserved} passed, ${notObserved} NOT-OBSERVED, ${failed} failed`);
   if (failed > 0) process.exitCode = 1;
   log(`artifacts: ${root}`);
 }
