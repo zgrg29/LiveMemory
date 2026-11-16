@@ -13,7 +13,13 @@ export const MEMORY_PROTOCOL = 'livememory-memory-update-v1';
 export const MEMORY_SCHEMA_VERSION = '1.0.0';
 export const ACCEPTED_MEMORY_SCHEMA_VERSIONS = Object.freeze(['1.0.0']);
 
-export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.1';
+/**
+ * Memory prompt revision. P41 replaced the "keep the source language" bullet
+ * with an explicit output-language contract (write memory prose in the task
+ * language, never translate the quoted chat) and widened the set to ten
+ * languages, so the revision moves with it. Jobs keep their stored value.
+ */
+export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.2';
 
 export function memoryPromptVersionFor(locale) {
   return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE}`;

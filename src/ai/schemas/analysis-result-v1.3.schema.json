@@ -50,7 +50,14 @@
       "enum": [
         "zh-CN",
         "ja",
-        "en"
+        "en",
+        "ko",
+        "es",
+        "pt-BR",
+        "zh-TW",
+        "fr",
+        "de",
+        "id"
       ]
     },
     "session_topics": {

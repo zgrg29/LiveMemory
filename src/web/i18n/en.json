@@ -1600,6 +1600,13 @@
       "headerHint": "The language control in the page header is the quickest way to switch; both use the same saved preference.",
       "note": "Chat messages are never translated; AI reports follow the analysis language you choose."
     },
+    "aiOutput": {
+      "title": "AI output language",
+      "desc": "Language used for AI analysis reports and long-term viewer profiles. It is independent of the interface language and of the language of the chat.",
+      "followUi": "Follow interface language",
+      "effective": "New AI analysis tasks will be written in {locale}",
+      "note": "Existing tasks and saved reports keep the language stored when they were created."
+    },
     "theme": {
       "title": "Appearance",
       "desc": "Light and dark are designed separately for comfortable contrast.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Saved",
     "language": "Language updated",
+    "aiOutputLanguage": "AI output language updated",
     "theme": "Theme updated",
     "copied": "Copied to clipboard",
     "exported": "Analysis package created",

@@ -1,9 +1,13 @@
 import {api} from '../api.js';
 import {createModal} from '../dialog.js';
 import {localeDisplayName, SUPPORTED_LOCALES} from '../i18n.js';
+import {AI_OUTPUT_LOCALES, localeDescriptors} from '../../../shared/locales.mjs';
 import {el, formatBytes, formatInteger, pageHead} from '../ui.js';
 import {renderProviderSettingsCard} from './ai-settings.js';
 import {renderBackupCard} from './settings-backup.js';
+
+/** Stored value meaning "follow the interface language" for new AI tasks. */
+const AI_OUTPUT_FOLLOW_UI = 'follow-ui';
 
 /**
  * Settings: language, appearance, storage mode, data facts and about.
@@ -61,6 +65,52 @@ export const settingsPage = {
           })}),
           el('div', {className: 'effective-note', text: t('settings.language.headerHint')}),
           el('div', {className: 'small tertiary', text: t('settings.language.note')}))));
+
+    /* ----------------------------------------------------- AI output language */
+
+    // L2 is a separate preference from the interface language: `follow-ui`
+    // (default) or a concrete AI output language. Existing tasks and saved
+    // reports keep the language stored on their job row, so changing this only
+    // affects tasks created afterwards.
+    const aiLocales = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
+      ? ctx.state.aiLocales
+      : localeDescriptors(AI_OUTPUT_LOCALES);
+    const aiOutputChoices = [
+      [AI_OUTPUT_FOLLOW_UI, t('settings.aiOutput.followUi')],
+      ...aiLocales.map((entry) => [entry.code, entry.nativeName || localeDisplayName(entry.code)])
+    ];
+    const currentAiPreference = ctx.aiOutputPreference ?? AI_OUTPUT_FOLLOW_UI;
+    // Eleven options (follow-ui + ten languages) do not fit a segmented control
+    // at narrow widths; a native select is used, matching the header control's
+    // "more than three languages" behaviour and keeping long native names intact.
+    const aiOutputSelect = el('select', {
+      className: 'select',
+      attrs: {'aria-label': t('settings.aiOutput.title')}
+    }, aiOutputChoices.map(([value, label]) => el('option', {value, text: label})));
+    aiOutputSelect.value = currentAiPreference;
+    aiOutputSelect.addEventListener('change', async () => {
+      if (ctx.aiOutputPreference === aiOutputSelect.value) return;
+      try {
+        await ctx.setAiOutputLocale(aiOutputSelect.value);
+      } catch (error) {
+        aiOutputSelect.value = currentAiPreference;
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+      }
+    });
+    const aiOutputCard = el('section', {className: 'card'},
+      el('div', {className: 'card-head'},
+        el('div', {className: 'card-title', text: t('settings.aiOutput.title')})),
+      el('div', {className: 'card-body'},
+        el('div', {className: 'setting-block'},
+          el('div', {className: 'setting-desc', text: t('settings.aiOutput.desc')}),
+          el('div', {style: {marginTop: '12px', maxWidth: '360px'}}, aiOutputSelect),
+          el('div', {
+            className: 'effective-note',
+            text: t('settings.aiOutput.effective', {
+              locale: localeDisplayName(ctx.aiOutputLocale ?? ctx.locale)
+            })
+          }),
+          el('div', {className: 'small tertiary', text: t('settings.aiOutput.note')}))));
 
     /* --------------------------------------------------------------- theme */
 
@@ -284,7 +334,7 @@ export const settingsPage = {
       // Settings must still render if the optional provider service is down.
     }
     const backupCard = renderBackupCard(ctx, {status: backupStatus});
-    grid.append(...[languageCard, themeCard, storageCard, providerCard, youtubeCard, dataLocationCard, backupCard, dangerCard, aboutCard].filter(Boolean));
+    grid.append(...[languageCard, aiOutputCard, themeCard, storageCard, providerCard, youtubeCard, dataLocationCard, backupCard, dangerCard, aboutCard].filter(Boolean));
     return undefined;
   }
 };

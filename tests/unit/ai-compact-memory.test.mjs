@@ -73,7 +73,7 @@ test('the best-effort compact example no longer teaches English identity fields'
 
 test('memory instructions state the task language and the no-fabrication rules', () => {
   const ja = buildMemoryInstructions('ja', {jobId: 'aij_x', session: {id: 'ses_x'}});
-  assert.match(ja, /自然で読みやすい日本語/);
+  assert.match(ja, /自然な日本語/);
   assert.match(ja, /topic/);
   assert.match(ja, /捏造/);
   assert.doesNotMatch(ja, /"locale": "en"/);
@@ -85,8 +85,15 @@ test('memory instructions state the task language and the no-fabrication rules',
   assert.doesNotMatch(zh, /viewer_memory_updates/);
 
   const en = buildMemoryInstructions('en', {jobId: 'aij_x', session: {id: 'ses_x'}});
-  assert.match(en, /task locale/);
+  assert.match(en, /natural English/);
   assert.doesNotMatch(en, /viewer_memory_updates/);
+
+  // P41: the seven added languages reuse the English instruction body but must
+  // carry their own output-language rule and their own example.
+  const ko = buildMemoryInstructions('ko', {jobId: 'aij_x', session: {id: 'ses_x'}});
+  assert.match(ko, /한국어/);
+  assert.match(ko, /기타/);
+  assert.doesNotMatch(ko, /natural English/);
 });
 
 test('provider memory prompts ignore a stale packaged shape and keep one compact contract', () => {

@@ -1600,6 +1600,13 @@
       "headerHint": "Le sélecteur de langue en haut de la page est le moyen le plus rapide de changer ; les deux utilisent la même préférence enregistrée.",
       "note": "Les messages de chat ne sont jamais traduits ; les rapports IA suivent la langue d'analyse que vous choisissez."
     },
+    "aiOutput": {
+      "title": "Langue de sortie de l’IA",
+      "desc": "Langue des rapports d’analyse par IA et des profils d’audience à long terme. Elle est indépendante de la langue de l’interface et de celle du chat.",
+      "followUi": "Suivre la langue de l’interface",
+      "effective": "Les nouvelles analyses par IA seront rédigées en {locale}",
+      "note": "Les tâches déjà créées et les rapports enregistrés conservent la langue enregistrée lors de leur création."
+    },
     "theme": {
       "title": "Apparence",
       "desc": "Les modes clair et sombre sont conçus séparément pour un contraste confortable.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Enregistré",
     "language": "Langue mise à jour",
+    "aiOutputLanguage": "Langue de sortie de l’IA mise à jour",
     "theme": "Thème mis à jour",
     "copied": "Copié dans le presse-papiers",
     "exported": "Paquet d'analyse créé",

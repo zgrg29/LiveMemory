@@ -114,14 +114,59 @@ export function isSupportedLocale(value) {
 /**
  * Narrow an interface language onto a language the AI output really supports.
  *
- * P40 ship ten interface languages but only the `aiOutput` subset has prompts,
- * result schemas and translation target names. Callers use this before a locale
- * reaches a provider, so an unsupported language can never be sent: the closest
- * family member is used when one exists (`zh-TW` → `zh-CN`, `pt-PT` → `en`),
- * otherwise the default language.
+ * Since P41 every shipped interface language also has an AI output rule, prompt
+ * set and result schema enum, so for the ten supported languages this is an
+ * identity mapping. The narrowing still exists because it is the *capability*
+ * gate: a language tag that is not an output language (`th-TH`) or a future
+ * interface-only language can never reach a provider. The closest family member
+ * is used when one exists (`zh-HK` → `zh-TW`), otherwise the default language.
  */
 export function aiOutputLocale(value, {fallback = DEFAULT_LOCALE} = {}) {
   const resolved = resolveLocaleTag(value, {available: AI_OUTPUT_LOCALES});
   if (resolved) return resolved;
   return AI_OUTPUT_LOCALES.includes(fallback) ? fallback : (AI_OUTPUT_LOCALES[0] ?? DEFAULT_LOCALE);
+}
+
+/**
+ * Stored preference value meaning "use whatever the interface language is".
+ *
+ * This is deliberately *not* the same thing as the interface language setting:
+ * the AI output language is its own persisted preference, defaults to
+ * `follow-ui`, and is snapshotted into every task when the task is created.
+ */
+export const AI_OUTPUT_PREFERENCE_FOLLOW_UI = 'follow-ui';
+
+/**
+ * Parse an AI output language preference.
+ *
+ * Accepts `follow-ui` or any language tag that resolves onto the AI output set.
+ * Returns `follow-ui`, a canonical language code, or `null` when the value is not
+ * usable. `normalizeAiOutputPreference()` maps "not usable" onto the default so
+ * an old or corrupt settings file can never block the console.
+ */
+export function parseAiOutputPreference(value) {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (raw.toLowerCase() === AI_OUTPUT_PREFERENCE_FOLLOW_UI) return AI_OUTPUT_PREFERENCE_FOLLOW_UI;
+  return resolveLocaleTag(raw, {available: AI_OUTPUT_LOCALES});
+}
+
+/** Normalize a stored AI output preference, defaulting to `follow-ui`. */
+export function normalizeAiOutputPreference(value) {
+  return parseAiOutputPreference(value) ?? AI_OUTPUT_PREFERENCE_FOLLOW_UI;
+}
+
+/**
+ * Resolve the concrete AI output language a *new* task would use.
+ *
+ * Order: an explicit preference wins; `follow-ui` (the default) follows the
+ * effective interface language. The result is always a language with real AI
+ * output support, and it never mutates any stored preference.
+ */
+export function resolveAiOutputPreference(preference, {uiLocale = null, systemLocale = null} = {}) {
+  const parsed = parseAiOutputPreference(preference);
+  if (parsed && parsed !== AI_OUTPUT_PREFERENCE_FOLLOW_UI) return aiOutputLocale(parsed);
+  const ui = uiLocale === LOCALE_PREFERENCE_SYSTEM || !uiLocale ? systemLocale : uiLocale;
+  return aiOutputLocale(ui);
 }

@@ -199,18 +199,18 @@ export const aiPage = {
       stepCard(5, t('ai.center.stepStart'), t('ai.center.stepStartDesc'))));
 
     let selectedId = chooseInitialSessionId(sessions, requestedId);
-    // Ten interface languages but only the `aiOutput` subset can be analysed:
-    // this list is never the interface list, so an unsupported locale can never
-    // be sent to a provider.
+    // The AI output language is its own persisted preference (`follow-ui` by
+    // default), not the interface language. The list is the `aiOutput` subset of
+    // the registry, so a language without prompts can never be sent to a
+    // provider, and the default pre-selects the configured preference.
     const outputLocales = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
       ? ctx.state.aiLocales
       : localeDescriptors(AI_OUTPUT_LOCALES);
-    let locale = ctx.locale;
-    if (!outputLocales.some((entry) => entry.code === locale)) {
-      locale = outputLocales.some((entry) => entry.code === DEFAULT_LOCALE)
+    let locale = outputLocales.some((entry) => entry.code === ctx.aiOutputLocale)
+      ? ctx.aiOutputLocale
+      : outputLocales.some((entry) => entry.code === DEFAULT_LOCALE)
         ? DEFAULT_LOCALE
-        : (outputLocales[0]?.code ?? locale);
-    }
+        : (outputLocales[0]?.code ?? ctx.locale);
     let runScope = 'session';
     let status = null;
     let timer = null;

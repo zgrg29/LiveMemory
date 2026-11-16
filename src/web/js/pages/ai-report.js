@@ -506,8 +506,9 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
 
 function languageBlock(ctx, payload, {onLocaleChange, onShowOriginal}) {
   const t = ctx.t;
-  // Reading/translation languages are the `aiOutput` subset: ten interface
-  // languages must not offer ten translation targets before their prompts exist.
+  // Reading/translation targets are the `aiOutput` subset of the registry. Since
+  // P41 that is all ten shipped languages, and the list still comes from the one
+  // registry instead of a hand-maintained translation target list.
   const installed = Array.isArray(ctx.state.aiLocales) && ctx.state.aiLocales.length > 0
     ? ctx.state.aiLocales
     : localeDescriptors(AI_OUTPUT_LOCALES);

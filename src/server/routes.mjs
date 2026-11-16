@@ -9,6 +9,7 @@ import {
   defaultLocaleFor,
   localeDescriptors,
   normalizeLocale,
+  resolveAiOutputPreference,
   resolveLocale
 } from '../shared/locale.mjs';
 import {
@@ -198,15 +199,43 @@ function localePayload(deps) {
 function effectiveSettings(deps) {
   const settings = deps.settingsStore.get();
   const available = installedLocales(deps);
+  const uiLocale = resolveLocale(settings.locale, deps.systemLocale, {available});
   return {
     settings,
     effective: {
-      locale: resolveLocale(settings.locale, deps.systemLocale, {available}),
+      locale: uiLocale,
       systemLocale: deps.systemLocale,
       theme: settings.theme,
-      storageMode: settings.storageMode
+      storageMode: settings.storageMode,
+      // The AI output language is its own preference (L2). `follow-ui` resolves
+      // to the effective interface language; an explicit code stays fixed even
+      // when the interface language changes. It is only a *default for new
+      // tasks*: an existing task keeps the language stored on its job row.
+      aiOutputLocale: resolveAiOutputPreference(settings.aiOutputLocale, {
+        uiLocale,
+        systemLocale: deps.systemLocale
+      })
     }
   };
+}
+
+/**
+ * Concrete AI output language for a NEW task.
+ *
+ * An explicit request wins (validated against the AI output set), otherwise the
+ * stored preference is used, and `follow-ui` follows the effective interface
+ * language. Whatever the input, the result is a language with real prompts.
+ */
+function newTaskAiLocale(deps, requested) {
+  const normalized = normalizeLocale(requested);
+  if (normalized && normalized !== 'system') return aiOutputLocale(normalized);
+  const settings = deps.settingsStore.get();
+  const available = installedLocales(deps);
+  const uiLocale = resolveLocale(settings.locale, deps.systemLocale, {available});
+  return resolveAiOutputPreference(settings.aiOutputLocale, {
+    uiLocale,
+    systemLocale: deps.systemLocale
+  });
 }
 
 function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') {
@@ -1660,11 +1689,11 @@ export function buildRoutes() {
         if (summary.stats.messages === 0) {
           throw new AppError('SESSION_EMPTY', {messageKey: 'errors.sessionEmpty', httpStatus: 409});
         }
-        // The interface language may be `ko`/`de`/… while the AI prompt set only
-        // exists for the `aiOutput` subset: narrow before it reaches a provider.
-        const locale = aiOutputLocale(
-          normalizeLocale(body.locale) || resolveLocale(deps.settingsStore.get().locale, deps.systemLocale)
-        );
+        // The interface language and the AI output language are independent.
+        // An explicit request wins; otherwise the persisted AI output preference
+        // decides (`follow-ui` by default). The value is snapshotted onto the job
+        // row by the runner, so later preference/UI changes cannot alter it.
+        const locale = newTaskAiLocale(deps, body.locale);
         try {
           const status = await deps.analysisRunner.start({
             sessionId,
@@ -1968,15 +1997,10 @@ export function buildRoutes() {
         if (!sessionId) {
           throw new AppError(ERROR_CODES.BAD_REQUEST, {messageKey: 'errors.badRequest', httpStatus: 400});
         }
-        const requested = body.locale ? normalizeLocale(body.locale) : null;
-        // Same narrowing as session analysis: memory prompts exist for the
-        // `aiOutput` subset only, so an unsupported interface language degrades
-        // to a supported one instead of being sent to the provider.
-        const locale = aiOutputLocale(
-          requested && requested !== 'system'
-            ? requested
-            : resolveLocale(deps.settingsStore.get().locale, deps.systemLocale)
-        );
+        // Same language resolution as session analysis: an explicit request
+        // wins, otherwise the persisted AI output preference decides. The memory
+        // job stores its own language snapshot, independent of the session job.
+        const locale = newTaskAiLocale(deps, body.locale);
         let created;
         try {
           created = await createMemoryUpdateJob({

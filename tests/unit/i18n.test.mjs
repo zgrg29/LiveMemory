@@ -19,7 +19,9 @@ import {
 } from '../../src/web/js/i18n.js';
 
 const webRoot = fileURLToPath(new URL('../../src/web/i18n/', import.meta.url));
-const LEAF_KEYS = 2265;
+// P41 added six keys (settings.aiOutput.* and toast.aiOutputLanguage) to every
+// dictionary, so the contract moved from 2,265 to 2,271 leaf keys.
+const LEAF_KEYS = 2271;
 
 /** Legacy native-name keys kept from the three-language era. */
 const LEGACY_NAME_KEYS = {'zh-CN': 'zh', ja: 'ja', en: 'en'};
@@ -75,7 +77,7 @@ test('web dictionaries share exactly the same keys', async () => {
   }
 });
 
-test('the shipped dictionaries keep all 2,265 leaf translation keys', async () => {
+test('the shipped dictionaries keep all 2,271 leaf translation keys', async () => {
   for (const locale of AVAILABLE_LOCALES) {
     assert.equal(flatten(await loadWeb(locale)).size, LEAF_KEYS, `${locale} leaf key count changed`);
   }
@@ -143,7 +145,7 @@ test('native language names in every dictionary match the single registry', asyn
   for (const locale of AVAILABLE_LOCALES) {
     const dictionary = await loadWeb(locale);
     // The three legacy keys stay byte-identical; the new languages are named by
-    // the registry alone, which keeps the 2,265-key set unchanged.
+    // the registry alone, so the language-name key set stays unchanged.
     for (const [code, key] of Object.entries(LEGACY_NAME_KEYS)) {
       assert.equal(
         dictionary.settings.language[key],
@@ -157,8 +159,10 @@ test('native language names in every dictionary match the single registry', asyn
   }
 });
 
-test('AI output languages stay a pinned subset of the interface languages', () => {
-  assert.deepEqual([...AI_OUTPUT_LOCALES], ['zh-CN', 'ja', 'en']);
+test('AI output languages cover every shipped interface language', () => {
+  // P41: the AI output set is the same registry narrowed by `aiOutput`, and every
+  // language now has prompts, a schema enum and a translation target.
+  assert.deepEqual([...AI_OUTPUT_LOCALES], [...AVAILABLE_LOCALES]);
   for (const code of AI_OUTPUT_LOCALES) assert.ok(AVAILABLE_LOCALES.includes(code), code);
 });
 

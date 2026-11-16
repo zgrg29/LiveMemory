@@ -1,6 +1,12 @@
 import {formatMinorAmount} from '../../shared/money.mjs';
 import {isoFromEpochMs} from '../../shared/time.mjs';
+import {AI_OUTPUT_LOCALES, DEFAULT_LOCALE} from '../../shared/locale.mjs';
 import {PROMPT_VERSION, RESULT_SCHEMA_VERSION, promptVersionFor} from '../constants.mjs';
+import {
+  hasNativeInstructions,
+  languageSectionBullets,
+  languageSectionHeading
+} from './language.mjs';
 
 /**
  * Localized instructions bundled with every analysis package.
@@ -343,7 +349,8 @@ const SCHEMA_OUTLINE = {
   broadcaster_id: 'string — copy from manifest.broadcaster_id',
   task_id: 'string — copy from manifest.tasks[0].task_id',
   session_id: 'string — copy from manifest.session_id',
-  locale: 'zh-CN | ja | en',
+  // Protocol mirror of the AI output language list, never a second list.
+  locale: AI_OUTPUT_LOCALES.join(' | '),
   session_topics: {
     summary: 'string',
     topics: [
@@ -427,8 +434,21 @@ function moneyLine(support) {
   }).join('; ');
 }
 
+/**
+ * Instruction body for a locale.
+ *
+ * The three verified bodies (Simplified Chinese, Japanese, English) are used
+ * as-is. Every other AI output language reuses the English body and relies on
+ * the dedicated output-language section below, so the instruction language and
+ * the output language stay separate and no rule is silently machine-translated.
+ */
+function rulesFor(locale) {
+  if (hasNativeInstructions(locale) && RULES[locale]) return RULES[locale];
+  return RULES[DEFAULT_LOCALE];
+}
+
 export function buildInstructions(locale, context = {}) {
-  const rules = RULES[locale] ?? RULES.en;
+  const rules = rulesFor(locale);
   const labels = rules.labels;
   const {session = null, batch = null, aggregate = null} = context;
   const schemaVersion = context.schemaVersion ?? '1.2.0';
@@ -436,6 +456,13 @@ export function buildInstructions(locale, context = {}) {
   lines.push(`# ${rules.title}`);
   lines.push('');
   for (const line of rules.intro) lines.push(line);
+  lines.push('');
+  // Explicit output-language contract for every AI output language. It is
+  // placed before the task rules so the model cannot read the whole document
+  // first and then treat the instruction body's language as the output language.
+  lines.push(languageSectionHeading(locale));
+  lines.push('');
+  for (const line of languageSectionBullets(locale)) lines.push(line);
   lines.push('');
   lines.push(labels.contents);
   lines.push('');
@@ -532,8 +559,14 @@ export function buildInstructions(locale, context = {}) {
   return lines.join('\n').replaceAll(RESULT_SCHEMA_VERSION, schemaVersion);
 }
 
+/**
+ * Every AI output language now has a complete instruction set: the three
+ * verified native bodies plus the seven that reuse the English body with their
+ * own output-language section. The list comes from the registry capability flag,
+ * never from a hand-maintained copy.
+ */
 export function instructionLocales() {
-  return Object.keys(RULES);
+  return [...AI_OUTPUT_LOCALES];
 }
 
 /** Version string for prompts of this locale (recorded on every job). */

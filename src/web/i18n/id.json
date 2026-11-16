@@ -1600,6 +1600,13 @@
       "headerHint": "Kontrol bahasa di bagian atas halaman adalah cara tercepat untuk berganti; keduanya memakai preferensi tersimpan yang sama.",
       "note": "Pesan chat tidak pernah diterjemahkan; laporan AI mengikuti bahasa analisis yang dipilih."
     },
+    "aiOutput": {
+      "title": "Bahasa keluaran AI",
+      "desc": "Bahasa untuk laporan analisis AI dan profil penonton jangka panjang. Bahasa ini terpisah dari bahasa antarmuka dan bahasa obrolan asli.",
+      "followUi": "Ikuti bahasa antarmuka",
+      "effective": "Analisis AI baru akan ditulis dalam {locale}",
+      "note": "Tugas yang sudah dibuat dan laporan tersimpan tetap memakai bahasa yang dicatat saat dibuat."
+    },
     "theme": {
       "title": "Tampilan",
       "desc": "Mode terang dan gelap dirancang terpisah agar kontrasnya nyaman.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Tersimpan",
     "language": "Bahasa diperbarui",
+    "aiOutputLanguage": "Bahasa keluaran AI diperbarui",
     "theme": "Tema diperbarui",
     "copied": "Disalin ke papan klip",
     "exported": "Paket analisis dibuat",

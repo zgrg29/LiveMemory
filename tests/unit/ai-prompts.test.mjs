@@ -20,16 +20,17 @@ import {
 import {
   PROMPT_VERSION,
   RESULT_SCHEMA_VERSION,
-  promptVersionFor
+  promptVersionFor,
+  SUPPORTED_LOCALES
 } from '../../src/ai/constants.mjs';
 import {validateAgainstSchema} from '../../src/ai/import/schema-validator.mjs';
 import {loadResultSchema} from '../../src/ai/import/validate.mjs';
 
 const LOCALES = ['zh-CN', 'ja', 'en'];
 
-test('all three prompt languages carry the same batch, aggregate and provenance rules', () => {
-  assert.deepEqual(instructionLocales().sort(), LOCALES.slice().sort());
-  for (const locale of LOCALES) {
+test('all ten AI output languages carry the same batch, aggregate and provenance rules', () => {
+  assert.deepEqual(instructionLocales().sort(), [...SUPPORTED_LOCALES].sort());
+  for (const locale of SUPPORTED_LOCALES) {
     const batch = buildInstructions(locale, {
       session: {id: 'ses_test', platform: 'youtube', simulated: true, started_at: T0, ended_at: T0 + 1000},
       broadcaster: {id: 'youtube:UC_TEST', name: 'Tester', identity: 'verified'},
@@ -60,8 +61,11 @@ test('all three prompt languages carry the same batch, aggregate and provenance 
     assert.match(batch, /viewer_memory_updates/);
     assert.match(batch, /confidence/);
     assert.match(batch, /500/);
+    // Every instruction set states its own output language and protects the
+    // machine contract (keys/enums/ids are never translated).
+    assert.match(batch, new RegExp(`Locale: \`${locale.replace(/[-]/g, '\\-')}\``));
     // Language-specific headings must not be mixed.
-    assert.ok(!batch.includes('## Package contents') || locale === 'en');
+    assert.ok(!batch.includes('## Package contents') || !LOCALES.includes(locale) || locale === 'en');
     assert.ok(!batch.includes('## 分析包内容') || locale === 'zh-CN');
 
     const aggregate = buildInstructions(locale, {
@@ -83,12 +87,12 @@ test('all three prompt languages carry the same batch, aggregate and provenance 
 });
 
 test('prompt versions are explicit, stable per locale and recorded on jobs', async () => {
-  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.3');
-  for (const locale of LOCALES) {
-    assert.equal(promptVersionFor(locale), `lm-prompt-m6.3-${locale}`);
+  assert.equal(PROMPT_VERSION, 'lm-prompt-m6.4');
+  for (const locale of SUPPORTED_LOCALES) {
+    assert.equal(promptVersionFor(locale), `lm-prompt-m6.4-${locale}`);
     assert.equal(instructionVersion(locale), promptVersionFor(locale));
   }
-  assert.equal(promptVersionFor('fr'), 'lm-prompt-m6.3-en');
+  assert.equal(promptVersionFor('th-TH'), 'lm-prompt-m6.4-en');
 
   const temp = createTempDir();
   const db = openMemoryDb();
@@ -96,9 +100,9 @@ test('prompt versions are explicit, stable per locale and recorded on jobs', asy
   const session = seedSession(db, {messageCount: 3});
   const exportsDir = join(temp.dir, 'exports');
   const job = await createAnalysisJob({db, sessionId: session.id, locale: 'ja', exportsDir, batchSize: 1000, now: T0 + 10_000});
-  assert.equal(job.job.promptVersion, 'lm-prompt-m6.3-ja');
+  assert.equal(job.job.promptVersion, 'lm-prompt-m6.4-ja');
   const packageData = readBatchPackage(exportsDir, job.packages[0]);
-  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.3-ja');
+  assert.equal(packageData.manifest.prompt_version, 'lm-prompt-m6.4-ja');
   assert.equal(packageData.manifest.schema_version, '1.2.0');
   closeDatabase(db);
   temp.cleanup();

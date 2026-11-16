@@ -1600,6 +1600,13 @@
       "headerHint": "Die Sprachauswahl im Seitenkopf ist der schnellste Weg zum Wechseln; beide verwenden dieselbe gespeicherte Einstellung.",
       "note": "Chat-Nachrichten werden nie übersetzt; KI-Berichte folgen der von Ihnen gewählten Analysesprache."
     },
+    "aiOutput": {
+      "title": "KI-Ausgabesprache",
+      "desc": "Sprache der KI-Analyseberichte und der langfristigen Zuschauerprofile. Sie ist unabhängig von der Oberflächensprache und von der Sprache des Chats.",
+      "followUi": "Oberflächensprache folgen",
+      "effective": "Neue KI-Analysen werden auf {locale} geschrieben",
+      "note": "Bereits erstellte Aufgaben und gespeicherte Berichte behalten die bei der Erstellung gespeicherte Sprache."
+    },
     "theme": {
       "title": "Erscheinungsbild",
       "desc": "Hell und dunkel sind getrennt gestaltet, um einen angenehmen Kontrast zu bieten.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Gespeichert",
     "language": "Sprache aktualisiert",
+    "aiOutputLanguage": "KI-Ausgabesprache aktualisiert",
     "theme": "Design aktualisiert",
     "copied": "In die Zwischenablage kopiert",
     "exported": "Analysepaket erstellt",

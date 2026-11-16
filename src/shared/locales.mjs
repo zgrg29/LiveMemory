@@ -38,7 +38,12 @@ export const LOCALE_REGISTRY = freeze([
     script: 'Hans',
     regions: freeze(['CN', 'SG', 'MY']),
     available: true,
-    aiOutput: true
+    aiOutput: true,
+    // A complete, hand-written instruction body exists in this language. The
+    // other AI output languages reuse the English body plus their own output
+    // rule (`src/ai/prompts/language.mjs`); keeping the flag here means the
+    // instruction-language list is still declared in exactly one place.
+    nativeInstructions: true
   }),
   freeze({
     code: 'ja',
@@ -48,7 +53,8 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['JP']),
     available: true,
-    aiOutput: true
+    aiOutput: true,
+    nativeInstructions: true
   }),
   freeze({
     code: 'en',
@@ -58,7 +64,8 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['US', 'GB', 'AU', 'CA', 'NZ', 'IE']),
     available: true,
-    aiOutput: true
+    aiOutput: true,
+    nativeInstructions: true
   }),
   freeze({
     code: 'ko',
@@ -68,7 +75,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['KR']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'es',
@@ -78,7 +85,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['ES', 'MX', 'AR', 'CO', 'CL', 'PE', 'VE', 'UY', 'US']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'pt-BR',
@@ -88,7 +95,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['BR']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'zh-TW',
@@ -98,7 +105,7 @@ export const LOCALE_REGISTRY = freeze([
     script: 'Hant',
     regions: freeze(['TW', 'HK', 'MO']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'fr',
@@ -108,7 +115,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['FR', 'BE', 'CA', 'CH', 'LU', 'MC']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'de',
@@ -118,7 +125,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['DE', 'AT', 'CH', 'LU', 'LI']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   }),
   freeze({
     code: 'id',
@@ -128,7 +135,7 @@ export const LOCALE_REGISTRY = freeze([
     script: null,
     regions: freeze(['ID']),
     available: true,
-    aiOutput: false
+    aiOutput: true
   })
 ]);
 
@@ -138,11 +145,16 @@ export const AVAILABLE_LOCALES = freeze(
 );
 
 /**
- * Languages the *AI output* can be produced in. This is deliberately narrower
- * than the interface list until the prompt set, the result schema and the
- * translation target names exist for a language (P41). A language without
- * `aiOutput: true` is never sent to a provider as an analysis language; the
- * callers fall back to `DEFAULT_LOCALE` instead of inventing a locale.
+ * Languages the *AI output* can be produced in: the same registry filtered by
+ * the `aiOutput` capability flag.
+ *
+ * P40 shipped ten interface languages but only three analysis languages; P41
+ * added the prompt rules, the result schema enum and the translation target for
+ * the remaining seven, so every shipped interface language is now also an AI
+ * output language. The flag is kept because it is the capability gate, not a
+ * second list: a language whose prompts are not ready must never reach a
+ * provider, and `aiOutputLocale()` degrades to the closest supported language
+ * (or `DEFAULT_LOCALE`) instead of inventing a locale.
  */
 export const AI_OUTPUT_LOCALES = freeze(
   LOCALE_REGISTRY.filter((entry) => entry.aiOutput).map((entry) => entry.code)
@@ -158,7 +170,7 @@ const LANGUAGE_ALIASES = freeze({
 /**
  * Stable script hints for Chinese regions. This is *not* a supported-language
  * list: it only lets a region-only tag (`zh-HK`) be matched against the script
- * of an available dictionary (`zh-TW` once it exists, `zh-CN` today).
+ * of an available dictionary (`zh-TW`).
  */
 const REGION_SCRIPT_HINTS = freeze({
   'zh-TW': 'Hant',

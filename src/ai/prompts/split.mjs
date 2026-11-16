@@ -1,10 +1,22 @@
 import {RESULT_SCHEMA_VERSION, promptVersionFor, ANALYSIS_MODE} from '../constants.mjs';
 import {MEMORY_MAX_FACTS_PER_VIEWER} from '../batching/tokens.mjs';
+import {
+  hasNativeInstructions,
+  languageRuleText,
+  memoryExampleFor,
+  outputLanguage
+} from './language.mjs';
 
 /**
  * Instructions for the two v0.13 tasks. They are deliberately separate:
  * a session report must not output memory updates, and a memory task must not
- * output a session report. Three complete localizations are kept in sync.
+ * output a session report.
+ *
+ * Three complete localizations (Simplified Chinese, Japanese, English) are kept
+ * in sync by hand. The other seven AI output languages reuse the verified
+ * English instruction body and add a native output-language rule — see
+ * `src/ai/prompts/language.mjs` for why that is the product decision instead of
+ * mechanically translating every rule ten times.
  */
 
 const TEXT = {
@@ -215,87 +227,59 @@ function bullets(items) {
   return items.map((item) => `- ${item}`).join('\n');
 }
 
+const SHAPE_BODY = `{
+  "protocol": "livememory-analysis-result-v1",
+  "schema_version": "1.3.0",
+  "analysis_scope": "session",
+  "job_id": "aij_...",
+  "batch_id": "aij_...-b01",
+  "task_id": "ses_...-analysis",
+  "session_id": "ses_...",
+  "locale": __LOCALE__,
+  "session_topics": {
+    "summary": "...",
+    "topics": [{"title": "...", "started_at": "ISO", "ended_at": "ISO", "summary": "...", "key_points": ["..."], "confidence": 0.7, "evidence": "observed", "message_refs": [1, 2]}],
+    "sentiment": [{"at": "ISO", "tone": "mixed", "note": "...", "confidence": 0.5}],
+    "disputes": [],
+    "highlights": [{"started_at": "ISO", "ended_at": "ISO", "reason": "...", "clip_suggestion": "...", "confidence": 0.5}]
+  }
+}`;
+
+/**
+ * Output shape example. It is identical for every language except the `locale`
+ * value: all prose values stay `"..."`, so the example cannot leak English text
+ * into a non-English report, and there is no reason to keep per-language copies.
+ */
 function shape(locale) {
-  if (locale === 'zh-CN') {
-    return `\`\`\`json
-{
-  "protocol": "livememory-analysis-result-v1",
-  "schema_version": "1.3.0",
-  "analysis_scope": "session",
-  "job_id": "aij_...",
-  "batch_id": "aij_...-b01",
-  "task_id": "ses_...-analysis",
-  "session_id": "ses_...",
-  "locale": "zh-CN",
-  "session_topics": {
-    "summary": "...",
-    "topics": [{"title": "...", "started_at": "ISO", "ended_at": "ISO", "summary": "...", "key_points": ["..."], "confidence": 0.7, "evidence": "observed", "message_refs": [1, 2]}],
-    "sentiment": [{"at": "ISO", "tone": "mixed", "note": "...", "confidence": 0.5}],
-    "disputes": [],
-    "highlights": [{"started_at": "ISO", "ended_at": "ISO", "reason": "...", "clip_suggestion": "...", "confidence": 0.5}]
-  }
-}
-\`\`\``;
-  }
-  if (locale === 'ja') {
-    return `\`\`\`json
-{
-  "protocol": "livememory-analysis-result-v1",
-  "schema_version": "1.3.0",
-  "analysis_scope": "session",
-  "job_id": "aij_...",
-  "batch_id": "aij_...-b01",
-  "task_id": "ses_...-analysis",
-  "session_id": "ses_...",
-  "locale": "ja",
-  "session_topics": {
-    "summary": "...",
-    "topics": [{"title": "...", "started_at": "ISO", "ended_at": "ISO", "summary": "...", "key_points": ["..."], "confidence": 0.7, "evidence": "observed", "message_refs": [1, 2]}],
-    "sentiment": [{"at": "ISO", "tone": "mixed", "note": "...", "confidence": 0.5}],
-    "disputes": [],
-    "highlights": [{"started_at": "ISO", "ended_at": "ISO", "reason": "...", "clip_suggestion": "...", "confidence": 0.5}]
-  }
-}
-\`\`\``;
-  }
   return `\`\`\`json
-{
-  "protocol": "livememory-analysis-result-v1",
-  "schema_version": "1.3.0",
-  "analysis_scope": "session",
-  "job_id": "aij_...",
-  "batch_id": "aij_...-b01",
-  "task_id": "ses_...-analysis",
-  "session_id": "ses_...",
-  "locale": "en",
-  "session_topics": {
-    "summary": "...",
-    "topics": [{"title": "...", "started_at": "ISO", "ended_at": "ISO", "summary": "...", "key_points": ["..."], "confidence": 0.7, "evidence": "observed", "message_refs": [1, 2]}],
-    "sentiment": [{"at": "ISO", "tone": "mixed", "note": "...", "confidence": 0.5}],
-    "disputes": [],
-    "highlights": [{"started_at": "ISO", "ended_at": "ISO", "reason": "...", "clip_suggestion": "...", "confidence": 0.5}]
-  }
-}
+${SHAPE_BODY.replace('__LOCALE__', JSON.stringify(String(locale ?? 'en')))}
 \`\`\``;
 }
 
-const MEMORY_SHAPE_TEXT = Object.freeze({
-  'zh-CN': {
-    summary: '最近开始学吉他，聊天时会主动聊练习进度。',
-    topic: '吉他',
-    statement: '开始学吉他'
-  },
-  ja: {
-    summary: '最近ギターを始め、練習の進み具合をよく話しています。',
-    topic: 'ギター',
-    statement: 'ギターを始めました'
-  },
-  en: {
-    summary: 'Recently started learning guitar and often talks about practice.',
-    topic: 'guitar',
-    statement: 'Started learning guitar'
+/**
+ * Instruction text for a locale: the verified native body when one exists,
+ * otherwise the verified English body with a native output-language rule.
+ */
+function textFor(locale) {
+  if (hasNativeInstructions(locale) && typeof TEXT[locale] === 'object') {
+    return {
+      ...TEXT[locale],
+      rules: [...TEXT[locale].rules, `OUTPUT LANGUAGE (${locale}): ${languageRuleText(locale)}`],
+      memoryRules: [languageRuleText(locale), ...TEXT[locale].memoryRules.slice(1)]
+    };
   }
-});
+  const output = outputLanguage(locale);
+  return {
+    ...TEXT.en,
+    rules: [
+      ...TEXT.en.rules,
+      `OUTPUT LANGUAGE (${locale}): ${output.rule} ${output.guard}`
+    ],
+    // The English body's first memory rule names English explicitly; replace it
+    // with this locale's own rule so the two never contradict each other.
+    memoryRules: [languageRuleText(locale), ...TEXT.en.memoryRules.slice(1)]
+  };
+}
 
 /**
  * Compact memory answer example.
@@ -303,10 +287,11 @@ const MEMORY_SHAPE_TEXT = Object.freeze({
  * The provider path never sends or accepts `viewer_id`; refs are mapped locally.
  * The example therefore contains no protocol fields and must stay in the same
  * language as the task locale, otherwise models copy the English example into a
- * Japanese long-term profile.
+ * Japanese long-term profile. The example prose lives next to the output-language
+ * rule in `language.mjs`, so adding a language cannot leave the example behind.
  */
 export function memoryCompactShape(locale = 'en') {
-  const text = MEMORY_SHAPE_TEXT[locale] ?? MEMORY_SHAPE_TEXT.en;
+  const text = memoryExampleFor(locale);
   return `\`\`\`json
 {
   "viewers": [
@@ -340,7 +325,7 @@ function header(locale, title, mode) {
 }
 
 export function buildSessionInstructions(locale = 'en', context = {}) {
-  const text = TEXT[locale] ?? TEXT.en;
+  const text = textFor(locale);
   const batchTotal = Math.max(1, Number(context.batchTotal) || 1);
   const batchIndex = Math.min(batchTotal, Math.max(1, Number(context.batchIndex) || 1));
   const batchScope = batchTotal > 1
@@ -382,7 +367,7 @@ export function buildSessionInstructions(locale = 'en', context = {}) {
 }
 
 export function buildMemoryInstructions(locale = 'en', context = {}) {
-  const text = TEXT[locale] ?? TEXT.en;
+  const text = textFor(locale);
   const lines = [
     header(locale, text.memoryTitle, ANALYSIS_MODE.MEMORY),
     '',

@@ -1600,6 +1600,13 @@
       "headerHint": "El control de idioma de la cabecera de la página es la forma más rápida de cambiar; ambos usan la misma preferencia guardada.",
       "note": "Los mensajes de chat nunca se traducen; los informes con IA usan el idioma de análisis que se elija."
     },
+    "aiOutput": {
+      "title": "Idioma de salida de la IA",
+      "desc": "Idioma de los informes de análisis con IA y de los perfiles de audiencia a largo plazo. Es independiente del idioma de la interfaz y del idioma del chat.",
+      "followUi": "Seguir el idioma de la interfaz",
+      "effective": "Los nuevos análisis con IA se escribirán en {locale}",
+      "note": "Las tareas ya creadas y los informes guardados conservan el idioma registrado al crearse."
+    },
     "theme": {
       "title": "Apariencia",
       "desc": "Los modos claro y oscuro se diseñan por separado para lograr un contraste cómodo.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Guardado",
     "language": "Idioma actualizado",
+    "aiOutputLanguage": "Idioma de salida de la IA actualizado",
     "theme": "Tema actualizado",
     "copied": "Copiado al portapapeles",
     "exported": "Paquete de análisis creado",

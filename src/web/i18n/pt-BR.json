@@ -1600,6 +1600,13 @@
       "headerHint": "O seletor de idioma no topo da página é a forma mais rápida de trocar; os dois usam a mesma preferência salva.",
       "note": "As mensagens de chat nunca são traduzidas; os relatórios de IA seguem o idioma de análise que você escolher."
     },
+    "aiOutput": {
+      "title": "Idioma de saída da IA",
+      "desc": "Idioma dos relatórios de análise com IA e dos perfis de audiência de longo prazo. É independente do idioma da interface e do idioma do chat.",
+      "followUi": "Seguir o idioma da interface",
+      "effective": "As novas análises com IA serão escritas em {locale}",
+      "note": "As tarefas já criadas e os relatórios salvos mantêm o idioma registrado na criação."
+    },
     "theme": {
       "title": "Aparência",
       "desc": "Claro e escuro são projetados separadamente para um contraste confortável.",
@@ -2039,6 +2046,7 @@
   "toast": {
     "saved": "Salvo",
     "language": "Idioma atualizado",
+    "aiOutputLanguage": "Idioma de saída da IA atualizado",
     "theme": "Tema atualizado",
     "copied": "Copiado para a área de transferência",
     "exported": "Pacote de análise criado",

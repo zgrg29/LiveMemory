@@ -1710,6 +1710,13 @@ export class AnalysisRunner {
         contextCapped: created.job.batchPlan?.contextCapped === true
       });
     }
+    // The job row is the authority for the task language (L2 snapshot). A resume
+    // after a restart must reuse that stored language even if the runtime state
+    // file lost the field, and even if the user changed the UI or the default AI
+    // output language in the meantime.
+    if (job.locale && this.state.get(sessionId)?.locale !== job.locale) {
+      this.state.set(sessionId, {locale: job.locale});
+    }
     const batches = listJobBatches(this.db, job.id);
     const total = Math.max(1, Number(job.batchTotal) || batches.length);
     const pending = batches.filter((batch) => (
@@ -3131,6 +3138,11 @@ export class AnalysisRunner {
         overheadTokens: created.job.overheadTokens ?? null,
         oversizedViewerCount: created.job.oversizedViewerCount ?? 0
       });
+    }
+    // Same rule as the session stage: the memory job's stored language wins on
+    // resume. A memory job may legitimately differ from the session job.
+    if (job.locale && this.state.get(sessionId)?.locale !== job.locale) {
+      this.state.set(sessionId, {locale: job.locale});
     }
     const sessionForGate = getSession(this.db, sessionId);
     if (!sessionForGate) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});

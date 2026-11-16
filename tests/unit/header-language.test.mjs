@@ -130,8 +130,8 @@ test('language and data-management interface keys exist in all ten languages', a
     assert.ok(dict.errors.relocationVerifyFailed);
     assert.ok(dict.errors.confirmTextMismatch);
     // The three legacy native-name keys keep their exact text in every
-    // dictionary. The seven new languages are named by the registry only, so no
-    // dictionary key was added and the 2,265-key contract is unchanged.
+    // dictionary. The seven new languages are named by the registry only, so the
+    // language-name key set is unchanged by P41 as well.
     assert.equal(dict.settings.language.zh, '简体中文');
     assert.equal(dict.settings.language.ja, '日本語');
     assert.equal(dict.settings.language.en, 'English');

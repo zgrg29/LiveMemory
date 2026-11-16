@@ -68,8 +68,13 @@ test('bootstrap locales expose all ten languages and survive a restart', async (
     assert.equal(payload.locales.system, 'zh-HK');
     // P40: a Traditional Chinese system now resolves to the shipped zh-TW.
     assert.equal(payload.effective.locale, 'zh-TW');
-    // The AI output list is the aiOutput subset, never the ten UI languages.
-    assert.deepEqual(payload.locales.aiOutput.map((entry) => entry.code), ['zh-CN', 'ja', 'en']);
+    // P41: every interface language is also a real AI output language, so the
+    // aiOutput list is the same registry with the capability flag set.
+    assert.deepEqual(payload.locales.aiOutput.map((entry) => entry.code), TEN_CODES);
+    // `follow-ui` is the default preference, and a Traditional Chinese system
+    // resolves it to zh-TW without touching the stored preference.
+    assert.equal(payload.settings.aiOutputLocale, 'follow-ui');
+    assert.equal(payload.effective.aiOutputLocale, 'zh-TW');
 
     for (const entry of payload.locales.available) {
       const dictionary = await request(server.url, `i18n/${entry.code}.json`);

@@ -80,12 +80,13 @@ test('selector metadata keeps registry order and native names', () => {
   );
 });
 
-test('AI and memory output languages are the aiOutput subset only', () => {
-  assert.deepEqual([...AI_OUTPUT_LOCALES], ['zh-CN', 'ja', 'en']);
+test('AI and memory output languages are the aiOutput subset of the same registry', () => {
+  // P41 opened the capability for every shipped interface language.
+  assert.deepEqual([...AI_OUTPUT_LOCALES], TEN_CODES);
   assert.deepEqual([...SUPPORTED_LOCALES], [...AI_OUTPUT_LOCALES]);
   assert.deepEqual([...SUPPORTED_MEMORY_LOCALES], [...AI_OUTPUT_LOCALES]);
-  for (const code of ['ko', 'es', 'pt-BR', 'zh-TW', 'fr', 'de', 'id']) {
-    assert.equal(AI_OUTPUT_LOCALES.includes(code), false, `${code} must not be an AI output language yet`);
+  for (const code of TEN_CODES) {
+    assert.equal(AI_OUTPUT_LOCALES.includes(code), true, `${code} must be an AI output language`);
   }
 });
 
@@ -97,12 +98,17 @@ test('every AI output language has prompts, a versioned name and a translation l
     assert.ok(instructions.length > 500, `${code} instructions too short`);
     assert.ok(LOCALE_NAME[code], `${code} translation label`);
   }
-  // The three prompt languages are genuinely different, not English copies.
-  assert.notEqual(buildInstructions('ja'), buildInstructions('en'));
-  assert.notEqual(buildInstructions('zh-CN'), buildInstructions('en'));
-  // An interface-only language degrades instead of inventing a prompt locale.
-  assert.match(promptVersionFor('ko'), /-en$/);
-  assert.match(memoryPromptVersionFor('de'), /-en$/);
+  // Every instruction set is genuinely language-specific, not an English copy:
+  // the three verified bodies differ in section text, the seven added languages
+  // differ through their output-language section.
+  for (const code of AI_OUTPUT_LOCALES) {
+    if (code === 'en') continue;
+    assert.notEqual(buildInstructions(code), buildInstructions('en'), `${code} must not equal English`);
+  }
+  // A language tag outside the registry degrades instead of inventing a prompt
+  // locale; it can never be sent to a provider.
+  assert.match(promptVersionFor('th-TH'), /-en$/);
+  assert.match(memoryPromptVersionFor('he'), /-en$/);
 });
 
 test('no second hardcoded three-language array survives in src', () => {
@@ -125,6 +131,7 @@ test('no second hardcoded three-language array survives in src', () => {
 test('the AI result schemas mirror the AI output registry instead of drifting', () => {
   for (const file of [
     'src/ai/schemas/analysis-result-v1.schema.json',
+    'src/ai/schemas/analysis-result-v1.3.schema.json',
     'src/memory/schemas/memory-update-result-v1.schema.json'
   ]) {
     const schema = JSON.parse(readFileSync(join(root, file), 'utf8'));

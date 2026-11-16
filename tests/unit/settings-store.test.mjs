@@ -97,3 +97,61 @@ test('updates are persisted atomically and validated', () => {
   assert.equal(store.update({locale: 'system'}).locale, 'system');
   temp.cleanup();
 });
+
+test('the AI output language is a persisted, independent preference', () => {
+  const temp = createTempDir();
+  const file = join(temp.dir, 'settings.json');
+  const store = new SettingsStore({file});
+  store.load();
+  // Default is `follow-ui`, not a hard-coded analysis language.
+  assert.equal(store.get().aiOutputLocale, 'follow-ui');
+  assert.equal(DEFAULT_SETTINGS.aiOutputLocale, 'follow-ui');
+  // The interface language and the AI output language are separate keys.
+  const both = store.update({locale: 'ja', aiOutputLocale: 'de'});
+  assert.equal(both.locale, 'ja');
+  assert.equal(both.aiOutputLocale, 'de');
+  const persisted = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(persisted.locale, 'ja');
+  assert.equal(persisted.aiOutputLocale, 'de');
+  // Restart keeps both values.
+  const reloaded = new SettingsStore({file}).load();
+  assert.equal(reloaded.locale, 'ja');
+  assert.equal(reloaded.aiOutputLocale, 'de');
+  // Switching the interface language does not touch the AI output language.
+  assert.equal(store.update({locale: 'ko'}).aiOutputLocale, 'de');
+  // Every AI output language is accepted, region variants normalize, and an
+  // unknown or non-language value is rejected instead of silently stored.
+  assert.equal(store.update({aiOutputLocale: 'pt-BR'}).aiOutputLocale, 'pt-BR');
+  assert.equal(store.update({aiOutputLocale: 'pt-PT'}).aiOutputLocale, 'pt-BR');
+  assert.equal(store.update({aiOutputLocale: 'zh-HK'}).aiOutputLocale, 'zh-TW');
+  assert.equal(store.update({aiOutputLocale: 'follow-ui'}).aiOutputLocale, 'follow-ui');
+  assert.throws(() => store.update({aiOutputLocale: 'th-TH'}), /SETTINGS_INVALID/);
+  assert.throws(() => store.update({aiOutputLocale: 'not-a-language'}), /SETTINGS_INVALID/);
+  assert.throws(() => store.update({aiOutputLocale: 42}), /SETTINGS_INVALID/);
+  temp.cleanup();
+});
+
+test('a pre-P41 settings file without aiOutputLocale loads as follow-ui', () => {
+  const temp = createTempDir();
+  const file = join(temp.dir, 'settings.json');
+  // Exactly what a P40 install has on disk: no aiOutputLocale key at all.
+  writeFileSync(file, JSON.stringify({
+    version: 1,
+    locale: 'ko',
+    theme: 'dark',
+    storageMode: 'compact',
+    preferredPort: 47800,
+    onboardingCompleted: true,
+    youtubeRawRetentionDays: 30,
+    updatedAt: '2026-11-16T00:00:00.000Z'
+  }));
+  const settings = new SettingsStore({file}).load();
+  assert.equal(settings.locale, 'ko');
+  assert.equal(settings.aiOutputLocale, 'follow-ui');
+  // Loading does not rewrite the file (no silent migration of the value).
+  const raw = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(Object.hasOwn(raw, 'aiOutputLocale'), false);
+  // A corrupt AI output value in an old file degrades instead of blocking boot.
+  assert.equal(normalizeSettings({aiOutputLocale: 'klingon'}).aiOutputLocale, 'follow-ui');
+  temp.cleanup();
+});

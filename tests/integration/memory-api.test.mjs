@@ -149,7 +149,7 @@ test('HTTP long-term memory workflow', async (t) => {
     );
     assert.equal(instructions.status, 200);
     assert.match(instructions.payload.text, /livememory-memory-update-v1/);
-    assert.equal(instructions.payload.promptVersionLabel, 'lm-prompt-m7.1-en');
+    assert.equal(instructions.payload.promptVersionLabel, 'lm-prompt-m7.2-en');
     assert.equal(instructions.payload.batch.index, 1);
 
     pkg = await inspectMemoryPackage(join(server.paths.exports, created.payload.batches[0].fileName));

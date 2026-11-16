@@ -2,12 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AI_OUTPUT_LOCALES,
+  AI_OUTPUT_PREFERENCE_FOLLOW_UI,
   AVAILABLE_LOCALES,
   aiOutputLocale,
   detectSystemLocale,
   mapSystemLocale,
+  normalizeAiOutputPreference,
   normalizeLocale,
   normalizeLocalePreference,
+  parseAiOutputPreference,
+  resolveAiOutputPreference,
   resolveLocale,
   resolveLocaleTag
 } from '../../src/shared/locale.mjs';
@@ -145,26 +149,77 @@ test('system detection can resolve against an installed subset', () => {
   assert.equal(detectSystemLocale({LC_ALL: 'de_DE.UTF-8'}, {available: ['zh-CN', 'ja', 'en']}), 'en');
 });
 
-test('AI output languages are a capability subset of the interface languages', () => {
-  assert.deepEqual([...AI_OUTPUT_LOCALES], ['zh-CN', 'ja', 'en']);
+test('AI output languages are the aiOutput subset of the interface languages', () => {
+  // P41: every shipped interface language now has real AI output support, and the
+  // capability flag remains the single gate for what may reach a provider.
+  assert.deepEqual([...AI_OUTPUT_LOCALES], [...AVAILABLE_LOCALES]);
   for (const code of AI_OUTPUT_LOCALES) assert.ok(AVAILABLE_LOCALES.includes(code), code);
-  // Ten interface languages must not become ten analysis languages in P40.
-  assert.ok(AVAILABLE_LOCALES.length === 10);
-  assert.ok(AI_OUTPUT_LOCALES.length < AVAILABLE_LOCALES.length);
 });
 
-test('aiOutputLocale never lets an unsupported language reach a provider', () => {
-  assert.equal(aiOutputLocale('en'), 'en');
-  assert.equal(aiOutputLocale('ja'), 'ja');
-  assert.equal(aiOutputLocale('zh-CN'), 'zh-CN');
-  // Closest supported family member first, then the default language.
-  assert.equal(aiOutputLocale('zh-TW'), 'zh-CN');
-  assert.equal(aiOutputLocale('zh-HK'), 'zh-CN');
-  assert.equal(aiOutputLocale('ko'), 'en');
-  assert.equal(aiOutputLocale('de'), 'en');
-  assert.equal(aiOutputLocale('pt-BR'), 'en');
-  assert.equal(aiOutputLocale('es-MX'), 'en');
+test('aiOutputLocale only returns a language with real prompts and a schema enum', () => {
+  for (const code of AI_OUTPUT_LOCALES) assert.equal(aiOutputLocale(code), code, code);
+  // Family/region resolution still applies to variants of a supported language.
+  assert.equal(aiOutputLocale('zh-HK'), 'zh-TW');
+  assert.equal(aiOutputLocale('zh-MO'), 'zh-TW');
+  assert.equal(aiOutputLocale('zh-Hant'), 'zh-TW');
+  assert.equal(aiOutputLocale('zh-Hans'), 'zh-CN');
+  assert.equal(aiOutputLocale('pt-PT'), 'pt-BR');
+  assert.equal(aiOutputLocale('en-GB'), 'en');
+  assert.equal(aiOutputLocale('es-419'), 'es');
+  assert.equal(aiOutputLocale('in-ID'), 'id');
+  // A language outside the registry can never reach a provider.
   assert.equal(aiOutputLocale('th-TH'), 'en');
+  assert.equal(aiOutputLocale('he'), 'en');
   assert.equal(aiOutputLocale(null), 'en');
   assert.equal(aiOutputLocale(''), 'en');
+});
+
+test('the AI output preference defaults to follow-ui and never invents a language', () => {
+  assert.equal(AI_OUTPUT_PREFERENCE_FOLLOW_UI, 'follow-ui');
+  assert.equal(normalizeAiOutputPreference(undefined), 'follow-ui');
+  assert.equal(normalizeAiOutputPreference(''), 'follow-ui');
+  assert.equal(normalizeAiOutputPreference('nonsense'), 'follow-ui');
+  assert.equal(normalizeAiOutputPreference('FOLLOW-UI'), 'follow-ui');
+  for (const code of AI_OUTPUT_LOCALES) {
+    assert.equal(normalizeAiOutputPreference(code), code, code);
+  }
+  assert.equal(parseAiOutputPreference('de'), 'de');
+  assert.equal(parseAiOutputPreference('de-DE'), 'de');
+  assert.equal(parseAiOutputPreference('th-TH'), null);
+});
+
+test('follow-ui follows the interface language, an explicit preference does not', () => {
+  // The matrix the user asked for: UI and AI output are independent.
+  const cases = [
+    // [preference, uiLocale, expected]
+    ['follow-ui', 'ko', 'ko'],
+    ['follow-ui', 'ja', 'ja'],
+    ['follow-ui', 'de', 'de'],
+    ['ko', 'ko', 'ko'],
+    ['ko', 'ja', 'ko'],
+    ['zh-CN', 'ko', 'zh-CN'],
+    ['ko', 'zh-CN', 'ko'],
+    ['de', 'ja', 'de'],
+    ['pt-BR', 'en', 'pt-BR'],
+    ['zh-TW', 'zh-CN', 'zh-TW'],
+    ['follow-ui', 'th-TH', 'en'],
+    [null, 'fr', 'fr']
+  ];
+  for (const [preference, uiLocale, expected] of cases) {
+    assert.equal(
+      resolveAiOutputPreference(preference, {uiLocale}),
+      expected,
+      `${preference} / ${uiLocale}`
+    );
+  }
+  // `system` as the interface preference means "use the detected system locale".
+  assert.equal(
+    resolveAiOutputPreference('follow-ui', {uiLocale: 'system', systemLocale: 'id-ID'}),
+    'id'
+  );
+  // An explicit preference is unaffected by a missing system locale.
+  assert.equal(
+    resolveAiOutputPreference('ja', {uiLocale: 'system', systemLocale: null}),
+    'ja'
+  );
 });

@@ -38,6 +38,11 @@ const state = {
   systemLocale: 'en',
   dict: null,
   locale: 'en',
+  // AI output language (L2) is independent of the interface language (L1):
+  // `aiOutputPreference` is the persisted choice (`follow-ui` or a code) and
+  // `aiOutputLocale` is the concrete language a new task would use right now.
+  aiOutputPreference: 'follow-ui',
+  aiOutputLocale: DEFAULT_LOCALE,
   status: null,
   version: '0.1.0',
   locales: [],
@@ -85,12 +90,19 @@ const ctx = {
   get locale() {
     return state.locale;
   },
+  get aiOutputLocale() {
+    return state.aiOutputLocale;
+  },
+  get aiOutputPreference() {
+    return state.aiOutputPreference;
+  },
   emit,
   on,
   toast: (message, options) => toaster(message, options),
   navigate,
   refreshStatus,
   setLocale,
+  setAiOutputLocale,
   setTheme,
   describeError: (error) => describeError(error, t)
 };
@@ -333,12 +345,35 @@ async function setLocale(preference) {
   const payload = await api.patch('/api/settings', {locale: preference});
   state.settings = payload.settings;
   state.effective = payload.effective;
+  // Changing the interface language may move the *default for new AI tasks*
+  // when the preference is `follow-ui`. Existing tasks and reports are not
+  // touched: their language lives on the job row.
+  state.aiOutputPreference = payload.settings?.aiOutputLocale ?? state.aiOutputPreference;
+  state.aiOutputLocale = payload.effective?.aiOutputLocale ?? state.aiOutputLocale;
   await applyLocale(payload.effective.locale);
   syncLanguageControls();
   toaster(t('toast.language'));
   emit('localechange', {locale: state.locale, preference});
   await renderRoute();
   syncLanguageControls();
+}
+
+/**
+ * Persist the AI output language preference (L2). It never changes the interface
+ * language and never rewrites an existing task or report.
+ */
+async function setAiOutputLocale(preference) {
+  const payload = await api.patch('/api/settings', {aiOutputLocale: preference});
+  state.settings = payload.settings;
+  state.effective = payload.effective;
+  state.aiOutputPreference = payload.settings?.aiOutputLocale ?? preference;
+  state.aiOutputLocale = payload.effective?.aiOutputLocale ?? state.aiOutputLocale;
+  emit('aioutputlocalechange', {
+    preference: state.aiOutputPreference,
+    locale: state.aiOutputLocale
+  });
+  toaster(t('toast.aiOutputLanguage'));
+  await renderRoute();
 }
 
 async function setTheme(preference) {
@@ -444,6 +479,13 @@ async function boot() {
     state.aiLocales = Array.isArray(bootstrap.locales?.aiOutput) && bootstrap.locales.aiOutput.length > 0
       ? bootstrap.locales.aiOutput
       : localeDescriptors(AI_OUTPUT_LOCALES);
+    state.aiOutputPreference = bootstrap.settings?.aiOutputLocale === 'follow-ui' ||
+      typeof bootstrap.settings?.aiOutputLocale !== 'string'
+      ? 'follow-ui'
+      : bootstrap.settings.aiOutputLocale;
+    state.aiOutputLocale = typeof bootstrap.effective?.aiOutputLocale === 'string'
+      ? bootstrap.effective.aiOutputLocale
+      : DEFAULT_LOCALE;
     applyTheme(bootstrap.settings.theme);
     await applyLocale(bootstrap.effective.locale);
     wireShell();

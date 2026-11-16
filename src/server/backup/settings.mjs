@@ -8,11 +8,16 @@ import {AppError} from '../../shared/errors.mjs';
  * - `preferredPort` would bind the new computer to this one's port preference;
  * - `updatedAt` is bookkeeping, not a preference.
  *
+ * `aiOutputLocale` (the AI analysis output language) *is* a user preference and
+ * must survive a backup/restore; forgetting to list it here would silently reset
+ * a restored install to `follow-ui`.
+ *
  * The data-folder pointer and every credential live outside this file and are
  * never part of a backup.
  */
 export const BACKUP_SETTING_KEYS = Object.freeze([
   'locale',
+  'aiOutputLocale',
   'theme',
   'storageMode',
   'onboardingCompleted',
