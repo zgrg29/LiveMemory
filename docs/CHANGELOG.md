@@ -10,7 +10,7 @@
 - 真实 DeepSeek `deepseek-flash`：单场 **10/10 语言**、长期画像 **10/10 语言**、
   跨语言 zh→ko→de→zh **4/4**、阅读翻译 ko/zh-TW/es/fr/id **5/5** + 失败回退；
   正式取证 31 次请求 / 100,487 input + 17,491 output tokens。**无母语签收**。
-- 真实 EXE：Build `5b9e355dccc7` / commit `c74dbcd` / 99,200,512 B / SHA-256 `ef7f1b37…` / `requireAdministrator`；
+- 真实 EXE：Build `5b9e355dccc7` / commit `310975e` / 99,200,512 B / SHA-256 `7c3f3d3f…` / `requireAdministrator`；
   `verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16。
 - 真实浏览器：源码 **440/440**、EXE 内服务 **440/440** 页面加载；十语言 × 1440/1024/820/390 × 明暗。
 - 旧 schema-15 真实数据升级到 16：计数/内容 hash 全一致、settings 未改写、旧报告可读、

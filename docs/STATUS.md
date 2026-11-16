@@ -54,9 +54,9 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 构建 | `node scripts/build-windows.mjs`，Build ID `5b9e355dccc7`（asset hash `5b9e355dccc749bde6f2`），commit `c74dbcd` |
-| 大小 / SHA-256 | `99,200,512` bytes / `ef7f1b3718f6505d3de81e24ae1db634d7ae7e6eb738c9c7dccbbea9d22c8057` |
-| builtAt / 资源 | `2026-11-16T16:21:04.971Z` / 237 files / 51 modules |
+| 构建 | `node scripts/build-windows.mjs`，Build ID `5b9e355dccc7`（asset hash `5b9e355dccc749bde6f2`），commit `310975e` |
+| 大小 / SHA-256 | `99,200,512` bytes / `7c3f3d3f0bccd8d218dcbb560c82d7f7d89a7df6e0e35b8b9ccde054a4361830` |
+| builtAt / 资源 | `2026-11-16T16:23:48.586Z` / 237 files / 51 modules |
 | RT_MANIFEST | **`requireAdministrator`**（构建脚本断言） |
 | `verify-exe` | **11/11**（含共享注册表、十字典、十 AI 输出、动态语言控件） |
 | `verify-help-exe` | **14/14**（十语言使用说明 112 键 × 10） |
@@ -153,7 +153,7 @@
   母语审校未做；版本号与 Tag/Release 未动。
 - 分支 `feature/p42-i18n-m3`（从 P41 HEAD `3b75e8b` 新建）；本地提交：
   `2d6777e`（help/UAC 修复）、`68f551e`（验收脚本）、`c74dbcd`（P42 文档/截图）、
-  最终 EXE 数字的文档提交见 `git log -1`；
+  `310975e`（最终 EXE 数字，也是最终 EXE 内嵌 commit）；其后的文档提交只记录最终 SHA-256；
   **未 Push、未 Merge main、未 Tag、未 Release**。
 
 ## 0.49 P41 / I18N-M2 十语言 AI 输出与独立输出语言（2026-11-16）✅ 未发布
