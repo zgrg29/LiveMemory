@@ -59,7 +59,8 @@
 ### 0.58.5 Git
 
 - 分支：`kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建；未 Push）。
-- 本地提交：`docs: verify Kuaishou G1.5 login and dual-mode boundaries`（Hash 见 §0.58.6）。
+- 本地提交：`939f416`（`docs: verify Kuaishou G1.5 login and dual-mode boundaries`）；
+  随后以 `docs: record the Kuaishou G1.5 commit` 记录本 Hash。`main` 未改，v0.16.0 资产未动。
 - 工作区：提交后干净；`research/kuaishou-g1_5/.state/` 与 `scan.png` 未提交。
 
 ### 0.58.6 验证
@@ -69,6 +70,7 @@
 - `git diff --name-only main...HEAD`：只有 `docs/`、`log/`、`research/`、`.gitignore`、`THIRD_PARTY_NOTICES.md`；
   **没有** `src/`、`package.json`、`scripts/`、`dist/` 变更。
 - `v0.16.0` Tag 仍存在；`main` 仍为 `6f71f56`。
+- 本地提交 `939f416`；工作区提交后干净（`.state/`、`scan.png` 未提交）。
 
 ## 0.57 快手 G1 双路线验证（2026-11-17）✅ 验证完成 · 结论 C
 

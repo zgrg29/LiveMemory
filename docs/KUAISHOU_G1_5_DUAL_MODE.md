@@ -638,6 +638,17 @@ node --test --test-isolation=none research/kuaishou-g1_5/tests/prototype.test.mj
 - 未跑新的 H5 长测（因 POLICY-BLOCKED）；
 - 未完成 WS 真实监听、礼物、跨场身份、再开播。
 
+### 14.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建；未 Push） |
+| 本地提交 | `939f416`（`docs: verify Kuaishou G1.5 login and dual-mode boundaries`，23 files，+3,323/−17） |
+| 记录提交 | `docs: record the Kuaishou G1.5 commit`（只追加本 Hash） |
+| `main` | 未改（`6f71f56`）；`v0.16.0` Tag/Release/EXE 未动 |
+| Push / Merge / Tag / Release | **均未执行** |
+| 工作区 | 提交后干净；`research/kuaishou-g1_5/.state/`、`scan.png`、`tests/.tmp/` 未提交 |
+
 ---
 
 ## 附录 A：证据时间线（Asia/Shanghai）

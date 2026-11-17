@@ -50,7 +50,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建，未 Push） |
-| 本地提交 | `docs: verify Kuaishou G1.5 login and dual-mode boundaries`（Hash 见 STATUS §0.58.5） |
+| 本地提交 | `939f416`（`docs: verify Kuaishou G1.5 login and dual-mode boundaries`） |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 工作区 | 提交后干净（`.state/`、`scan.png` 未提交） |
 
