@@ -47,6 +47,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `kuaishou-g0`（从 `main` `6f71f56` 创建，未 Push） |
+| 本地提交 | `fb964ca`（`docs: investigate Kuaishou G0 feasibility (anonymous H5 feed)`） |
 | `main` | 未改；v0.16.0 Tag/Release/EXE 未动 |
 | 工作区 | 本轮文档/脚本提交后 clean |
 

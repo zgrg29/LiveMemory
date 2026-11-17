@@ -85,6 +85,7 @@
 | Tag | `v0.16.0` 存在 | `git tag --list` |
 | Kick | 已作为第六平台随 v0.16.0 发布 | `docs/STATUS.md` §0.55、`docs/HANDOFF.md` |
 | 本轮分支 | `kuaishou-g0`（从 `main` 创建，未 Push） | `git branch --show-current` |
+| 本轮调查提交 | `fb964ca`（`docs: investigate Kuaishou G0 feasibility (anonymous H5 feed)`） | `git log --oneline -1` |
 
 > 说明：本机 `git` 不在 PATH，使用 GitHub Desktop 自带 git；
 > `.git/logs` 目录被环境 ACL 拒绝写入，分支创建通过 `git branch` + 手写 `.git/HEAD` 完成（见 §12）。

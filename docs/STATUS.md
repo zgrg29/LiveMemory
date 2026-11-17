@@ -53,7 +53,8 @@
 ### 0.56.5 Git
 
 - 分支：`kuaishou-g0`（从 `main` `6f71f56` 创建；未 Push）。
-- 本地提交：见本轮文档提交；`main` 未改，v0.16.0 资产未动。
+- 本地提交：`fb964ca`（`docs: investigate Kuaishou G0 feasibility (anonymous H5 feed)`）；
+  随后以 `docs: record the Kuaishou G0 commit` 记录本 Hash。`main` 未改，v0.16.0 资产未动。
 - 工作区：调查结束时干净（仅本轮文档/脚本已提交）。
 
 ## 0.55 v0.16.0 正式发布：Kick 支持与自动开播监控（2026-11-17）✅ 已发布
