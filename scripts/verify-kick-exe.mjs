@@ -153,7 +153,7 @@ try {
     `platforms: ${ids.join(', ')}`,
     `kick: mode=${kick?.mode} unofficial=${kick?.unofficial} requiresLogin=${kick?.requiresLogin}`
   ]);
-  record('the EXE build is the Kick candidate build', bootstrap.app?.build?.buildId === exeBuild?.buildId && bootstrap.app?.version === '0.15.0', [
+  record('the EXE build matches the release version', bootstrap.app?.build?.buildId === exeBuild?.buildId && bootstrap.app?.version === '0.16.0', [
     `version: ${bootstrap.app?.version}`,
     `buildId: ${bootstrap.app?.build?.buildId}`,
     `sha256: ${exeSha}`

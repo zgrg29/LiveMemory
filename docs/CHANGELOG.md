@@ -1,9 +1,19 @@
 # 版本变化（CHANGELOG）
 
-## 未发布 — v0.16.0 候选（Kick G2–G5.1，未 Tag / 未 Release）
+## 0.16.0 — 2026-11-17（Kick 支持与自动开播监控：Kick Support & Auto Live Monitoring）
 
-> 本分支（`feature/kick-g2`）的测试候选，**不是正式版本**。版本号仍 `0.15.0`，未合并 `main`，
-> 未 Push / Tag / Release，未覆盖 `v0.15.0` 资产。
+**正式稳定版**，Tag `v0.16.0`。相对 `v0.15.0` 新增第六个直播平台 Kick（免登录采集、礼物/赠订、
+开播监控、自动录制），属 SemVer minor。原有五个平台、数据库 Schema（16）、金额/身份/去重规则与
+任务语言快照语义未改变。
+
+| 项目 | 值 |
+| --- | --- |
+| Release | `LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring` |
+| Build ID | `__BUILD_ID__` |
+| 提交 | `__COMMIT__` |
+| EXE | `LiveMemory.exe` · `__EXE_SIZE__` bytes |
+| SHA-256 | `__EXE_SHA__` |
+| Manifest | `requireAdministrator` |
 
 ### 新增
 
@@ -23,7 +33,7 @@
 - 十语言 Kick UI：**20/20**（1440/1024/820/390，明暗，10 语言，含监控开关/表单与真实 waiting/recording Tab）。
 - 真实长测（≥60 分钟）：见 `docs/KICK_G2_G5_ACCEPTANCE.md`。
 - 真实监控验收：**16/16**（离线 xqc、开播自动记录、重启、双频道、手动停止）。
-- 候选 EXE：Build ID `8bfc48086b20` / 99,342,336 B / `verify-kick-exe` **27/27**。
+- 正式 EXE：Build ID `__BUILD_ID__` / `__EXE_SIZE__` B / `verify-kick-exe` **27/27**。
 
 ### 未验证 / 已知限制
 
