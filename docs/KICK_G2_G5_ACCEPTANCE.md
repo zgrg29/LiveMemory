@@ -140,16 +140,17 @@
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe`（正式候选）、`dist/LiveMemory-asInvoker.exe`（同源测试副本身份） |
 | 版本 | `0.15.0`（未改正式版本号；候选以 Build ID 区分） |
-| Build ID | __BUILD_ID__ |
+| Build ID | `5314bd79a0f3` |
 | 源码哈希 | `5314bd79a0f3e16854bd0796402c814327b47bb1df29f3154b49fec98896ffa1` |
-| 大小 | __EXE_SIZE__ bytes |
-| SHA-256 | __EXE_SHA__ |
+| 大小 | 99,329,024 bytes |
+| SHA-256 | `acdc4ea3a75305fd1a26364127f8bfada97728cfb9892b1046ac68ac5b653058` |
+| 提交 | `969d97564653036fa073828f5b1c61bf02de1e4f` |
 | Manifest | 正式 EXE `requireAdministrator`（构建断言 + 注入后复读）；asInvoker 副本仅用于自动化 |
 | 资源 | 244 个打包文件；Kick 七个模块、十份字典、Schema/提示词全部在包内 |
 
 ### 4.1 EXE 内真实服务验收（`scripts/verify-kick-exe.mjs`）
 
-**19/19 通过**，使用真实 Kick 房间（kinocasinogaming + paymoneywubby）：
+**19/19 通过**，使用真实 Kick 房间（最终构建：kinocasinogaming + lospollostv；同一脚本此前在 paymoneywubby 也通过）：
 
 1. 正式 EXE 仍为 `requireAdministrator`，测试副本为 `asInvoker`。
 2. EXE 启动、控制台可加载、会话认证成功。
@@ -159,7 +160,7 @@
 6. 真实 Kick URL 在 EXE 内解析成功（免登录）。
 7. VOD URL 被拒绝（`errors.kickLinkInvalid`）。
 8. 两个真实房间均成功开始采集（201）。
-9. 每个房间收到并保存真实聊天（22 / 4 条）。
+9. 每个房间收到并保存真实聊天（最终构建 19 / 8 条；此前 22 / 4 条）。
 10. 稳定身份写入（`kick:<id>`，身份覆盖率 100%）。
 11. `/api/live/recordings` 同时列出两场。
 12. 历史记录可读取。
@@ -183,7 +184,7 @@
 | 套件 | 结果 |
 | --- | --- |
 | 全量单元 + 集成（`--test-isolation=none`） | **1,169 passed / 0 failed / 0 skipped**（463,240 ms） |
-| 其中 Kick | 48 单测（G1）+ G2 新增消息映射/服务/UI 等；总计 Kick 相关 67+ |
+| 其中 Kick | **67** 个（单测 + 集成：URL、状态映射、字段、Emote、reply、礼物/赠订、token 刷新、109、退避、双房间、停止、服务/路由、UI 键与打包清单） |
 | 现有五平台回归 | 随全量套件通过；未修改五平台协议 |
 | 十语言门禁 | 10 × 2,302 键；缺失/多余/占位符/空值/英文残留均为 0 |
 | 真实 UI | 20/20（10 语、4 宽度、明暗、真实 2 场） |

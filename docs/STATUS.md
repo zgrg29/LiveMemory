@@ -42,9 +42,9 @@ Windows 候选 EXE，但**不执行 G6、不发布**。本轮从 `feature/kick-g
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe`（正式候选）、`dist/LiveMemory-asInvoker.exe`（同源 asInvoker 测试副本） |
-| 版本 / Build ID | `0.15.0` / `5314bd79a0f3` |
+| 版本 / Build ID | `0.15.0` / `5314bd79a0f3`（提交 `969d97564653036fa073828f5b1c61bf02de1e4f`） |
 | 大小 | 99,329,024 bytes |
-| SHA-256（候选） | `__FINAL_EXE_SHA__` |
+| SHA-256（候选） | `acdc4ea3a75305fd1a26364127f8bfada97728cfb9892b1046ac68ac5b653058` |
 | Manifest | `requireAdministrator`（构建断言 + 注入后复读）；副本 `asInvoker` |
 | 打包 | 244 个文件；Kick 7 模块 + 十份字典 + 全部提示词/Schema |
 | EXE 验收 | `verify-kick-exe.mjs` **19/19**：注册、URL、双房间真实聊天、身份、历史、AI 入口、停止、十语资源 |
