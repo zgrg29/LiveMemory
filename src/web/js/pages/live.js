@@ -160,7 +160,8 @@ export const livePage = {
     let twitchAutoMonitor = false;
     let douyinAutoMonitor = false;
     let tiktokAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: ''};
+    let kickAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: '', kick: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
@@ -3017,6 +3018,18 @@ export const livePage = {
       if (!status) {
         panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
           t('live.source.kickUnavailable')));
+        return panel;
+      }
+
+      panel.append(autoMonitorToggle('kick', kickAutoMonitor, (checked) => {
+        kickAutoMonitor = checked;
+        checkedKick = null;
+        renderSource();
+      }));
+      if (kickAutoMonitor) {
+        panel.append(buildAutoMonitorSection('kick'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.kickUnofficialNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.kickNoLoginNote')}));
         return panel;
       }
 

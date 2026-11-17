@@ -232,6 +232,7 @@ export async function startServer({
       twitch,
       douyin,
       tiktok,
+      kick,
       logger,
       now,      onChange: () => {
         try {

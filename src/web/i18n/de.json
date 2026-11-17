@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "Livestream-URL oder Raumnummer",
       "douyinLabel": "Livestream-URL oder Raumnummer",
       "tiktokPlaceholder": "TikTok-Livestream-URL oder @Benutzername",
-      "tiktokLabel": "TikTok-Livestream-URL oder @Benutzername"
+      "tiktokLabel": "TikTok-Livestream-URL oder @Benutzername",
+      "kickPlaceholder": "Kick-Live-Link oder Kanalname",
+      "kickLabel": "Kick-Live-Link oder Kanalname"
     },
     "hero": {
       "autoChip": "Automatische Überwachung",

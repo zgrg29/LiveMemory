@@ -117,6 +117,7 @@ const REQUIRED_MODULES = [
   'src/platforms/kick/messages.mjs',
   'src/platforms/kick/service.mjs',
   'src/platforms/kick/transport.mjs',
+  'src/monitoring/detectors/kick.mjs',
   'src/monitoring/detectors/twitch.mjs',
   'src/monitoring/detectors/douyin.mjs',
   'src/monitoring/detectors/tiktok.mjs',
@@ -275,6 +276,7 @@ for (const needle of [
   'src/platforms/kick/adapter.mjs',
   'src/platforms/kick/service.mjs',
   'src/platforms/kick/transport.mjs',
+  'src/monitoring/detectors/kick.mjs',
   'restore-journal.json'
 ]) {
   if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {

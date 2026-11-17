@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "URL del directo o número de sala",
       "douyinLabel": "URL del directo o número de sala",
       "tiktokPlaceholder": "URL del directo de TikTok o @usuario",
-      "tiktokLabel": "URL del directo de TikTok o @usuario"
+      "tiktokLabel": "URL del directo de TikTok o @usuario",
+      "kickPlaceholder": "Enlace de directo o nombre de canal de Kick",
+      "kickLabel": "Enlace de directo o nombre de canal de Kick"
     },
     "hero": {
       "autoChip": "Supervisión automática",

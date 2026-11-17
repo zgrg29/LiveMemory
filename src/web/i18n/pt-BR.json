@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "URL ao vivo ou número da sala",
       "douyinLabel": "URL ao vivo ou número da sala",
       "tiktokPlaceholder": "URL ao vivo do TikTok ou @nome de usuário",
-      "tiktokLabel": "URL ao vivo do TikTok ou @nome de usuário"
+      "tiktokLabel": "URL ao vivo do TikTok ou @nome de usuário",
+      "kickPlaceholder": "Link da live ou nome do canal da Kick",
+      "kickLabel": "Link da live ou nome do canal da Kick"
     },
     "hero": {
       "autoChip": "Monitoramento automático",

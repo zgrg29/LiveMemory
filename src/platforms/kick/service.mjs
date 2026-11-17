@@ -87,7 +87,8 @@ export class KickService {
     this.settings = settings;
     this.logger = logger;
     this.now = now;
-    this.http = http;
+    this.http = http ?? new KickHttp({logger, now});
+    this.ownsHttp = !http;
     this.WebSocketImpl = WebSocketImpl;
     this.adapterOptions = adapterOptions;
     this.lastEnd = null;
@@ -95,7 +96,12 @@ export class KickService {
   }
 
   #http() {
-    return this.http ?? new KickHttp({logger: this.logger, now: this.now});
+    return this.http;
+  }
+
+  /** One public channel observation; used by the manual check and the monitor. */
+  async observeChannel(slug) {
+    return resolveChannel(this.http, slug);
   }
 
   #recordings() {
@@ -209,14 +215,8 @@ export class KickService {
 
   async checkRoom(input) {
     const parsed = parseKickInput(input);
-    const http = this.#http();
-    const owns = !this.http;
-    try {
-      const channel = await resolveChannel(http, parsed.slug);
-      return roomView(channel, input);
-    } finally {
-      if (owns) await http.close().catch(() => {});
-    }
+    const channel = await resolveChannel(this.#http(), parsed.slug);
+    return roomView(channel, input);
   }
 
   async #startWithRoom(room, {monitorTargetId = null, input = null} = {}) {
@@ -238,7 +238,7 @@ export class KickService {
       WebSocketImpl: this.WebSocketImpl,
       logger: this.logger,
       now: this.now,
-      ...(this.http ? {http: this.http} : {}),
+      http: this.http,
       ...(this.adapterOptions ? {options: this.adapterOptions} : {})
     });
     const identity = resolveBroadcasterIdentity({
@@ -319,6 +319,49 @@ export class KickService {
     return this.#startWithRoom(room, {input});
   }
 
+  /**
+   * Start a capture discovered by the monitoring scheduler.
+   *
+   * The observation comes from the Kick detector (public channel JSON), which
+   * already confirmed `live`. The room identity is built here so the session,
+   * metadata and broadcaster identity match a manual start exactly.
+   */
+  async connectDetected(observation, {monitorTargetId = null, input = null} = {}) {
+    const slug = String(
+      observation?.slug
+      ?? observation?.targetKey
+      ?? observation?.meta?.slug
+      ?? ''
+    ).trim();
+    const channelId = observation?.channelId === undefined || observation?.channelId === null
+      ? null
+      : String(observation.channelId);
+    const chatroomId = observation?.chatroomId === undefined || observation?.chatroomId === null
+      ? null
+      : String(observation.chatroomId);
+    if (!slug || !channelId || !chatroomId) {
+      throw new KickError(KICK_ERRORS.PROTOCOL, {httpStatus: 502, details: {reason: 'detected_room_incomplete'}});
+    }
+    const room = {
+      slug,
+      channelId,
+      chatroomId,
+      userId: observation?.anchorUid === undefined || observation?.anchorUid === null
+        ? null
+        : String(observation.anchorUid),
+      isLive: true,
+      title: observation?.title ?? observation?.channelTitle ?? null,
+      startedAt: observation?.liveStartedAt ?? observation?.startedAt ?? null,
+      viewerCount: observation?.viewerCount ?? null,
+      followersCount: null,
+      recordable: true,
+      reason: null,
+      liveUrl: `https://kick.com/${slug}`,
+      input: input ?? observation?.input ?? null
+    };
+    return this.#startWithRoom(room, {monitorTargetId, input: room.input});
+  }
+
   async disconnect({sessionId = null} = {}) {
     const result = await this.sessionManager.stopPlatform('kick', {
       sessionId,
@@ -368,6 +411,13 @@ export class KickService {
   }
 
   async shutdown() {
+    if (this.ownsHttp) {
+      try {
+        await this.http.close();
+      } catch {
+        /* ignore */
+      }
+    }
     return true;
   }
 }

@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "URL siaran langsung atau nomor ruang",
       "douyinLabel": "URL siaran langsung atau nomor ruang",
       "tiktokPlaceholder": "URL siaran langsung TikTok atau @nama pengguna",
-      "tiktokLabel": "URL siaran langsung TikTok atau @nama pengguna"
+      "tiktokLabel": "URL siaran langsung TikTok atau @nama pengguna",
+      "kickPlaceholder": "Tautan live atau nama kanal Kick",
+      "kickLabel": "Tautan live atau nama kanal Kick"
     },
     "hero": {
       "autoChip": "Pemantauan otomatis",

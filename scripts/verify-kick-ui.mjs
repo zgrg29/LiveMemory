@@ -124,7 +124,7 @@ async function visit({locale, width, height, dark, screenshot = false}) {
   }
   const metrics = await evaluate(`(() => {
     const introFound = document.body.innerText.includes(${JSON.stringify(dictionary(locale).live.source.kickIntro)});
-    const rawKey = /(?:live\\.source\\.kick|errors\\.kick)/.test(document.body.innerText);
+    const rawKey = /(?:live\\.source\\.kick|errors\\.kick|monitoring\\.add\\.kick)/.test(document.body.innerText);
     const rows = document.querySelectorAll('.tiktok-active-recordings .live-recording-row').length;
     const input = document.querySelector('.source-panel input.input');
     const button = [...document.querySelectorAll('.source-panel button')]
@@ -145,8 +145,35 @@ async function visit({locale, width, height, dark, screenshot = false}) {
         || (buttonRect !== null && buttonRect.right > window.innerWidth + 1)
     };
   })()`);
-  const record = {locale, width, height, dark, screenshot, metrics};
-  record.ok = metrics.introFound && !metrics.rawKey && !metrics.overflow && metrics.recordings >= 1;
+  // The shared live-monitor toggle must exist and open a translated add form.
+  const monitorToggle = await evaluate("Boolean(document.querySelector('.monitor-toggle input'))");
+  let monitor = {toggle: monitorToggle, placeholder: null, action: null};
+  if (monitorToggle) {
+    await evaluate("document.querySelector('.monitor-toggle input').click(); true");
+    await waitFor("Boolean(document.querySelector('.monitor-add input'))", {timeout: 5000});
+    monitor = await evaluate(`(() => {
+      const input = document.querySelector('.monitor-add input');
+      const action = document.querySelector('.monitor-add button');
+      return {
+        toggle: true,
+        placeholder: input?.getAttribute('placeholder') ?? null,
+        action: action?.textContent?.trim() ?? null,
+        rawKey: /monitoring\\.add\\.kick/.test(document.body.innerText),
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1
+      };
+    })()`);
+    // Restore the manual panel so screenshots still show the capture card.
+    await evaluate("document.querySelector('.monitor-toggle input').click(); true");
+    await sleep(150);
+  }
+  const expected = dictionary(locale).monitoring.add;
+  const monitorOk = monitor.toggle
+    && monitor.placeholder === expected.kickPlaceholder
+    && monitor.action === expected.action
+    && !monitor.rawKey
+    && !monitor.overflow;
+  const record = {locale, width, height, dark, screenshot, metrics, monitor};
+  record.ok = metrics.introFound && !metrics.rawKey && !metrics.overflow && metrics.recordings >= 1 && monitorOk;
   if (screenshot) {
     const shot = await send('Page.captureScreenshot', {format: 'png'});
     const file = join(outDir, `kick-${locale}-${width}${dark ? '-dark' : ''}.png`);
@@ -171,6 +198,7 @@ for (const locale of LOCALES) {
       results.push(record);
       console.log(`${record.ok ? 'PASS' : 'FAIL'} ${locale} ${width}${dark ? ' dark' : ''} ` +
         `intro=${record.metrics.introFound} raw=${record.metrics.rawKey} recordings=${record.metrics.recordings} ` +
+        `monitor=${record.monitor?.toggle}/${record.monitor?.placeholder === dictionary(locale).monitoring.add.kickPlaceholder} ` +
         `overflow=${record.metrics.overflow} scroll=${record.metrics.docScrollWidth}/${record.metrics.innerWidth}`);
     }
   }

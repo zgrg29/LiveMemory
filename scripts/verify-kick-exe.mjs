@@ -176,6 +176,16 @@ try {
     if (liveSlugs.length >= 2) break;
   }
   if (liveSlugs.length === 0) throw new Error('no live Kick room available for the EXE acceptance');
+  let offlineSlug = null;
+  for (const slug of ['xqc', 'trainwreck', 'adinross', 'hasanabi', 'kaicenat', 'moistcr1tikal']) {
+    const response = await api('/api/kick/room', {method: 'POST', body: {url: `https://kick.com/${slug}`}});
+    if (response.status === 200 && response.json?.room?.isLive === false) {
+      offlineSlug = slug;
+      break;
+    }
+  }
+  if (!offlineSlug) throw new Error('no offline Kick channel available for the EXE monitoring scenario');
+  record('a real offline Kick channel is available for monitoring', true, [`offline: ${offlineSlug}`]);
   record('a real Kick URL resolves inside the EXE without login', liveSlugs.length >= 1, [`live rooms: ${liveSlugs.join(', ')}`]);
 
   const invalid = await api('/api/kick/room', {method: 'POST', body: {url: 'https://kick.com/video/not-live'}});
@@ -267,6 +277,67 @@ try {
     `category: ${finalStatus.capture?.category}`,
     `recordings: ${finalStatus.recordings?.length ?? 0}`
   ]);
+
+  // ---- G5.1: live monitoring inside the packaged EXE ----
+  const monitorPolicy = bootstrap.monitoring?.policy?.kick
+    ?? bootstrap.status?.monitoring?.policy?.kick
+    ?? null;
+  record('the EXE advertises the Kick monitoring policy', monitorPolicy?.checkIntervalMs === 90000, [
+    `checkIntervalMs: ${monitorPolicy?.checkIntervalMs}`
+  ]);
+
+  const offlineTargetResponse = await api('/api/monitoring', {method: 'POST', body: {platform: 'kick', input: `https://kick.com/${offlineSlug}`}});
+  const offlineTarget = offlineTargetResponse.json?.target ?? offlineTargetResponse.json;
+  record('the EXE can add an offline Kick channel to monitoring', offlineTargetResponse.status === 201 && offlineTarget?.state === 'waiting', [
+    `status: ${offlineTargetResponse.status}`,
+    `state: ${offlineTarget?.state}`
+  ]);
+  await api(`/api/monitoring/${encodeURIComponent(offlineTarget.id)}/check`, {method: 'POST'});
+  await sleep(1200);
+  const offlineAfter = (await api('/api/monitoring')).json?.targets?.find((row) => row.id === offlineTarget.id);
+  const offlineSessions = (await api(`/api/monitoring/${encodeURIComponent(offlineTarget.id)}/sessions`)).json;
+  record('the offline monitor keeps waiting without an empty session', offlineAfter?.state === 'waiting' && (offlineSessions?.sessions ?? []).length === 0, [
+    `state: ${offlineAfter?.state}`,
+    `sessions: ${(offlineSessions?.sessions ?? []).length}`
+  ]);
+
+  const liveTargetResponse = await api('/api/monitoring', {method: 'POST', body: {platform: 'kick', input: `https://kick.com/${liveSlugs[0]}`}});
+  const liveTarget = liveTargetResponse.json?.target ?? liveTargetResponse.json;
+  await api(`/api/monitoring/${encodeURIComponent(liveTarget.id)}/check`, {method: 'POST'});
+  const liveMonitor = await waitFor(async () => {
+    const row = (await api('/api/monitoring')).json?.targets?.find((item) => item.id === liveTarget.id);
+    return row?.state === 'recording' && row?.activeSessionId ? row : null;
+  }, {timeoutMs: 120000, intervalMs: 2000, label: 'EXE automatic recording'});
+  record('the EXE starts recording a monitored live Kick channel automatically', true, [
+    `session: ${liveMonitor.activeSessionId}`,
+    `state: ${liveMonitor.state}`
+  ]);
+  const autoChat = await waitFor(async () => {
+    const payload = (await api(`/api/sessions/${encodeURIComponent(liveMonitor.activeSessionId)}`)).json;
+    return Number(payload?.stats?.messages ?? 0) > 0 ? payload : null;
+  }, {timeoutMs: 120000, intervalMs: 2000, label: 'EXE monitored chat'});
+  const autoViewers = (await api(`/api/sessions/${encodeURIComponent(liveMonitor.activeSessionId)}/top-viewers`)).json;
+  const autoIdentity = (autoViewers?.viewers ?? []).some((row) => String(row.viewerId ?? '').startsWith('kick:'));
+  record('the monitored session stores real chat and stable viewer identity', autoChat.stats.messages > 0 && autoIdentity, [
+    `messages: ${autoChat.stats.messages}`,
+    `identity: ${autoIdentity}`
+  ]);
+  await api(`/api/monitoring/${encodeURIComponent(liveTarget.id)}/check`, {method: 'POST'});
+  await sleep(1200);
+  const targetSessions = (await api(`/api/monitoring/${encodeURIComponent(liveTarget.id)}/sessions`)).json;
+  record('the monitored live channel is not recorded twice', (targetSessions?.sessions ?? []).length === 1, [
+    `sessions: ${(targetSessions?.sessions ?? []).length}`
+  ]);
+  await api(`/api/sessions/${encodeURIComponent(liveMonitor.activeSessionId)}/stop`, {method: 'POST'});
+  await api(`/api/monitoring/${encodeURIComponent(liveTarget.id)}/check`, {method: 'POST'});
+  await sleep(2000);
+  const stoppedMonitor = (await api('/api/monitoring')).json?.targets?.find((row) => row.id === liveTarget.id);
+  record('a manual stop is not immediately restarted by the EXE monitor', stoppedMonitor?.state === 'live_stopped', [
+    `state: ${stoppedMonitor?.state}`
+  ]);
+  for (const target of [offlineTarget, liveTarget]) {
+    if (target?.id) await api(`/api/monitoring/${encodeURIComponent(target.id)}`, {method: 'DELETE', body: {confirm: true}});
+  }
 
   const gifts = finalRows.reduce((sum, row) => sum + Number(row.summary?.stats?.giftEvents ?? 0), 0);
   const memberships = finalRows.reduce((sum, row) => sum + Number(row.summary?.stats?.membershipEvents ?? 0), 0);

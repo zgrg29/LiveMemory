@@ -144,7 +144,7 @@ node scripts/build-windows.mjs
 - 颜色、间距、圆角、阴影全部通过 `src/web/styles/tokens.css` 的 CSS 变量使用，不得在组件里写死颜色。
 - 明亮与黑暗**分别设计**，不能简单反转。
 - 首次渲染不得出现主题闪烁：`data-theme` 由 `js/theme-boot.js` 在样式表之前设置。
-- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**当前已实现十种界面语言（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`，每份 2,302 键）与十种 AI 输出语言（同一注册表的 `aiOutput` 能力位全部为 true，P41）；界面语言与 AI 输出语言是两个独立持久设置（`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。详见 `docs/I18N.md`、`docs/i18n/GLOSSARY.md`。**
+- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**当前已实现十种界面语言（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`，每份 2,304 键）与十种 AI 输出语言（同一注册表的 `aiOutput` 能力位全部为 true，P41）；界面语言与 AI 输出语言是两个独立持久设置（`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。详见 `docs/I18N.md`、`docs/i18n/GLOSSARY.md`。**
 - 新增/修改文案必须**同时**更新清单内所有语言的字典，键集与 `{param}` 占位符必须完全一致；不得先只加英文再「以后再补」。
 - 启动器文案放在 `src/launcher/cli-i18n.mjs`，各语言键必须一致；控制台编码失败时必须走既有 ASCII 降级，不得输出乱码。
 - 语言名在语言选择器中**始终用该语言自身文字显示**（简体中文 / 日本語 / English / 한국어 …），不跟随界面语言翻译。

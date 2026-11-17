@@ -1,6 +1,53 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **Kick G2–G5 完成** · 分支 `feature/kick-g2` · 第六个平台接入产品 ·
+本轮：2026-11-17 · **Kick G5.1 开播监控完成** · 共用监控调度器 + 自动录制 + 下播确认 ·
+真实服务验收 16/16 · 十语 UI 20/20 · EXE 27/27 · **未发布 / 未合并 main / 未 Push / 未 Tag**
+
+> 补齐 Kick 与其余五平台一致的「监控频道开播」：离线可添加、低频只读检查、开播自动建立
+> session、连续两次确认下播后结束并继续等待、手动停止不被自动重启、重启恢复、多频道独立。
+> 版本仍 `0.15.0`，未执行 G6；用户可试玩新候选 EXE。
+
+## 0. 本轮（Kick G5.1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 根因 | 平台注册（`MONITOR_PLATFORMS`/policy/detector/manager）缺失 + UI 无监控开关 + 适配器无周期性下播确认 |
+| 后台 | 新增 `src/monitoring/detectors/kick.mjs`；manager/service 接入；90s 策略；周期键 `kick:<channelId>:<livestreamId>` |
+| 下播 | 适配器每 60s 确认公开频道状态，连续 2 次 offline 结束 session（不再只靠断线） |
+| 真实验收 | `scripts/kick-g51-monitor-acceptance.mjs` **16/16**（离线 xqc、开播自动记录、重启、双频道、手动停止、隔离） |
+| UI | 十语监控开关/表单；真实监控 Tab waiting/recording；**20/20** 十语矩阵 |
+| 测试 | 新增 Kick monitoring 7 测试；全量 **1,177 passed / 0 failed / 0 skipped** |
+| EXE | Build ID `8bfc48086b20`；`verify-kick-exe` **27/27**（含监控） |
+| 未验证 | 真实下播/下一次开播窗口（集成覆盖）；EXE 内重启；真实双击 UAC |
+
+### 0.2 关键文件
+
+- `src/monitoring/{constants,manager,model}.mjs`、`src/monitoring/detectors/kick.mjs`
+- `src/platforms/kick/{service,adapter}.mjs`
+- `src/web/js/pages/live.js`、十份字典（+2 键 → 2,304）
+- `scripts/kick-g51-monitor-acceptance.mjs`、`scripts/verify-kick-ui.mjs`、`scripts/verify-kick-exe.mjs`
+- `tests/integration/kick-monitoring.test.mjs`、`docs/KICK_G5_1_MONITORING.md`
+
+### 0.3 下一轮
+
+1. 用户试玩新 EXE：添加离线 Kick 频道 → 等待开播 → 自动记录 → 下播后等待下一场。
+2. 有条件时补真实「下播 → 再次开播」连续观察，并把结果写回 STATUS。
+3. G6 发布判断仍需用户确认；**不得自动发布**。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g2` |
+| 提交 | 见最终报告 |
+| Push / Merge / Tag / Release | **均未执行** |
+| 版本 / Schema | `0.15.0` / 16；未改五平台协议 |
+
+---
+
+上一轮：2026-11-17 · **Kick G2–G5 完成** · 分支 `feature/kick-g2` · 第六个平台接入产品 ·
 十语言 UI 20/20 · 70.2 分钟真实长测（1 次真实 token 刷新）· 候选 EXE `5314bd79a0f3`
 · **未发布 / 未合并 main / 未 Push / 未 Tag**
 
@@ -8,7 +55,7 @@
 > 完成 ≥60 分钟真实长测、全量回归与 Windows 候选 EXE 验收。**版本仍 `0.15.0`，未执行 G6。**
 > 用户可直接试玩候选 EXE；真实双击 UAC、干净 Windows 账户、订阅/开播事件仍未覆盖。
 
-## 0. 本轮（Kick G2–G5）
+## 0. 上一轮（Kick G2–G5）
 
 ### 0.1 结果
 

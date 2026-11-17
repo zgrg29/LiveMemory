@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "直播间链接或房间号",
       "douyinLabel": "直播间链接或房间号",
       "tiktokPlaceholder": "TikTok 直播链接或 @用户名",
-      "tiktokLabel": "TikTok 直播链接或 @用户名"
+      "tiktokLabel": "TikTok 直播链接或 @用户名",
+      "kickPlaceholder": "Kick 直播链接或频道名",
+      "kickLabel": "Kick 直播链接或频道名"
     },
     "hero": {
       "autoChip": "自动监听",

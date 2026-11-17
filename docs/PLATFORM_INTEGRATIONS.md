@@ -713,11 +713,17 @@ WSS  realtime.<region>.platform.kick.com/connection/websocket
 - 每房间独立 adapter/socket/session；同 `platform+room` 拒绝重复启动；跨房间事件按 chatroom topic 校验。
 - 状态 `connecting/connected/reconnecting/failed/stopped`；连接成功但无事件显示「已连接，等待第一条事件」。
 - 真实 G4 长测（≥60 分钟）中出现过平台侧断线并自动恢复，记录在 `docs/KICK_G2_G5_ACCEPTANCE.md`。
+- **开播监控（G5.1）**：Kick 已接入共用 `MonitoringManager`（与其余五平台同一调度器/表/生命周期）。
+  `detectors/kick.mjs` 每 90 秒（抖动 60–150 秒）只读查询公开频道；离线是正常等待，
+  频道不存在/网络/WAF 分别映射；目标身份用 `channelId`，直播周期键 `kick:<channelId>:<livestreamId>`。
+  开播后 `connectDetected` 创建 session；适配器每 60 秒确认频道状态，**连续两次 offline** 才结束
+  （聊天 socket 下播后可能仍连接，不能只靠断线）；手动停止写入 `manualStop`，同一场不会被自动重启，
+  确认 offline 后清除并等待下一场。详见 `docs/KICK_G5_1_MONITORING.md`。
 
 ### 3D.5 保留、UI 与验证状态
 
 - 30 天原文保留策略，平台作用域 `kick`；清理 `content/emotes/badges/amount_display`，保留计数与稳定 ID。
-- UI：直播页第六个平台页签；十语言 2,302 键；添加房间 / 检查 / 开始 / 停止 / 状态 / 历史 / 画像 / AI 全部复用现有页面。
+- UI：直播页第六个平台页签；十语言 2,304 键；添加房间 / 检查 / 开始 / 停止 / 开播监控 / 状态 / 历史 / 画像 / AI 全部复用现有页面。
 - 验证：G1 真实连接（3,040 条聊天）→ G2 产品接入 → G3 十语言 UI → G4 ≥60 分钟长测 →
   G5 真实 EXE（`verify-kick-exe.mjs`）。未发布：版本仍 `0.15.0`，未合并 `main`。
   详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/KICK_G2_G5_ACCEPTANCE.md`。

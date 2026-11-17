@@ -55,7 +55,17 @@ test('the live page has a Kick tab and a single no-login capture panel', () => {
   assert.match(liveSource, /kickCaptureCard/);
   assert.match(liveSource, /kickTokenRefreshes/);
   assert.match(liveSource, /kickReasonText/);
-  assert.doesNotMatch(liveSource, /kickAutoMonitor/, 'Kick has no auto-monitor UI in this candidate');
+  assert.match(liveSource, /kickAutoMonitor/);
+});
+
+test('the Kick panel offers the shared live monitor with translated inputs', () => {
+  for (const locale of locales) {
+    const dict = JSON.parse(read(`src/web/i18n/${locale}.json`));
+    assert.equal(typeof dict.monitoring.add.kickPlaceholder, 'string', `${locale} placeholder`);
+    assert.equal(typeof dict.monitoring.add.kickLabel, 'string', `${locale} label`);
+  }
+  assert.match(liveSource, /autoMonitorToggle\('kick'/);
+  assert.match(liveSource, /buildAutoMonitorSection\('kick'\)/);
 });
 
 test('the server registers Kick routes, capabilities and the unofficial flag', () => {
@@ -88,7 +98,8 @@ test('the Windows build requires the Kick modules so the EXE cannot silently mis
     'src/platforms/kick/link.mjs',
     'src/platforms/kick/messages.mjs',
     'src/platforms/kick/service.mjs',
-    'src/platforms/kick/transport.mjs'
+    'src/platforms/kick/transport.mjs',
+    'src/monitoring/detectors/kick.mjs'
   ]) {
     assert.ok(buildSource.includes(module), `build requires ${module}`);
   }

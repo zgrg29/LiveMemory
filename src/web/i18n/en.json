@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "Live URL or room number",
       "douyinLabel": "Live URL or room number",
       "tiktokPlaceholder": "TikTok live URL or @username",
-      "tiktokLabel": "TikTok live URL or @username"
+      "tiktokLabel": "TikTok live URL or @username",
+      "kickPlaceholder": "Kick live link or channel name",
+      "kickLabel": "Kick live link or channel name"
     },
     "hero": {
       "autoChip": "Auto-monitor",

@@ -167,7 +167,7 @@
   版本号已由发布轮的 0.14.0 更新为 0.15.0）
 - 详见 `docs/STATUS.md` §0.50、`docs/I18N.md` §2.9、`log/2026-11-16-p42-i18n-m3.md`
 
-## P43 KICK-G2–G5：Kick 正式接入与候选 EXE（v0.16.x）🟢 G5 完成、等待试玩
+## P43 KICK-G2–G5.1：Kick 正式接入、开播监控与候选 EXE（v0.16.x）🟢 G5.1 完成、等待试玩
 
 - ✅ G1（2026-11-17）：双直播间 966 秒、1,936 条真实聊天；字段 100%、0 重复/0 串台
 - ✅ G2：`KickService` + `/api/kick/{status,room,connect,disconnect,retention/apply}` + capabilities；
@@ -178,9 +178,14 @@
   全量 1,169 passed / 0 failed
 - ✅ G5：候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` 19/19；
   正式 EXE `requireAdministrator`，自动化使用同 Build ID 的 asInvoker 副本
+- ✅ **G5.1 开播监控**（2026-11-17）：Kick 接入共用 `MonitoringManager`（90s 轮询、抖动、退避、
+  手动停止抑制、重启恢复）；新增 Kick detector；适配器连续 2 次确认 offline 才结束 session；
+  真实服务验收 16/16（离线 xqc、开播自动记录、双频道、重启、手动停止）、十语 UI 20/20、
+  EXE 27/27（含监控）；全量 1,177 passed
 - ⬜ G6：**未执行**。需用户试玩确认后决定版本号、Tag、Release；当前未 Push / 未合并 `main`
-- 未观测：订阅/续订、开播下播、Host、投票（`NOT-OBSERVED`）；关注仅官方 webhook → 本地不支持
-- 详见 `docs/KICK_G2_G5_ACCEPTANCE.md`、`docs/KICK_G1_ACCEPTANCE.md`
+- 未观测：真实下播/下一次开播窗口（集成测试覆盖状态机；G4 有真实 odablock 下播）；
+  订阅/续订、开播下播事件、Host、投票（`NOT-OBSERVED`）；关注仅官方 webhook → 本地不支持
+- 详见 `docs/KICK_G2_G5_ACCEPTANCE.md`、`docs/KICK_G5_1_MONITORING.md`、`docs/KICK_G1_ACCEPTANCE.md`
 
 ## P44 PLATFORM-EXPANSION：候选平台调查与准入评估（持续）🟡
 

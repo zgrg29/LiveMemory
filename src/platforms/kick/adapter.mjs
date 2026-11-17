@@ -34,7 +34,12 @@ const DEFAULT_OPTIONS = Object.freeze({
   // Guest tokens carry ~45 min TTL. Reconnect shortly before expiry so a
   // capture never relies on the server rejecting an expired token.
   tokenRefreshLeadMs: 90000,
-  minTokenRefreshMs: 30000
+  minTokenRefreshMs: 30000,
+  // Kick chat rooms stay open after a stream ends, so the socket alone cannot
+  // prove the broadcast is over. The adapter asks the public channel JSON;
+  // two consecutive "offline" observations end the session.
+  statusIntervalMs: 60000,
+  statusOfflineConfirmations: 2
 });
 
 function backoffDelay(attempt, {baseBackoffMs, maxBackoffMs}) {
@@ -96,6 +101,9 @@ export class KickAdapter extends PlatformAdapter {
     this.nextRetryAt = null;
     this.retryTimer = null;
     this.tokenRefreshTimer = null;
+    this.statusTimer = null;
+    this.statusChecking = false;
+    this.statusOfflineObservations = 0;
     this.timers = new Set();
     this.onEvent = () => {};
     this.onEnd = () => {};
@@ -116,6 +124,8 @@ export class KickAdapter extends PlatformAdapter {
       giftedSubscriptions: 0,
       subscriptions: 0,
       tokenRefreshes: 0,
+      statusChecks: 0,
+      statusOffline: 0,
       skipped: 0,
       decodeErrors: 0,
       crossRoomIgnored: 0,
@@ -231,6 +241,7 @@ export class KickAdapter extends PlatformAdapter {
     this.disconnectedAt = this.now();
     this.socket = null;
     this.#clearTokenRefresh();
+    this.#clearStatusTimer();
     if (this.stopping || !this.started) return;
     const tokenExpired = info?.disconnect?.code === 109;
     const tokenRefresh = info?.reason === 'token_refresh';
@@ -247,6 +258,53 @@ export class KickAdapter extends PlatformAdapter {
   #clearTokenRefresh() {
     if (this.tokenRefreshTimer) clearTimeout(this.tokenRefreshTimer);
     this.tokenRefreshTimer = null;
+  }
+
+  #clearStatusTimer() {
+    if (this.statusTimer) clearTimeout(this.statusTimer);
+    this.statusTimer = null;
+  }
+
+  /**
+   * Periodically confirm the broadcast is still live.
+   *
+   * Kick's chat socket remains connected after a stream ends, so "still
+   * receiving frames" is not evidence of a live broadcast. Two consecutive
+   * offline observations end the capture; a failed read changes nothing.
+   */
+  #armStatusCheck() {
+    this.#clearStatusTimer();
+    if (this.stopping || !this.started) return;
+    const interval = Math.max(20, Number(this.options.statusIntervalMs) || 60000);
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = null;
+      this.#checkLiveStatus()
+        .catch((error) => this.logger?.warn({event: 'kick.status.failed', code: error?.code ?? 'unknown'}))
+        .finally(() => this.#armStatusCheck());
+    }, interval);
+    this.statusTimer.unref?.();
+  }
+
+  async #checkLiveStatus() {
+    if (this.statusChecking || this.stopping || !this.started || !this.channel?.slug) return;
+    this.statusChecking = true;
+    try {
+      const observed = await resolveChannel(this.http, this.channel.slug);
+      this.counters.statusChecks += 1;
+      if (observed.isLive) {
+        this.statusOfflineObservations = 0;
+        this.channel = {...this.channel, ...observed};
+        return;
+      }
+      this.statusOfflineObservations += 1;
+      this.counters.statusOffline += 1;
+      if (this.statusOfflineObservations >= (this.options.statusOfflineConfirmations ?? 2)) {
+        await this.stop({reason: 'platform_ended'});
+        this.onEnd({reason: 'platform_ended'});
+      }
+    } finally {
+      this.statusChecking = false;
+    }
   }
 
   /** Refresh the guest token before its TTL runs out instead of waiting for a refusal. */
@@ -370,6 +428,7 @@ export class KickAdapter extends PlatformAdapter {
     this.disconnectedAt = null;
     this.lastError = null;
     this.#armTokenRefresh(socket);
+    this.#armStatusCheck();
     return socket;
   }
 
@@ -437,6 +496,7 @@ export class KickAdapter extends PlatformAdapter {
     this.generation += 1;
     this.#clearTimers();
     this.#clearTokenRefresh();
+    this.#clearStatusTimer();
     const socket = this.socket;
     this.socket = null;
     if (socket) {

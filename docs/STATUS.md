@@ -1,10 +1,68 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**Kick G2–G5 完成，候选 EXE 已构建**：正式后台接入 + 十语言 UI +
-70.2 分钟真实长测（34,766 条聊天、1 次真实 token 刷新）+ 真实 EXE 验收 19/19；
-**未发布、未合并 main、未 Tag/Release**，版本仍 `0.15.0`）
+最后更新：2026-11-17（**Kick G5.1 开播监控完成**：离线频道可监控、开播自动记录、
+连续两次确认下播后结束、重启恢复、多频道独立；真实服务验收 16/16、十语 UI 20/20、
+EXE 27/27；**未发布、未合并 main、未 Tag/Release**，版本仍 `0.15.0`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.54 Kick G5.1：开播监控、自动录制与 EXE 补验（2026-11-17）✅ 候选
+
+用户试玩后指出 Kick 缺少与其余五平台一致的「监控频道开播」。本轮先核实：五个平台都有
+detector + policy + `MonitoringManager` 生命周期，**Kick 在平台注册、UI 开关、下播确认三个层面
+都缺失**，不是纯前端问题。
+
+### 0.54.1 修改
+
+- `MONITOR_PLATFORMS` / `MONITOR_POLICY` 加 `kick`（90s 基础、60–150s 抖动、错误退避到 20min）。
+- 新增 `src/monitoring/detectors/kick.mjs`：公开频道 JSON 查询；离线是正常 observation，
+  不存在/网络/WAF 分别映射；`targetKey=channelId`，周期键 `kick:<channelId>:<livestreamId>`。
+- `MonitoringManager` 注册 detector、暴露 policy、`#startPlatformSession` 走 `KickService.connectDetected`。
+- `KickService` 共享 HTTP 客户端、新增 `observeChannel` / `connectDetected`。
+- `KickAdapter` 每 60s 确认公开频道状态，**连续 2 次 offline** 结束 session（聊天 socket 下播后仍可能
+  保持连接，不能只靠断线判断）。
+- Kick 面板加入共用监控开关/表单；十语新增 2 个键（每份 **2,304** 键）。
+- 构建清单加入 Kick detector。
+
+### 0.54.2 真实验收（源码服务）
+
+| 场景 | 结果 |
+| --- | --- |
+| A 离线频道（`xqc`） | 可添加，状态 `waiting`；检查后仍 waiting、0 失败、0 session |
+| F 重启恢复 | 重启真实服务后目标仍 enabled/waiting |
+| B 开播自动记录 | 真实在播频道自动 `recording`；真实聊天 + `kick:<id>` 身份；未重复 |
+| E 多频道 | 两个真实在播频道 → 独立 session、互不串台；离线目标不受影响 |
+| 手动停止 | 停止后 `live_stopped`，强制检查未自动重启 |
+| 真实下播 | **本轮窗口内未自然发生**（G4 有真实 odablock 下播证据；本轮用集成测试覆盖两次确认→结束） |
+| 下一次开播 | 真实窗口内未发生；集成测试覆盖“offline→新 livestream id→新 session” |
+| 合计 | `scripts/kick-g51-monitor-acceptance.mjs` **16/16** |
+
+### 0.54.3 十语 UI 与自动化
+
+- `verify-kick-ui.mjs`（真实服务：1 个离线监控 + 1 个自动录制）：**20/20**；
+  每语检查监控开关、添加表单 placeholder/按钮；真实监控 Tab 显示 `waiting` / `recording`；
+  1440/1024/820/390、明暗、无溢出、无未解析键。
+- 新增 `tests/integration/kick-monitoring.test.mjs` 7 个测试；全量
+  **1,177 passed / 0 failed / 0 skipped**（`--test-isolation=none`，512,084 ms）。
+- 五平台 monitoring 回归全绿。
+
+### 0.54.4 候选 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| Build ID | `8bfc48086b20` |
+| 大小 | 99,342,336 bytes |
+| SHA-256 | `__FINAL_SHA__` |
+| Manifest | `requireAdministrator`（自动化使用同 Build ID 的 asInvoker 副本） |
+| EXE 验收 | **27/27**：含 Kick 监控 policy、离线 `xqc` 添加/waiting/无空 session、真实频道自动录制、真实聊天与身份、不重复、手动停止不立即重启 |
+| 未验证 | 真实双击 UAC；EXE 内重启恢复（源码真实服务已验）；真实下播/下一次开播窗口 |
+
+### 0.54.5 限制
+
+- 频道改名后轮询 slug 会 404，需要重新添加（身份仍用 channelId）；无续传，下播/断线可能漏消息；
+  非官方协议可能变化。
+- 不得把本轮「模拟下播/下一次开播」描述为真实端到端；真实下播仅有 G4 的 odablock 一次。
 
 ## 0.53 Kick G2–G5：正式接入、完整验收与候选 EXE（2026-11-17）✅ 候选
 

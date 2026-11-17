@@ -7,7 +7,7 @@
  * request storm is not.
  */
 
-export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch', 'douyin', 'tiktok']);
+export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch', 'douyin', 'tiktok', 'kick']);
 
 export const MONITOR_STATE = Object.freeze({
   /** Enabled, not live, waiting for the next scheduled check. */
@@ -95,6 +95,18 @@ export const MONITOR_POLICY = Object.freeze({
   tiktok: Object.freeze({
     platform: 'tiktok',
     /** 1 public live-room read every 90 seconds per offline creator. */
+    baseMs: 90000,
+    minMs: 60000,
+    maxMs: 150000,
+    errorBaseMs: 90000,
+    errorMaxMs: 1200000,
+    endCooldownMs: 20000,
+    maxConsecutiveFailures: 4,
+    requestGapMs: 2000
+  }),
+  kick: Object.freeze({
+    platform: 'kick',
+    /** 1 public channel read every 90 seconds per offline channel. */
     baseMs: 90000,
     minMs: 60000,
     maxMs: 150000,

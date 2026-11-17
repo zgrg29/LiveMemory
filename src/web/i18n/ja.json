@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "ライブ URL またはルーム番号",
       "douyinLabel": "ライブ URL またはルーム番号",
       "tiktokPlaceholder": "TikTok ライブ URL または @ユーザー名",
-      "tiktokLabel": "TikTok ライブ URL または @ユーザー名"
+      "tiktokLabel": "TikTok ライブ URL または @ユーザー名",
+      "kickPlaceholder": "Kick のライブリンクまたはチャンネル名",
+      "kickLabel": "Kick のライブリンクまたはチャンネル名"
     },
     "hero": {
       "autoChip": "自動監視",

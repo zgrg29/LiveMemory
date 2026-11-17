@@ -2408,7 +2408,9 @@
       "douyinPlaceholder": "URL du direct ou numéro de salon",
       "douyinLabel": "URL du direct ou numéro de salon",
       "tiktokPlaceholder": "URL du direct TikTok ou @nom d'utilisateur",
-      "tiktokLabel": "URL du direct TikTok ou @nom d'utilisateur"
+      "tiktokLabel": "URL du direct TikTok ou @nom d'utilisateur",
+      "kickPlaceholder": "Lien de direct ou nom de chaîne Kick",
+      "kickLabel": "Lien de direct ou nom de chaîne Kick"
     },
     "hero": {
       "autoChip": "Surveillance auto",
