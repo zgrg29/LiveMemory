@@ -1,12 +1,13 @@
 # 直播平台扩展：候选调查记录
 
-状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0 实测更新于 2026-11-17）**。
+状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0/G1 实测更新于 2026-11-17）**。
 2026-11-16 本轮**没有接入任何新平台、没有连接任何新平台、没有安装依赖、
 没有复制任何第三方代码**；2026-11-17 的 G1 轮**真实连接了 Kick**，
 结果与证据见 `docs/KICK_G1_ACCEPTANCE.md`，本文 §2.8 只做摘要。
 2026-11-17 的 Kuaishou G0 轮**真实请求了公开快手直播间**（无登录、无 Cookie、无签名），
-结果见 `docs/KUAISHOU_G0_FEASIBILITY.md`，本文 §3.5 只做摘要。
-除 Kick G1 与 Kuaishou G0 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
+结果见 `docs/KUAISHOU_G0_FEASIBILITY.md`；G1 轮**真实复测了匿名 H5、扫码 start 与软限流**，
+结论 **C（暂缓）**，见 `docs/KUAISHOU_G1_POC.md`，本文 §3.5 只做摘要。
+除 Kick G1 与 Kuaishou G0/G1 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
 **一律为「待验证」**。
 
 准入判据与门禁流程见 `docs/PLATFORM_ADMISSION.md`。本文件只记录「调查到了什么」。
@@ -238,7 +239,24 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 
 ### 3.5 快手 Kuaishou
 
-**2026-11-17 G0 更新：结论 B（有条件进入 G1），完整报告 `docs/KUAISHOU_G0_FEASIBILITY.md`。**
+**2026-11-17 G1 更新：结论 C（暂缓），完整报告 `docs/KUAISHOU_G1_POC.md`。**
+
+- 登录态 WebSocket 仍未真实验证：没有账号/真人扫码；catbus 的扫码/WS 实现依赖
+  `__NS_hxfalcon`、设备指纹、webweapon 和**滑块验证码自动求解**，属于 LiveMemory 明确禁止的
+  “非公开签名 / 模拟客户端 / 绕过风控”，只能读、不能复用。
+- 官方 QR `start` 在**无签名**下返回 `result:1` + PNG（本轮实测）；`scanResult`/`acceptResult`
+  在未扫码时返回 `707`，不是签名错误。完整登录仍需真人扫码，本轮 **[未执行]**。
+- 登录 WS 的 `liveListen` 在 catbus 中接受任意主播 `eid`，代码层面没有“只能监听本人房间”的限制；
+  但没有真实账号验证，平台是否额外限制仍是 **[待验证]**。
+- 登录 WS 同样**没有消息 ID**（catbus `Event` 无 id）；礼物/点赞/分享有代码但零实测；
+  关注/进入/撤回未实现。
+- 匿名 H5 仍可用：3 房间/45 秒 6 条；2 小时 3 房间 **555 条 / 229 用户 / 0 重复 / 0 HTTP 错误**，
+  但 92.5% 轮询为空，并出现 `请求过快，请稍后重试` 软限流；`juedidatou` 约 13 分钟后
+  `result:601` / “直播已停止”（真实下播），再开播未观察；`robots.txt` 仍为 `Disallow: /`。
+- 评分（G1 权重）：登录 WS **68/100**、匿名 H5 **55/100**；两条路线都未通过独立准入。
+- 未接入生产代码；实验脚本在 `research/kuaishou-g1/`。
+
+**2026-11-17 G0 调查：结论 B（有条件进入 G1），完整报告 `docs/KUAISHOU_G0_FEASIBILITY.md`。**
 
 - **已找到并实测免登录实时公开聊天**：快手 H5 分享页的
   `GET https://livev.m.chenzhongtech.com/wap/live/feed?liveStreamId=<id>&cursor=<cursor>`，

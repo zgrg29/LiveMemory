@@ -87,7 +87,7 @@ binary from any of them is copied, rewritten into `src/`, or bundled.**
 
 | Project | License | How it was used |
 | --- | --- | --- |
-| [cv-cat/catbus](https://github.com/cv-cat/catbus) | MIT | Read `live.ts`, `commands.ts`, `api.ts`, `client.ts` for the desktop WebSocket/protobuf and login/sig4 requirements. |
+| [cv-cat/catbus](https://github.com/cv-cat/catbus) | MIT | Read `live.ts`, `commands.ts`, `api.ts`, `client.ts`, `session.ts`, `sign.ts`, `captcha.ts`, `normalize.ts`, `resolve.ts` for the desktop WebSocket/protobuf, login/sig4 requirements, event mapping and arbitrary-room support. |
 | [cv-cat/KuaiShou-Spider](https://github.com/cv-cat/KuaiShou-Spider) | **No LICENSE** | Read-only protocol reference (`live_api.py`, `live_proto.py`). No code may be copied. |
 | [BarryWangQwQ/UniBarrage](https://github.com/BarryWangQwQ/UniBarrage) | GPL-3.0 + commercial restriction | Read-only (`kuaishou/kuaishou.go`, `LICENSE`). GPL code is not copied into the MIT area. |
 | [ykaiqx/Live-Barrage](https://github.com/ykaiqx/Live-Barrage) | MIT | Read-only (`Kwai/barrage.py`); the anonymous H5 feed shape was independently re-requested in 2026. |
@@ -101,5 +101,18 @@ binary from any of them is copied, rewritten into `src/`, or bundled.**
 The Kuaishou live H5 feed and desktop WebSocket are **not** an official API.
 They are what Kuaishou's own web clients use, can change without notice, and
 are subject to Kuaishou's terms and `robots.txt`. See
-`docs/KUAISHOU_G0_FEASIBILITY.md` §12 for the platform-rule risk.
+`docs/KUAISHOU_G0_FEASIBILITY.md` §12 and `docs/KUAISHOU_G1_POC.md` §11 for the
+platform-rule risk.
 
+### G1 addendum (2026-11-17)
+
+`docs/KUAISHOU_G1_POC.md` and `research/kuaishou-g1/` add no third-party code
+and no runtime dependency. The G1 review read catbus's `sign.ts` (pure-JS
+`__NS_hxfalcon` / `__NS_sig3` reimplementation), `captcha.ts` (automatic slider
+captcha solving) and `package.json` (18 runtime dependencies, including
+`wreq-js`, which advertises TLS/JA3/JA4 browser-fingerprint impersonation).
+Those mechanisms are **not** copied, bundled, or used; they are recorded only
+as evidence of why the catbus login/WebSocket path is not acceptable for
+LiveMemory. catbus's MIT `LICENSE` permits commercial reuse, while its
+`README.zh-CN.md` asks for study/research use only; that inconsistency is
+documented in `docs/KUAISHOU_G1_POC.md` §11.2.

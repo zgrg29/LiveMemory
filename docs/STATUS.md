@@ -1,10 +1,72 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G0 技术调查**，
-结论 **B（有条件进入 G1）**，详见 `docs/KUAISHOU_G0_FEASIBILITY.md`；
+最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1 双路线验证**，
+结论 **C（暂缓）**，详见 `docs/KUAISHOU_G1_POC.md`；
 未接入平台、未改生产代码、未 Push/Tag/Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.57 快手 G1 双路线验证（2026-11-17）✅ 验证完成 · 结论 C
+
+### 0.57.1 结论
+
+- **登录态 WebSocket 未能真实验证**：官方 QR `start` 无签名返回 `result:1` + PNG，
+  `scanResult`/`acceptResult` 未扫码返回 `707`（不是签名错误）；但完整登录需要真人扫码，
+  本轮没有账号/手机 → callback、直播站换票、`websocketinfo`、WS 全部 **[未执行]**。
+- **catbus 源码审查完成**：扫码/会话/签名/设备指纹/验证码/WS/心跳/重连/事件/任意房间都读完；
+  其 `__NS_hxfalcon` 纯算、gdfp 设备指纹、**滑块自动求解**、`wreq-js` TLS 伪装
+  属于用户明确禁止的“非公开签名 / 模拟客户端 / 绕过风控”，**只读参考，未复制**。
+- **登录 WS 同样没有消息 ID**（catbus `Event` 无 id）；礼物/点赞/分享 CODE-SUPPORTED 但零实测；
+  关注/进入/撤回 UNSUPPORTED。
+- **匿名 H5 仍可用**：3 房间/45 秒 6 条；2 小时 3 房间长测 **555 条 / 229 用户 / 0 重复 / 0 HTTP 错误**，
+  昵称/数字 userId/时间/头像 100%、消息 ID 0%；跨房间用户重叠 **0**。
+- **真实下播已观察**：`juedidatou` 约 13 分钟后持续返回 `result:601` / `"直播已停止"`（1,969 次）；
+  再开播未观察，SSR 当时仍被“请求过快”限流。
+- **出现软限流**：公开直播间页返回 `"errorType":{"type":2,"title":"请求过快，请稍后重试"}`；
+  不能把“没有 liveStream.id”当主播下播。
+- **合规门槛未过**：`livev.m.chenzhongtech.com/robots.txt` 对 `User-agent: *` 为 `Disallow: /`；
+  登录≠平台采集授权；条款未逐条审阅。
+- **跨场/跨日/跨路线稳定 ID 未验证**：H5 `userId` 100% 覆盖、运行内一致，但不能证明跨房间/跨天；
+  不得把 `kuaishou:<h5 id>` 与 `kuaishou:<ws principalId>` 合并。
+
+### 0.57.2 评分（G1 权重）
+
+| 路线 | 实时 20 | 稳定 ID 25 | 礼物 15 | 监控 15 | 登录 10 | 长期 10 | 本地 5 | 总分 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 登录态 WS | 17 | 12 | 12 | 12 | 6 | 6 | 3 | **68** |
+| 匿名 H5 | 15 | 8 | 1 | 11 | 9 | 6 | 5 | **55** |
+
+两条路线都未通过独立准入（许可证/平台规则），**不能因分数进入 G2**。
+
+### 0.57.3 本轮产物
+
+- `docs/KUAISHOU_G1_POC.md`（完整报告：catbus 源码、登录、双路线、身份、礼物、监控、稳定性、评分、G2 清单）。
+- `research/kuaishou-g1/probe.mjs`（零依赖 PoC：discover/status/watch/ws-anon/qr-probe/login/auth/cleanup）。
+- `research/kuaishou-g1/README.md`（用法与安全边界）。
+- `THIRD_PARTY_NOTICES.md` G1 addendum（未复制任何代码）。
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5、`docs/ROADMAP.md` P48、`log/2026-11-17-kuaishou-g1.md`。
+
+### 0.57.4 未做 / 禁止
+
+- 未新增 `src/platforms/kuaishou/`，未改路由/UI/数据库/监控生产代码。
+- 未改版本号、未改 v0.16.0 Tag/Release/EXE。
+- 未引入依赖、未复制第三方代码、未实现签名/设备指纹/验证码求解。
+- 未 Push、未 Merge main、未创建 Tag/Release。
+- 未验证：真实登录 WS、跨场/跨日身份、礼物/点赞/分享、真实再开播、高流量截断、10+ 房间。
+
+### 0.57.5 Git
+
+- 分支：`kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建；未 Push）。
+- 本地提交：见本轮提交；`main` 未改，v0.16.0 资产未动。
+- 工作区：提交后干净（仅本轮文档/脚本）。
+
+### 0.57.6 验证
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs"`：**805 passed / 0 failed / 0 skipped**（24,881 ms，最终复跑）。
+- `node --check research/kuaishou-g1/probe.mjs`：通过。
+- `git diff --name-only main...HEAD`：只有 `docs/`、`log/`、`research/`、`.gitignore`、`THIRD_PARTY_NOTICES.md`；
+  **没有** `src/`、`package.json`、`scripts/`、`dist/` 变更。
+- `v0.16.0` Tag 仍存在；`main` 仍为 `6f71f56`。
 
 ## 0.56 快手（Kuaishou）G0 技术调查（2026-11-17）✅ 调查完成 · 结论 B
 

@@ -1,15 +1,60 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **快手 G0 技术调查** · 结论 **B（有条件进入 G1）** · 未接入、未改生产代码 ·
-未 Push/Tag/Release · 详见 `docs/KUAISHOU_G0_FEASIBILITY.md`
+本轮：2026-11-17 · **快手 G1 登录态 WebSocket / 匿名 H5 双路线验证** · 结论 **C（暂缓）** ·
+未接入、未改生产代码 · 未 Push/Tag/Release · 详见 `docs/KUAISHOU_G1_POC.md`
 
-> 找到并实测了快手**免登录** H5 实时聊天路径（`livev.m.chenzhongtech.com/wap/live/feed`）：
-> 126 条真实消息，昵称/数字 userId/毫秒时间/头像 100%，消息 ID 0%，礼物 NOT-OBSERVED；
-> 公开直播间 SSR 可判在播/不在播。桌面 WS 需要登录+sig4，不可准入。
-> 最高风险是 H5 域名 `robots.txt` 对普通 agent `Disallow: /`，产品化前必须做合规判断；
-> 跨场稳定 ID 与真实下播→再开播仍未验证。**G0 结束，等待用户决定是否进入 G1。**
+> 登录态 WS **没有完成真实实验**：没有账号/真人扫码；但官方 `qr/start` 在**无签名**下返回
+> `result:1` + PNG，`scanResult/acceptResult` 返回 `707`（不是签名错误），说明干净扫码有希望。
+> catbus 的扫码/WS 实现依赖 sig4、设备指纹、webweapon、**滑块自动求解**、`wreq-js` TLS 伪装，
+> 属于明确禁止的“非公开签名 / 模拟客户端 / 绕过风控”，只能读、不能复用。
+> 匿名 H5 仍可用（3 房间 45 秒 6 条，字段 100%，消息 ID 0%），但出现“请求过快”软限流，
+> `robots.txt` 仍 `Disallow: /`；跨场/跨日/跨路线稳定 ID 全部未验证。
+> **G1 结束，不进入 G2；等待用户决定是否授权一次真人扫码的 G1.5。**
 
-## 0. 本轮（快手 G0）
+## 0. 本轮（快手 G1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **C — 暂缓**（不是 A/B：登录 WS 与稳定 ID 未验证；不是 D：匿名聊天与 QR start 真实可用） |
+| 评分 | 登录 WS **68/100**；匿名 H5 **55/100** |
+| 登录 WS | QR start **REAL-VERIFIED**；scan/callback/换票/websocketinfo/WS **[未执行]** |
+| 匿名 H5 | 3 房间/45 秒 6 条；2 小时 3 房间 **555 条 / 229 用户 / 0 重复 / 0 HTTP 错误** |
+| 跨房身份 | 229 个用户跨 3 房间重叠 **0** → 无跨场证据 |
+| 下播 | `juedidatou` 约 13 分钟后 `result:601` / “直播已停止”；再开播未观察 |
+| 最高风险 | H5 `robots.txt` `Disallow: /`；SSR 软限流；登录≠采集授权 |
+| 验证 | unit **805 passed / 0 failed**；`node --check` 通过；无 `src/` 变更 |
+| Git | 分支 `kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建；未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_POC.md`（完整报告）
+- `research/kuaishou-g1/probe.mjs`（零依赖 PoC：discover/status/watch/ws-anon/qr-probe/login/auth/cleanup）
+- `research/kuaishou-g1/README.md`（用法与安全边界）
+- `THIRD_PARTY_NOTICES.md`（G1 addendum；未复制代码）
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5、`docs/ROADMAP.md` P48
+- `log/2026-11-17-kuaishou-g1.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否授权一次真人扫码的 G1.5**：只验证“无签名扫码 → 直播站换票 → websocketinfo → 一条真实弹幕 →
+   另一个公开主播房间”；不写生产代码，不实现签名/指纹/验证码。
+2. **合规结论**：是否允许自动访问 `livev.m.chenzhongtech.com` 与登录态直播接口。
+3. 若扫码后 `websocketinfo` 要求 sig4/滑块 → **停止登录路线**，按 D 处理；不要找替代签名服务。
+4. 若合规不允许 H5 → 保持 C，不进入 G2。
+5. **不得**默认引入登录、Cookie 复制、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建，未 Push） |
+| 本地提交 | 见本轮提交 Hash；`main` 未改 |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净 |
+
+## 1. 上一轮（快手 G0）
 
 ### 0.1 结果
 
