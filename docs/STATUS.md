@@ -1,12 +1,75 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.15.0 十语言国际化正式发布**：P39–P42 全部合并到 `main`，
-版本统一为 **`0.15.0`**，Tag `v0.15.0`，GitHub Release
-`LiveMemory v0.15.0 — 10-Language Internationalization` 已发布；十份字典各 2,271 键、
-十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；五平台与 Schema（16）未变，
-**未新增直播平台**）
+最后更新：2026-11-17（**Kick G1 真实本地采集验证完成**：免登录、双直播间、
+1,936 条真实聊天、`sender.id` 100%、强制断线 5.7 秒恢复；**Kick 未接入产品**，
+无路由/界面/十语言文案，版本仍 **`0.15.0`**，未合并 `main`、未 Push/Tag/Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.52 Kick G1 真实本地采集验证（2026-11-17）✅ 未接入产品
+
+用户要求以既有 G0 调查为起点，对 Kick 做**源码核实、真实连接测试和最小可运行 PoC**，
+不从零重复调查、不复制第三方项目、不新增云端依赖、不改正式版本号。本轮**未 Push / 未合并
+`main` / 未 Tag / 未 Release**，版本仍 `0.15.0`（v0.15.0 仍是当前正式发布）。
+
+### 0.52.1 起点与继承
+
+| 项目 | 值 |
+| --- | --- |
+| 起始分支 / 工作区 | `main`（HEAD `0a0f9b5`），clean；v0.15.0 Tag/Release 已存在 |
+| 继承的既有研究 | `docs/PLATFORM_EXPANSION_RESEARCH.md` §2（G0：kixo / Kick-Live-Connector / kick-api、官方 API 无读聊天、Centrifugo/Pusher 轮廓、字段与 6 项风险） |
+| 本轮分支 | `feature/kick-g1` |
+| 版本 / Schema | 未改（`0.15.0` / 16）；未改五平台协议、金额、身份、去重 |
+
+### 0.52.2 真实采集（本地直连，免登录）
+
+| 项目 | 结果 |
+| --- | --- |
+| 传输 | `kick.com/api/v2/channels/<slug>` → `web.kick.com` realtime 配置 → 匿名 guest JWT（TTL 2700s）→ Centrifugo WebSocket |
+| 房间 | odablock（channel `2401072` / chatroom `2393554`）与 gmhikaru（`1770127` / `1762730`），并发 **966 秒** |
+| 真实消息 | **1,604 + 332 = 1,936** 条；99.7 / 20.6 条每分钟 |
+| 字段完整率 | `sender.id` **100%**、消息 `id` **100%**、`created_at` **100%**（均为 `+00:00` ISO-8601） |
+| 身份 | 391 + 113 个稳定用户 ID；同名不同 ID 不合并；1 个跨房间稳定 ID 可关联 |
+| Emote | 827 条含 `[emote:id:name]` 的消息全部解析，`content` 原文不变 |
+| 消息 ID 唯一性 | 1,936 条全部唯一，重连前后无重复 |
+| 多房间隔离 | 跨房间串台 **0**；每房间独立 adapter/socket/session |
+| 断线恢复 | 强制断开后 **5.7 秒**恢复（退避 1.08s），空档 **5.338 秒**；无续传，可能漏消息 |
+| 停止 | `stop()` 关闭 socket、状态 `stopped`、无重连；测试夹具断言无残留连接 |
+| 事件 | 聊天/Emote/reply/封禁 6/解封 1/删除 7/Pin 3+取消 2 已真实观测；**赠送订阅 1 条、KICKs 1 条**（仅形状与限制，未映射）；订阅/续订/上下播/Host/投票 **NOT-OBSERVED** |
+| 附加运行 | 10 分钟 odablock + nelkboys：1,104 条聊天、赠订 1、KICKs 1、Pin 3、删除 2；强制断开 5.3 秒恢复 |
+| 传输事实 | `kick.com` 公开接口 HTTP/1.1 被 WAF 403、HTTP/2 200；Node 内置 WebSocket 不发 `Origin` 且被接受 |
+| 官方 API | `api.kick.com/public/v1/channels?slug=…` 无 token → **401**；无读聊天 scope；webhook 需公网接收端 |
+
+### 0.52.3 交付物
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/platforms/kick/{errors,link,http,messages,transport,adapter}.mjs` | 最小适配器骨架：URL 解析、HTTP/2 JSON、Centrifugo 五 feed、事件映射、重连/停止 |
+| `scripts/kick-poc.mjs` | 真实采集 PoC：双房间、强制断线、原始 payload + canonical 草稿 + summary.json |
+| `scripts/kick-g1-analyze.mjs` | 身份/字段/唯一性/跨房间证据分析 |
+| `tests/unit/kick-{link,messages,transport,adapter}.test.mjs` | 离线单测（fake HTTP/WebSocket） |
+| `tests/integration/kick-ingest.test.mjs` | SessionManager + SQLite + EventIngest：去重、身份、匿名降级、双房间、停止 |
+| `docs/KICK_G1_ACCEPTANCE.md` | G1 完整验收报告（证据、风险、G2 设计） |
+
+### 0.52.4 测试
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量单元 + 集成 | **1,155 passed / 0 failed / 0 skipped**（`--test-isolation=none`，300,336 ms；含 Kick 48 单测 + 5 集成） |
+| 时序抖动（如实记录） | 本轮两次全量运行各出现 1 个与本轮无关的时序失败（`ai-memory-output-recovery`、`youtube-lifecycle-regression` 的定时断言），**单独重跑均 8/8、10/10 通过**；第三次全量 1,155/1,155 通过。未修改这些断言 |
+| Kick 单测 | 48 passed（URL、HTTP 状态映射/重定向/gzip、字段、Emote、reply、缺失身份、时间、五 feed、token 刷新、109、退避、失败上限、双 adapter） |
+| Kick 集成 | 5 passed（去重、同昵称不同 ID、匿名降级、双房间隔离、停止后拒绝迟到消息） |
+| 现有五平台回归 | 随全量套件通过；未修改五平台代码 |
+| 真实与模拟区分 | 真实采集只在 `scripts/kick-poc.mjs`；所有 `node --test` 使用 fake transport，未访问 Kick |
+
+### 0.52.5 已知限制（必须保持如实）
+
+- 订阅/续订、开播/下播、Host、投票：**NOT-OBSERVED**；赠送订阅与 KICKs 各只观测到 1 条，
+  赠订只有用户名（无稳定 ID）、KICKs 无法币币种/金额语义，**不得声明支持**。
+- 45 分钟 guest token **真实到期**未等待；只验证了「提前刷新」与「109 处理」的代码路径。
+- 长时（>1h）稳定性、429 限流形态、重连漏消息比例未量化。
+- `Origin` 与 HTTP/2 依赖是新增的平台侧风险；被收紧时必须如实失败（`KICK_BLOCKED`）。
+- Kick 仍未接入产品：无路由、无 UI、无十语言文案、无 EXE 验收（G5 未做）。
 
 ## 0.51 v0.15.0 十语言国际化正式发布（2026-11-17）🚀
 

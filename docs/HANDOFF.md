@@ -1,6 +1,61 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **v0.15.0 十语言国际化正式发布完成** · P39–P42 合并 `main` ·
+本轮：2026-11-17 · **Kick G1 真实本地采集验证完成** · 分支 `feature/kick-g1` ·
+免登录双直播间 966 秒 / 1,936 条真实聊天 · **Kick 未接入产品** · **未 Push/Merge/Tag/Release**
+
+> 本轮按用户要求以既有 G0 调查为起点，对 Kick 做源码核实、真实连接与最小 PoC；
+> 新增 `src/platforms/kick/` 骨架、真实采集 PoC、证据分析脚本、离线测试与
+> `docs/KICK_G1_ACCEPTANCE.md`。**未改五平台协议、Schema（16）、金额/身份/去重、版本号（仍 0.15.0），
+> 未新增路由/UI/十语言文案，未构建 EXE，未 Push/Merge/Tag/Release。**
+> 礼物/订阅等事件仍为 `NOT-OBSERVED`，不得在界面或 README 宣称支持 Kick。
+
+## 0. 本轮（Kick G1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 / 起点 | `feature/kick-g1` ← `main` `0a0f9b5`（工作区 clean） |
+| 真实房间 | odablock（channel `2401072` / chatroom `2393554`）、gmhikaru（`1770127` / `1762730`） |
+| 时长 / 消息 | 966 秒；**1,936** 条真实聊天（1,604 + 332） |
+| 字段完整率 | `sender.id` / 消息 `id` / `created_at` 均 **100%** |
+| 身份 | 391 + 113 个稳定 ID；同名不同 ID 不合并；1 个跨房间 ID |
+| Emote | 827 条消息含 Emote 标记，全部解析，原文不变 |
+| 重复 / 串台 | 重复消息 ID **0**；跨房间 **0** |
+| 断线 | 强制断开后 **5.7 秒**恢复，空档 5.338 秒；无续传 |
+| 停止 | socket 关闭、状态 `stopped`、无重连 |
+| 测试 | 全量单元 + 集成通过；Kick 单测 48 + 集成 5 |
+| 未验证 | 订阅/续订/上下播/Host/投票；赠订与 KICKs 各仅 1 条（身份或金额不完整）；45 分钟真实到期；长时限流 |
+
+### 0.2 关键新增文件
+
+- `src/platforms/kick/{errors,link,http,messages,transport,adapter}.mjs`
+- `scripts/kick-poc.mjs`、`scripts/kick-g1-analyze.mjs`
+- `tests/unit/kick-*.test.mjs`、`tests/integration/kick-ingest.test.mjs`
+- `docs/KICK_G1_ACCEPTANCE.md`（完整证据与 G2 设计）
+- `tests/helpers/kick-frames.mjs`、`tests/helpers/kick-ws-fake.mjs`
+
+### 0.3 下一轮（G2，需用户确认后开始）
+
+1. ≥60 分钟长测 + 真实 45 分钟 token 到期观测（或注入短 TTL），记录刷新次数/空档/漏消息比例。
+2. 在有真实订阅/送礼的时段抓 `SubscriptionEvent`、`GiftedSubscriptionsEvent`、`KicksGifted`，
+   记录字段与缺失率；金额/币种不可得保持 `unknown`。
+3. 接入产品：`service.mjs`、routes、`capabilities.platforms`（`requiresLogin:false`、
+   `unofficial:true`）、十语言文案、备份设置白名单（如新增设置键）、监控与保留。
+4. G4/G5：断线/多房间自动化 + `verify-kick-exe.mjs` 真实 EXE 验收。
+5. **未观测到礼物/订阅前，README/UI 不得写「支持 Kick」。**
+
+### 0.4 工作区 / Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g1`（基于 `main` `0a0f9b5`） |
+| Push / Merge / Tag | **未做** |
+| 证据目录 | `tests/.tmp/kick-g1-run/`、`tests/.tmp/kick-g1-events/`（gitignored，未提交） |
+
+---
+
+上一轮：2026-11-17 · **v0.15.0 十语言国际化正式发布完成** · P39–P42 合并 `main` ·
 版本统一 `0.15.0` · Tag `v0.15.0` · GitHub Release 已发布 · **未新增平台**
 
 > 本轮按用户明确授权把 P39–P42 的十语言国际化完整合并到 `main`，统一版本号为 `0.15.0`，
@@ -9,7 +64,7 @@
 > `LiveMemory v0.15.0 — 10-Language Internationalization`。
 > **未改平台协议、数据库 Schema（16）、金额/身份/去重、任务语言快照；未新增语言、未新增直播平台。**
 
-## 0. 本轮（v0.15.0 发布）
+## 0. 上一轮（v0.15.0 发布）
 
 ### 0.1 基线
 

@@ -842,4 +842,7 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 > （三个核心准入条件、字段最低要求、登录优先序、G0–G6 门禁、暂停条件、许可证策略）。
 > 本节的 7 条原则仍然有效，但只是其中一部分；两者冲突时以 `docs/PLATFORM_ADMISSION.md`
 > 与 `AGENTS.md` §6.12/§6.17 为准。候选平台调查记录见 `docs/PLATFORM_EXPANSION_RESEARCH.md`。
-> **目前没有任何新平台通过 G1 真实验证，界面与文档不得出现「已支持」。**
+> **目前 Kick 已通过 G1 真实连接验证（2026-11-17），但尚未通过 G2–G6，未接入产品；
+> 其余候选平台均未通过 G1。界面、README 与发布说明不得出现「已支持 Kick」或任何新平台。**
+> Kick 的 G1 证据与 G2 设计见 `docs/KICK_G1_ACCEPTANCE.md`；代码位于
+> `src/platforms/kick/`（骨架，未接入 routes/UI/监控）。
