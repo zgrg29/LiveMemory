@@ -148,17 +148,20 @@ export const livePage = {
     let checkedTwitch = null;
     let checkedDouyin = null;
     let checkedTikTok = null;
+    let checkedKick = null;
     let biliStatus = null;
     let youtubeStatus = null;
     let twitchStatus = null;
     let douyinStatus = null;
     let tiktokStatus = null;
+    let kickStatus = null;
     let biliAutoMonitor = false;
     let youtubeAutoMonitor = false;
     let twitchAutoMonitor = false;
     let douyinAutoMonitor = false;
     let tiktokAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: ''};
+    let kickAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: '', kick: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
@@ -177,6 +180,8 @@ export const livePage = {
     let douyinCookieError = '';
     let tiktokCaptureHost = null;
     let tiktokListHost = null;
+    let kickCaptureHost = null;
+    let kickListHost = null;
     let douyinLoginHint = '';
 
     const summaryCache = new Map();
@@ -372,18 +377,28 @@ export const livePage = {
     /* ---------------------------------------------------------- data sync */
 
     async function loadSourceStatuses() {
-      const [bili, youtube, twitch, douyin, tiktok] = await Promise.all([
+      const [bili, youtube, twitch, douyin, tiktok, kick] = await Promise.all([
         api.get('/api/bilibili/status').catch(() => null),
         api.get('/api/youtube/status').catch(() => null),
         api.get('/api/twitch/status').catch(() => null),
         api.get('/api/douyin/status').catch(() => null),
-        api.get('/api/tiktok/status').catch(() => null)
+        api.get('/api/tiktok/status').catch(() => null),
+        api.get('/api/kick/status').catch(() => null)
       ]);
       biliStatus = bili;
       youtubeStatus = youtube;
       twitchStatus = twitch;
       douyinStatus = douyin;
       tiktokStatus = tiktok;
+      kickStatus = kick;
+    }
+
+    async function refreshKickStatus() {
+      try {
+        kickStatus = await api.get('/api/kick/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
     }
 
     async function refreshTikTokStatus() {
@@ -1549,6 +1564,7 @@ export const livePage = {
           checkedTwitch = null;
           checkedDouyin = null;
           checkedTikTok = null;
+          checkedKick = null;
           onSelect?.();
           renderSource();
           if (mode === 'youtube') {
@@ -1571,6 +1587,11 @@ export const livePage = {
               if (!destroyed && sourceMode === 'tiktok') renderSource();
             }).catch(() => {});
           }
+          if (mode === 'kick') {
+            refreshKickStatus().then(() => {
+              if (!destroyed && sourceMode === 'kick') renderSource();
+            }).catch(() => {});
+          }
         }
       });
     }
@@ -1583,6 +1604,8 @@ export const livePage = {
       qrWrapRef = null;
       tiktokCaptureHost = null;
       tiktokListHost = null;
+      kickCaptureHost = null;
+      kickListHost = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
           el('div', {className: 'card-title', text: t('live.source.title')}),
@@ -1593,13 +1616,15 @@ export const livePage = {
         tabButton(t('live.source.youtubeTab'), 'youtube'),
         tabButton(t('live.source.twitchTab'), 'twitch'),
         tabButton(t('live.source.douyinTab'), 'douyin'),
-        tabButton(t('live.source.tiktokTab'), 'tiktok'));
+        tabButton(t('live.source.tiktokTab'), 'tiktok'),
+        tabButton(t('live.source.kickTab'), 'kick'));
 
       const body = el('div', {className: 'card-body'}, tabs);
       if (sourceMode === 'bilibili') body.append(buildBiliPanel());
       else if (sourceMode === 'twitch') body.append(buildTwitchPanel());
       else if (sourceMode === 'douyin') body.append(buildDouyinPanel());
       else if (sourceMode === 'tiktok') body.append(buildTikTokPanel());
+      else if (sourceMode === 'kick') body.append(buildKickPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
@@ -2798,6 +2823,329 @@ export const livePage = {
         buildDouyinCookieHelp());
       section.append(cookieBlock);
       return section;
+    }
+
+    /* --------------------------------------------------------------- Kick */
+    // One capture path: Kick's public Centrifugo feed with an anonymous guest
+    // token. No account, no cookie, no API key and no third-party relay. It is
+    // an unofficial endpoint, so the panel says so and never claims completeness.
+
+    function kickRecordings() {
+      return recordings.filter((recording) => recording.platform === 'kick');
+    }
+
+    function kickRecordingForRoom(room) {
+      if (!room) return null;
+      return kickRecordings().find((recording) => String(recording.platformRoomId) === String(room.channelId)) ?? null;
+    }
+
+    function kickPanelRecording() {
+      const selected = recordings.find((recording) => recording.sessionId === selectedId);
+      if (selected?.platform === 'kick') return selected;
+      if (checkedKick) return kickRecordingForRoom(checkedKick);
+      return kickRecordings().at(-1) ?? null;
+    }
+
+    function currentKickCapture() {
+      const recording = kickPanelRecording();
+      if (recording) return recording.capture ?? null;
+      if (checkedKick) return null;
+      return kickStatus?.capture ?? null;
+    }
+
+    function kickReasonText(code) {
+      const map = {
+        KICK_RATE_LIMITED: 'errors.kickRateLimit',
+        KICK_NETWORK: 'errors.kickNetwork',
+        KICK_PROTOCOL: 'errors.kickProtocol',
+        KICK_CONNECT_TIMEOUT: 'errors.kickConnectTimeout',
+        KICK_SOCKET_FAILED: 'errors.kickSocketFailed',
+        KICK_ROOM_OFFLINE: 'errors.kickRoomOffline',
+        KICK_ROOM_NOT_FOUND: 'errors.kickRoomNotFound',
+        KICK_BLOCKED: 'errors.kickBlocked',
+        KICK_NOT_CONFIGURED: 'errors.kickNotConfigured'
+      };
+      return map[code] ? t(map[code]) : t('live.source.tiktokReasonUnknown');
+    }
+
+    function kickCaptureMeta(capture) {
+      const category = capture?.category;
+      if (category === 'normal') return {key: 'live.source.tiktokCaptureStateConnected', tone: 'live'};
+      if (category === 'waiting_events') return {key: 'live.source.tiktokCaptureStateWaitingEvents', tone: 'neutral'};
+      if (category === 'connecting') return {key: 'live.source.tiktokCaptureStateConnecting', tone: 'neutral'};
+      if (category === 'temporary') return {key: 'live.source.tiktokCaptureStateInterrupted', tone: 'warn'};
+      if (category === 'auto_reconnect') return {key: 'live.source.tiktokCaptureStateReconnecting', tone: 'warn'};
+      if (category === 'rate_limit') return {key: 'live.source.kickCaptureStateRateLimited', tone: 'warn'};
+      if (category === 'ended') return {key: 'live.source.tiktokCaptureStateEnded', tone: 'neutral'};
+      if (category === 'stopped') return {key: 'live.source.tiktokCaptureStateStopped', tone: 'neutral'};
+      if (category === 'failed') return {key: 'live.source.tiktokCaptureStateFailed', tone: 'warn'};
+      return {key: 'live.source.tiktokCaptureStateIdle', tone: 'neutral'};
+    }
+
+    function buildKickList() {
+      const list = kickRecordings();
+      if (list.length === 0) return null;
+      const section = el('section', {className: 'tiktok-active-recordings'});
+      section.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.kickActiveTitle')}),
+        chip(t('live.source.tiktokActiveCount', {n: list.length}), 'neutral')));
+      for (const recording of list) {
+        const meta = kickCaptureMeta(recording.capture);
+        section.append(el('div', {className: 'live-recording-row'},
+          el('div', {className: 'live-recording-main'},
+            el('div', {className: 'row-title'},
+              el('span', {className: 'row-title-text', text: recordingName(recording)})),
+            el('div', {className: 'live-recording-meta'},
+              chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'}),
+              recording.meta?.slug ? el('span', {className: 'small', text: recording.meta.slug}) : null,
+              el('span', {className: 'small', text: t('live.new.recordingMessages', {
+                n: formatInteger(Number(recording.messageCount ?? 0), ctx.locale)
+              })}))),
+          el('div', {className: 'live-recording-actions'},
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.new.open'),
+              onClick: () => openSession(recording.sessionId)
+            }),
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.source.tiktokStop'),
+              onClick: (event) => stopKick(event.currentTarget, recording.sessionId)
+            }))));
+      }
+      return section;
+    }
+
+    function kickCaptureCard(capture) {
+      const card = el('section', {className: 'card card--padded'});
+      const meta = kickCaptureMeta(capture);
+      card.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.kickCaptureTitle')}),
+        chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'})));
+      if (!capture) {
+        card.append(el('p', {className: 'source-note', text: t('live.source.tiktokCaptureIdle')}));
+        return card;
+      }
+      const lines = [];
+      lines.push(capture.lastEventAt
+        ? t('live.source.tiktokCaptureLastMessage', {time: formatDateTime(capture.lastEventAt, ctx.locale)})
+        : t('live.source.tiktokCaptureNoMessage'));
+      if (Number(capture.reconnectAttempts) > 0) {
+        lines.push(t('live.source.tiktokCaptureReconnects', {n: formatInteger(capture.reconnectAttempts, ctx.locale)}));
+      }
+      if (Number(capture.tokenRefreshes) > 0) {
+        lines.push(t('live.source.kickTokenRefreshes', {n: formatInteger(capture.tokenRefreshes, ctx.locale)}));
+      }
+      if (capture.lastFailure?.code) {
+        lines.push(t('live.source.tiktokCaptureLastFailure', {reason: kickReasonText(capture.lastFailure.code)}));
+      }
+      if (capture.possibleGap) lines.push(t('live.source.tiktokCapturePossibleGap'));
+      for (const line of lines) card.append(el('p', {className: 'source-note', text: line}));
+
+      const details = el('details', {className: 'auto-details'});
+      details.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
+      const counters = capture.counters ?? {};
+      details.append(el('p', {className: 'small', text: t('live.source.kickTechnicalProtocol', {
+        protocol: capture.protocol ?? 'kick-centrifugo',
+        room: capture.chatroomId ?? '—'
+      })}));
+      details.append(el('p', {className: 'small', text: t('live.source.kickTechnicalCounters', {
+        chats: formatInteger(counters.chats ?? 0, ctx.locale),
+        gifts: formatInteger(counters.gifts ?? 0, ctx.locale),
+        memberships: formatInteger(counters.memberships ?? 0, ctx.locale),
+        publications: formatInteger(counters.publications ?? 0, ctx.locale)
+      })}));
+      details.append(el('p', {className: 'small', text: t('live.source.kickCaptureNotCompleteNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.kickUnofficialNote')}));
+      card.append(details);
+      return card;
+    }
+
+    function updateKickHosts() {
+      if (kickCaptureHost && !destroyed) {
+        clear(kickCaptureHost);
+        kickCaptureHost.append(kickCaptureCard(currentKickCapture()));
+      }
+      if (kickListHost && !destroyed) {
+        clear(kickListHost);
+        const list = buildKickList();
+        kickListHost.hidden = !list;
+        if (list) kickListHost.append(list);
+      }
+    }
+
+    function buildKickRoomMeta(room) {
+      const meta = el('div', {className: 'source-meta'});
+      meta.append(el('div', {className: 'source-status'},
+        chip(t('live.source.twitchChannelReady'), 'accent'),
+        room.isLive
+          ? chip(t('live.source.twitchLiveNow'), 'live', {dot: true})
+          : chip(t('live.source.twitchOffline'), 'neutral'),
+        room.title ? el('span', {className: 'row-title-text', text: room.title}) : null));
+      const details = [
+        `${t('live.source.twitchChannel')}: ${room.slug}`,
+        `${t('live.source.twitchChannelId')}: ${room.channelId}`,
+        `${t('live.source.kickChatroom')}: ${room.chatroomId}`
+      ];
+      if (room.viewerCount !== null && room.viewerCount !== undefined) {
+        details.push(`${t('live.source.twitchViewers')}: ${formatInteger(room.viewerCount, ctx.locale)}`);
+      }
+      meta.append(el('div', {text: details.join(' · ')}));
+      const canStart = Boolean(room.isLive);
+      meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: canStart ? t('live.source.twitchStart') : t('live.source.waitForLive'),
+          attrs: canStart ? {} : {disabled: ''},
+          onClick: (event) => {
+            if (!canStart) return;
+            connectKick(event.currentTarget);
+          }
+        })));
+      if (!canStart) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+      return meta;
+    }
+
+    function buildKickPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kickIntro')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kickNoLoginNote')}));
+
+      const status = kickStatus;
+      if (!status) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.kickUnavailable')));
+        return panel;
+      }
+
+      panel.append(autoMonitorToggle('kick', kickAutoMonitor, (checked) => {
+        kickAutoMonitor = checked;
+        checkedKick = null;
+        renderSource();
+      }));
+      if (kickAutoMonitor) {
+        panel.append(buildAutoMonitorSection('kick'));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.kickUnofficialNote')}));
+        panel.append(el('p', {className: 'source-note', text: t('live.source.kickNoLoginNote')}));
+        return panel;
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.kickLinkPlaceholder'),
+          'aria-label': t('live.source.kickLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedKick?.input ?? '';
+      refs.kickInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.kickLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.twitchCheck'),
+          onClick: (event) => checkKick(event.currentTarget)
+        })));
+
+      if (checkedKick) panel.append(buildKickRoomMeta(checkedKick));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kickUnofficialNote')}));
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.twitchPolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.kickPolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.twitchApplyRetention'),
+            onClick: (event) => applyKickRetention(event.currentTarget)
+          })));
+      }
+
+      kickListHost = el('div');
+      kickCaptureHost = el('div');
+      panel.append(kickListHost, kickCaptureHost);
+      updateKickHosts();
+      return panel;
+    }
+
+    async function checkKick(button) {
+      const url = String(refs.kickInput?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.kickLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchChecking');
+      try {
+        const result = await api.post('/api/kick/room', {url});
+        checkedKick = {...result.room, input: url};
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function connectKick(button) {
+      if (!checkedKick) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchStarting');
+      try {
+        const payload = await api.post('/api/kick/connect', {url: checkedKick.input});
+        checkedKick = null;
+        await refreshKickStatus();
+        await refreshRecordings();
+        await openSession(payload.session.id, {force: true});
+        await ctx.refreshStatus();
+        ctx.toast(t('live.source.twitchStarted', {name: payload.room?.slug ?? ''}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function stopKick(button, sessionId) {
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokStopping');
+      try {
+        await api.post('/api/kick/disconnect', {sessionId});
+        await refreshKickStatus();
+        await refreshRecordings();
+        renderSource();
+        ctx.toast(t('live.source.tiktokStopped'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function applyKickRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/kick/retention/apply', {});
+        await refreshKickStatus();
+        renderSource();
+        ctx.toast(t('live.source.kickRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
     }
 
     function buildDouyinPanel() {

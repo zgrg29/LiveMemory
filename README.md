@@ -1,8 +1,8 @@
 # LiveMemory 直播记忆
 
-本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live** 与 **TikTok Live**。抖音：匿名弹幕、稳定 UID、自动监听已真实接入；礼物需登录，真实手机扫码与真实礼物尚未验证。TikTok：统一为匿名本地 webcast WebSocket 采集，不需要登录、不需要选择采集通道，也不依赖付费签名服务；属于非官方协议，实验性。
+本地优先的直播记录与长期观众记忆系统：所有 AI 分析使用**你自己配置的 API Key**，由本地程序直接调用 Provider。支持 **Bilibili Live**、**YouTube Live**、**Twitch Live**、**抖音 Live**、**TikTok Live** 与 **Kick**（v0.16.0 新增）。抖音：匿名弹幕、稳定 UID、自动监听已真实接入；礼物需登录，真实手机扫码与真实礼物尚未验证。TikTok：统一为匿名本地 webcast WebSocket 采集，不需要登录、不需要选择采集通道，也不依赖付费签名服务；属于非官方协议，实验性。Kick：免登录公开聊天与自动开播监控。
 
-Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douyin Live and TikTok Live. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
+Local-first livestream memory for Bilibili Live, YouTube Live, Twitch Live, Douyin Live, TikTok Live and **Kick**. All AI analysis uses **your own API key** and is called directly by the local program. No cloud account, no developer server, no anonymous free AI.
 
 > **License notice**: LiveMemory's own source is MIT. The Windows EXE also embeds an **AGPL-3.0** Douyin signature component under `src/platforms/douyin/vendor/`; binary distributions that include it must provide the corresponding source under AGPL-3.0. See `THIRD_PARTY_NOTICES.md` and `docs/LICENSE_AGPL_DOUYIN.md`. The project `LICENSE` was not changed.
 
@@ -90,13 +90,14 @@ LiveMemory 在你自己电脑上记录一场直播的聊天、礼物、醒目留
 - 清空全部直播/观众数据或恢复出厂设置：二次确认 + `DELETE`/`RESET` 文字 + 记录中禁止 + 数据目录外的数据库快照
 - **多主播观众档案**：同一平台账号保持一个稳定身份，但按主播分别保留发言、场次、经济支持与未来 AI 画像；观众页可切换主播范围、搜索、排序
 - 跟随系统 / 明亮 / 黑暗三种主题，独立设计，切换不闪烁、不丢失内容
-- 五个真实平台（Bilibili / YouTube / Twitch / 抖音 / TikTok）同时记录，后台任务独立；正式界面不提供模拟直播
+- 六个真实平台（Bilibili / YouTube / Twitch / 抖音 / TikTok / Kick）同时记录，后台任务独立；正式界面不提供模拟直播
 - 直播记录、直播历史（含单场详情与热度曲线）、观众档案、AI 分析中心、设置五个页面
 - **Bilibili 直播**：真实 WebSocket 弹幕、礼物、醒目留言、大航海、平台表情；扫码登录可选
 - **YouTube 直播**：唯一入口是公开直播页面的网页聊天，无需 Google 登录、API Key、OAuth 或 Cookie；粘贴直播链接即可。支持多场并发、多币种分账与 30 天原文保留策略。该机制不是 YouTube 官方稳定 API，可能因平台变化失效
 - **Twitch 直播（M1）**：匿名 IRC 公开聊天 + 公开频道元数据，无需 Twitch 登录、OAuth、API Key 或 Cookie；粘贴频道链接/账号即可，支持多频道并发与自动开播监听。真实公开频道已实测稳定 User ID、消息 ID、Unicode、平台表情 ID 与订阅/续订；**Bits 与赠订已解析但尚未观测到真实事件**。Bits/Tier/月数不换算收入，金额保持未知
 - **抖音直播（M2/M3，`feature/douyin`）**：公开直播间网页 + 签名的匿名 WebSocket；昵称、稳定 UID `douyin:<user.id>`、弹幕原文、Unicode/Emoji、消息 ID、去重、断线重连、两次离线确认、多房间隔离、自动开播。礼物需登录：连送只在 `repeatEnd=1` 写一条，钻石只作展示价值，`amount_minor=null`，不冒充收入；匿名连接真实观测到 0 礼物。扫码登录通过本机 Chrome/Edge 打开官方页面并显示同一二维码（不绕过验证码/风控）；可展开的中/日/英 12 步 Cookie 教程作为备用；Cookie 仅加密保存在本机。**真实手机扫码、真实 Cookie 正向与真实礼物尚未验证**。签名组件为 AGPL-3.0，见许可证说明
 - **TikTok 直播（M5，`feature/tiktok`，统一为匿名本地采集）**：房间识别、开播状态、主播稳定 ID、标题与礼物目录由 TikTok 公开接口**完全本地免费**读取。弹幕与礼物事件走 TikTok 自身的 **webcast WebSocket**，只需要任何访客都会获得的匿名 `ttwid` 设备 Cookie：**不需要登录、不需要 Cookie 导入、不需要浏览器中继、不需要 API Key，也不依赖付费或免费社区签名服务**。稳定身份为 `tiktok:<user.id>`，消息 `msgId` 去重，连送只在最终态计一次；钻石只作展示价值（`amount_minor=null`、`value_kind=unknown`），不换算主播收入。**这不是 TikTok 官方 API，而是其非公开 web 协议**：可能随平台变更失效，连接没有续传游标（重连期间可能漏消息，不补录），界面始终标注「非官方/实验性」。M5 已删除浏览器扫码登录、登录状态与专用浏览器资料目录，并在启动时安全清理旧版本遗留的专用 Profile（只删除带 LiveMemory 所有权标记的目录，绝不影响 Chrome/Edge 日常资料）。真实弹幕/稳定 ID/消息 ID 与断线重连已在 30 分钟真实长测与正式 EXE 验证；礼物是否观测到以每次运行的实际证据为准（未观测到即标 NOT-OBSERVED）。
+- **Kick（v0.16.0 正式支持）**：第六个平台。粘贴 `https://kick.com/<频道名>` 即可采集公开聊天，**不需要登录、Cookie、API Key 或付费服务**；使用 Kick 前端自己的 Centrifugo 实时通道（HTTP/2 读取公开频道，五条 feed，匿名 guest token 提前 90 秒刷新）。稳定身份 `kick:<sender.id>`，消息 UUID 去重；`[emote:id:name]` 解析进 `emotes` 且原文不变。KICKs 礼物保留 `gift_transaction_id`、发送者稳定 ID 与 KICKs 数量，但不换算法币（`amount_minor=null`、`value_kind=unknown`）；赠送订阅按“赠送者一条 + 接收者每人一条免费记录”保存，接收者无稳定 ID 时不建档案。**开播监控复用公共调度器**：可添加未开播频道，低频只读检查公开频道信息，开播自动开始记录，连续两次确认下播后结束本次记录并继续等待下一场；重启后恢复监控任务。**非官方 / 实验性**：没有续传游标，重连期间可能漏消息。订阅/续订、开播下播、Host、投票尚未观测到真实事件（`NOT-OBSERVED`）。详见 `docs/KICK_G2_G5_ACCEPTANCE.md`、`docs/KICK_G5_1_MONITORING.md` 与 `docs/release-notes/v0.16.0.md`。
 - 一键导出 `livememory-analysis-v1` 分析包（含聊天 JSONL、统计、观众上下文、平台表情字典、badge、三语 AI 分析指令与结果 Schema）
 - **M6：AI 文件协议（历史）**：v0.13.1 已删除用户可见的“导出 ZIP / 复制提示词 / 粘贴 JSON”流程；内部包格式、严格 Schema、证据/身份/批次校验、事务导入与历史结果读取保留。
 - **严格校验与可追溯证据**：Schema 版本、场次/任务/批次/主播/观众稳定身份、时间窗口、消息引用全部校验；错误显示字段路径、原因与修改建议；证据点击展开真实原文，原文已清理时明确标为不可用

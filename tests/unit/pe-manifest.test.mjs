@@ -18,8 +18,11 @@ test('the manifest helper can still produce an asInvoker test copy', {skip: proc
 
 test('the Windows build script ships requireAdministrator and verifies the final EXE', () => {
   const build = readFileSync(new URL('../../scripts/build-windows.mjs', import.meta.url), 'utf8');
-  assert.match(build, /setManifestLevel\(binary, 'requireAdministrator'\)/);
-  assert.match(build, /failed to apply requireAdministrator manifest/);
-  assert.match(build, /final EXE manifest is not requireAdministrator/);
-  assert.doesNotMatch(build, /setManifestLevel\(binary, 'asInvoker'\)/);
+  // The default build is requireAdministrator; asInvoker exists only behind an
+  // explicit test flag used to run the packaged server without accepting UAC.
+  assert.match(build, /const asInvoker = process\.argv\.includes\('--as-invoker'\)/);
+  assert.match(build, /const manifestTarget = asInvoker \? 'asInvoker' : 'requireAdministrator'/);
+  assert.match(build, /setManifestLevel\(binary, manifestTarget\)/);
+  assert.match(build, /final EXE manifest is not \$\{manifestTarget\}/);
+  assert.match(build, /manifestLevel\(exeBytes\) !== manifestTarget/);
 });

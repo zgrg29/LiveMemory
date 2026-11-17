@@ -76,7 +76,8 @@
       "youtube": "YouTube en directo",
       "twitch": "Twitch en directo",
       "douyin": "Douyin en directo",
-      "tiktok": "TikTok en directo"
+      "tiktok": "TikTok en directo",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "demasiado tiempo sin datos",
       "tiktokActiveTitle": "Salas de TikTok en grabación",
       "tiktokActiveCount": "{n} sala(s)",
-      "tiktokOtherRecordings": "Hay otras {n} sala(s) de TikTok grabándose en segundo plano; puedes añadir una sala diferente."
+      "tiktokOtherRecordings": "Hay otras {n} sala(s) de TikTok grabándose en segundo plano; puedes añadir una sala diferente.",
+      "kickTab": "Kick",
+      "kickIntro": "Graba el chat público de un canal de Kick en directo. El feed en tiempo real de Kick es el que usa la propia página de kick.com, no una API oficial.",
+      "kickNoLoginNote": "No se necesita cuenta, clave de API ni servicio de pago. LiveMemory solicita un token de invitado anónimo para el chat público.",
+      "kickUnofficialNote": "No oficial / experimental: Kick puede cambiar este feed sin avisar y una reconexión puede perder mensajes porque no hay cursor de reanudación.",
+      "kickUnavailable": "La captura de Kick no está disponible en esta compilación.",
+      "kickLinkLabel": "Enlace del canal de Kick",
+      "kickLinkPlaceholder": "https://kick.com/canal",
+      "kickChatroom": "ID de la sala de chat",
+      "kickCaptureTitle": "Captura de Kick",
+      "kickActiveTitle": "Canales de Kick en grabación",
+      "kickCaptureStateRateLimited": "Kick está limitando las peticiones; esperando",
+      "kickTokenRefreshes": "Renovaciones del token de invitado: {n}",
+      "kickTechnicalProtocol": "Protocolo: {protocol} · sala {room}",
+      "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · membresías {memberships} · publicaciones {publications}",
+      "kickCaptureNotCompleteNote": "El feed de Kick no tiene cursor de reanudación: los mensajes durante una reconexión pueden perderse y no se recuperan. LiveMemory no afirma tener un registro completo.",
+      "kickPolicyBody": "El texto de chat, las insignias y las etiquetas de Kick con más de {days} días se eliminan; los recuentos y los ID estables se conservan.",
+      "kickRetentionApplied": "Se eliminaron {count} filas de Kick caducadas."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "La captura de TikTok no está disponible en esta compilación.",
     "tiktokStopped": "La captura de TikTok se ha detenido.",
     "tiktokError": "La operación de TikTok ha fallado.",
-    "tiktokSocketFailed": "No se pudo abrir la conexión de directo de TikTok."
+    "tiktokSocketFailed": "No se pudo abrir la conexión de directo de TikTok.",
+    "kickLinkInvalid": "Introduce un enlace de canal de Kick como https://kick.com/canal. Los VOD, clips, categorías y búsquedas no son canales en directo.",
+    "kickRoomNotFound": "Ese canal de Kick no existe.",
+    "kickRoomOffline": "Este canal de Kick no está en directo. Empieza a grabar cuando comience la emisión.",
+    "kickRoomUnavailable": "Kick rechazó el chat de este canal.",
+    "kickBlocked": "Kick bloqueó la petición (política de seguridad). Inténtalo más tarde; LiveMemory no la elude.",
+    "kickRateLimit": "Kick está limitando las peticiones. Inténtalo más tarde.",
+    "kickNetwork": "No se pudo contactar con Kick. Revisa la red e inténtalo de nuevo.",
+    "kickProtocol": "Kick devolvió una respuesta en tiempo real inesperada. El feed no oficial puede haber cambiado.",
+    "kickConnectTimeout": "Se agotó el tiempo para conectar con el chat de Kick.",
+    "kickSocketFailed": "Falló la conexión con el chat de Kick.",
+    "kickNotConfigured": "La captura de Kick no está disponible en esta compilación.",
+    "kickStopped": "La captura de Kick se detuvo.",
+    "kickError": "La captura de Kick falló."
   },
   "toast": {
     "saved": "Guardado",
@@ -2377,7 +2408,9 @@
       "douyinPlaceholder": "URL del directo o número de sala",
       "douyinLabel": "URL del directo o número de sala",
       "tiktokPlaceholder": "URL del directo de TikTok o @usuario",
-      "tiktokLabel": "URL del directo de TikTok o @usuario"
+      "tiktokLabel": "URL del directo de TikTok o @usuario",
+      "kickPlaceholder": "Enlace de directo o nombre de canal de Kick",
+      "kickLabel": "Enlace de directo o nombre de canal de Kick"
     },
     "hero": {
       "autoChip": "Supervisión automática",

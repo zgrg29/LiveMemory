@@ -76,7 +76,8 @@
       "youtube": "YouTube 直播",
       "twitch": "Twitch 直播",
       "douyin": "抖音直播",
-      "tiktok": "TikTok 直播"
+      "tiktok": "TikTok 直播",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "长时间无数据",
       "tiktokActiveTitle": "正在记录的 TikTok 直播间",
       "tiktokActiveCount": "{n} 场",
-      "tiktokOtherRecordings": "另有 {n} 个 TikTok 直播间在后台记录；可以继续添加不同的直播间。"
+      "tiktokOtherRecordings": "另有 {n} 个 TikTok 直播间在后台记录；可以继续添加不同的直播间。",
+      "kickTab": "Kick",
+      "kickIntro": "记录 Kick 正在直播频道的公开聊天。Kick 的实时通道就是 kick.com 自己页面使用的通道，不是官方 API。",
+      "kickNoLoginNote": "无需登录、无需 API Key、无付费服务。LiveMemory 会为公开聊天通道申请匿名访客令牌。",
+      "kickUnofficialNote": "非官方 / 实验性：Kick 可能随时更改该通道；重连期间可能漏消息（没有续传游标）。",
+      "kickUnavailable": "此版本未提供 Kick 采集。",
+      "kickLinkLabel": "Kick 频道链接",
+      "kickLinkPlaceholder": "https://kick.com/频道名",
+      "kickChatroom": "聊天室 ID",
+      "kickCaptureTitle": "Kick 采集",
+      "kickActiveTitle": "正在记录的 Kick 频道",
+      "kickCaptureStateRateLimited": "Kick 正在限流，等待中",
+      "kickTokenRefreshes": "访客令牌刷新次数：{n}",
+      "kickTechnicalProtocol": "协议：{protocol} · 聊天室 {room}",
+      "kickTechnicalCounters": "聊天 {chats} · KICKs {gifts} · 会员 {memberships} · 推送 {publications}",
+      "kickCaptureNotCompleteNote": "Kick 通道没有续传游标：重连期间的消息可能遗漏且不会补录。LiveMemory 不声称弹幕完整。",
+      "kickPolicyBody": "超过 {days} 天的 Kick 聊天原文、徽章与展示标签会被清理；消息计数与稳定 ID 保留。",
+      "kickRetentionApplied": "已清理 {count} 条过期 Kick 记录。"
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "此版本无法使用 TikTok 采集。",
     "tiktokStopped": "TikTok 采集已停止。",
     "tiktokError": "TikTok 操作失败。",
-    "tiktokSocketFailed": "无法建立 TikTok 直播连接。"
+    "tiktokSocketFailed": "无法建立 TikTok 直播连接。",
+    "kickLinkInvalid": "请输入 Kick 频道链接，例如 https://kick.com/频道名。回放、切片、分类和搜索页不是直播间。",
+    "kickRoomNotFound": "找不到这个 Kick 频道。",
+    "kickRoomOffline": "该 Kick 频道当前未开播。请在开播后开始记录。",
+    "kickRoomUnavailable": "Kick 拒绝了这个频道的聊天。",
+    "kickBlocked": "Kick 以安全策略拦截了请求。请稍后再试；LiveMemory 不会绕过该限制。",
+    "kickRateLimit": "Kick 正在限流，请稍后再试。",
+    "kickNetwork": "无法连接 Kick，请检查网络后重试。",
+    "kickProtocol": "Kick 返回了异常的实时响应，非官方通道可能已变化。",
+    "kickConnectTimeout": "连接 Kick 聊天超时。",
+    "kickSocketFailed": "Kick 聊天连接失败。",
+    "kickNotConfigured": "此版本未提供 Kick 采集。",
+    "kickStopped": "Kick 采集已停止。",
+    "kickError": "Kick 采集失败。"
   },
   "toast": {
     "saved": "已保存",
@@ -2377,7 +2408,9 @@
       "douyinPlaceholder": "直播间链接或房间号",
       "douyinLabel": "直播间链接或房间号",
       "tiktokPlaceholder": "TikTok 直播链接或 @用户名",
-      "tiktokLabel": "TikTok 直播链接或 @用户名"
+      "tiktokLabel": "TikTok 直播链接或 @用户名",
+      "kickPlaceholder": "Kick 直播链接或频道名",
+      "kickLabel": "Kick 直播链接或频道名"
     },
     "hero": {
       "autoChip": "自动监听",

@@ -125,6 +125,16 @@ export function liveCycleKey(platform, target, observation) {
     if (uniqueId && roomId) return `tiktok:${uniqueId}:${roomId}`;
     return null;
   }
+  if (platform === 'kick') {
+    // Kick's public channel JSON carries the current livestream id; it changes
+    // for every new broadcast of the same channel.
+    const channelId = String(observation?.channelId ?? target?.target_key ?? target?.targetKey ?? '');
+    const liveId = String(observation?.liveId ?? '');
+    if (channelId && liveId) return `kick:${channelId}:${liveId}`;
+    const startedAt = Number(observation?.liveStartedAt);
+    if (channelId && Number.isFinite(startedAt) && startedAt > 0) return `kick:${channelId}:${startedAt}`;
+    return null;
+  }
   return null;
 }
 

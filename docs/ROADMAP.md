@@ -167,24 +167,31 @@
   版本号已由发布轮的 0.14.0 更新为 0.15.0）
 - 详见 `docs/STATUS.md` §0.50、`docs/I18N.md` §2.9、`log/2026-11-16-p42-i18n-m3.md`
 
-## P43 KICK-M0：Kick 技术预研与 G1 真实连接验证（v0.16.x）🟡 调查完成、未连接
+## P43 KICK-G2–G5.1：Kick 正式接入、开播监控与候选 EXE（v0.16.x）🟢 G5.1 完成、等待试玩
 
-- ✅ G0 调查完成（2026-11-16）：三个候选项目存在性/维护状态/许可证已核实
-  （kixo MIT，2026-10 活跃；Kick-Live-Connector MIT，2024-11 停更；kick-api Apache-2.0，Rust，不适配）
-- ✅ 确认官方 Public API **没有**读取聊天的 scope/端点（只有 `chat:write`、`events:subscribe` webhook）
-- ✅ 确认免登录路径的技术轮廓（公开房间端点取 `chatroom.id`；`web.kick.com/api/v1/realtime/*` 取匿名配置；
-  Centrifugo guest token 或公开 Pusher app key；topic `chatrooms.<id>.v2`）
-- ✅ 确认消息字段含 `sender.id`（稳定 ID 候选）、`sender.username`、消息 UUID `id`、`created_at`
-- ⬜ **G1 真实连接未做**：未连接 Kick、未取任何真实样本；界面/文档不得出现「已支持 Kick」
-- 下一步单一任务：真实公开直播间只读连接 15 分钟，记录成功率/条数/字段完整率（详见 `docs/PLATFORM_EXPANSION_RESEARCH.md` §4）
-- 风险：非官方端点一年内已迁移过一次（Pusher → Centrifugo）；guest token TTL 与限流；无续传游标
-- 详见 `docs/PLATFORM_EXPANSION_RESEARCH.md` §2
+- ✅ G1（2026-11-17）：双直播间 966 秒、1,936 条真实聊天；字段 100%、0 重复/0 串台
+- ✅ G2：`KickService` + `/api/kick/{status,room,connect,disconnect,retention/apply}` + capabilities；
+  KICKs 礼物（交易 ID、sender.id、KICKs 数量、无金额）、赠订（赠送者 + 接收者、无身份）；
+  多房间隔离、停止、30 天保留；历史/画像/AI 复用既有管线
+- ✅ G3：直播页第六个平台页签；十语 2,302 键；真实浏览器 20/20（10 语 × 4 宽度 × 明暗，真实 2 场）
+- ✅ G4：70.2 分钟真实长测；34,766 聊天、3,438 观众、0 重复、7 次真实重连、**1 次真实 token 刷新**；
+  全量 1,169 passed / 0 failed
+- ✅ G5：候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` 19/19；
+  正式 EXE `requireAdministrator`，自动化使用同 Build ID 的 asInvoker 副本
+- ✅ **G5.1 开播监控**（2026-11-17）：Kick 接入共用 `MonitoringManager`（90s 轮询、抖动、退避、
+  手动停止抑制、重启恢复）；新增 Kick detector；适配器连续 2 次确认 offline 才结束 session；
+  真实服务验收 16/16（离线 xqc、开播自动记录、双频道、重启、手动停止）、十语 UI 20/20、
+  EXE 27/27（含监控）；全量 1,177 passed
+- ⬜ G6：**未执行**。需用户试玩确认后决定版本号、Tag、Release；当前未 Push / 未合并 `main`
+- 未观测：真实下播/下一次开播窗口（集成测试覆盖状态机；G4 有真实 odablock 下播）；
+  订阅/续订、开播下播事件、Host、投票（`NOT-OBSERVED`）；关注仅官方 webhook → 本地不支持
+- 详见 `docs/KICK_G2_G5_ACCEPTANCE.md`、`docs/KICK_G5_1_MONITORING.md`、`docs/KICK_G1_ACCEPTANCE.md`
 
 ## P44 PLATFORM-EXPANSION：候选平台调查与准入评估（持续）🟡
 
 调查优先级（**不是无条件开发承诺**，命中暂停条件即跳过）：
 
-1. Kick 🟡 G0 通过、待 G1｜2. 虎牙 ⬜｜3. 斗鱼 ⬜｜4. CHZZK ⬜（官方 API 违反条件一）｜
+1. Kick 🟢 G5 完成、等待试玩与 G6 判断｜2. 虎牙 ⬜｜3. 斗鱼 ⬜｜4. CHZZK ⬜（官方 API 违反条件一）｜
 5. SOOP ⬜｜6. 快手 ⬜｜7. Niconico ⬜（很可能需登录）｜8. 小红书 ⬜（未发现维护中实现）｜
 9. YY 直播 ⬜（未发现维护中实现）｜10. Facebook Live ⬜（预判不满足条件一）
 

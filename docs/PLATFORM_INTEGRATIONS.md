@@ -669,6 +669,65 @@ TikTok 面板只保留普通用户需要的东西：直播间链接/`@用户名`
   若平台明确拒绝访问，必须停止该路径并报告。
 
 
+## 3D. Kick（v0.16.0 候选，G2–G5 完成，未发布）
+
+### 3D.1 接入边界与代码结构
+
+- 唯一路径：匿名 Centrifugo 实时通道（`kick.com` 前端自己使用的公开 feed），**免登录**、无 Cookie、
+  无 API Key、无第三方采集服务、无公网服务器。官方 API 无读聊天能力（webhook 需公网接收端），不作为采集路径。
+- 代码：`src/platforms/kick/{link,http,messages,transport,adapter,service,errors}.mjs`；
+  `KickAdapter` 每房间一个 socket，事件只经 `EventIngest` 写入。
+- 非官方 / 实验性：不得描述为官方 API；无续传游标，重连期间可能漏消息。
+
+### 3D.2 连接流程
+
+```text
+GET  https://kick.com/api/v2/channels/<slug>                 (HTTP/2; HTTP/1.1 会被 WAF 403)
+POST https://web.kick.com/api/v1/realtime/channels/<channelId>/chat/connection
+POST https://web.kick.com/api/v1/realtime/auth/connection     → guest JWT (TTL 2700s)
+WSS  realtime.<region>.platform.kick.com/connection/websocket
+     connect → subscribe 五条 feed：chatrooms.<id>.v2（必需）、chatrooms.<id>、
+     chatroom_<id>、channel.<channelId>、channel_<channelId>
+```
+
+- 服务端每 25 秒发 `{}`，客户端回 `{}`。
+- token 在 TTL 前 90 秒主动重连换新；`disconnect/error 109/3500` 立即换 token。
+- 退避 1–30 秒 + 抖动；连续失败 12 次进入 `failed`；主动停止不重连。
+
+### 3D.3 身份、文本与金额
+
+- 身份：`kick:<sender.id>`；缺 ID 的消息 `viewer_uid=NULL`、`source_quality=unknown`、不建档案；
+  昵称只用于展示，不作为身份。
+- 消息：`external_id` = Kick 消息 UUID；`content` 原文不变；`[emote:id:name]` 解析进 `emotes`；
+  reply 的父消息 ID 作为诊断字段保留。
+- KICKs 礼物：`KicksGifted` → `gift`；`external_id` = `gift_transaction_id`；`amount_minor=NULL`、
+  `currency=NULL`、`value_kind=unknown`；KICKs 数量与 gift type/tier 只写入 `amount_display`，不换算收入。
+- 赠送订阅：`GiftedSubscriptionsEvent` 只有用户名。按 YouTube 赠订语义，赠送者一条 `membership`
+  （`is_paid=true`、数量 = gifted_total），每位接收者一条免费 `membership`（`is_paid=false`、无身份）；
+  接收者名单因此按事件行保留，不按用户名建档案、不计收入。
+- 订阅/续订、开播/下播、Host、投票：已解析分类但未观测到真实事件，标 `NOT-OBSERVED`；
+  封禁/删除/Pin 只计数、不进入用户时间线（与其他平台一致）。关注事件只能走官方 webhook → 本地形态不支持。
+
+### 3D.4 状态、重连与多房间
+
+- 每房间独立 adapter/socket/session；同 `platform+room` 拒绝重复启动；跨房间事件按 chatroom topic 校验。
+- 状态 `connecting/connected/reconnecting/failed/stopped`；连接成功但无事件显示「已连接，等待第一条事件」。
+- 真实 G4 长测（≥60 分钟）中出现过平台侧断线并自动恢复，记录在 `docs/KICK_G2_G5_ACCEPTANCE.md`。
+- **开播监控（G5.1）**：Kick 已接入共用 `MonitoringManager`（与其余五平台同一调度器/表/生命周期）。
+  `detectors/kick.mjs` 每 90 秒（抖动 60–150 秒）只读查询公开频道；离线是正常等待，
+  频道不存在/网络/WAF 分别映射；目标身份用 `channelId`，直播周期键 `kick:<channelId>:<livestreamId>`。
+  开播后 `connectDetected` 创建 session；适配器每 60 秒确认频道状态，**连续两次 offline** 才结束
+  （聊天 socket 下播后可能仍连接，不能只靠断线）；手动停止写入 `manualStop`，同一场不会被自动重启，
+  确认 offline 后清除并等待下一场。详见 `docs/KICK_G5_1_MONITORING.md`。
+
+### 3D.5 保留、UI 与验证状态
+
+- 30 天原文保留策略，平台作用域 `kick`；清理 `content/emotes/badges/amount_display`，保留计数与稳定 ID。
+- UI：直播页第六个平台页签；十语言 2,304 键；添加房间 / 检查 / 开始 / 停止 / 开播监控 / 状态 / 历史 / 画像 / AI 全部复用现有页面。
+- 验证：G1 真实连接（3,040 条聊天）→ G2 产品接入 → G3 十语言 UI → G4 ≥60 分钟长测 →
+  G5 真实 EXE（`verify-kick-exe.mjs`）。未发布：版本仍 `0.15.0`，未合并 `main`。
+  详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/KICK_G2_G5_ACCEPTANCE.md`。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：
@@ -842,4 +901,7 @@ session。网络重连不创建新 session（连接状态由适配器维护）�
 > （三个核心准入条件、字段最低要求、登录优先序、G0–G6 门禁、暂停条件、许可证策略）。
 > 本节的 7 条原则仍然有效，但只是其中一部分；两者冲突时以 `docs/PLATFORM_ADMISSION.md`
 > 与 `AGENTS.md` §6.12/§6.17 为准。候选平台调查记录见 `docs/PLATFORM_EXPANSION_RESEARCH.md`。
-> **目前没有任何新平台通过 G1 真实验证，界面与文档不得出现「已支持」。**
+> **目前 Kick 已通过 G1 真实连接验证（2026-11-17），但尚未通过 G2–G6，未接入产品；
+> 其余候选平台均未通过 G1。界面、README 与发布说明不得出现「已支持 Kick」或任何新平台。**
+> Kick 的 G1 证据与 G2 设计见 `docs/KICK_G1_ACCEPTANCE.md`；代码位于
+> `src/platforms/kick/`（骨架，未接入 routes/UI/监控）。

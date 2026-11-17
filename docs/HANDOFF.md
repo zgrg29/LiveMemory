@@ -1,6 +1,156 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **v0.15.0 十语言国际化正式发布完成** · P39–P42 合并 `main` ·
+本轮：2026-11-17 · **Kick G5.1 开播监控完成** · 共用监控调度器 + 自动录制 + 下播确认 ·
+真实服务验收 16/16 · 十语 UI 20/20 · EXE 27/27 · **未发布 / 未合并 main / 未 Push / 未 Tag**
+
+> 补齐 Kick 与其余五平台一致的「监控频道开播」：离线可添加、低频只读检查、开播自动建立
+> session、连续两次确认下播后结束并继续等待、手动停止不被自动重启、重启恢复、多频道独立。
+> 版本仍 `0.15.0`，未执行 G6；用户可试玩新候选 EXE。
+
+## 0. 本轮（Kick G5.1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 根因 | 平台注册（`MONITOR_PLATFORMS`/policy/detector/manager）缺失 + UI 无监控开关 + 适配器无周期性下播确认 |
+| 后台 | 新增 `src/monitoring/detectors/kick.mjs`；manager/service 接入；90s 策略；周期键 `kick:<channelId>:<livestreamId>` |
+| 下播 | 适配器每 60s 确认公开频道状态，连续 2 次 offline 结束 session（不再只靠断线） |
+| 真实验收 | `scripts/kick-g51-monitor-acceptance.mjs` **16/16**（离线 xqc、开播自动记录、重启、双频道、手动停止、隔离） |
+| UI | 十语监控开关/表单；真实监控 Tab waiting/recording；**20/20** 十语矩阵 |
+| 测试 | 新增 Kick monitoring 7 测试；全量 **1,177 passed / 0 failed / 0 skipped** |
+| EXE | Build ID `8bfc48086b20`；`verify-kick-exe` **27/27**（含监控） |
+| 未验证 | 真实下播/下一次开播窗口（集成覆盖）；EXE 内重启；真实双击 UAC |
+
+### 0.2 关键文件
+
+- `src/monitoring/{constants,manager,model}.mjs`、`src/monitoring/detectors/kick.mjs`
+- `src/platforms/kick/{service,adapter}.mjs`
+- `src/web/js/pages/live.js`、十份字典（+2 键 → 2,304）
+- `scripts/kick-g51-monitor-acceptance.mjs`、`scripts/verify-kick-ui.mjs`、`scripts/verify-kick-exe.mjs`
+- `tests/integration/kick-monitoring.test.mjs`、`docs/KICK_G5_1_MONITORING.md`
+
+### 0.3 下一轮
+
+1. 用户试玩新 EXE：添加离线 Kick 频道 → 等待开播 → 自动记录 → 下播后等待下一场。
+2. 有条件时补真实「下播 → 再次开播」连续观察，并把结果写回 STATUS。
+3. G6 发布判断仍需用户确认；**不得自动发布**。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g2` |
+| 提交 | `5976c78d0626de3a286aa94cafb290332c6d1edc`（G5.1 监控代码/测试/文档 + 最终构建记录） |
+| Push / Merge / Tag / Release | **均未执行** |
+| 版本 / Schema | `0.15.0` / 16；未改五平台协议 |
+
+---
+
+上一轮：2026-11-17 · **Kick G2–G5 完成** · 分支 `feature/kick-g2` · 第六个平台接入产品 ·
+十语言 UI 20/20 · 70.2 分钟真实长测（1 次真实 token 刷新）· 候选 EXE `5314bd79a0f3`
+· **未发布 / 未合并 main / 未 Push / 未 Tag**
+
+> 从 G1 `74b39fa` 继续，把 Kick 接入正式 service/routes/capabilities/UI/十语言/历史/AI/画像，
+> 完成 ≥60 分钟真实长测、全量回归与 Windows 候选 EXE 验收。**版本仍 `0.15.0`，未执行 G6。**
+> 用户可直接试玩候选 EXE；真实双击 UAC、干净 Windows 账户、订阅/开播事件仍未覆盖。
+
+## 0. 上一轮（Kick G2–G5）
+
+### 0.1 结果
+
+| 阶段 | 结果 |
+| --- | --- |
+| G2 | `KickService` + 5 个 `/api/kick/*` 路由 + capabilities；KICKs 111 条、赠订 41 条真实入库；身份 `kick:<id>` |
+| G3 | 第六个平台页签；十语 2,302 键；真实浏览器 **20/20**（10 语、4 宽度、明暗、真实 2 场） |
+| G4 | **70.2 分钟**真实长测：34,766 聊天、3,438 观众、0 重复、7 次重连、**1 次真实 token 刷新** |
+| G5 | 候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` **19/19** |
+| 回归 | 全量 **1,169 passed / 0 failed / 0 skipped**；五平台未改协议 |
+
+### 0.2 关键文件
+
+- `src/platforms/kick/service.mjs`（新增）、`adapter/messages/transport`（礼物/赠订与计数）
+- `src/server/index.mjs`、`src/server/routes.mjs`（注册、路由、capabilities、保留）
+- `src/web/js/pages/live.js`（Kick 页签/面板）、十份字典（+31 键）
+- `scripts/kick-g4-longrun.mjs`、`scripts/verify-kick-ui.mjs`、`scripts/verify-kick-exe.mjs`
+- `tests/unit/kick-*.test.mjs`、`tests/integration/kick-{ingest,service}.test.mjs`
+- `docs/KICK_G2_G5_ACCEPTANCE.md`（完整验收）
+
+### 0.3 下一轮（需用户确认）
+
+1. 用户试玩候选 EXE：普通双击（接受 UAC）→ 新建记录 → Kick → 粘贴链接 → 开始/停止 → 历史/AI/画像。
+2. 真实双击 UAC 同意/拒绝、干净 Windows 账户人工验收。
+3. 视需要等待订阅/续订、开播下播、Host 的真实样本；未观测前保持 `NOT-OBSERVED`。
+4. G6 发布判断：用户确认后再决定版本号、Tag、Release；**不得自动发布**。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g2`（继承 `feature/kick-g1` 全部提交） |
+| 提交 | `969d97564653036fa073828f5b1c61bf02de1e4f`（G2–G5 接入与文档，38 files, +3,207/−87） |
+| Push / Merge / Tag / Release | **均未执行** |
+| 版本 / Schema | `0.15.0` / 16；未改五平台协议 |
+
+---
+
+上一轮：2026-11-17 · **Kick G1 真实本地采集验证完成** · 分支 `feature/kick-g1` ·
+免登录双直播间 966 秒 / 1,936 条真实聊天 · **Kick 未接入产品** · **未 Push/Merge/Tag/Release**
+
+> 本轮按用户要求以既有 G0 调查为起点，对 Kick 做源码核实、真实连接与最小 PoC；
+> 新增 `src/platforms/kick/` 骨架、真实采集 PoC、证据分析脚本、离线测试与
+> `docs/KICK_G1_ACCEPTANCE.md`。**未改五平台协议、Schema（16）、金额/身份/去重、版本号（仍 0.15.0），
+> 未新增路由/UI/十语言文案，未构建 EXE，未 Push/Merge/Tag/Release。**
+> 礼物/订阅等事件仍为 `NOT-OBSERVED`，不得在界面或 README 宣称支持 Kick。
+
+## 0. 上一轮（Kick G1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 / 起点 | `feature/kick-g1` ← `main` `0a0f9b5`（工作区 clean） |
+| 真实房间 | odablock（channel `2401072` / chatroom `2393554`）、gmhikaru（`1770127` / `1762730`） |
+| 时长 / 消息 | 966 秒；**1,936** 条真实聊天（1,604 + 332） |
+| 字段完整率 | `sender.id` / 消息 `id` / `created_at` 均 **100%** |
+| 身份 | 391 + 113 个稳定 ID；同名不同 ID 不合并；1 个跨房间 ID |
+| Emote | 827 条消息含 Emote 标记，全部解析，原文不变 |
+| 重复 / 串台 | 重复消息 ID **0**；跨房间 **0** |
+| 断线 | 强制断开后 **5.7 秒**恢复，空档 5.338 秒；无续传 |
+| 停止 | socket 关闭、状态 `stopped`、无重连 |
+| 测试 | 全量单元 + 集成通过；Kick 单测 48 + 集成 5 |
+| 未验证 | 订阅/续订/上下播/Host/投票；赠订与 KICKs 各仅 1 条（身份或金额不完整）；45 分钟真实到期；长时限流 |
+
+### 0.2 关键新增文件
+
+- `src/platforms/kick/{errors,link,http,messages,transport,adapter}.mjs`
+- `scripts/kick-poc.mjs`、`scripts/kick-g1-analyze.mjs`
+- `tests/unit/kick-*.test.mjs`、`tests/integration/kick-ingest.test.mjs`
+- `docs/KICK_G1_ACCEPTANCE.md`（完整证据与 G2 设计）
+- `tests/helpers/kick-frames.mjs`、`tests/helpers/kick-ws-fake.mjs`
+
+### 0.3 下一轮（G2，需用户确认后开始）
+
+1. ≥60 分钟长测 + 真实 45 分钟 token 到期观测（或注入短 TTL），记录刷新次数/空档/漏消息比例。
+2. 在有真实订阅/送礼的时段抓 `SubscriptionEvent`、`GiftedSubscriptionsEvent`、`KicksGifted`，
+   记录字段与缺失率；金额/币种不可得保持 `unknown`。
+3. 接入产品：`service.mjs`、routes、`capabilities.platforms`（`requiresLogin:false`、
+   `unofficial:true`）、十语言文案、备份设置白名单（如新增设置键）、监控与保留。
+4. G4/G5：断线/多房间自动化 + `verify-kick-exe.mjs` 真实 EXE 验收。
+5. **未观测到礼物/订阅前，README/UI 不得写「支持 Kick」。**
+
+### 0.4 工作区 / Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g1`（基于 `main` `0a0f9b5`） |
+| 本地提交 | `4e4bbb161bbe894300620d9107263af5efe67052`（24 files, +3,981/−28） |
+| Push / Merge / Tag | **未做** |
+| 证据目录 | `tests/.tmp/kick-g1-run/`、`tests/.tmp/kick-g1-events/`（gitignored，未提交） |
+
+---
+
+上一轮：2026-11-17 · **v0.15.0 十语言国际化正式发布完成** · P39–P42 合并 `main` ·
 版本统一 `0.15.0` · Tag `v0.15.0` · GitHub Release 已发布 · **未新增平台**
 
 > 本轮按用户明确授权把 P39–P42 的十语言国际化完整合并到 `main`，统一版本号为 `0.15.0`，
@@ -9,7 +159,7 @@
 > `LiveMemory v0.15.0 — 10-Language Internationalization`。
 > **未改平台协议、数据库 Schema（16）、金额/身份/去重、任务语言快照；未新增语言、未新增直播平台。**
 
-## 0. 本轮（v0.15.0 发布）
+## 0. 上一轮（v0.15.0 发布）
 
 ### 0.1 基线
 

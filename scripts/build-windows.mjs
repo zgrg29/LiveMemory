@@ -110,6 +110,14 @@ const REQUIRED_MODULES = [
   'src/platforms/tiktok/service.mjs',
   'src/platforms/tiktok/state.mjs',
   'src/platforms/tiktok/webcast.mjs',
+  'src/platforms/kick/adapter.mjs',
+  'src/platforms/kick/errors.mjs',
+  'src/platforms/kick/http.mjs',
+  'src/platforms/kick/link.mjs',
+  'src/platforms/kick/messages.mjs',
+  'src/platforms/kick/service.mjs',
+  'src/platforms/kick/transport.mjs',
+  'src/monitoring/detectors/kick.mjs',
   'src/monitoring/detectors/twitch.mjs',
   'src/monitoring/detectors/douyin.mjs',
   'src/monitoring/detectors/tiktok.mjs',
@@ -204,8 +212,14 @@ await writeFile('build/sea-config.json', JSON.stringify({
 
 execFileSync(process.execPath, ['--experimental-sea-config', 'build/sea-config.json'], {stdio: 'inherit'});
 
-const exe = 'dist/LiveMemory.exe';
 const binary = await readFile(process.execPath);
+
+// A test-only build can be produced from the same sources with an asInvoker
+// manifest, because Application Control refuses a binary that was re-patched
+// after the build. The shipped EXE always stays requireAdministrator.
+const asInvoker = process.argv.includes('--as-invoker');
+const exe = asInvoker ? 'dist/LiveMemory-asInvoker.exe' : 'dist/LiveMemory.exe';
+const manifestTarget = asInvoker ? 'asInvoker' : 'requireAdministrator';
 
 // RC0-ADMIN-MANIFEST: the user explicitly chose to restore automatic UAC
 // elevation because the packaged EXE failed on their PC during Bootstrap
@@ -213,9 +227,9 @@ const binary = await readFile(process.execPath);
 // a requireAdministrator image; the program does not bypass or disable UAC, and
 // denying the prompt simply cancels the launch. Patch before and verify after
 // postject injection so a build can never silently ship the wrong level.
-setManifestLevel(binary, 'requireAdministrator');
-if (manifestLevel(binary) !== 'requireAdministrator') {
-  throw new Error('failed to apply requireAdministrator manifest');
+setManifestLevel(binary, manifestTarget);
+if (manifestLevel(binary) !== manifestTarget) {
+  throw new Error(`failed to apply ${manifestTarget} manifest`);
 }
 
 // PE layout: DOS header -> PE header -> optional header.
@@ -259,14 +273,18 @@ for (const needle of [
   'src/server/backup/restore.mjs',
   'src/platforms/douyin/vendor/sign.js',
   'src/platforms/douyin/adapter.mjs',
+  'src/platforms/kick/adapter.mjs',
+  'src/platforms/kick/service.mjs',
+  'src/platforms/kick/transport.mjs',
+  'src/monitoring/detectors/kick.mjs',
   'restore-journal.json'
 ]) {
   if (!exeBytes.includes(Buffer.from(needle, 'utf8'))) {
     throw new Error(`built EXE does not contain expected build marker: ${needle}`);
   }
 }
-if (manifestLevel(exeBytes) !== 'requireAdministrator') {
-  throw new Error('final EXE manifest is not requireAdministrator');
+if (manifestLevel(exeBytes) !== manifestTarget) {
+  throw new Error(`final EXE manifest is not ${manifestTarget}`);
 }
 console.log(`Built ${exe}`);
 console.log(`  size:    ${(size / 1024 / 1024).toFixed(1)} MB`);

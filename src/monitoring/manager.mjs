@@ -37,6 +37,7 @@ import {YouTubeChannelDetector} from './detectors/youtube.mjs';
 import {TwitchChannelDetector} from './detectors/twitch.mjs';
 import {DouyinRoomDetector} from './detectors/douyin.mjs';
 import {TikTokRoomDetector} from './detectors/tiktok.mjs';
+import {KickRoomDetector} from './detectors/kick.mjs';
 
 /**
  * Unified automatic-monitoring scheduler.
@@ -64,6 +65,7 @@ export class MonitoringManager {
     twitch = null,
     douyin = null,
     tiktok = null,
+    kick = null,
     logger = null,
     now = Date.now,
     detectors = null,
@@ -78,6 +80,7 @@ export class MonitoringManager {
     this.twitch = twitch;
     this.douyin = douyin;
     this.tiktok = tiktok;
+    this.kick = kick;
     this.logger = logger;
     this.now = now;
     this.onChange = onChange;
@@ -142,6 +145,15 @@ export class MonitoringManager {
         now: this.now,
         pacer: this.pacer,
         policy: MONITOR_POLICY.tiktok
+      });
+    }
+    if (this.kick?.observeChannel) {
+      detectors.kick = new KickRoomDetector({
+        service: this.kick,
+        logger: this.logger,
+        now: this.now,
+        pacer: this.pacer,
+        policy: MONITOR_POLICY.kick
       });
     }
     return detectors;
@@ -243,7 +255,8 @@ export class MonitoringManager {
         youtube: {checkIntervalMs: MONITOR_POLICY.youtube.baseMs},
         twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs},
         douyin: {checkIntervalMs: MONITOR_POLICY.douyin.baseMs},
-        tiktok: {checkIntervalMs: MONITOR_POLICY.tiktok.baseMs}
+        tiktok: {checkIntervalMs: MONITOR_POLICY.tiktok.baseMs},
+        kick: {checkIntervalMs: MONITOR_POLICY.kick.baseMs}
       },
       summary: summarizeTargets(targets),
       targets
@@ -820,6 +833,17 @@ export class MonitoringManager {
         anchorName: observation?.anchorName ?? observation?.channelTitle ?? row.display_name ?? null
       }, {monitorTargetId: row.id, input: row.input});
     }
+    if (row.platform === 'kick') {
+      if (!this.kick?.connectDetected) throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
+      return this.kick.connectDetected({
+        ...observation,
+        status: 'live',
+        slug: observation?.slug ?? observation?.targetKey ?? null,
+        channelId: observation?.channelId ?? row.target_key,
+        chatroomId: observation?.chatroomId ?? targetMetaChatroom(row),
+        anchorUid: observation?.anchorUid ?? row.platform_uid
+      }, {monitorTargetId: row.id, input: row.input});
+    }
     throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
   }
 
@@ -887,6 +911,12 @@ function displayNameFor(row, observation) {
     || observation?.displayName
     || row?.display_name
     || null;
+}
+
+/** The chatroom id a Kick target resolved when it was created. */
+function targetMetaChatroom(row) {
+  const meta = parseMeta(row?.meta_json);
+  return meta?.chatroomId ?? null;
 }
 
 function applyMetadataMeta(meta, observation) {

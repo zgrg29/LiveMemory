@@ -123,6 +123,7 @@ import {inspectBackup} from './backup/inspect.mjs';
 import {restoreBackup} from './backup/restore.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
 import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
+import {toApiError as kickToApiError} from '../platforms/kick/service.mjs';
 import {sessionIdRequiredError} from '../shared/recording.mjs';
 
 /**
@@ -583,6 +584,11 @@ function tiktokError(error) {
   });
 }
 
+/** Kick failures are mapped by KickService (link, room, blocked, socket). */
+function kickError(error) {
+  return kickToApiError(error);
+}
+
 export function createRouter(routes, deps) {
   const compiled = routes.map((route) => {
     const names = [];
@@ -705,6 +711,18 @@ export function buildRoutes() {
                 unofficial: true,
                 requiresLogin: false,
                 requiresPaidService: false
+              },
+              {
+                id: 'kick',
+                label: 'Kick',
+                state: 'available',
+                mode: 'anonymous-centrifugo',
+                unofficial: true,
+                requiresLogin: false,
+                requiresApiKey: false,
+                requiresPaidService: false,
+                requiresBrowser: false,
+                events: ['chat', 'emote', 'gift', 'membership']
               }
             ],
             ai: {automated: true, export: false, import: false, schemaVersion: RESULT_SCHEMA_VERSION},
@@ -2811,6 +2829,71 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
         const result = deps.tiktok.applyRetention();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/kick/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.kick.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kick/room',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const room = await deps.kick.checkRoom(body.url ?? body.slug ?? body.input);
+          sendJson(res, 200, {room});
+        } catch (error) {
+          throw kickError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kick/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.kick.connect(body.url ?? body.slug ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            room: result.room,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw kickError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kick/disconnect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.kick.disconnect({sessionId: body.sessionId ?? null});
+          if (!result?.stopped && result?.reason === 'session_id_required') {
+            throw sessionIdRequiredError({count: result.count, platform: 'kick'});
+          }
+          sendJson(res, 200, {
+            stopped: Boolean(result?.stopped),
+            session: serializeSessionRow(result?.session ?? null)
+          });
+        } catch (error) {
+          throw kickError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kick/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.kick.applyRetention();
         sendJson(res, 200, result);
       }
     }

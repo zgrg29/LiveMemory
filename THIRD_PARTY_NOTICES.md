@@ -54,3 +54,26 @@ protocol work.
 
 The protocol itself belongs to TikTok and is **not** an official API: it is
 TikTok's private web protocol and can change without notice.
+
+## Kick Centrifugo protocol reference — MIT / Apache-2.0
+
+The Kick chat capture under `src/platforms/kick/` was written for LiveMemory
+against the protocol observed live on 2026-11-16/17 and cross-checked by
+reading two third-party projects:
+
+- [achrafthedev/kixo](https://github.com/achrafthedev/kixo) — MIT,
+  `src/renderer/src/lib/realtime.js` (Centrifugo session, topics, ping/pong,
+  token TTL handling).
+- [AnisAbdellatif/kicksdk](https://github.com/AnisAbdellatif/kicksdk) —
+  dual-licensed MIT OR Apache-2.0, `docs/KICK.md` (five chat feeds, event
+  names, disconnect-code semantics, official API boundaries).
+
+**No source file from either project is copied or bundled.** Both are used as
+protocol references only: LiveMemory's implementation is its own zero-dependency
+Node ESM code (`node:http2`, built-in `WebSocket`), and no package, WASM module
+or Rust crate from those projects is shipped or required at runtime.
+
+The Kick realtime feed and `kick.com` website endpoints are **not** an official
+API. They are what kick.com's own front end uses, can change without notice,
+and are used only as described in `docs/KICK_G1_ACCEPTANCE.md` (anonymous guest
+token, no login, no access-control bypass).

@@ -76,7 +76,8 @@
       "youtube": "YouTube Live",
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
-      "tiktok": "TikTok 直播"
+      "tiktok": "TikTok 直播",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "no data for too long",
       "tiktokActiveTitle": "TikTok rooms being recorded",
       "tiktokActiveCount": "{n} room(s)",
-      "tiktokOtherRecordings": "{n} other TikTok room(s) are recording in the background; you can add a different room."
+      "tiktokOtherRecordings": "{n} other TikTok room(s) are recording in the background; you can add a different room.",
+      "kickTab": "Kick",
+      "kickIntro": "Record a live Kick channel's public chat. Kick's realtime feed is what kick.com's own page uses, not an official API.",
+      "kickNoLoginNote": "No login, API key or paid service is required. LiveMemory requests an anonymous guest token for the public chat feed.",
+      "kickUnofficialNote": "Unofficial / experimental: Kick can change this feed without notice, and a reconnect can miss messages because there is no replay cursor.",
+      "kickUnavailable": "Kick capture is unavailable in this build.",
+      "kickLinkLabel": "Kick channel link",
+      "kickLinkPlaceholder": "https://kick.com/channel",
+      "kickChatroom": "Chatroom ID",
+      "kickCaptureTitle": "Kick capture",
+      "kickActiveTitle": "Recording Kick channels",
+      "kickCaptureStateRateLimited": "Kick is rate limiting; waiting",
+      "kickTokenRefreshes": "Guest token refreshes: {n}",
+      "kickTechnicalProtocol": "Protocol: {protocol} · chatroom {room}",
+      "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · memberships {memberships} · publications {publications}",
+      "kickCaptureNotCompleteNote": "The Kick feed has no replay cursor: messages during a reconnect can be missed and are not recovered. LiveMemory does not claim a complete chat log.",
+      "kickPolicyBody": "Kick chat text, badges and display labels older than {days} days are purged; counts and stable IDs are kept.",
+      "kickRetentionApplied": "Removed {count} expired Kick rows."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "TikTok capture is not available in this build.",
     "tiktokStopped": "TikTok capture has stopped.",
     "tiktokError": "The TikTok operation failed.",
-    "tiktokSocketFailed": "The TikTok live connection could not be opened."
+    "tiktokSocketFailed": "The TikTok live connection could not be opened.",
+    "kickLinkInvalid": "Enter a Kick channel link such as https://kick.com/channel. VODs, clips, categories and search pages are not live channels.",
+    "kickRoomNotFound": "That Kick channel does not exist.",
+    "kickRoomOffline": "This Kick channel is offline. Start recording after the stream goes live.",
+    "kickRoomUnavailable": "Kick refused this channel's chat.",
+    "kickBlocked": "Kick blocked the request (security policy). Try again later; LiveMemory does not bypass it.",
+    "kickRateLimit": "Kick is rate limiting requests. Try again later.",
+    "kickNetwork": "Could not reach Kick. Check the network and try again.",
+    "kickProtocol": "Kick returned an unexpected realtime response. The unofficial feed may have changed.",
+    "kickConnectTimeout": "Connecting to Kick chat timed out.",
+    "kickSocketFailed": "The Kick chat connection failed.",
+    "kickNotConfigured": "Kick capture is not available in this build.",
+    "kickStopped": "Kick capture was stopped.",
+    "kickError": "Kick capture failed."
   },
   "toast": {
     "saved": "Saved",
@@ -2377,7 +2408,9 @@
       "douyinPlaceholder": "Live URL or room number",
       "douyinLabel": "Live URL or room number",
       "tiktokPlaceholder": "TikTok live URL or @username",
-      "tiktokLabel": "TikTok live URL or @username"
+      "tiktokLabel": "TikTok live URL or @username",
+      "kickPlaceholder": "Kick live link or channel name",
+      "kickLabel": "Kick live link or channel name"
     },
     "hero": {
       "autoChip": "Auto-monitor",
