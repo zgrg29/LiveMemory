@@ -57,6 +57,15 @@
   随后以 `docs: record the Kuaishou G0 commit` 记录本 Hash。`main` 未改，v0.16.0 资产未动。
 - 工作区：调查结束时干净（仅本轮文档/脚本已提交）。
 
+### 0.56.6 验证
+
+- `node --test --test-isolation=none "tests/unit/*.test.mjs"`：**805 passed / 0 failed / 0 skipped**（14,890 ms）。
+- `node --check research/kuaishou-g0/feed-probe.mjs`、`cdp-probe.mjs`：通过。
+- `git diff --name-only main...HEAD`：只有 `docs/`、`log/`、`research/`、`THIRD_PARTY_NOTICES.md`；
+  **没有** `src/`、`package.json`、`scripts/`、`dist/` 变更。
+- `v0.16.0` Tag 仍存在；`main` 仍为 `6f71f56`。
+- 未跑全量 integration：本轮没有生产代码变更；快手实验是独立研究脚本。
+
 ## 0.55 v0.16.0 正式发布：Kick 支持与自动开播监控（2026-11-17）✅ 已发布
 
 ### 0.55.1 最终审计与合并

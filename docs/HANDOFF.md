@@ -24,6 +24,7 @@
 | 重复 | 0；cursor 重放 0 |
 | 事件 | 只有 `comment`；礼物/点赞/进入/关注 **NOT-OBSERVED** |
 | 开播检测 | SSR `liveStream.id` 已验证；真实下播/再开播 **未观测** |
+| 验证 | 全量 unit `805 passed / 0 failed`（`--test-isolation=none`）；研究脚本 `node --check` 通过；无 `src/` 变更 |
 | 最高风险 | `livev.m.chenzhongtech.com/robots.txt` → `User-agent: * Disallow: /` |
 
 ### 0.2 关键文件
