@@ -149,19 +149,22 @@ export const livePage = {
     let checkedDouyin = null;
     let checkedTikTok = null;
     let checkedKick = null;
+    let checkedKuaishou = null;
     let biliStatus = null;
     let youtubeStatus = null;
     let twitchStatus = null;
     let douyinStatus = null;
     let tiktokStatus = null;
     let kickStatus = null;
+    let kuaishouStatus = null;
     let biliAutoMonitor = false;
     let youtubeAutoMonitor = false;
     let twitchAutoMonitor = false;
     let douyinAutoMonitor = false;
     let tiktokAutoMonitor = false;
     let kickAutoMonitor = false;
-    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: '', kick: ''};
+    let kuaishouAutoMonitor = false;
+    const autoInputs = {bilibili: '', youtube: '', twitch: '', douyin: '', tiktok: '', kick: '', kuaishou: ''};
     let targetSessionsToken = 0;
     let loginTimer = null;
     let loginExpiresAt = 0;
@@ -182,6 +185,8 @@ export const livePage = {
     let tiktokListHost = null;
     let kickCaptureHost = null;
     let kickListHost = null;
+    let kuaishouCaptureHost = null;
+    let kuaishouListHost = null;
     let douyinLoginHint = '';
 
     const summaryCache = new Map();
@@ -377,13 +382,14 @@ export const livePage = {
     /* ---------------------------------------------------------- data sync */
 
     async function loadSourceStatuses() {
-      const [bili, youtube, twitch, douyin, tiktok, kick] = await Promise.all([
+      const [bili, youtube, twitch, douyin, tiktok, kick, kuaishou] = await Promise.all([
         api.get('/api/bilibili/status').catch(() => null),
         api.get('/api/youtube/status').catch(() => null),
         api.get('/api/twitch/status').catch(() => null),
         api.get('/api/douyin/status').catch(() => null),
         api.get('/api/tiktok/status').catch(() => null),
-        api.get('/api/kick/status').catch(() => null)
+        api.get('/api/kick/status').catch(() => null),
+        api.get('/api/kuaishou/status').catch(() => null)
       ]);
       biliStatus = bili;
       youtubeStatus = youtube;
@@ -391,6 +397,15 @@ export const livePage = {
       douyinStatus = douyin;
       tiktokStatus = tiktok;
       kickStatus = kick;
+      kuaishouStatus = kuaishou;
+    }
+
+    async function refreshKuaishouStatus() {
+      try {
+        kuaishouStatus = await api.get('/api/kuaishou/status');
+      } catch {
+        /* keep the previous snapshot */
+      }
     }
 
     async function refreshKickStatus() {
@@ -1565,6 +1580,7 @@ export const livePage = {
           checkedDouyin = null;
           checkedTikTok = null;
           checkedKick = null;
+          checkedKuaishou = null;
           onSelect?.();
           renderSource();
           if (mode === 'youtube') {
@@ -1592,6 +1608,11 @@ export const livePage = {
               if (!destroyed && sourceMode === 'kick') renderSource();
             }).catch(() => {});
           }
+          if (mode === 'kuaishou') {
+            refreshKuaishouStatus().then(() => {
+              if (!destroyed && sourceMode === 'kuaishou') renderSource();
+            }).catch(() => {});
+          }
         }
       });
     }
@@ -1606,6 +1627,8 @@ export const livePage = {
       tiktokListHost = null;
       kickCaptureHost = null;
       kickListHost = null;
+      kuaishouCaptureHost = null;
+      kuaishouListHost = null;
       const card = el('section', {className: 'card', style: {marginTop: '16px'}},
         el('div', {className: 'card-head'},
           el('div', {className: 'card-title', text: t('live.source.title')}),
@@ -1617,7 +1640,8 @@ export const livePage = {
         tabButton(t('live.source.twitchTab'), 'twitch'),
         tabButton(t('live.source.douyinTab'), 'douyin'),
         tabButton(t('live.source.tiktokTab'), 'tiktok'),
-        tabButton(t('live.source.kickTab'), 'kick'));
+        tabButton(t('live.source.kickTab'), 'kick'),
+        tabButton(t('live.source.kuaishouTab'), 'kuaishou'));
 
       const body = el('div', {className: 'card-body'}, tabs);
       if (sourceMode === 'bilibili') body.append(buildBiliPanel());
@@ -1625,6 +1649,7 @@ export const livePage = {
       else if (sourceMode === 'douyin') body.append(buildDouyinPanel());
       else if (sourceMode === 'tiktok') body.append(buildTikTokPanel());
       else if (sourceMode === 'kick') body.append(buildKickPanel());
+      else if (sourceMode === 'kuaishou') body.append(buildKuaishouPanel());
       else body.append(buildYouTubePanel());
       card.append(body);
       sourceHost.append(card);
@@ -3142,6 +3167,360 @@ export const livePage = {
         await refreshKickStatus();
         renderSource();
         ctx.toast(t('live.source.kickRetentionApplied', {count: result?.summary?.purged ?? 0}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+      }
+    }
+
+    /* ----------------------------------------------------------- Kuaishou */
+    // Preview integration. The panel always shows the required disclosure and
+    // states plainly whether live collection is enabled. While it is disabled,
+    // link parsing still works and no Kuaishou request is made.
+
+    function kuaishouRecordings() {
+      return recordings.filter((recording) => recording.platform === 'kuaishou');
+    }
+
+    function kuaishouRecordingForRoom(room) {
+      if (!room) return null;
+      return kuaishouRecordings().find((recording) => String(recording.platformRoomId) === String(room.eid)) ?? null;
+    }
+
+    function kuaishouPanelRecording() {
+      const selected = recordings.find((recording) => recording.sessionId === selectedId);
+      if (selected?.platform === 'kuaishou') return selected;
+      if (checkedKuaishou) return kuaishouRecordingForRoom(checkedKuaishou);
+      return kuaishouRecordings().at(-1) ?? null;
+    }
+
+    function currentKuaishouCapture() {
+      const recording = kuaishouPanelRecording();
+      if (recording) return recording.capture ?? null;
+      if (checkedKuaishou) return null;
+      return kuaishouStatus?.capture ?? null;
+    }
+
+    function kuaishouReasonText(code) {
+      const map = {
+        KUAISHOU_LINK_INVALID: 'errors.kuaishouLinkInvalid',
+        KUAISHOU_AUTHORIZATION_REQUIRED: 'errors.kuaishouAuthorizationRequired',
+        KUAISHOU_ACCESS_DENIED: 'errors.kuaishouAccessDenied',
+        KUAISHOU_RISK_CONTROL: 'errors.kuaishouAccessDenied',
+        KUAISHOU_ROOM_OFFLINE: 'errors.kuaishouRoomOffline',
+        KUAISHOU_ROOM_NOT_FOUND: 'errors.kuaishouRoomNotFound',
+        KUAISHOU_RATE_LIMITED: 'errors.kuaishouRateLimit',
+        KUAISHOU_NETWORK: 'errors.kuaishouNetwork',
+        KUAISHOU_TIMEOUT: 'errors.kuaishouConnectTimeout',
+        KUAISHOU_PROTOCOL: 'errors.kuaishouProtocol',
+        KUAISHOU_UPSTREAM: 'errors.kuaishouProtocol',
+        KUAISHOU_STATUS_UNKNOWN: 'errors.kuaishouStatusUnknown',
+        KUAISHOU_NOT_CONFIGURED: 'errors.kuaishouNotConfigured',
+        KUAISHOU_STOPPED: 'errors.kuaishouStopped'
+      };
+      return map[code] ? t(map[code]) : t('errors.kuaishouError');
+    }
+
+    function kuaishouCaptureMeta(capture) {
+      const category = capture?.category;
+      if (category === 'normal') return {key: 'live.source.tiktokCaptureStateConnected', tone: 'live'};
+      if (category === 'waiting_events') return {key: 'live.source.tiktokCaptureStateWaitingEvents', tone: 'neutral'};
+      if (category === 'connecting') return {key: 'live.source.tiktokCaptureStateConnecting', tone: 'neutral'};
+      if (category === 'temporary') return {key: 'live.source.tiktokCaptureStateInterrupted', tone: 'warn'};
+      if (category === 'auto_reconnect') return {key: 'live.source.tiktokCaptureStateReconnecting', tone: 'warn'};
+      if (category === 'rate_limit') return {key: 'live.source.kuaishouStateRateLimited', tone: 'warn'};
+      if (category === 'ended') return {key: 'live.source.tiktokCaptureStateEnded', tone: 'neutral'};
+      if (category === 'stopped') return {key: 'live.source.tiktokCaptureStateStopped', tone: 'neutral'};
+      if (category === 'failed') return {key: 'live.source.tiktokCaptureStateFailed', tone: 'warn'};
+      return {key: 'live.source.tiktokCaptureStateIdle', tone: 'neutral'};
+    }
+
+    function kuaishouIdentityText(identity) {
+      const mode = identity?.mode === 'session-provisional'
+        ? t('live.source.kuaishouIdentityModeSession')
+        : String(identity?.mode ?? '—');
+      const stable = identity?.stableUserId === 'unproven'
+        ? t('live.source.kuaishouIdentityStableUnproven')
+        : String(identity?.stableUserId ?? '—');
+      const messageId = identity?.messageId
+        ? String(identity.messageId)
+        : t('live.source.kuaishouIdentityMessageIdNone');
+      return t('live.source.kuaishouTechnicalIdentity', {mode, stable, messageId});
+    }
+
+    function buildKuaishouList() {
+      const list = kuaishouRecordings();
+      if (list.length === 0) return null;
+      const section = el('section', {className: 'tiktok-active-recordings'});
+      section.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.kuaishouActiveTitle')}),
+        chip(t('live.source.tiktokActiveCount', {n: list.length}), 'neutral')));
+      for (const recording of list) {
+        const meta = kuaishouCaptureMeta(recording.capture);
+        section.append(el('div', {className: 'live-recording-row'},
+          el('div', {className: 'live-recording-main'},
+            el('div', {className: 'row-title'},
+              el('span', {className: 'row-title-text', text: recordingName(recording)})),
+            el('div', {className: 'live-recording-meta'},
+              chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'}),
+              recording.meta?.eid ? el('span', {className: 'small', text: recording.meta.eid}) : null,
+              el('span', {className: 'small', text: t('live.new.recordingMessages', {
+                n: formatInteger(Number(recording.messageCount ?? 0), ctx.locale)
+              })}))),
+          el('div', {className: 'live-recording-actions'},
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.new.open'),
+              onClick: () => openSession(recording.sessionId)
+            }),
+            el('button', {
+              className: 'button button--ghost button--small',
+              type: 'button',
+              text: t('live.source.tiktokStop'),
+              onClick: (event) => stopKuaishou(event.currentTarget, recording.sessionId)
+            }))));
+      }
+      return section;
+    }
+
+    function kuaishouCaptureCard(capture) {
+      const card = el('section', {className: 'card card--padded'});
+      const meta = kuaishouCaptureMeta(capture);
+      card.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.kuaishouCaptureTitle')}),
+        chip(t(meta.key), meta.tone, {dot: meta.tone === 'live' || meta.tone === 'warn'})));
+      if (!capture) {
+        card.append(el('p', {className: 'source-note', text: t('live.source.tiktokCaptureIdle')}));
+        return card;
+      }
+      const lines = [];
+      lines.push(capture.lastEventAt
+        ? t('live.source.tiktokCaptureLastMessage', {time: formatDateTime(capture.lastEventAt, ctx.locale)})
+        : t('live.source.tiktokCaptureNoMessage'));
+      if (Number(capture.reconnects) > 0) {
+        lines.push(t('live.source.tiktokCaptureReconnects', {n: formatInteger(capture.reconnects, ctx.locale)}));
+      }
+      if (capture.lastFailure?.code) {
+        lines.push(t('live.source.tiktokCaptureLastFailure', {reason: kuaishouReasonText(capture.lastFailure.code)}));
+      }
+      if (capture.possibleGap) lines.push(t('live.source.tiktokCapturePossibleGap'));
+      for (const line of lines) card.append(el('p', {className: 'source-note', text: line}));
+
+      const details = el('details', {className: 'auto-details'});
+      details.append(el('summary', {text: t('live.source.tiktokCaptureTechnical')}));
+      const counters = capture.counters ?? {};
+      details.append(el('p', {className: 'small', text: t('live.source.kuaishouTechnicalCounters', {
+        polls: formatInteger(counters.polls ?? 0, ctx.locale),
+        chats: formatInteger(counters.chats ?? 0, ctx.locale),
+        duplicates: formatInteger(counters.duplicates ?? 0, ctx.locale),
+        ignored: formatInteger(counters.ignored ?? 0, ctx.locale)
+      })}));
+      details.append(el('p', {className: 'small', text: kuaishouIdentityText(capture.identity)}));
+      details.append(el('p', {className: 'small', text: t('live.source.kuaishouCaptureNotCompleteNote')}));
+      details.append(el('p', {className: 'small', text: t('live.source.kuaishouUnofficialNote')}));
+      card.append(details);
+      return card;
+    }
+
+    function updateKuaishouHosts() {
+      if (kuaishouCaptureHost && !destroyed) {
+        clear(kuaishouCaptureHost);
+        kuaishouCaptureHost.append(kuaishouCaptureCard(currentKuaishouCapture()));
+      }
+      if (kuaishouListHost && !destroyed) {
+        clear(kuaishouListHost);
+        const list = buildKuaishouList();
+        kuaishouListHost.hidden = !list;
+        if (list) kuaishouListHost.append(list);
+      }
+    }
+
+    function buildKuaishouRoomMeta(room) {
+      const access = kuaishouStatus?.access ?? {enabled: false};
+      const meta = el('div', {className: 'source-meta'});
+      const statusChip = room.liveStatus === 'live'
+        ? chip(t('live.source.twitchLiveNow'), 'live', {dot: true})
+        : (room.liveStatus === 'offline'
+          ? chip(t('live.source.twitchOffline'), 'neutral')
+          : chip(t('live.source.kuaishouStatusUnknown'), 'warn'));
+      meta.append(el('div', {className: 'source-status'},
+        chip(t('live.source.twitchChannelReady'), 'accent'),
+        statusChip,
+        room.title ? el('span', {className: 'row-title-text', text: room.title}) : null));
+      const details = [`${t('live.source.kuaishouEid')}: ${room.eid}`];
+      if (room.liveStreamId) details.push(`${t('live.source.kickChatroom')}: ${room.liveStreamId}`);
+      meta.append(el('div', {text: details.join(' · ')}));
+      const canStart = Boolean(access.enabled && room.recordable);
+      meta.append(el('div', {className: 'hero-actions', style: {marginTop: '12px'}},
+        el('button', {
+          className: 'button button--primary',
+          type: 'button',
+          text: canStart ? t('live.source.twitchStart') : t('live.source.kuaishouStartDisabled'),
+          attrs: canStart ? {} : {disabled: ''},
+          onClick: (event) => {
+            if (!canStart) return;
+            connectKuaishou(event.currentTarget);
+          }
+        })));
+      if (!access.enabled) meta.append(el('p', {className: 'source-note', text: t('live.source.kuaishouStartRequiresAuthorization')}));
+      else if (!room.isLive) meta.append(el('p', {className: 'source-note', text: t('live.source.onlyLiveCanStart')}));
+      return meta;
+    }
+
+    function buildKuaishouPanel() {
+      const panel = el('div', {className: 'source-panel'});
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouIntro')}));
+      // Required transparency notice. It is always rendered, in every language,
+      // and is never hidden behind a details/summary element.
+      panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+        t('live.source.kuaishouNotice')));
+
+      const status = kuaishouStatus;
+      if (!status) {
+        panel.append(el('div', {className: 'callout callout--warn', style: {marginTop: '12px'}},
+          t('live.source.kuaishouUnavailable')));
+        return panel;
+      }
+      const access = status.access ?? {enabled: false};
+      const enabled = Boolean(access.enabled);
+
+      const accessCard = el('div', {className: enabled ? 'callout callout--neutral' : 'callout callout--warn', style: {marginTop: '12px'}});
+      accessCard.append(el('div', {className: 'source-status'},
+        el('span', {className: 'label', text: t('live.source.kuaishouAccessTitle')})));
+      accessCard.append(el('p', {className: 'source-note', text: enabled
+        ? t('live.source.kuaishouAccessEnabled')
+        : t('live.source.kuaishouAccessRequired')}));
+      panel.append(accessCard);
+
+      if (!enabled) {
+        panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouMonitorRequiresAuthorization')}));
+      } else {
+        panel.append(autoMonitorToggle('kuaishou', kuaishouAutoMonitor, (checked) => {
+          kuaishouAutoMonitor = checked;
+          checkedKuaishou = null;
+          renderSource();
+        }));
+        if (kuaishouAutoMonitor) {
+          panel.append(buildAutoMonitorSection('kuaishou'));
+          panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouIdentityNote')}));
+          panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouGiftNote')}));
+          return panel;
+        }
+      }
+
+      const input = el('input', {
+        className: 'input',
+        attrs: {
+          type: 'text',
+          placeholder: t('live.source.kuaishouLinkPlaceholder'),
+          'aria-label': t('live.source.kuaishouLinkLabel'),
+          spellcheck: 'false'
+        }
+      });
+      input.value = checkedKuaishou?.input ?? '';
+      refs.kuaishouInput = input;
+      panel.append(el('div', {className: 'source-row', style: {marginTop: '16px'}},
+        el('label', {className: 'field', style: {flex: '1 1 320px'}},
+          el('span', {className: 'label', text: t('live.source.kuaishouLinkLabel')}),
+          input),
+        el('button', {
+          className: 'button button--secondary',
+          type: 'button',
+          text: t('live.source.kuaishouCheck'),
+          onClick: (event) => parseKuaishou(event.currentTarget)
+        })));
+
+      if (checkedKuaishou) panel.append(buildKuaishouRoomMeta(checkedKuaishou));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouIdentityNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouMessageIdNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouGiftNote')}));
+      panel.append(el('p', {className: 'source-note', text: t('live.source.kuaishouUnofficialNote')}));
+
+      if (status.policy) {
+        panel.append(el('div', {className: 'source-row', style: {marginTop: '8px'}},
+          el('div', {className: 'field', style: {flex: '1 1 320px'}},
+            el('span', {className: 'label', text: t('live.source.twitchPolicyTitle')}),
+            el('div', {className: 'source-status', text: t('live.source.kuaishouPolicyBody', {days: status.policy.days})})),
+          el('button', {
+            className: 'button button--ghost button--small',
+            type: 'button',
+            text: t('live.source.twitchApplyRetention'),
+            onClick: (event) => applyKuaishouRetention(event.currentTarget)
+          })));
+      }
+
+      kuaishouListHost = el('div');
+      kuaishouCaptureHost = el('div');
+      panel.append(kuaishouListHost, kuaishouCaptureHost);
+      updateKuaishouHosts();
+      return panel;
+    }
+
+    async function parseKuaishou(button) {
+      const url = String(refs.kuaishouInput?.value ?? '').trim();
+      if (!url) {
+        ctx.toast(t('errors.kuaishouLinkInvalid'), {tone: 'error'});
+        return;
+      }
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchChecking');
+      try {
+        const result = await api.post('/api/kuaishou/room', {url});
+        checkedKuaishou = {...result.room, input: url};
+        renderSource();
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function connectKuaishou(button) {
+      if (!checkedKuaishou) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.twitchStarting');
+      try {
+        const payload = await api.post('/api/kuaishou/connect', {url: checkedKuaishou.input});
+        checkedKuaishou = null;
+        await refreshKuaishouStatus();
+        await refreshRecordings();
+        await openSession(payload.session.id, {force: true});
+        await ctx.refreshStatus();
+        ctx.toast(t('live.source.twitchStarted', {name: payload.room?.eid ?? ''}));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function stopKuaishou(button, sessionId) {
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = t('live.source.tiktokStopping');
+      try {
+        await api.post('/api/kuaishou/disconnect', {sessionId});
+        await refreshKuaishouStatus();
+        await refreshRecordings();
+        renderSource();
+        ctx.toast(t('live.source.tiktokStopped'));
+      } catch (error) {
+        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function applyKuaishouRetention(button) {
+      button.disabled = true;
+      try {
+        const result = await api.post('/api/kuaishou/retention/apply', {});
+        await refreshKuaishouStatus();
+        renderSource();
+        ctx.toast(t('live.source.kuaishouRetentionApplied', {count: result?.summary?.purged ?? 0}));
       } catch (error) {
         ctx.toast(ctx.describeError(error), {tone: 'error'});
         button.disabled = false;

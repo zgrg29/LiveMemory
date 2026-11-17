@@ -77,7 +77,8 @@
       "twitch": "Twitch en direct",
       "douyin": "Douyin en direct",
       "tiktok": "TikTok en direct",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Kuaishou en direct"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "Prêt à enregistrer",
       "title": "Nouvel enregistrement",
-      "subtitleIdle": "Choisissez Bilibili, YouTube, Twitch, Douyin ou TikTok et connectez-vous à un salon en direct. Les enregistrements déjà en cours continuent en arrière-plan.",
+      "subtitleIdle": "Choisissez Bilibili, YouTube, Twitch, Douyin, TikTok, Kick ou l'aperçu Kuaishou et connectez une salle en direct ; les enregistrements existants continuent en arrière-plan.",
       "subtitleRunning": "{n} direct(s) continuent de s'enregistrer en arrière-plan. En démarrer un nouveau ne les arrêtera pas.",
       "background": "{n} direct(s) s'enregistrent encore en arrière-plan. Ouvrez leurs onglets à tout moment.",
       "activeTitle": "{n} enregistrement(s) en cours",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · abonnements {memberships} · publications {publications}",
       "kickCaptureNotCompleteNote": "Le flux Kick n'a pas de curseur de reprise : les messages pendant une reconnexion peuvent être manqués et ne sont pas récupérés. LiveMemory ne prétend pas à un journal complet.",
       "kickPolicyBody": "Le texte du chat, les badges et les libellés Kick de plus de {days} jours sont supprimés ; les compteurs et les ID stables sont conservés.",
-      "kickRetentionApplied": "{count} lignes Kick expirées supprimées."
+      "kickRetentionApplied": "{count} lignes Kick expirées supprimées.",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Enregistrez le chat public d'une salle en direct Kuaishou. L'intégration analyse le lien, stocke le chat et réutilise la même analyse IA et le même profil à long terme que les autres plateformes.",
+      "kuaishouNotice": "Kuaishou limite la collecte automatisée de données non autorisée. LiveMemory n'est pas un produit officiel de Kuaishou. Vous devez respecter les conditions de la plateforme Kuaishou et disposer des droits d'accès aux données nécessaires. Les interfaces tierces peuvent changer ou cesser de fonctionner à tout moment.",
+      "kuaishouNoLoginNote": "Aucune connexion, clé API, cookie ou service payant n'est utilisé. Lorsque la collecte est autorisée, LiveMemory lit directement la page publique H5 de la salle et le flux de chat.",
+      "kuaishouUnofficialNote": "Non officiel / expérimental : cette interface H5 n'est pas une API publique Kuaishou. Elle peut changer ou cesser de fonctionner à tout moment, et une reconnexion peut manquer des messages faute de curseur de reprise.",
+      "kuaishouLinkLabel": "Lien ou ID de la salle en direct Kuaishou",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "Analyser le lien",
+      "kuaishouEid": "ID de la salle",
+      "kuaishouCaptureTitle": "Capture Kuaishou",
+      "kuaishouActiveTitle": "Salles Kuaishou en cours d'enregistrement",
+      "kuaishouAccessTitle": "Autorisation de collecte",
+      "kuaishouAccessRequired": "La collecte en direct est désactivée dans cette version. L'intégration et l'analyse locale restent disponibles, mais LiveMemory ne demandera aucune donnée Kuaishou tant que l'exploitant n'aura pas consigné une autorisation écrite.",
+      "kuaishouAccessEnabled": "La collecte est activée pour une version interne autorisée. Vous devez veiller à respecter le périmètre de l'autorisation obtenue.",
+      "kuaishouIdentityNote": "Les ID de spectateur sont provisoires et limités à cette session. La stabilité entre salles et entre jours n'étant pas démontrée, LiveMemory ne fusionne pas les spectateurs Kuaishou d'une session à l'autre.",
+      "kuaishouMessageIdNote": "Le flux H5 n'a ni ID de message ni curseur de reprise. Les doublons sont éliminés par utilisateur + heure + contenu ; des messages peuvent être manqués pendant une reconnexion.",
+      "kuaishouGiftNote": "Aucun cadeau ni « j'aime » n'a été observé dans l'échantillon de recherche. LiveMemory ne revendique pas la prise en charge des cadeaux ou des « j'aime » Kuaishou.",
+      "kuaishouStatusUnknown": "Kuaishou n'a pas confirmé si cette salle est en direct. La collecte ne démarre pas tant que l'état n'est pas confirmé.",
+      "kuaishouPolicyBody": "Le texte du chat et les noms affichés Kuaishou de plus de {days} jours sont purgés ; les compteurs, les ID de session et les analyses sont conservés.",
+      "kuaishouRetentionApplied": "{count} lignes Kuaishou expirées ont été supprimées.",
+      "kuaishouStartDisabled": "Lancez l'enregistrement après activation de l'autorisation et confirmation que la salle est en direct.",
+      "kuaishouCaptureNotCompleteNote": "Pas de curseur de reprise : une reconnexion peut manquer des messages, sans récupération. LiveMemory ne prétend pas disposer d'un journal complet du chat.",
+      "kuaishouTechnicalCounters": "Interrogations {polls} · chats {chats} · doublons {duplicates} · non-chats ignorés {ignored}",
+      "kuaishouTechnicalIdentity": "Identité : {mode} · ID utilisateur stable : {stable} · ID de message : {messageId}",
+      "kuaishouStateRateLimited": "Kuaishou limite le débit ; attente",
+      "kuaishouStartRequiresAuthorization": "L'enregistrement est indisponible tant que la collecte n'est pas autorisée.",
+      "kuaishouMonitorRequiresAuthorization": "La surveillance automatique n'est disponible qu'après autorisation de la collecte.",
+      "kuaishouUnavailable": "L'intégration Kuaishou n'est pas disponible dans cette version.",
+      "kuaishouIdentityModeSession": "identité temporaire de session",
+      "kuaishouIdentityStableUnproven": "non démontré",
+      "kuaishouIdentityMessageIdNone": "non fourni"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "La connexion au chat Kick a échoué.",
     "kickNotConfigured": "La capture Kick n'est pas disponible dans cette version.",
     "kickStopped": "La capture Kick a été arrêtée.",
-    "kickError": "La capture Kick a échoué."
+    "kickError": "La capture Kick a échoué.",
+    "kuaishouLinkInvalid": "Saisissez un lien de salle en direct Kuaishou, par exemple https://live.kuaishou.com/u/… . Les profils, vidéos courtes, rediffusions et autres plateformes ne sont pas des salles en direct.",
+    "kuaishouAuthorizationRequired": "La collecte en direct Kuaishou reste désactivée tant que l'exploitant n'a pas consigné une autorisation écrite. L'analyse de lien et l'analyse locale restent disponibles.",
+    "kuaishouAccessDenied": "Kuaishou a refusé la demande (accès, connexion ou contrôle des risques). LiveMemory ne la contourne pas.",
+    "kuaishouRoomOffline": "Cette salle Kuaishou n'est pas en direct. Réessayez au début de la diffusion.",
+    "kuaishouRoomNotFound": "Cette salle Kuaishou n'existe pas.",
+    "kuaishouRateLimit": "Kuaishou limite les requêtes. Réessayez plus tard.",
+    "kuaishouNetwork": "Impossible de joindre Kuaishou. Vérifiez le réseau et réessayez.",
+    "kuaishouProtocol": "Kuaishou a renvoyé une réponse inattendue. L'interface H5 non officielle a peut-être changé.",
+    "kuaishouStatusUnknown": "Kuaishou n'a pas confirmé l'état de la salle. Elle limite peut-être le débit ou la page a changé ; LiveMemory ne devine pas.",
+    "kuaishouConnectTimeout": "La connexion à Kuaishou a expiré.",
+    "kuaishouNotConfigured": "La capture Kuaishou n'est pas configurée dans cette version.",
+    "kuaishouStopped": "La capture Kuaishou a été arrêtée.",
+    "kuaishouError": "La capture Kuaishou a échoué."
   },
   "toast": {
     "saved": "Enregistré",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "URL du direct TikTok ou @nom d'utilisateur",
       "tiktokLabel": "URL du direct TikTok ou @nom d'utilisateur",
       "kickPlaceholder": "Lien de direct ou nom de chaîne Kick",
-      "kickLabel": "Lien de direct ou nom de chaîne Kick"
+      "kickLabel": "Lien de direct ou nom de chaîne Kick",
+      "kuaishouPlaceholder": "Lien en direct ou ID de salle Kuaishou",
+      "kuaishouLabel": "Lien en direct ou ID de salle Kuaishou"
     },
     "hero": {
       "autoChip": "Surveillance auto",

@@ -1,6 +1,61 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **快手 G1.6 登录态 WebSocket 复测** · 结论 **E（停止正式接入）** ·
+本轮：2026-11-17 · **快手 H5 预览接入完成 · 生产采集禁用 · v0.17.0 候选未发布** ·
+未 Push/Tag/Release · 详见 `docs/KUAISHOU_H5_INTEGRATION.md`
+
+> **按用户指示停止登录 WS 研究，只采用 G1 匿名 H5。** URL 解析、comment 解析、
+> 会话内身份、去重、SQLite、AI 分析/画像、自动监控、异常恢复、十语 UI 与内部候选 EXE
+> 已集成。**默认不发起任何 H5 请求**；`connect` 在任何网络请求前返回 403
+> `KUAISHOU_AUTHORIZATION_REQUIRED`。未取得书面许可，未做真实许可下验收，
+> **不发布为已支持**。礼物/点赞仍 **NOT-OBSERVED**；跨场身份不合并。
+
+## 0. 本轮（快手 H5 预览接入）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **组件完成；生产采集禁用；候选未发布** |
+| 代码 | `src/platforms/kuaishou/` 8 模块 + `src/monitoring/detectors/kuaishou.mjs` |
+| 服务端 | 5 个 `/api/kuaishou/*` 路由；capabilities `state:'preview'`、`captureEnabled:false` |
+| 数据 | 仅 comment → chat；无消息 ID；会话内临时身份；30 天保留 |
+| 监控 | 共享调度器；feed 601 / 连续 2 次 offline；rate_limited/unknown 不结束 |
+| UI | 第七个页签；强制告知；禁用状态只解析；十语 2,351 键 |
+| 真实 H5 | **未执行**（无许可） |
+| 测试 | **844 unit + 382 integration = 1,226 passed / 0 failed**；Kuaishou 专项 49 passed；UI 80/80 |
+| EXE | 候选 `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `90be8be1…b3981c29`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_H5_INTEGRATION.md`（完整范围、门禁、身份、监控、G0–G6、阻碍）
+- `src/platforms/kuaishou/{link,policy,http,transport,messages,status,adapter,service}.mjs`
+- `src/monitoring/detectors/kuaishou.mjs`；`src/monitoring/{constants,model,manager}.mjs`
+- `tests/unit/kuaishou-*.test.mjs`、`tests/integration/kuaishou-*.test.mjs`、`tests/fixtures/kuaishou.mjs`
+- `scripts/build-windows.mjs`（必需模块与 EXE 标记）
+- `docs/release-notes/v0.17.0.md`、`docs/RELEASE_CHECKLIST_v0.17.0.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **取得快手书面许可/官方接口**：明确第三方读取公开聊天、保存、分析、分发范围。
+2. 获得许可后，才在隔离环境设置内部开关做真实 G4/G5：≥30 分钟、≥2 房间、真实结束、断线恢复。
+3. 补齐 G3：跨场/跨日身份证据；证据前保持会话内隔离，禁止自动合并。
+4. 不实现/恢复：登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理、浏览器中继。
+5. 无许可时保持禁用；不要 Tag/Release、不要把快手写成已支持。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（未 Push） |
+| 本轮提交 | 见最终回复与 `git log` |
+| 版本 / Schema | `0.17.0` / 16 |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |
+
+---
+
+上一轮：2026-11-17 · **快手 G1.6 登录态 WebSocket 复测** · 结论 **E（停止正式接入）** ·
 未接入、未改生产代码、未构建 EXE · 未 Push/Tag/Release ·
 详见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`
 

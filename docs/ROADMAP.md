@@ -42,6 +42,18 @@
 > 十份字典各 **2,271** 键、十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；
 > 五平台与数据库 Schema（16）未变，**未新增直播平台**。详见 `docs/STATUS.md` §0.51。
 
+## P51 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 候选 · 未发布
+
+- ✅ 用户明确指示：停止登录 WebSocket 研究，**只采用 G1 已验证的匿名 H5**；不实现扫码登录、签名、设备指纹、验证码、TLS 伪装、代理或浏览器中继。
+- ✅ 集成：`src/platforms/kuaishou/`（link / policy / http / transport / messages / status / adapter / service）、路由 `/api/kuaishou/*`、capabilities `state:'preview'`、监控 detector、30 天保留、十语 UI、AI 分析包与长期画像（会话内）。
+- ✅ 数据：仅 `comment` → `chat`；`external_id=NULL`；`viewer_uid=h5:<rawUserId>@<sessionId>`；`source_quality=unknown`；礼物/点赞 **NOT-OBSERVED**，不映射。
+- ✅ 门禁：默认 `access.enabled=false`；`connect` 在任何网络请求前 403；`room` 在禁用时只本地解析；UI 始终展示要求的告知。内部启用需同时设置 `LIVEMEMORY_KUAISHOU_H5_OPT_IN=1` 与 `LIVEMEMORY_KUAISHOU_AUTHORIZATION_ACK`。
+- ✅ 自动监控：`MONITOR_PLATFORMS` 增加 `kuaishou`；基础 120 秒；目标键 `eid`；循环键 `kuaishou:<eid>:<liveStreamId>`；feed 601 权威结束，房间页连续 2 次 offline 结束，rate_limited/unknown 不结束。
+- ✅ 十语言：10 × **2,351** 键，新增 47 键，键集/占位符 0 差异。
+- ⚠️ 验收：全部 fake fetch / 研究样本；**真实 H5 未执行**；真实许可下长测、跨场身份、真实下播→再开播均未验证。
+- ⛔ **G6 阻塞**：无书面许可、无真实 H5 验收；**不发布为已支持**，不 Push/Tag/Release。
+- 📄 `docs/KUAISHOU_H5_INTEGRATION.md`；`docs/release-notes/v0.17.0.md`；`docs/RELEASE_CHECKLIST_v0.17.0.md`。
+
 ## P50 快手 G1.6：登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 
 - ✅ **第二次真人扫码登录成功**：`qr/start → scanResult=1 → acceptResult=1 → passToken →`

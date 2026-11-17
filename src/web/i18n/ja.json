@@ -77,7 +77,8 @@
       "twitch": "Twitch ライブ",
       "douyin": "Douyin ライブ",
       "tiktok": "TikTok 直播",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Kuaishou ライブ"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "準備完了",
       "title": "新規記録",
-      "subtitleIdle": "Bilibili、YouTube、Twitch、Douyin、TikTok から配信中のルームを選んで接続します。記録中の配信はバックグラウンドで続きます。",
+      "subtitleIdle": "Bilibili、YouTube、Twitch、Douyin、TikTok、Kick または Kuaishou プレビューを選び、配信中のルームに接続します。既存の記録はバックグラウンドで続行されます。",
       "subtitleRunning": "{n} 件の配信をバックグラウンドで記録中です。新規記録を始めても停止しません。",
       "background": "バックグラウンドで {n} 件の配信を記録中です。上のタブからいつでも確認できます。",
       "activeTitle": "{n} 件の配信を記録中",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "チャット {chats} · KICKs {gifts} · メンバー {memberships} · 配信 {publications}",
       "kickCaptureNotCompleteNote": "Kick の経路には再生カーソルがありません。再接続中のメッセージは欠落し、補完されません。LiveMemory は完全なチャットログを主張しません。",
       "kickPolicyBody": "{days} 日を超えた Kick のチャット本文・バッジ・表示ラベルは削除されます。件数と安定 ID は保持されます。",
-      "kickRetentionApplied": "期限切れの Kick レコードを {count} 件削除しました。"
+      "kickRetentionApplied": "期限切れの Kick レコードを {count} 件削除しました。",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Kuaishou のライブ配信ルームの公開チャットを記録します。ルームリンクを解析してチャットを保存し、他プラットフォームと同じ AI 分析・長期プロフィールを利用します。",
+      "kuaishouNotice": "Kuaishou は、許可されていない自動データ収集に制限を設けています。LiveMemory は Kuaishou の公式製品ではありません。利用者は Kuaishou のプラットフォーム規約を守り、必要なデータアクセス権限を有していることを確認してください。第三者インターフェースは予告なく変更または停止される場合があります。",
+      "kuaishouNoLoginNote": "ログイン、API キー、Cookie、有料サービスは不要です。収集が許可された場合、LiveMemory は公開 H5 ルームページとチャットフィードを直接読み取ります。",
+      "kuaishouUnofficialNote": "非公式 / 実験的：この H5 インターフェースは Kuaishou の公開 API ではありません。予告なく変更・停止される可能性があり、再開用カーソルがないため再接続中にメッセージを取りこぼすことがあります。",
+      "kuaishouLinkLabel": "Kuaishou ライブのリンクまたは ID",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "リンクを解析",
+      "kuaishouEid": "ルーム ID",
+      "kuaishouCaptureTitle": "Kuaishou の取得",
+      "kuaishouActiveTitle": "記録中の Kuaishou ルーム",
+      "kuaishouAccessTitle": "収集の許可",
+      "kuaishouAccessRequired": "このビルドではリアルタイム収集を無効にしています。連携とローカル分析は利用できますが、運用者が書面による許可を記録するまで LiveMemory は Kuaishou のデータを要求しません。",
+      "kuaishouAccessEnabled": "内部向けの許可済みビルドで収集が有効です。取得した許可の範囲を超えないよう、利用者自身で確認してください。",
+      "kuaishouIdentityNote": "視聴者 ID は一時的なもので、このセッション内に限定されます。ルーム間・日跨ぎの安定性は未証明のため、LiveMemory は Kuaishou の視聴者をセッションを跨いで統合しません。",
+      "kuaishouMessageIdNote": "H5 フィードにはメッセージ ID も再開カーソルもありません。重複は「ユーザー + 時刻 + 内容」で除去します。再接続中はメッセージを取りこぼす可能性があります。",
+      "kuaishouGiftNote": "調査サンプルではギフトやいいねは観測されていません。LiveMemory は Kuaishou のギフト・いいね対応を主張しません。",
+      "kuaishouStatusUnknown": "Kuaishou はこのルームが配信中かどうかを確認できませんでした。状態が確認できるまで収集を開始しません。",
+      "kuaishouPolicyBody": "{days} 日を超えた Kuaishou のチャット本文と表示名は削除されます。件数、セッション内 ID、分析結果は保持されます。",
+      "kuaishouRetentionApplied": "期限切れの Kuaishou データを {count} 件削除しました。",
+      "kuaishouStartDisabled": "許可が有効になり、ルームが配信中であることを確認してから記録を開始してください。",
+      "kuaishouCaptureNotCompleteNote": "再開カーソルがないため、再接続中のメッセージは取りこぼす可能性があり、復元されません。LiveMemory は完全なチャット記録を主張しません。",
+      "kuaishouTechnicalCounters": "ポーリング {polls} · チャット {chats} · 重複 {duplicates} · 無視した非チャット {ignored}",
+      "kuaishouTechnicalIdentity": "身元モード：{mode} · 安定ユーザー ID：{stable} · メッセージ ID：{messageId}",
+      "kuaishouStateRateLimited": "Kuaishou がレート制限中です。待機しています",
+      "kuaishouStartRequiresAuthorization": "収集の許可が有効になるまで記録できません。",
+      "kuaishouMonitorRequiresAuthorization": "自動監視は収集の許可が有効になってから利用できます。",
+      "kuaishouUnavailable": "このビルドでは Kuaishou 連携を利用できません。",
+      "kuaishouIdentityModeSession": "セッション内の一時 ID",
+      "kuaishouIdentityStableUnproven": "未証明",
+      "kuaishouIdentityMessageIdNone": "提供なし"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "Kick チャットへの接続に失敗しました。",
     "kickNotConfigured": "このビルドでは Kick の取得を利用できません。",
     "kickStopped": "Kick の取得は停止しました。",
-    "kickError": "Kick の取得に失敗しました。"
+    "kickError": "Kick の取得に失敗しました。",
+    "kuaishouLinkInvalid": "Kuaishou のライブリンク（例：https://live.kuaishou.com/u/…）を入力してください。プロフィール、ショート動画、再生回数、他プラットフォームはライブルームではありません。",
+    "kuaishouAuthorizationRequired": "運用者が書面による許可を記録するまで、Kuaishou のリアルタイム収集は無効です。リンク解析とローカル分析は利用できます。",
+    "kuaishouAccessDenied": "Kuaishou がリクエストを拒否しました（アクセス権限、ログイン、リスク管理）。LiveMemory は回避しません。",
+    "kuaishouRoomOffline": "この Kuaishou ルームは現在配信中ではありません。配信開始後に再試行してください。",
+    "kuaishouRoomNotFound": "その Kuaishou ルームは存在しません。",
+    "kuaishouRateLimit": "Kuaishou がレート制限中です。しばらくしてから再試行してください。",
+    "kuaishouNetwork": "Kuaishou に接続できませんでした。ネットワークを確認して再試行してください。",
+    "kuaishouProtocol": "Kuaishou から想定外の応答がありました。非公式 H5 インターフェースが変更された可能性があります。",
+    "kuaishouStatusUnknown": "Kuaishou はルームの状態を確認できませんでした。レート制限中か、ページが変更された可能性があります。LiveMemory は推測しません。",
+    "kuaishouConnectTimeout": "Kuaishou への接続がタイムアウトしました。",
+    "kuaishouNotConfigured": "このビルドでは Kuaishou の収集が設定されていません。",
+    "kuaishouStopped": "Kuaishou の収集を停止しました。",
+    "kuaishouError": "Kuaishou の収集に失敗しました。"
   },
   "toast": {
     "saved": "保存しました",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "TikTok ライブ URL または @ユーザー名",
       "tiktokLabel": "TikTok ライブ URL または @ユーザー名",
       "kickPlaceholder": "Kick のライブリンクまたはチャンネル名",
-      "kickLabel": "Kick のライブリンクまたはチャンネル名"
+      "kickLabel": "Kick のライブリンクまたはチャンネル名",
+      "kuaishouPlaceholder": "Kuaishou のライブリンクまたはルーム ID",
+      "kuaishouLabel": "Kuaishou のライブリンクまたはルーム ID"
     },
     "hero": {
       "autoChip": "自動監視",

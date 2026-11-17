@@ -38,6 +38,7 @@ import {TwitchChannelDetector} from './detectors/twitch.mjs';
 import {DouyinRoomDetector} from './detectors/douyin.mjs';
 import {TikTokRoomDetector} from './detectors/tiktok.mjs';
 import {KickRoomDetector} from './detectors/kick.mjs';
+import {KuaishouRoomDetector} from './detectors/kuaishou.mjs';
 
 /**
  * Unified automatic-monitoring scheduler.
@@ -66,6 +67,7 @@ export class MonitoringManager {
     douyin = null,
     tiktok = null,
     kick = null,
+    kuaishou = null,
     logger = null,
     now = Date.now,
     detectors = null,
@@ -81,6 +83,7 @@ export class MonitoringManager {
     this.douyin = douyin;
     this.tiktok = tiktok;
     this.kick = kick;
+    this.kuaishou = kuaishou;
     this.logger = logger;
     this.now = now;
     this.onChange = onChange;
@@ -154,6 +157,15 @@ export class MonitoringManager {
         now: this.now,
         pacer: this.pacer,
         policy: MONITOR_POLICY.kick
+      });
+    }
+    if (this.kuaishou?.observeRoom) {
+      detectors.kuaishou = new KuaishouRoomDetector({
+        service: this.kuaishou,
+        logger: this.logger,
+        now: this.now,
+        pacer: this.pacer,
+        policy: MONITOR_POLICY.kuaishou
       });
     }
     return detectors;
@@ -256,7 +268,8 @@ export class MonitoringManager {
         twitch: {checkIntervalMs: MONITOR_POLICY.twitch.baseMs},
         douyin: {checkIntervalMs: MONITOR_POLICY.douyin.baseMs},
         tiktok: {checkIntervalMs: MONITOR_POLICY.tiktok.baseMs},
-        kick: {checkIntervalMs: MONITOR_POLICY.kick.baseMs}
+        kick: {checkIntervalMs: MONITOR_POLICY.kick.baseMs},
+        kuaishou: {checkIntervalMs: MONITOR_POLICY.kuaishou.baseMs}
       },
       summary: summarizeTargets(targets),
       targets
@@ -841,6 +854,16 @@ export class MonitoringManager {
         slug: observation?.slug ?? observation?.targetKey ?? null,
         channelId: observation?.channelId ?? row.target_key,
         chatroomId: observation?.chatroomId ?? targetMetaChatroom(row),
+        anchorUid: observation?.anchorUid ?? row.platform_uid
+      }, {monitorTargetId: row.id, input: row.input});
+    }
+    if (row.platform === 'kuaishou') {
+      if (!this.kuaishou?.connectDetected) throw monitorError(MONITOR_ERROR.NOT_CONFIGURED);
+      return this.kuaishou.connectDetected({
+        ...observation,
+        status: 'live',
+        eid: observation?.eid ?? row.target_key,
+        liveStreamId: observation?.liveStreamId ?? observation?.liveId ?? null,
         anchorUid: observation?.anchorUid ?? row.platform_uid
       }, {monitorTargetId: row.id, input: row.input});
     }

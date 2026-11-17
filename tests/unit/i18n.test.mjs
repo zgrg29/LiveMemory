@@ -22,8 +22,9 @@ const webRoot = fileURLToPath(new URL('../../src/web/i18n/', import.meta.url));
 // P41 added six keys (settings.aiOutput.* and toast.aiOutputLanguage) to every
 // dictionary, so the contract moved from 2,265 to 2,271 leaf keys. G2 added 31
 // Kick keys (17 live/source + 13 errors + common.platform.kick) → 2,302; G5.1
-// added two monitoring placeholders → 2,304.
-const LEAF_KEYS = 2304;
+// added two monitoring placeholders → 2,304. The Kuaishou preview added 47 keys
+// (31 live/source + 13 errors + 2 monitoring + common.platform.kuaishou) → 2,351.
+const LEAF_KEYS = 2351;
 
 /** Legacy native-name keys kept from the three-language era. */
 const LEGACY_NAME_KEYS = {'zh-CN': 'zh', ja: 'ja', en: 'en'};
@@ -79,7 +80,7 @@ test('web dictionaries share exactly the same keys', async () => {
   }
 });
 
-test('the shipped dictionaries keep all 2,304 leaf translation keys', async () => {
+test('the shipped dictionaries keep all 2,351 leaf translation keys', async () => {
   for (const locale of AVAILABLE_LOCALES) {
     assert.equal(flatten(await loadWeb(locale)).size, LEAF_KEYS, `${locale} leaf key count changed`);
   }

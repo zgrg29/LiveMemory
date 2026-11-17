@@ -242,6 +242,15 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 
 ### 3.5 快手 Kuaishou
 
+**2026-11-17 P51 更新：用户指示只采用 G1 匿名 H5，组件已集成但实时采集默认禁用。完整报告 `docs/KUAISHOU_H5_INTEGRATION.md`。**
+
+- 新增 `src/platforms/kuaishou/`、路由、capabilities `preview`、监控、30 天保留、十语 UI 与候选 EXE。
+- **未取得书面许可**：默认 `access.enabled=false`；`connect` 在任何网络请求前 403；
+  `room` 只做本地解析；UI 始终展示要求的告知。
+- 身份 `h5:<rawUserId>@<sessionId>`；不跨场合并；礼物/点赞 `NOT-OBSERVED`。
+- 真实 H5、真实 EXE 采集、许可下长测、跨场身份均**未执行**；G6 仍阻塞。
+- 不实现登录/扫码/签名/设备指纹/验证码/TLS 伪装/代理/浏览器中继。
+
 **2026-11-17 G1.6 更新：结论 E（停止正式接入），完整报告 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`。**
 
 - **旧 ID 解释被排除**：第二次真人扫码登录成功（`userLogin=1`）后，重新取 `home/list`，

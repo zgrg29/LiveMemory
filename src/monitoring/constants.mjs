@@ -7,7 +7,7 @@
  * request storm is not.
  */
 
-export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch', 'douyin', 'tiktok', 'kick']);
+export const MONITOR_PLATFORMS = Object.freeze(['bilibili', 'youtube', 'twitch', 'douyin', 'tiktok', 'kick', 'kuaishou']);
 
 export const MONITOR_STATE = Object.freeze({
   /** Enabled, not live, waiting for the next scheduled check. */
@@ -115,6 +115,22 @@ export const MONITOR_POLICY = Object.freeze({
     endCooldownMs: 20000,
     maxConsecutiveFailures: 4,
     requestGapMs: 2000
+  }),
+  kuaishou: Object.freeze({
+    platform: 'kuaishou',
+    /**
+     * The H5 route is rate-limit sensitive and collection is only enabled after
+     * written permission. One room-page read every 2 minutes while waiting is
+     * deliberately slower than the feed's 3.2 s capture cadence.
+     */
+    baseMs: 120000,
+    minMs: 90000,
+    maxMs: 180000,
+    errorBaseMs: 120000,
+    errorMaxMs: 1800000,
+    endCooldownMs: 20000,
+    maxConsecutiveFailures: 4,
+    requestGapMs: 3000
   })
 });
 

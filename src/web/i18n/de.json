@@ -77,7 +77,8 @@
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
       "tiktok": "TikTok Live",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Kuaishou live"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "Bereit zur Aufzeichnung",
       "title": "Neue Aufzeichnung",
-      "subtitleIdle": "Wählen Sie Bilibili, YouTube, Twitch, Douyin oder TikTok und verbinden Sie sich mit einem Livestream-Raum. Bereits laufende Aufzeichnungen werden im Hintergrund fortgesetzt.",
+      "subtitleIdle": "Wählen Sie Bilibili, YouTube, Twitch, Douyin, TikTok, Kick oder die Kuaishou-Vorschau und verbinden Sie einen Liveraum; bestehende Aufzeichnungen laufen im Hintergrund weiter.",
       "subtitleRunning": "{n} Livestream(s) werden im Hintergrund weiter aufgezeichnet. Eine neue Aufzeichnung beendet sie nicht.",
       "background": "{n} Livestream(s) werden noch im Hintergrund aufgezeichnet. Die zugehörigen Tabs lassen sich jederzeit öffnen.",
       "activeTitle": "{n} laufende Aufzeichnung(en)",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · Mitgliedschaften {memberships} · Publikationen {publications}",
       "kickCaptureNotCompleteNote": "Der Kick-Feed hat keinen Fortsetzungs-Cursor: Nachrichten während einer Wiederverbindung können fehlen und werden nicht nachgeladen. LiveMemory behauptet kein vollständiges Chat-Protokoll.",
       "kickPolicyBody": "Kick-Chattext, Badges und Anzeige-Labels, die älter als {days} Tage sind, werden gelöscht; Zähler und stabile IDs bleiben erhalten.",
-      "kickRetentionApplied": "{count} abgelaufene Kick-Zeilen entfernt."
+      "kickRetentionApplied": "{count} abgelaufene Kick-Zeilen entfernt.",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Zeichnet den öffentlichen Chat eines Kuaishou-Liveraums auf. Die Integration analysiert den Raumlink, speichert den Chat und nutzt dieselbe KI-Analyse und dasselbe Langzeitprofil wie die anderen Plattformen.",
+      "kuaishouNotice": "Kuaishou beschränkt die nicht autorisierte automatisierte Datenerfassung. LiveMemory ist kein offizielles Kuaishou-Produkt. Sie müssen die Bedingungen der Kuaishou-Plattform einhalten und sicherstellen, dass Sie über die erforderlichen Datenzugriffsrechte verfügen. Schnittstellen von Drittanbietern können sich jederzeit ändern oder eingestellt werden.",
+      "kuaishouNoLoginNote": "Keine Anmeldung, kein API-Schlüssel, kein Cookie und kein kostenpflichtiger Dienst. Wenn die Erfassung autorisiert ist, liest LiveMemory die öffentliche H5-Raumseite und den Chat-Feed direkt.",
+      "kuaishouUnofficialNote": "Inoffiziell / experimentell: Diese H5-Schnittstelle ist keine öffentliche Kuaishou-API. Sie kann sich jederzeit ändern oder eingestellt werden; bei einer Neuverbindung können Nachrichten fehlen, da es keinen Fortsetzungs-Cursor gibt.",
+      "kuaishouLinkLabel": "Kuaishou-Liveraum-Link oder ID",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "Link analysieren",
+      "kuaishouEid": "Raum-ID",
+      "kuaishouCaptureTitle": "Kuaishou-Erfassung",
+      "kuaishouActiveTitle": "Aufgezeichnete Kuaishou-Räume",
+      "kuaishouAccessTitle": "Erfassungsgenehmigung",
+      "kuaishouAccessRequired": "Die Live-Erfassung ist in diesem Build deaktiviert. Integration und lokale Analyse sind verfügbar, aber LiveMemory fordert keine Kuaishou-Daten an, bis der Betreiber eine schriftliche Genehmigung dokumentiert.",
+      "kuaishouAccessEnabled": "Die Erfassung ist für einen internen, autorisierten Build aktiviert. Sie sind dafür verantwortlich, den Rahmen der erhaltenen Genehmigung einzuhalten.",
+      "kuaishouIdentityNote": "Zuschauer-IDs sind vorläufig und auf diese Sitzung beschränkt. Die Stabilität über Räume und Tage ist nicht belegt; LiveMemory führt Kuaishou-Zuschauer daher nicht über Sitzungen hinweg zusammen.",
+      "kuaishouMessageIdNote": "Der H5-Feed hat weder Nachrichten-ID noch Fortsetzungs-Cursor. Duplikate werden über Nutzer + Zeit + Inhalt entfernt; bei einer Neuverbindung können Nachrichten fehlen.",
+      "kuaishouGiftNote": "In der Untersuchungsstichprobe wurden keine Geschenke oder Likes beobachtet. LiveMemory beansprucht keine Unterstützung für Kuaishou-Geschenke oder -Likes.",
+      "kuaishouStatusUnknown": "Kuaishou hat nicht bestätigt, ob dieser Raum live ist. Die Erfassung beginnt erst nach bestätigtem Status.",
+      "kuaishouPolicyBody": "Chattext und Anzeigenamen von Kuaishou, die älter als {days} Tage sind, werden gelöscht; Zähler, Sitzungs-IDs und Analysen bleiben erhalten.",
+      "kuaishouRetentionApplied": "{count} abgelaufene Kuaishou-Zeilen wurden entfernt.",
+      "kuaishouStartDisabled": "Starten Sie die Aufzeichnung erst, wenn die Genehmigung aktiv und der Raum als live bestätigt ist.",
+      "kuaishouCaptureNotCompleteNote": "Kein Fortsetzungs-Cursor: Bei einer Neuverbindung können Nachrichten fehlen und werden nicht nachgeliefert. LiveMemory beansprucht kein vollständiges Chat-Protokoll.",
+      "kuaishouTechnicalCounters": "Abfragen {polls} · Chats {chats} · Duplikate {duplicates} · ignorierte Nicht-Chats {ignored}",
+      "kuaishouTechnicalIdentity": "Identität: {mode} · stabile Nutzer-ID: {stable} · Nachrichten-ID: {messageId}",
+      "kuaishouStateRateLimited": "Kuaishou drosselt die Anfragen; warten",
+      "kuaishouStartRequiresAuthorization": "Die Aufzeichnung ist erst nach Genehmigung der Erfassung verfügbar.",
+      "kuaishouMonitorRequiresAuthorization": "Die automatische Überwachung ist erst nach Genehmigung der Erfassung verfügbar.",
+      "kuaishouUnavailable": "Die Kuaishou-Integration ist in diesem Build nicht verfügbar.",
+      "kuaishouIdentityModeSession": "sitzungsgebundene vorläufige Identität",
+      "kuaishouIdentityStableUnproven": "nicht belegt",
+      "kuaishouIdentityMessageIdNone": "nicht verfügbar"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "Die Verbindung zum Kick-Chat ist fehlgeschlagen.",
     "kickNotConfigured": "Kick-Aufzeichnung ist in diesem Build nicht verfügbar.",
     "kickStopped": "Kick-Aufzeichnung wurde beendet.",
-    "kickError": "Kick-Aufzeichnung ist fehlgeschlagen."
+    "kickError": "Kick-Aufzeichnung ist fehlgeschlagen.",
+    "kuaishouLinkInvalid": "Geben Sie einen Kuaishou-Liveraum-Link ein, z. B. https://live.kuaishou.com/u/… . Profile, Kurzvideos, Wiederholungen und andere Plattformen sind keine Liveräume.",
+    "kuaishouAuthorizationRequired": "Die Kuaishou-Live-Erfassung bleibt deaktiviert, bis der Betreiber eine schriftliche Genehmigung dokumentiert. Linkanalyse und lokale Analyse bleiben verfügbar.",
+    "kuaishouAccessDenied": "Kuaishou hat die Anfrage abgelehnt (Zugriff, Anmeldung oder Risikokontrolle). LiveMemory umgeht dies nicht.",
+    "kuaishouRoomOffline": "Dieser Kuaishou-Raum ist nicht live. Versuchen Sie es erneut, wenn die Ausstrahlung beginnt.",
+    "kuaishouRoomNotFound": "Dieser Kuaishou-Raum existiert nicht.",
+    "kuaishouRateLimit": "Kuaishou drosselt Anfragen. Versuchen Sie es später erneut.",
+    "kuaishouNetwork": "Kuaishou ist nicht erreichbar. Prüfen Sie das Netzwerk und versuchen Sie es erneut.",
+    "kuaishouProtocol": "Kuaishou hat unerwartet geantwortet. Die inoffizielle H5-Schnittstelle hat sich möglicherweise geändert.",
+    "kuaishouStatusUnknown": "Kuaishou hat den Raumstatus nicht bestätigt. Möglicherweise wird gedrosselt oder die Seite hat sich geändert; LiveMemory rät nicht.",
+    "kuaishouConnectTimeout": "Zeitüberschreitung bei der Verbindung zu Kuaishou.",
+    "kuaishouNotConfigured": "Die Kuaishou-Erfassung ist in diesem Build nicht konfiguriert.",
+    "kuaishouStopped": "Die Kuaishou-Erfassung wurde gestoppt.",
+    "kuaishouError": "Die Kuaishou-Erfassung ist fehlgeschlagen."
   },
   "toast": {
     "saved": "Gespeichert",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "TikTok-Livestream-URL oder @Benutzername",
       "tiktokLabel": "TikTok-Livestream-URL oder @Benutzername",
       "kickPlaceholder": "Kick-Live-Link oder Kanalname",
-      "kickLabel": "Kick-Live-Link oder Kanalname"
+      "kickLabel": "Kick-Live-Link oder Kanalname",
+      "kuaishouPlaceholder": "Kuaishou-Livelink oder Raum-ID",
+      "kuaishouLabel": "Kuaishou-Livelink oder Raum-ID"
     },
     "hero": {
       "autoChip": "Automatische Überwachung",

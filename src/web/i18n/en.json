@@ -77,7 +77,8 @@
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
       "tiktok": "TikTok 直播",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Kuaishou Live"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "Ready to record",
       "title": "New recording",
-      "subtitleIdle": "Choose Bilibili, YouTube, Twitch, Douyin or TikTok and connect to a live room. Recordings already running keep going in the background.",
+      "subtitleIdle": "Choose Bilibili, YouTube, Twitch, Douyin, TikTok, Kick or the Kuaishou preview and connect a live room; existing recordings keep running in the background.",
       "subtitleRunning": "{n} broadcast(s) keep recording in the background. Starting a new one will not stop them.",
       "background": "{n} broadcast(s) are still recording in the background. Open their tabs at any time.",
       "activeTitle": "{n} recording(s) in progress",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · memberships {memberships} · publications {publications}",
       "kickCaptureNotCompleteNote": "The Kick feed has no replay cursor: messages during a reconnect can be missed and are not recovered. LiveMemory does not claim a complete chat log.",
       "kickPolicyBody": "Kick chat text, badges and display labels older than {days} days are purged; counts and stable IDs are kept.",
-      "kickRetentionApplied": "Removed {count} expired Kick rows."
+      "kickRetentionApplied": "Removed {count} expired Kick rows.",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Record a Kuaishou live room's public chat. The integration parses the room link, stores chat, and reuses the same AI analysis and long-term memory as other platforms.",
+      "kuaishouNotice": "Kuaishou limits unauthorized automated data collection. LiveMemory is not an official Kuaishou product. You must comply with Kuaishou's platform terms and ensure you have the necessary data access rights. Third-party interfaces may change or stop working at any time.",
+      "kuaishouNoLoginNote": "No login, API key, cookie or paid service is used. When collection is authorised, LiveMemory reads the public H5 room page and chat feed directly.",
+      "kuaishouUnofficialNote": "Unofficial / experimental: this H5 interface is not a Kuaishou public API. It can change or stop working at any time, and a reconnect can miss messages because there is no replay cursor.",
+      "kuaishouLinkLabel": "Kuaishou live room link or ID",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "Parse link",
+      "kuaishouEid": "Room ID",
+      "kuaishouCaptureTitle": "Kuaishou capture",
+      "kuaishouActiveTitle": "Recording Kuaishou rooms",
+      "kuaishouAccessTitle": "Collection authorization",
+      "kuaishouAccessRequired": "Live collection is disabled in this build. Integration and local analysis are available, but LiveMemory will not request Kuaishou data until the operator records written permission.",
+      "kuaishouAccessEnabled": "Collection is enabled for an internal, authorised build. You are responsible for staying within the permission you obtained.",
+      "kuaishouIdentityNote": "Viewer IDs are provisional and scoped to this session. Cross-room and cross-day stability is not proven, so LiveMemory does not merge Kuaishou viewers across sessions.",
+      "kuaishouMessageIdNote": "The H5 feed has no message ID and no replay cursor. Duplicates are removed by user + time + content; messages during a reconnect can be missed.",
+      "kuaishouGiftNote": "Gifts and likes were not observed in the research sample. LiveMemory does not claim gift or like support for Kuaishou.",
+      "kuaishouStatusUnknown": "Kuaishou did not confirm whether this room is live. Collection stays disabled until the state is confirmed.",
+      "kuaishouPolicyBody": "Kuaishou chat text and display names older than {days} days are purged; counts, session-scoped IDs and analysis remain.",
+      "kuaishouRetentionApplied": "Removed {count} expired Kuaishou rows.",
+      "kuaishouStartDisabled": "Start recording after authorization is enabled and the room is confirmed live.",
+      "kuaishouCaptureNotCompleteNote": "No replay cursor: a reconnect can miss messages and they are not recovered. LiveMemory does not claim a complete chat log.",
+      "kuaishouTechnicalCounters": "Polls {polls} · chats {chats} · duplicates {duplicates} · ignored non-chat {ignored}",
+      "kuaishouTechnicalIdentity": "Identity: {mode} · stable user ID: {stable} · message ID: {messageId}",
+      "kuaishouStateRateLimited": "Kuaishou is rate limiting; waiting",
+      "kuaishouStartRequiresAuthorization": "Recording is unavailable until collection is authorized.",
+      "kuaishouMonitorRequiresAuthorization": "Automatic monitoring becomes available only after collection is authorized.",
+      "kuaishouUnavailable": "Kuaishou integration is unavailable in this build.",
+      "kuaishouIdentityModeSession": "session-provisional identity",
+      "kuaishouIdentityStableUnproven": "not proven",
+      "kuaishouIdentityMessageIdNone": "not provided"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "The Kick chat connection failed.",
     "kickNotConfigured": "Kick capture is not available in this build.",
     "kickStopped": "Kick capture was stopped.",
-    "kickError": "Kick capture failed."
+    "kickError": "Kick capture failed.",
+    "kuaishouLinkInvalid": "Enter a Kuaishou live-room link such as https://live.kuaishou.com/u/… . Profiles, short videos, replays and other platforms are not live rooms.",
+    "kuaishouAuthorizationRequired": "Kuaishou live collection is disabled until the operator records written permission. Link parsing and local analysis remain available.",
+    "kuaishouAccessDenied": "Kuaishou refused the request (access, login or risk control). LiveMemory does not bypass it.",
+    "kuaishouRoomOffline": "This Kuaishou room is not live. Try again when the broadcast starts.",
+    "kuaishouRoomNotFound": "That Kuaishou room does not exist.",
+    "kuaishouRateLimit": "Kuaishou is rate limiting requests. Try again later.",
+    "kuaishouNetwork": "Could not reach Kuaishou. Check the network and try again.",
+    "kuaishouProtocol": "Kuaishou returned an unexpected response. The unofficial H5 interface may have changed.",
+    "kuaishouStatusUnknown": "Kuaishou did not confirm the room state. It may be rate limiting or the page may have changed; LiveMemory will not guess.",
+    "kuaishouConnectTimeout": "Connecting to Kuaishou timed out.",
+    "kuaishouNotConfigured": "Kuaishou capture is not configured in this build.",
+    "kuaishouStopped": "Kuaishou capture was stopped.",
+    "kuaishouError": "Kuaishou capture failed."
   },
   "toast": {
     "saved": "Saved",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "TikTok live URL or @username",
       "tiktokLabel": "TikTok live URL or @username",
       "kickPlaceholder": "Kick live link or channel name",
-      "kickLabel": "Kick live link or channel name"
+      "kickLabel": "Kick live link or channel name",
+      "kuaishouPlaceholder": "Kuaishou live link or room ID",
+      "kuaishouLabel": "Kuaishou live link or room ID"
     },
     "hero": {
       "autoChip": "Auto-monitor",

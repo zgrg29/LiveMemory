@@ -13,6 +13,8 @@ import {TwitchService} from '../platforms/twitch/service.mjs';
 import {DouyinService} from '../platforms/douyin/service.mjs';
 import {TikTokService} from '../platforms/tiktok/service.mjs';
 import {KickService} from '../platforms/kick/service.mjs';
+import {KuaishouService} from '../platforms/kuaishou/service.mjs';
+import {resolveKuaishouAccess} from '../platforms/kuaishou/policy.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -104,6 +106,9 @@ export async function startServer({
   kickHttp = null,
   kickAdapterOptions = null,
   kickWebSocketImpl = null,
+  kuaishouAccess = null,
+  kuaishouFetchImpl = null,
+  kuaishouAdapterOptions = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -224,6 +229,20 @@ export async function startServer({
       ...(kickWebSocketImpl ? {WebSocketImpl: kickWebSocketImpl} : {}),
       ...(kickAdapterOptions ? {adapterOptions: kickAdapterOptions} : {})
     });
+    // Kuaishou is integrated as a preview: URL parsing, storage, analysis, UI
+    // and monitoring exist, but live H5 collection stays disabled until an
+    // operator records written permission. The access switch is resolved from
+    // the environment, so a normal build never reaches the H5 endpoints.
+    const kuaishou = new KuaishouService({
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      access: kuaishouAccess ?? resolveKuaishouAccess({env}),
+      ...(kuaishouFetchImpl ? {fetchImpl: kuaishouFetchImpl} : {}),
+      ...(kuaishouAdapterOptions ? {adapterOptions: kuaishouAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
@@ -233,6 +252,7 @@ export async function startServer({
       douyin,
       tiktok,
       kick,
+      kuaishou,
       logger,
       now,      onChange: () => {
         try {
@@ -278,6 +298,15 @@ export async function startServer({
       platforms: ['kick'],
       logger
     });
+    // Kuaishou raw H5 content follows the same 30-day policy, scoped to
+    // Kuaishou only. This runs even while collection is disabled so previously
+    // collected local rows still expire on schedule.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['kuaishou'],
+      logger
+    });
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
@@ -310,6 +339,7 @@ export async function startServer({
       douyin,
       tiktok,
       kick,
+      kuaishou,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -360,6 +390,11 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.kick.failed', code: error?.code ?? 'unknown'});
     }
+    try {
+      await instance.kuaishou?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.kuaishou.failed', code: error?.code ?? 'unknown'});
+    }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
@@ -391,6 +426,7 @@ export async function startServer({
     get douyin() { return runtime.douyin; },
     get tiktok() { return runtime.tiktok; },
     get kick() { return runtime.kick; },
+    get kuaishou() { return runtime.kuaishou; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -568,6 +604,7 @@ export async function startServer({
     get douyin() { return runtime.douyin; },
     get tiktok() { return runtime.tiktok; },
     get kick() { return runtime.kick; },
+    get kuaishou() { return runtime.kuaishou; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

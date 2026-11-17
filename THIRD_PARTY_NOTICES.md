@@ -144,3 +144,14 @@ does not use any paid signing, browser relay or cloud relay service.
 Official Kuaishou texts quoted in the report (user agreement, live service
 agreement, live management rules, `robots.txt`) are cited for compliance
 review only; they are not redistributed as files.
+
+### P51 addendum — H5 preview integration (2026-11-17)
+
+The production preview (`src/platforms/kuaishou/`) reuses only the repository's
+own G1 research code and protocol facts already recorded above. It adds **no
+third-party code, no protobuf descriptor, no signer, no captcha solver, no
+TLS-fingerprint tool and no runtime npm dependency**. It does not use catbus or
+any other project's source. The H5 feed/room-page URL shapes are public web
+behaviour documented in the G0/G1 reports; the implementation was written for
+this repository under MIT. The integration ships with collection disabled
+pending Kuaishou's written permission; see `docs/KUAISHOU_H5_INTEGRATION.md`.

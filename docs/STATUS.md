@@ -1,11 +1,74 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1.6 登录态 WebSocket 复测**，
-结论 **E（停止正式接入：8 个最新在播房间均无法取得 WS token）**，
-详见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`；
-未接入平台、未改生产代码、未构建 EXE、未 Push/Tag/Release）
+最后更新：2026-11-17（**v0.17.0 候选：快手 H5 预览接入完成**；H5 实时采集默认禁用，
+未取得书面许可、未发布；六个已发布平台协议未改；详见 `docs/KUAISHOU_H5_INTEGRATION.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.60 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 候选 · 未发布
+
+### 0.60.1 结论
+
+- **按用户指示只采用 G1 已验证的匿名 H5**：停止登录 WebSocket 研究，不实现扫码登录、签名、
+  设备指纹、验证码、TLS 伪装、代理或浏览器中继。
+- **组件全部集成**：URL 解析、公开 comment 解析、昵称/数字 `userId`/毫秒时间、去重、
+  多直播间隔离、SQLite、单场 AI 分析、长期画像（受身份限制）、自动监控、异常恢复、
+  上下播判断、十语 UI、候选 EXE。
+- **生产采集保持禁用**：默认 `access.enabled=false`；connect 在任何网络请求前返回 403
+  `KUAISHOU_AUTHORIZATION_REQUIRED`；room 在禁用时只做本地解析；UI 始终展示要求的告知。
+- **未取得书面许可**：G1.5 已确认快手条款禁止未经授权的自动采集、H5 robots 为
+  `Disallow: /`；因此不进行真实 H5 采集、不进行真实许可下验收、不发布为已支持。
+- **礼物 / 点赞不声称支持**：研究样本未观测（`NOT-OBSERVED`），代码只映射 `comment`。
+- **身份不跨场合并**：`viewer_uid=h5:<rawUserId>@<sessionId>`，两场相同 `userId` 也保持隔离；
+  G3 稳定性证据仍缺失，不提供自动合并。
+- **版本**：`0.16.0` → `0.17.0`（候选，未 Tag/未 Release）；Schema 仍 **16**，无迁移。
+
+### 0.60.2 实现与数据语义
+
+| 项目 | 结果 |
+| --- | --- |
+| 平台标识 | `kuaishou`；`broadcaster_id=kuaishou:<eid>` |
+| URL | `live.kuaishou.com/u/<eid>`、`livev.m.chenzhongtech.com/fw/live/<eid>`、裸 ID |
+| 事件 | 仅 `chat`；`external_id=NULL`；`source_quality=unknown` |
+| 身份 | 会话内临时 `h5:<userId>@<sessionId>`；昵称不作身份 |
+| 去重 | 适配器 `userId+time+content` 指纹 + `UNIQUE(session_id, dedupe_key)` |
+| 结束 | feed `601/671` 权威；房间页连续 2 次 offline；rate_limited/unknown 不结束 |
+| 监控 | `kuaishou` 加入共享调度器；基础 120 秒；目标键 `eid`；循环键 `kuaishou:<eid>:<liveStreamId>` |
+| 保留 | 30 天原文/昵称清理，scoped `kuaishou`；计数/会话内 ID/分析保留 |
+| UI | 第七个页签；强制告知；授权状态；会话内身份/无消息 ID/无礼物说明；禁用时仅解析 |
+| 语言 | 10 × **2,351** 键，新增 47 键，键集/占位符 0 差异 |
+
+### 0.60.3 验收（真实结果）
+
+> 全部为 fake fetch / 研究样本形状；**不是真实 H5 验收**。
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量测试 | **844 unit + 382 integration = 1,226 passed / 0 failed / 0 skipped**（`--test-isolation=none`，最终复跑 363,562 ms） |
+| Kuaishou 专项 | **49 passed / 0 failed**（unit 39 + integration 10；含监控、去重、双房间、AI 包、会话内身份） |
+| 六平台回归 | 全量套件通过；Bilibili/YouTube/Twitch/抖音/TikTok/Kick 协议与测试未改 |
+| 十语言字典 | 10 × 2,351；缺失/多余/占位符/空值/英文残留 0 |
+| 真实浏览器 UI | **80/80**（10 语 × 1440/1024/820/390 × 明暗；告知/授权/身份/礼物说明可见，无溢出，无原始键；每语 1440 light 执行链接解析 + 禁用开始按钮检查） |
+| 候选 EXE | `dist/LiveMemory.exe`；**99,492,352 bytes**；SHA-256 `90be8be19c4709102834a2db0c94f8dcf34cdd5d407e05a119100740b3981c29`；Build ID `47b42dc8417b`；Manifest **requireAdministrator** |
+| EXE 验收 | `verify-kuaishou-exe.mjs` **10/10**；`verify-exe.mjs` **11/11**；`verify-help-exe.mjs` **14/14** |
+| 真实 H5 | **未执行**（无许可） |
+| 真实 EXE 采集 | **未执行** |
+| 真实下播→再开播 | **未执行** |
+| 礼物/点赞 | **NOT-OBSERVED** |
+
+### 0.60.4 未做 / 保持阻塞
+
+- 未向快手发起真实 H5 请求；未取得书面许可；未做真实许可下验收。
+- 未实现礼物/点赞/进入/关注映射；未实现登录/扫码/签名/WebSocket。
+- 未验证跨场/跨日身份稳定性；未提供跨场合并。
+- 未发布；未 Push、未 Tag、未创建 Release。
+- 真实双击 UAC、干净 Windows 账户仍未人工验证。
+
+### 0.60.5 Git
+
+- 分支：`kuaishou-g1_5`（继续；未 Push）。
+- `main` 仍 `6f71f56`；v0.16.0 Tag/Release/资产未动。
+- 本轮提交 Hash 见交付回复与 `docs/HANDOFF.md`。
 
 ## 0.59 快手 G1.6：修正旧 ID 后的登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 

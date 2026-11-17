@@ -1,5 +1,52 @@
 # 版本变化（CHANGELOG）
 
+## 0.17.0 — 2026-11-17（快手 H5 预览接入：Kuaishou H5 Preview，采集默认禁用）
+
+**候选 / 未发布**。相对 `0.16.0` 新增第七个平台页签「快手」，定位为**预览**：
+URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（会话内）、自动监控、
+异常恢复、十语 UI 与候选 EXE 已集成。**实时 H5 采集默认关闭**；未取得快手书面许可，
+未做真实许可下验收，**不得描述为已正式支持**。六平台协议、Schema（16）、金额/身份/去重
+规则未变，不新增设置键。
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 / Schema | `0.17.0` / 16（无迁移） |
+| 发布状态 | **未 Tag、未 Release、未 Push** |
+| 真实 H5 | **未执行（无许可）** |
+| 候选 EXE | 99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `90be8be19c4709102834a2db0c94f8dcf34cdd5d407e05a119100740b3981c29`；`requireAdministrator`；Kuaishou 10/10 |
+
+### 新增
+
+- `src/platforms/kuaishou/`：`link`、`policy`、`http`、`transport`、`messages`、`status`、
+  `adapter`、`service`；零依赖。
+- 只接受 `live.kuaishou.com/u/<eid>`、`livev.m.chenzhongtech.com/fw/live/<eid>`、裸 eid。
+- 只映射 `comment`：原文、昵称、数字 `userId`、毫秒时间；**无消息 ID**；礼物/点赞
+  `NOT-OBSERVED`。
+- 会话内临时身份 `h5:<rawUserId>@<sessionId>`；跨场不合并。
+- 适配器去重 + `UNIQUE(session_id, dedupe_key)`；30 天保留 scoped `kuaishou`。
+- `MONITOR_PLATFORMS` 增加 `kuaishou`；feed 601 权威结束；房间页连续 2 次 offline 结束；
+  `rate_limited`/`unknown` 不结束；新 `liveStreamId` 结束旧场。
+- 5 个 `/api/kuaishou/*` 路由；capabilities `state:'preview'`、`captureEnabled:false`。
+- 直播页第七个页签、强制告知、禁用状态、十语 2,351 键（+47）。
+- 新增单元/集成测试与 `tests/fixtures/kuaishou.mjs`；构建清单加入全部模块与 detector。
+
+### 验证
+
+- Kuaishou 专项：**49 passed / 0 failed**。
+- 全量：**844 unit + 382 integration = 1,226 passed / 0 failed / 0 skipped**。
+- 六平台回归：全量套件通过；协议未改。
+- 十语言：10 × 2,351 键，差异 0；真实浏览器 **80/80**。
+- 候选 EXE：99,492,352 B / Build ID `47b42dc8417b` / `requireAdministrator`；
+  Kuaishou **10/10**、`verify-exe` **11/11**、`verify-help-exe` **14/14**。
+
+### 未验证 / 已知限制
+
+- 无书面许可；H5 条款与 robots 禁止未授权自动采集；生产采集默认禁用。
+- 真实 H5/真实 EXE 采集/真实下播→再开播/跨场身份均未验证。
+- 无消息 ID、无续传游标；重连可能漏消息。
+- 礼物/点赞 `NOT-OBSERVED`。
+- 非官方接口可能变更；真实 UAC 与干净账户未人工验证；EXE 未签名。
+
 ## 0.16.0 — 2026-11-17（Kick 支持与自动开播监控：Kick Support & Auto Live Monitoring）
 
 **正式稳定版**，Tag `v0.16.0`。相对 `v0.15.0` 新增第六个直播平台 Kick（免登录采集、礼物/赠订、

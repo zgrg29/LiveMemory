@@ -77,7 +77,8 @@
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
       "tiktok": "TikTok Live",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Siaran Langsung Kuaishou"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "Siap merekam",
       "title": "Perekaman baru",
-      "subtitleIdle": "Pilih Bilibili, YouTube, Twitch, Douyin, atau TikTok dan hubungkan ke ruang siaran. Perekaman yang sudah berjalan tetap berlanjut di latar belakang.",
+      "subtitleIdle": "Pilih Bilibili, YouTube, Twitch, Douyin, TikTok, Kick, atau pratinjau Kuaishou dan hubungkan ruang langsung; rekaman yang ada tetap berjalan di latar belakang.",
       "subtitleRunning": "{n} siaran terus direkam di latar belakang. Memulai perekaman baru tidak akan menghentikannya.",
       "background": "{n} siaran masih direkam di latar belakang. Buka tabnya kapan saja.",
       "activeTitle": "{n} perekaman sedang berlangsung",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "Obrolan {chats} · KICKs {gifts} · keanggotaan {memberships} · publikasi {publications}",
       "kickCaptureNotCompleteNote": "Feed Kick tidak memiliki kursor lanjutan: pesan selama sambung ulang bisa terlewat dan tidak dipulihkan. LiveMemory tidak mengklaim log obrolan lengkap.",
       "kickPolicyBody": "Teks obrolan, lencana, dan label tampilan Kick yang lebih lama dari {days} hari dihapus; jumlah dan ID stabil tetap disimpan.",
-      "kickRetentionApplied": "{count} baris Kick kedaluwarsa dihapus."
+      "kickRetentionApplied": "{count} baris Kick kedaluwarsa dihapus.",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Rekam chat publik ruang langsung Kuaishou. Integrasi ini mengurai tautan ruang, menyimpan chat, dan memakai analisis AI serta profil jangka panjang yang sama dengan platform lain.",
+      "kuaishouNotice": "Kuaishou membatasi pengumpulan data otomatis yang tidak sah. LiveMemory bukan produk resmi Kuaishou. Anda harus mematuhi ketentuan platform Kuaishou dan memastikan Anda memiliki hak akses data yang diperlukan. Antarmuka pihak ketiga dapat berubah atau berhenti berfungsi kapan saja.",
+      "kuaishouNoLoginNote": "Tidak perlu login, kunci API, cookie, atau layanan berbayar. Saat pengumpulan diizinkan, LiveMemory membaca langsung halaman publik H5 ruang dan feed chat.",
+      "kuaishouUnofficialNote": "Tidak resmi / eksperimental: antarmuka H5 ini bukan API publik Kuaishou. Dapat berubah atau berhenti kapan saja, dan sambungan ulang dapat melewatkan pesan karena tidak ada kursor lanjutan.",
+      "kuaishouLinkLabel": "Tautan atau ID ruang langsung Kuaishou",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "Uraikan tautan",
+      "kuaishouEid": "ID ruang",
+      "kuaishouCaptureTitle": "Perekaman Kuaishou",
+      "kuaishouActiveTitle": "Ruang Kuaishou yang direkam",
+      "kuaishouAccessTitle": "Izin pengumpulan",
+      "kuaishouAccessRequired": "Pengumpulan langsung dinonaktifkan dalam build ini. Integrasi dan analisis lokal tersedia, tetapi LiveMemory tidak akan meminta data Kuaishou sampai operator mencatat izin tertulis.",
+      "kuaishouAccessEnabled": "Pengumpulan diaktifkan untuk build internal yang berizin. Anda bertanggung jawab untuk tetap dalam cakupan izin yang diperoleh.",
+      "kuaishouIdentityNote": "ID penonton bersifat sementara dan hanya berlaku untuk sesi ini. Stabilitas antaruang dan antarhari belum terbukti, jadi LiveMemory tidak menggabungkan penonton Kuaishou antarsesi.",
+      "kuaishouMessageIdNote": "Feed H5 tidak memiliki ID pesan maupun kursor lanjutan. Duplikat dihapus berdasarkan pengguna + waktu + konten; pesan saat sambungan ulang dapat terlewat.",
+      "kuaishouGiftNote": "Hadiah dan suka tidak teramati dalam sampel riset. LiveMemory tidak mengklaim dukungan hadiah atau suka untuk Kuaishou.",
+      "kuaishouStatusUnknown": "Kuaishou tidak memastikan apakah ruang ini sedang langsung. Pengumpulan tidak dimulai sampai status terkonfirmasi.",
+      "kuaishouPolicyBody": "Teks chat dan nama tampilan Kuaishou yang lebih lama dari {days} hari dihapus; jumlah, ID sesi, dan analisis tetap disimpan.",
+      "kuaishouRetentionApplied": "{count} baris Kuaishou yang kedaluwarsa telah dihapus.",
+      "kuaishouStartDisabled": "Mulai perekaman setelah izin aktif dan ruang dipastikan sedang langsung.",
+      "kuaishouCaptureNotCompleteNote": "Tanpa kursor lanjutan: sambungan ulang dapat melewatkan pesan dan pesan tidak dipulihkan. LiveMemory tidak mengklaim catatan chat yang lengkap.",
+      "kuaishouTechnicalCounters": "Polling {polls} · chat {chats} · duplikat {duplicates} · non-chat diabaikan {ignored}",
+      "kuaishouTechnicalIdentity": "Identitas: {mode} · ID pengguna stabil: {stable} · ID pesan: {messageId}",
+      "kuaishouStateRateLimited": "Kuaishou sedang membatasi laju; menunggu",
+      "kuaishouStartRequiresAuthorization": "Perekaman tidak tersedia sampai pengumpulan diizinkan.",
+      "kuaishouMonitorRequiresAuthorization": "Pemantauan otomatis hanya tersedia setelah pengumpulan diizinkan.",
+      "kuaishouUnavailable": "Integrasi Kuaishou tidak tersedia dalam build ini.",
+      "kuaishouIdentityModeSession": "identitas sementara sesi",
+      "kuaishouIdentityStableUnproven": "belum terbukti",
+      "kuaishouIdentityMessageIdNone": "tidak tersedia"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "Koneksi obrolan Kick gagal.",
     "kickNotConfigured": "Perekaman Kick tidak tersedia di build ini.",
     "kickStopped": "Perekaman Kick dihentikan.",
-    "kickError": "Perekaman Kick gagal."
+    "kickError": "Perekaman Kick gagal.",
+    "kuaishouLinkInvalid": "Masukkan tautan ruang langsung Kuaishou, misalnya https://live.kuaishou.com/u/… . Profil, video pendek, tayangan ulang, dan platform lain bukan ruang langsung.",
+    "kuaishouAuthorizationRequired": "Pengumpulan langsung Kuaishou tetap dinonaktifkan sampai operator mencatat izin tertulis. Penguraian tautan dan analisis lokal tetap tersedia.",
+    "kuaishouAccessDenied": "Kuaishou menolak permintaan (akses, login, atau kontrol risiko). LiveMemory tidak mengatasinya.",
+    "kuaishouRoomOffline": "Ruang Kuaishou ini tidak sedang langsung. Coba lagi saat siaran dimulai.",
+    "kuaishouRoomNotFound": "Ruang Kuaishou itu tidak ada.",
+    "kuaishouRateLimit": "Kuaishou sedang membatasi permintaan. Coba lagi nanti.",
+    "kuaishouNetwork": "Tidak dapat menjangkau Kuaishou. Periksa jaringan dan coba lagi.",
+    "kuaishouProtocol": "Kuaishou mengembalikan respons tak terduga. Antarmuka H5 tidak resmi mungkin telah berubah.",
+    "kuaishouStatusUnknown": "Kuaishou tidak memastikan status ruang. Mungkin sedang membatasi laju atau halaman telah berubah; LiveMemory tidak menebak.",
+    "kuaishouConnectTimeout": "Koneksi ke Kuaishou habis waktu.",
+    "kuaishouNotConfigured": "Perekaman Kuaishou tidak dikonfigurasi dalam build ini.",
+    "kuaishouStopped": "Perekaman Kuaishou dihentikan.",
+    "kuaishouError": "Perekaman Kuaishou gagal."
   },
   "toast": {
     "saved": "Tersimpan",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "URL siaran langsung TikTok atau @nama pengguna",
       "tiktokLabel": "URL siaran langsung TikTok atau @nama pengguna",
       "kickPlaceholder": "Tautan live atau nama kanal Kick",
-      "kickLabel": "Tautan live atau nama kanal Kick"
+      "kickLabel": "Tautan live atau nama kanal Kick",
+      "kuaishouPlaceholder": "Tautan langsung atau ID ruang Kuaishou",
+      "kuaishouLabel": "Tautan langsung atau ID ruang Kuaishou"
     },
     "hero": {
       "autoChip": "Pemantauan otomatis",
