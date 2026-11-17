@@ -1,10 +1,74 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1 双路线验证**，
-结论 **C（暂缓）**，详见 `docs/KUAISHOU_G1_POC.md`；
+最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1.5 双模式验证**，
+结论 **D（暂缓，不进入 G2）**，详见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`；
 未接入平台、未改生产代码、未 Push/Tag/Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.58 快手 G1.5：匿名 H5 + 登录 WebSocket 双模式验证（2026-11-17）✅ 验证完成 · 结论 D
+
+### 0.58.1 结论
+
+- **匿名 H5 被官方条款明文禁止**：从官方“法律声明”页 CMS 取得《快手软件许可及服务协议》全文，
+  七、1.1 / 七、1.4 / 八、1 / 十、1 明确禁止以机器人、蜘蛛或未经授权的第三方工具监视、复制、
+  读取平台内容，且数据使用需**书面许可**；H5 域名 `robots.txt` 仍为 `User-agent: * Disallow: /`。
+  → H5 判 **POLICY-BLOCKED**，不得作为正式默认采集器；保留 G1 的 555 条/2h/3 房间证据，不再发起新的 H5 请求。
+- **正常扫码登录端到端真实成功（首次）**：`qr/start` 无签名 → 真人扫码 → `scanResult=1` →
+  `acceptResult=1` → `callback` 得 `passToken` → `getCdns=1` → 直播站 `passToken` 换票 `result=1`
+  → `userLogin=1`（`live.web_st/_ph`）。全程未实现签名/设备指纹/webweapon/验证码/TLS 伪装。
+- **登录后 WS token 未验证**：唯一一次 `websocketinfo`（18:41:59）返回 `result:2`、无 token/URL，
+  但使用的是 18:34 的旧 `liveStreamId`，目标房间 18:44 复核已下播；因此**不能判定“签名是唯一障碍”，
+  也不能判定“平台拒绝”**。已修复方法缺陷：连接前必须重新确认在播，旧 ID 默认拒绝。
+- **稳定身份未证明**：G1 H5 229 用户跨 3 房间重叠 0；WS 无样本；跨日/跨路线均无证据。
+  原型强制 `h5:` / `ws:` 命名空间隔离，只有显式证据才允许合并。
+- **礼物/点赞/分享零真实样本**：协议字段存在（含 feed `id`）→ CODE-SUPPORTED / NOT-OBSERVED。
+- **开播监控**：匿名 `home/list` 两次返回 48 个在播房间；发现并修复“无顶层 `result` 被误判为错误”的缺陷；
+  目标房间“从列表消失=下播”已真实观察；真实“再开播”未观察。
+- **结论 D（暂缓，不进入 G2）**：H5 授权不允许；WS 监听未验证；身份/礼物/长测均缺证据；
+  即使 WS 技术复测通过，仍缺平台书面许可。
+
+### 0.58.2 关键证据
+
+| 项目 | 结果 |
+| --- | --- |
+| H5 合规 | 官方条款明文禁止机器人/蜘蛛监视、复制 + 数据使用需书面许可；robots `Disallow: /` |
+| 官方直播开放平台 | `liveopen.kuaishou.com` 为云直播（OBS 推流/拉流），不是聊天读取 API；`open.kuaishou.com` 为小程序文档 |
+| QR 生成 | 无 Cookie/无签名 `result:1`，125×125 PNG，约 58 秒过期，自动换码 3 次 |
+| 真人扫码 | `scanResult=1` → `acceptResult=1` → callback `passToken` → 直播站换票 `result=1` → `userLogin=1` |
+| `websocketinfo` | `result:2`、无 token；旧 `liveStreamId`（7 分钟前），目标随后 offline → **受污染，不作结论** |
+| 在播列表 | 18:34 / 18:43 均 48 个房间；18:44 目标不在列表 → `offline` |
+| 单测 | `research/kuaishou-g1_5/tests/prototype.test.mjs` **10 passed / 0 failed** |
+
+### 0.58.3 本轮产物
+
+- `docs/KUAISHOU_G1_5_DUAL_MODE.md`（完整报告：合规、登录、WS、身份、礼物、监控、G2 清单、结论）。
+- `research/kuaishou-g1_5/`（`probe.mjs`、`lib/` 双 transport + normalizer + identity + status + login +
+  protocol + errors + http、10 个单测、`scan.html`、`README.md`）。
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5 G1.5 摘要、`docs/ROADMAP.md` P49、
+  `log/2026-11-17-kuaishou-g1_5.md`、`THIRD_PARTY_NOTICES.md` G1.5 附录。
+
+### 0.58.4 未做 / 禁止
+
+- 未新增 `src/platforms/kuaishou/`，未改路由/UI/数据库/监控生产代码。
+- 未改版本号、未动 v0.16.0 Tag/Release/EXE。
+- 未引入依赖、未复制第三方代码、未实现签名/设备指纹/验证码。
+- 未跑新的 H5 长测（因 POLICY-BLOCKED）；未完成 WS 真实监听、礼物、跨场身份、再开播。
+- 未 Push、未 Merge main、未创建 Tag/Release。
+
+### 0.58.5 Git
+
+- 分支：`kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建；未 Push）。
+- 本地提交：`docs: verify Kuaishou G1.5 login and dual-mode boundaries`（Hash 见 §0.58.6）。
+- 工作区：提交后干净；`research/kuaishou-g1_5/.state/` 与 `scan.png` 未提交。
+
+### 0.58.6 验证
+
+- `node --test --test-isolation=none research/kuaishou-g1_5/tests/prototype.test.mjs`：**10 passed / 0 failed**。
+- `node --check research/kuaishou-g1_5/probe.mjs`、`lib/*.mjs`：通过。
+- `git diff --name-only main...HEAD`：只有 `docs/`、`log/`、`research/`、`.gitignore`、`THIRD_PARTY_NOTICES.md`；
+  **没有** `src/`、`package.json`、`scripts/`、`dist/` 变更。
+- `v0.16.0` Tag 仍存在；`main` 仍为 `6f71f56`。
 
 ## 0.57 快手 G1 双路线验证（2026-11-17）✅ 验证完成 · 结论 C
 

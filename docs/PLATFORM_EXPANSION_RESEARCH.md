@@ -1,13 +1,14 @@
 # 直播平台扩展：候选调查记录
 
-状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0/G1 实测更新于 2026-11-17）**。
+状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0/G1/G1.5 实测更新于 2026-11-17）**。
 2026-11-16 本轮**没有接入任何新平台、没有连接任何新平台、没有安装依赖、
 没有复制任何第三方代码**；2026-11-17 的 G1 轮**真实连接了 Kick**，
 结果与证据见 `docs/KICK_G1_ACCEPTANCE.md`，本文 §2.8 只做摘要。
 2026-11-17 的 Kuaishou G0 轮**真实请求了公开快手直播间**（无登录、无 Cookie、无签名），
 结果见 `docs/KUAISHOU_G0_FEASIBILITY.md`；G1 轮**真实复测了匿名 H5、扫码 start 与软限流**，
-结论 **C（暂缓）**，见 `docs/KUAISHOU_G1_POC.md`，本文 §3.5 只做摘要。
-除 Kick G1 与 Kuaishou G0/G1 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
+结论 **C（暂缓）**，见 `docs/KUAISHOU_G1_POC.md`；G1.5 轮**完成一次真实扫码登录并审查官方条款**，
+结论 **D（暂缓）**，见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`，本文 §3.5 只做摘要。
+除 Kick G1 与 Kuaishou G0/G1/G1.5 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
 **一律为「待验证」**。
 
 准入判据与门禁流程见 `docs/PLATFORM_ADMISSION.md`。本文件只记录「调查到了什么」。
@@ -238,6 +239,24 @@ LiveMemory 若实现必须自行重写，不得复制代码。
   `PLATFORM_ADMISSION.md` §3 评估「二维码登录是否可接受」。
 
 ### 3.5 快手 Kuaishou
+
+**2026-11-17 G1.5 更新：结论 D（暂缓，不进入 G2），完整报告 `docs/KUAISHOU_G1_5_DUAL_MODE.md`。**
+
+- **匿名 H5 判 POLICY-BLOCKED**：官方《快手软件许可及服务协议》七、1.1 / 七、1.4 / 八、1 / 十、1
+  明文禁止以机器人、蜘蛛或未获授权的第三方工具监视/复制/读取平台内容，数据使用需**书面许可**；
+  `livev.m.chenzhongtech.com/robots.txt` 仍为 `User-agent: * Disallow: /`。
+  技术上可用（G1：555 条/2h/3 房间）**不等于允许使用**，不得作为正式默认采集器。
+- **正常扫码登录端到端真实成功**：无签名 `qr/start` → 真人扫码 → `scanResult=1` → `acceptResult=1`
+  → `passToken` → 直播站换票 `result=1` → `userLogin=1`。未使用 sig4、设备指纹、webweapon、
+  验证码求解或 TLS 伪装。
+- **登录后 WS token 仍未验证**：唯一一次 `websocketinfo` 返回 `result:2`、无 token，但调用使用了
+  7 分钟前的旧 `liveStreamId`，目标随后确认下播 → 不能据此判定“签名是唯一障碍”。需按报告 §5.3
+  做一次修正后的扫码复测（先重新确认在播，再调用，20 秒后重试）。
+- **身份/礼物/再开播**：跨场/跨日/跨路线均无证据；礼物/点赞/分享 CODE-SUPPORTED 但 NOT-OBSERVED；
+  原始 WS 协议含 feed `id`，但没有真实帧；`h5:` / `ws:` 强制命名空间隔离。
+- **官方接口**：`liveopen.kuaishou.com` 是云直播推流/拉流，`open.kuaishou.com` 是小程序文档，
+  均无“读取任意直播间聊天”能力；未发现功能相当且条件更明确的公开接口。
+- 未接入生产代码；研究原型与 10 个单测在 `research/kuaishou-g1_5/`。
 
 **2026-11-17 G1 更新：结论 C（暂缓），完整报告 `docs/KUAISHOU_G1_POC.md`。**
 

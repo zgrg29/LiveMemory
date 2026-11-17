@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="3">
+<title>快手扫码登录 · LiveMemory G1.5</title>
+<style>
+  body { margin: 0; padding: 24px; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #fff; color: #111; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0; }
+  p { margin: 0; font-size: 14px; color: #555; max-width: 560px; text-align: center; line-height: 1.6; }
+  .frame { padding: 14px; border: 1px solid #e6e6e6; border-radius: 18px; box-shadow: 0 8px 30px rgba(0,0,0,.06); }
+  img { display: block; width: 460px; height: 460px; image-rendering: pixelated; }
+  .hint { font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+  <h1>用快手 App 扫这个二维码</h1>
+  <p>手机打开快手 App → 首页左上角「扫一扫」→ 对着本屏幕扫描 → 在手机上点「确认登录」。</p>
+  <div class="frame"><img id="qr" src=".state/qr-large.png" alt="快手登录二维码"></div>
+  <p class="hint">本页每 3 秒自动加载最新码；旧码过期会自动换新，不用手动刷新。<br>
+  仅技术验证：不保存 Cookie/Token，不发送弹幕、点赞或礼物。</p>
+  <script>
+    var img = document.getElementById('qr');
+    setInterval(function () { img.src = '.state/qr-large.png?t=' + Date.now(); }, 3000);
+  </script>
+</body>
+</html>

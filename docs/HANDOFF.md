@@ -1,17 +1,60 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **快手 G1 登录态 WebSocket / 匿名 H5 双路线验证** · 结论 **C（暂缓）** ·
-未接入、未改生产代码 · 未 Push/Tag/Release · 详见 `docs/KUAISHOU_G1_POC.md`
+本轮：2026-11-17 · **快手 G1.5 双模式验证** · 结论 **D（暂缓，不进入 G2）** ·
+未接入、未改生产代码 · 未 Push/Tag/Release · 详见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`
 
-> 登录态 WS **没有完成真实实验**：没有账号/真人扫码；但官方 `qr/start` 在**无签名**下返回
-> `result:1` + PNG，`scanResult/acceptResult` 返回 `707`（不是签名错误），说明干净扫码有希望。
-> catbus 的扫码/WS 实现依赖 sig4、设备指纹、webweapon、**滑块自动求解**、`wreq-js` TLS 伪装，
-> 属于明确禁止的“非公开签名 / 模拟客户端 / 绕过风控”，只能读、不能复用。
-> 匿名 H5 仍可用（3 房间 45 秒 6 条，字段 100%，消息 ID 0%），但出现“请求过快”软限流，
-> `robots.txt` 仍 `Disallow: /`；跨场/跨日/跨路线稳定 ID 全部未验证。
-> **G1 结束，不进入 G2；等待用户决定是否授权一次真人扫码的 G1.5。**
+> **匿名 H5 被官方条款明文禁止**（机器人/蜘蛛监视、复制；数据使用需书面许可），
+> 且 H5 `robots.txt` 为 `Disallow: /` → **不得作为正式默认采集器**，不再发起新的 H5 请求。
+> **正常扫码登录端到端真实成功**：`qr/start` → 真人扫码 → `acceptResult` → `passToken` →
+> 直播站换票 → `userLogin` 全部 `result:1`，全程未用签名/设备指纹/验证码/TLS 伪装。
+> **登录后 `websocketinfo` 返回 `result:2`、无 token**，但用的是 7 分钟前的旧 `liveStreamId`，
+> 目标随后下播 → **不能据此判定 WS 不可用**；需一次修正后的扫码复测。
+> **跨场身份、礼物、真实再开播均无证据**；G2 不启动。
 
-## 0. 本轮（快手 G1）
+## 0. 本轮（快手 G1.5）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **D — 暂缓，不进入 G2** |
+| 匿名 H5 | 技术 REAL-VERIFIED（G1），但 **POLICY-BLOCKED**（官方条款 + robots）；保留证据，不再请求 |
+| 扫码登录 | **REAL-VERIFIED（首次端到端）**：无签名完成到直播站 `userLogin=1` |
+| WS token | **未验证**：`websocketinfo` `result:2`，旧 `liveStreamId`，目标已下播 → 不作结论 |
+| WS 弹幕/礼物 | **NOT-OBSERVED**（未建立连接） |
+| 身份 | 跨场/跨日/跨路线均未证明；`h5:` / `ws:` 强制隔离 |
+| 监控 | `home/list` 48 房间；修复“无 result 误判”；“消失=下播”已观察；再开播未观察 |
+| 验证 | 原型单测 **10 passed / 0 failed**；`node --check` 通过；无 `src/` 变更 |
+| Git | 分支 `kuaishou-g1_5`（从 `83a2c30` 创建，未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_5_DUAL_MODE.md`（完整报告：合规原文、登录时间线、WS 复测方案、G2 清单）
+- `research/kuaishou-g1_5/probe.mjs`（policy / rooms / status / h5 / login / selftest / cleanup）
+- `research/kuaishou-g1_5/lib/`（双 transport、normalizer、identity、status、login、protocol）
+- `research/kuaishou-g1_5/tests/prototype.test.mjs`（10 个离线单测）
+- `research/kuaishou-g1_5/scan.html`（真人扫码大图页，自动换码）
+- `THIRD_PARTY_NOTICES.md` G1.5 附录；`docs/ROADMAP.md` P49；`log/2026-11-17-kuaishou-g1_5.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否做一次修正后的扫码复测**：`login --room <在播eid> --wait 600 --listen 120 --probe`；
+   该命令会先重新确认在播，再调 `websocketinfo`，并在 20 秒后重试，用于区分“签名要求”和“限流”。
+2. **是否向快手申请书面许可/合作**：没有它，即使 WS 技术通过也不能产品化。
+3. **若 WS 复测确认必须签名** → 登录路线按 D 处理（对 LiveMemory 不可用）；不要找替代签名服务。
+4. **若用户希望做身份实验**：需授权测试账号在 2 个直播间各发 1 条弹幕，并最好跨日重复。
+5. **不得**默认引入登录、Cookie 复制、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建，未 Push） |
+| 本地提交 | `docs: verify Kuaishou G1.5 login and dual-mode boundaries`（Hash 见 STATUS §0.58.5） |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净（`.state/`、`scan.png` 未提交） |
+
+## 1. 上一轮（快手 G1）
 
 ### 0.1 结果
 
