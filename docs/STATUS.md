@@ -71,8 +71,28 @@
   （`feat: integrate Kuaishou H5 preview with collection disabled`）。
 - main 合并提交：`9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`
   （`merge: release Kuaishou H5 preview (v0.17.0)`）。
-- 发布 Tag：`v0.17.0`（annotated，指向发布文档提交；见 Release 记录）。
+- 发布 Tag：`v0.17.0`（annotated，tag object `4cf356a` → 提交 `5807e3e`）。
 - `v0.16.0` Tag/Release/资产未动；`main` 原 `6f71f56` 已包含在合并历史中。
+
+### 0.60.6 v0.17.0 正式发布记录
+
+| 项目 | 值 |
+| --- | --- |
+| Release | **LiveMemory v0.17.0 — Kuaishou H5 Preview (Live Collection Disabled)** |
+| Release URL | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.17.0` |
+| Release ID | `448828056` |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-17T15:31:37Z` |
+| Push | `main`：`6f71f56..5807e3e`；Tag `v0.17.0` 新推送 |
+| Tag | annotated `v0.17.0`（object `4cf356a27ea73e402520bb0df0ccb38455c60bae` → commit `5807e3e7dcb183fdd09515baacf0c4193591a7c2`） |
+| 资产 1 | `LiveMemory.exe`：99,492,352 B，SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac` |
+| 资产 2 | `SHA256SUMS.txt`：82 B，SHA-256 `dfa9716b10e291104877999a114197a2410a15164e7c2f5cf49303a377001879` |
+| Release body | 与 `docs/release-notes/v0.17.0.md` 逐字节一致（SHA-256 `3454b3d05d9b3d4ed6f37ac381741a743ae4bbc2c99e9bb529cd8f1180ae0e7b`） |
+| 下载复核 | EXE 99,492,352 B、SHA-256 `58b21dc9…830471ac` 与本地一致；`SHA256SUMS.txt` 内容一致 |
+| 页面 | Release 页 200、`/releases/latest` 200、`v0.16.0` 页 200 |
+| 旧版本 | `v0.16.0`（Release ID `448187380`）与资产未修改 |
+
+> 快手在线采集仍未开放：Release Notes、README、界面与 API 均标注预览/采集禁用；
+> 真实 H5 采集、真实 EXE 采集、许可下长测、跨场身份与礼物/点赞仍未验证。
 
 ## 0.59 快手 G1.6：修正旧 ID 后的登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 

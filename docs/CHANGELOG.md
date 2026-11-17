@@ -12,6 +12,8 @@ URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（�
 | --- | --- |
 | 版本 / Schema | `0.17.0` / 16（无迁移） |
 | 发布状态 | **Tag `v0.17.0` · GitHub Release Published（预览组件；快手在线采集未开放）** |
+| Release | `448828056` · `https://github.com/zgrg29/LiveMemory/releases/tag/v0.17.0` |
+| 发布资产 | `LiveMemory.exe`（99,492,352 B）+ `SHA256SUMS.txt`（82 B）；下载复核 SHA-256 一致 |
 | 真实 H5 | **未执行（无许可）** |
 | 发布 EXE | 99,492,352 B；Build ID `47b42dc8417b`；提交 `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`；SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac`；`requireAdministrator`；Kuaishou 10/10 |
 

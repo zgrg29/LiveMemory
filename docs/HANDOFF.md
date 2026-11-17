@@ -41,7 +41,7 @@ main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATIO
 2. 获得许可后，才在隔离环境设置内部开关做真实 G4/G5：≥30 分钟、≥2 房间、真实结束、断线恢复。
 3. 补齐 G3：跨场/跨日身份证据；证据前保持会话内隔离，禁止自动合并。
 4. 不实现/恢复：登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理、浏览器中继。
-5. 无许可时保持禁用；不要 Tag/Release、不要把快手写成已支持。
+5. 无许可时保持生产采集禁用；可以发布预览组件，但必须明确在线采集未开放，**不得写成已支持**。
 
 ### 0.4 Git
 
@@ -50,7 +50,8 @@ main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATIO
 | 分支 | `main`（已合并 `kuaishou-g1_5`） |
 | 功能提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
 | main 合并提交 | `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`（`merge: release Kuaishou H5 preview (v0.17.0)`） |
-| 发布 Tag | `v0.17.0`（annotated） |
+| 发布 Tag | `v0.17.0`（annotated，object `4cf356a` → commit `5807e3e`） |
+| Release | `448828056` · `https://github.com/zgrg29/LiveMemory/releases/tag/v0.17.0` · Published |
 | 版本 / Schema | `0.17.0` / 16 |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |
