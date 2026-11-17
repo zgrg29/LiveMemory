@@ -1,10 +1,10 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **快手 H5 预览接入完成 · 生产采集禁用 · v0.17.0 候选未发布** ·
-未 Push/Tag/Release · 详见 `docs/KUAISHOU_H5_INTEGRATION.md`
+本轮：2026-11-17 · **v0.17.0 已发布：快手 H5 预览接入 · 生产采集禁用** ·
+main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATION.md`
 
 > **按用户指示停止登录 WS 研究，只采用 G1 匿名 H5。** URL 解析、comment 解析、
-> 会话内身份、去重、SQLite、AI 分析/画像、自动监控、异常恢复、十语 UI 与内部候选 EXE
+> 会话内身份、去重、SQLite、AI 分析/画像、自动监控、异常恢复、十语 UI 与内部发布 EXE
 > 已集成。**默认不发起任何 H5 请求**；`connect` 在任何网络请求前返回 403
 > `KUAISHOU_AUTHORIZATION_REQUIRED`。未取得书面许可，未做真实许可下验收，
 > **不发布为已支持**。礼物/点赞仍 **NOT-OBSERVED**；跨场身份不合并。
@@ -15,7 +15,7 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 结论 | **组件完成；生产采集禁用；候选未发布** |
+| 结论 | **预览组件已随 v0.17.0 发布；生产采集禁用** |
 | 代码 | `src/platforms/kuaishou/` 8 模块 + `src/monitoring/detectors/kuaishou.mjs` |
 | 服务端 | 5 个 `/api/kuaishou/*` 路由；capabilities `state:'preview'`、`captureEnabled:false` |
 | 数据 | 仅 comment → chat；无消息 ID；会话内临时身份；30 天保留 |
@@ -23,8 +23,8 @@
 | UI | 第七个页签；强制告知；禁用状态只解析；十语 2,351 键 |
 | 真实 H5 | **未执行**（无许可） |
 | 测试 | **844 unit + 382 integration = 1,226 passed / 0 failed**；Kuaishou 专项 49 passed；UI 80/80 |
-| EXE | 候选 `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `413a4b59…ede7b5`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
-| Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
+| EXE | `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `58b21dc9…830471ac`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| Git | `main`（合并提交 `9ae4a37`）；Tag `v0.17.0`；`v0.16.0` 未动 |
 
 ### 0.2 关键文件
 
@@ -47,8 +47,10 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 分支 | `kuaishou-g1_5`（未 Push） |
-| 本轮提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
+| 分支 | `main`（已合并 `kuaishou-g1_5`） |
+| 功能提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
+| main 合并提交 | `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`（`merge: release Kuaishou H5 preview (v0.17.0)`） |
+| 发布 Tag | `v0.17.0`（annotated） |
 | 版本 / Schema | `0.17.0` / 16 |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |
@@ -64,7 +66,7 @@
 > **旧 ID 解释被排除**：登录后对 8 个最新在播房间（最高 9,427 watching）请求
 > `websocketinfo`，**8/8 `result:2`、无 token、无 URL**；不是下播，也不是全站限流。
 > **WS 路径在当前边界内不可用**：剩余 gate 需要被禁止的签名/设备指纹/浏览器风控能力。
-> **没有真实弹幕/礼物/身份样本**；不写正式适配器、不构建候选 EXE、不发布。
+> **没有真实弹幕/礼物/身份样本**；不写正式适配器、不构建发布 EXE、不发布。
 > 官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口不等同于任意公开主播聊天 API。
 
 ## 0. 本轮（快手 G1.6）
@@ -83,7 +85,7 @@
 | 单测 | 原型 **10 passed / 0 failed** |
 | 回归 | 全量 **1,177 passed / 0 failed / 0 skipped**（326,590 ms） |
 | 生产代码 | **无变更**；无 `src/platforms/kuaishou/`、无路由/UI/监控/DB |
-| 候选 EXE | **无**（不制造“已支持”假象） |
+| 发布 EXE | **无**（不制造“已支持”假象） |
 | Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
 
 ### 0.2 关键文件
@@ -288,8 +290,8 @@ Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/2
 真实服务验收 16/16 · 十语 UI 20/20 · EXE 27/27 · 已并入 v0.16.0
 
 > 从 G1 `74b39fa` 继续，把 Kick 接入正式 service/routes/capabilities/UI/十语言/历史/AI/画像，
-> 完成 ≥60 分钟真实长测、全量回归与 Windows 候选 EXE 验收。**版本仍 `0.15.0`，未执行 G6。**
-> 用户可直接试玩候选 EXE；真实双击 UAC、干净 Windows 账户、订阅/开播事件仍未覆盖。
+> 完成 ≥60 分钟真实长测、全量回归与 Windows 发布 EXE 验收。**版本仍 `0.15.0`，未执行 G6。**
+> 用户可直接试玩发布 EXE；真实双击 UAC、干净 Windows 账户、订阅/开播事件仍未覆盖。
 
 ## 0. 上一轮（Kick G2–G5）
 
@@ -300,7 +302,7 @@ Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/2
 | G2 | `KickService` + 5 个 `/api/kick/*` 路由 + capabilities；KICKs 111 条、赠订 41 条真实入库；身份 `kick:<id>` |
 | G3 | 第六个平台页签；十语 2,302 键；真实浏览器 **20/20**（10 语、4 宽度、明暗、真实 2 场） |
 | G4 | **70.2 分钟**真实长测：34,766 聊天、3,438 观众、0 重复、7 次重连、**1 次真实 token 刷新** |
-| G5 | 候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` **19/19** |
+| G5 | 发布 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` **19/19** |
 | 回归 | 全量 **1,169 passed / 0 failed / 0 skipped**；五平台未改协议 |
 
 ### 0.2 关键文件
@@ -314,7 +316,7 @@ Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/2
 
 ### 0.3 下一轮（需用户确认）
 
-1. 用户试玩候选 EXE：普通双击（接受 UAC）→ 新建记录 → Kick → 粘贴链接 → 开始/停止 → 历史/AI/画像。
+1. 用户试玩发布 EXE：普通双击（接受 UAC）→ 新建记录 → Kick → 粘贴链接 → 开始/停止 → 历史/AI/画像。
 2. 真实双击 UAC 同意/拒绝、干净 Windows 账户人工验收。
 3. 视需要等待订阅/续订、开播下播、Host 的真实样本；未观测前保持 `NOT-OBSERVED`。
 4. G6 发布判断：用户确认后再决定版本号、Tag、Release；**不得自动发布**。

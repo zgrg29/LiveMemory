@@ -42,7 +42,7 @@
 > 十份字典各 **2,271** 键、十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；
 > 五平台与数据库 Schema（16）未变，**未新增直播平台**。详见 `docs/STATUS.md` §0.51。
 
-## P51 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 候选 · 未发布
+## P51 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 已发布为预览 · 采集禁用
 
 - ✅ 用户明确指示：停止登录 WebSocket 研究，**只采用 G1 已验证的匿名 H5**；不实现扫码登录、签名、设备指纹、验证码、TLS 伪装、代理或浏览器中继。
 - ✅ 集成：`src/platforms/kuaishou/`（link / policy / http / transport / messages / status / adapter / service）、路由 `/api/kuaishou/*`、capabilities `state:'preview'`、监控 detector、30 天保留、十语 UI、AI 分析包与长期画像（会话内）。

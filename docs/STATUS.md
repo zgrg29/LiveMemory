@@ -1,11 +1,11 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.17.0 候选：快手 H5 预览接入完成**；H5 实时采集默认禁用，
-未取得书面许可、未发布；六个已发布平台协议未改；详见 `docs/KUAISHOU_H5_INTEGRATION.md`）
+最后更新：2026-11-17（**v0.17.0 已发布：快手 H5 预览接入，实时采集默认禁用**；
+未取得书面许可，未开放生产采集；六个已发布平台协议未改；详见 `docs/KUAISHOU_H5_INTEGRATION.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 
-## 0.60 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 候选 · 未发布
+## 0.60 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 已发布为预览 · 采集禁用
 
 ### 0.60.1 结论
 
@@ -13,7 +13,7 @@
   设备指纹、验证码、TLS 伪装、代理或浏览器中继。
 - **组件全部集成**：URL 解析、公开 comment 解析、昵称/数字 `userId`/毫秒时间、去重、
   多直播间隔离、SQLite、单场 AI 分析、长期画像（受身份限制）、自动监控、异常恢复、
-  上下播判断、十语 UI、候选 EXE。
+  上下播判断、十语 UI、发布 EXE。
 - **生产采集保持禁用**：默认 `access.enabled=false`；connect 在任何网络请求前返回 403
   `KUAISHOU_AUTHORIZATION_REQUIRED`；room 在禁用时只做本地解析；UI 始终展示要求的告知。
 - **未取得书面许可**：G1.5 已确认快手条款禁止未经授权的自动采集、H5 robots 为
@@ -21,7 +21,7 @@
 - **礼物 / 点赞不声称支持**：研究样本未观测（`NOT-OBSERVED`），代码只映射 `comment`。
 - **身份不跨场合并**：`viewer_uid=h5:<rawUserId>@<sessionId>`，两场相同 `userId` 也保持隔离；
   G3 稳定性证据仍缺失，不提供自动合并。
-- **版本**：`0.16.0` → `0.17.0`（候选，未 Tag/未 Release）；Schema 仍 **16**，无迁移。
+- **版本**：`0.16.0` → `0.17.0`（**正式发布为预览版**；Schema 仍 **16**，无迁移；快手实时采集未开放）。
 
 ### 0.60.2 实现与数据语义
 
@@ -44,12 +44,12 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 全量测试 | **844 unit + 382 integration = 1,226 passed / 0 failed / 0 skipped**（`--test-isolation=none`，最终复跑 363,562 ms） |
+| 全量测试 | **844 unit + 382 integration = 1,226 passed / 0 failed / 0 skipped**（`--test-isolation=none`，最终复跑 336,443 ms） |
 | Kuaishou 专项 | **49 passed / 0 failed**（unit 39 + integration 10；含监控、去重、双房间、AI 包、会话内身份） |
 | 六平台回归 | 全量套件通过；Bilibili/YouTube/Twitch/抖音/TikTok/Kick 协议与测试未改 |
 | 十语言字典 | 10 × 2,351；缺失/多余/占位符/空值/英文残留 0 |
 | 真实浏览器 UI | **80/80**（10 语 × 1440/1024/820/390 × 明暗；告知/授权/身份/礼物说明可见，无溢出，无原始键；每语 1440 light 执行链接解析 + 禁用开始按钮检查） |
-| 候选 EXE | `dist/LiveMemory.exe`；**99,492,352 bytes**；SHA-256 `413a4b59268400f9cb71042ba8d1f16802a753838d8b066909cab81a79ede7b5`；Build ID `47b42dc8417b`；提交 `d49047af32f18b271b00043c1e19db44dd796fb8`；Manifest **requireAdministrator** |
+| 发布 EXE | `dist/LiveMemory.exe`；**99,492,352 bytes**；SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac`；Build ID `47b42dc8417b`；提交 `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`；Manifest **requireAdministrator** |
 | EXE 验收 | `verify-kuaishou-exe.mjs` **10/10**；`verify-exe.mjs` **11/11**；`verify-help-exe.mjs` **14/14** |
 | 真实 H5 | **未执行**（无许可） |
 | 真实 EXE 采集 | **未执行** |
@@ -61,16 +61,18 @@
 - 未向快手发起真实 H5 请求；未取得书面许可；未做真实许可下验收。
 - 未实现礼物/点赞/进入/关注映射；未实现登录/扫码/签名/WebSocket。
 - 未验证跨场/跨日身份稳定性；未提供跨场合并。
-- 未发布；未 Push、未 Tag、未创建 Release。
+- **快手在线采集未开放**；本版仅正式发布预览组件，不把快手标记为已支持采集。
 - 真实双击 UAC、干净 Windows 账户仍未人工验证。
 
 ### 0.60.5 Git
 
-- 分支：`kuaishou-g1_5`（继续；未 Push）。
-- 本轮代码/测试/文档提交：`d49047af32f18b271b00043c1e19db44dd796fb8`
+- 分支：`main`（已合并 `kuaishou-g1_5`；发布时 Push）。
+- 功能提交：`d49047af32f18b271b00043c1e19db44dd796fb8`
   （`feat: integrate Kuaishou H5 preview with collection disabled`）。
-- `main` 仍 `6f71f56`；v0.16.0 Tag/Release/资产未动。
-- 本轮提交 Hash 见交付回复与 `docs/HANDOFF.md`。
+- main 合并提交：`9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`
+  （`merge: release Kuaishou H5 preview (v0.17.0)`）。
+- 发布 Tag：`v0.17.0`（annotated，指向发布文档提交；见 Release 记录）。
+- `v0.16.0` Tag/Release/资产未动；`main` 原 `6f71f56` 已包含在合并历史中。
 
 ## 0.59 快手 G1.6：修正旧 ID 后的登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 
@@ -87,7 +89,7 @@
   因此**没有真实弹幕、没有礼物、没有正式适配器**。
 - **授权仍未取得**：官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口是
   app_id + roomCode + sign、面向已入驻玩法开发者的服务端能力，不是“任意公开主播聊天读取 API”。
-- **结论 E（停止正式接入）**：不写 `src/platforms/kuaishou/`，不加路由/UI/监控/数据库，不构建候选 EXE，
+- **结论 E（停止正式接入）**：不写 `src/platforms/kuaishou/`，不加路由/UI/监控/数据库，不构建发布 EXE，
   不发布；不重新启用 POLICY-BLOCKED 的匿名 H5 作为替代。
 
 ### 0.59.2 关键证据
@@ -410,7 +412,7 @@ detector + policy + `MonitoringManager` 生命周期，**Kick 在平台注册、
   **1,177 passed / 0 failed / 0 skipped**（`--test-isolation=none`，512,084 ms）。
 - 五平台 monitoring 回归全绿。
 
-### 0.54.4 候选 EXE
+### 0.54.4 发布 EXE
 
 | 项目 | 值 |
 | --- | --- |
@@ -428,10 +430,10 @@ detector + policy + `MonitoringManager` 生命周期，**Kick 在平台注册、
   非官方协议可能变化。
 - 不得把本轮「模拟下播/下一次开播」描述为真实端到端；真实下播仅有 G4 的 odablock 一次。
 
-## 0.53 Kick G2–G5：正式接入、完整验收与候选 EXE（2026-11-17）✅ 候选
+## 0.53 Kick G2–G5：正式接入、完整验收与发布 EXE（2026-11-17）✅ 候选
 
 用户要求连续推进 G2–G5，每个阶段独立验收，出现 P0/P1 先修复再继续，最终交付可试玩的
-Windows 候选 EXE，但**不执行 G6、不发布**。本轮从 `feature/kick-g1` 的 `74b39fa` 继续。
+Windows 发布 EXE，但**不执行 G6、不发布**。本轮从 `feature/kick-g1` 的 `74b39fa` 继续。
 
 ### 0.53.1 范围与结果
 
@@ -459,7 +461,7 @@ Windows 候选 EXE，但**不执行 G6、不发布**。本轮从 `feature/kick-g
 | 事件 | 111 KICKs + 41 membership（18 paid / 23 free）；KICKs 的 `amount_minor`/`currency` 100% 为 NULL |
 | 停止 | `/api/kick/disconnect` 后 `liveSessionsAfterStop=0`、`recordingsAfterStop=0` |
 
-### 0.53.3 候选 EXE（G5）
+### 0.53.3 发布 EXE（G5）
 
 | 项目 | 值 |
 | --- | --- |

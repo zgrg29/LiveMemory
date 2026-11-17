@@ -38,7 +38,7 @@
 - Kuaishou 专项：**49 passed**。
 - 六平台：全量回归，未改协议。
 - 十语言：10 × 2,351，键集/占位符/空值/英文残留 0；真实浏览器 **80/80**。
-- 候选 EXE：99,492,352 B、Build ID `47b42dc8417b`、`requireAdministrator`；
+- 发布 EXE：99,492,352 B、Build ID `47b42dc8417b`、`requireAdministrator`；
   `verify-kuaishou-exe` 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14。
 - 真实 H5、真实 EXE 采集、真实下播/再开播、跨场身份：**未执行**。
 
@@ -51,7 +51,10 @@
 
 ## Git
 
-- 分支 `kuaishou-g1_5`；本地提交
+- 分支 `kuaishou-g1_5`；功能提交
   `d49047af32f18b271b00043c1e19db44dd796fb8`
   （`feat: integrate Kuaishou H5 preview with collection disabled`）。
-- `main` 仍 `6f71f56`；v0.16.0 Tag/Release 未动。
+- 合并到 `main`：`9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`
+  （`merge: release Kuaishou H5 preview (v0.17.0)`）。
+- Tag `v0.17.0`；GitHub Release 已发布（预览组件；在线采集未开放）。
+- `v0.16.0` Tag/Release 未动。

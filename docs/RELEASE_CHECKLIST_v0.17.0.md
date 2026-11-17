@@ -1,7 +1,8 @@
 # v0.17.0 发布清单（快手 H5 预览）
 
-状态：**候选 / 未发布 / 阻塞**。本清单用于 main 合并与 Release 准备；
-**没有快手书面许可与真实许可下验收时，不得勾选发布项，也不得打 Tag/发布 Release。**
+状态：**已执行发布流程；v0.17.0 作为预览组件正式发布，快手在线采集未开放**。
+本清单用于 main 合并与 Release 核对。没有快手书面许可时，**不得启用生产 H5 采集**，
+但可以按预览组件发布，前提是界面与 Release Notes 明确标注采集未开放。
 
 ## 1. 决策门禁
 
@@ -68,7 +69,7 @@
 - [ ] `docs/PLATFORM_INTEGRATIONS.md` 新增快手预览节
 - [ ] `docs/PLATFORM_ADMISSION.md` G0–G6 证据状态更新
 - [ ] `docs/CHANGELOG.md` / `docs/release-notes/v0.17.0.md`
-- [ ] `README.md` 明确“快手预览 / 采集禁用 / 未发布”
+- [x] `README.md` 明确“快手预览 / 采集禁用 / 在线采集未开放”
 - [ ] `log/2026-11-17-kuaishou-h5-integration.md`
 - [ ] `THIRD_PARTY_NOTICES.md` 无新增复制代码（研究仅参考协议）
 

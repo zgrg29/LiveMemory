@@ -728,7 +728,7 @@ WSS  realtime.<region>.platform.kick.com/connection/websocket
   G5 真实 EXE（`verify-kick-exe.mjs`）。G6 已合并 `main`、Tag `v0.16.0` 并发布 GitHub Release。
   详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/KICK_G2_G5_ACCEPTANCE.md`。
 
-## 3E. 快手 Kuaishou（v0.17.0 候选预览，实时采集默认禁用）
+## 3E. 快手 Kuaishou（v0.17.0 正式发布为预览，实时采集默认禁用）
 
 ### 3E.1 接入边界与状态
 

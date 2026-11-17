@@ -2,18 +2,18 @@
 
 ## 0.17.0 — 2026-11-17（快手 H5 预览接入：Kuaishou H5 Preview，采集默认禁用）
 
-**候选 / 未发布**。相对 `0.16.0` 新增第七个平台页签「快手」，定位为**预览**：
+**正式发布（预览组件；实时 H5 采集未开放）**。相对 `0.16.0` 新增第七个平台页签「快手」，定位为**预览**：
 URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（会话内）、自动监控、
-异常恢复、十语 UI 与候选 EXE 已集成。**实时 H5 采集默认关闭**；未取得快手书面许可，
+异常恢复、十语 UI 与发布 EXE 已集成。**实时 H5 采集默认关闭**；未取得快手书面许可，
 未做真实许可下验收，**不得描述为已正式支持**。六平台协议、Schema（16）、金额/身份/去重
 规则未变，不新增设置键。
 
 | 项目 | 值 |
 | --- | --- |
 | 版本 / Schema | `0.17.0` / 16（无迁移） |
-| 发布状态 | **未 Tag、未 Release、未 Push** |
+| 发布状态 | **Tag `v0.17.0` · GitHub Release Published（预览组件；快手在线采集未开放）** |
 | 真实 H5 | **未执行（无许可）** |
-| 候选 EXE | 99,492,352 B；Build ID `47b42dc8417b`；提交 `d49047af32f18b271b00043c1e19db44dd796fb8`；SHA-256 `413a4b59268400f9cb71042ba8d1f16802a753838d8b066909cab81a79ede7b5`；`requireAdministrator`；Kuaishou 10/10 |
+| 发布 EXE | 99,492,352 B；Build ID `47b42dc8417b`；提交 `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`；SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac`；`requireAdministrator`；Kuaishou 10/10 |
 
 ### 新增
 
@@ -36,7 +36,8 @@ URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（�
 - 全量：**844 unit + 382 integration = 1,226 passed / 0 failed / 0 skipped**。
 - 六平台回归：全量套件通过；协议未改。
 - 十语言：10 × 2,351 键，差异 0；真实浏览器 **80/80**。
-- 候选 EXE：99,492,352 B / Build ID `47b42dc8417b` / `requireAdministrator`；
+- 发布 EXE：99,492,352 B / Build ID `47b42dc8417b` / `requireAdministrator`；
+  SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac`；
   Kuaishou **10/10**、`verify-exe` **11/11**、`verify-help-exe` **14/14**。
 
 ### 未验证 / 已知限制
