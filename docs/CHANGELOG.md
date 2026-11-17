@@ -9,10 +9,10 @@
 | 项目 | 值 |
 | --- | --- |
 | Release | `LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring` |
-| Build ID | `__BUILD_ID__` |
-| 提交 | `__COMMIT__` |
-| EXE | `LiveMemory.exe` · `__EXE_SIZE__` bytes |
-| SHA-256 | `__EXE_SHA__` |
+| Build ID | `ac0daca067b3` |
+| 提交 | `4a2bcd6f5c54554cc20629257b3a548011cdf056` |
+| EXE | `LiveMemory.exe` · `99,342,336` bytes |
+| SHA-256 | `d6c39ee259ed5b8f35c4174eede54c2dfc436bd49edcd57b18e50f1591118094` |
 | Manifest | `requireAdministrator` |
 
 ### 新增
@@ -33,7 +33,7 @@
 - 十语言 Kick UI：**20/20**（1440/1024/820/390，明暗，10 语言，含监控开关/表单与真实 waiting/recording Tab）。
 - 真实长测（≥60 分钟）：见 `docs/KICK_G2_G5_ACCEPTANCE.md`。
 - 真实监控验收：**16/16**（离线 xqc、开播自动记录、重启、双频道、手动停止）。
-- 正式 EXE：Build ID `__BUILD_ID__` / `__EXE_SIZE__` B / `verify-kick-exe` **27/27**。
+- 正式 EXE：Build ID `ac0daca067b3` / `99,342,336` B / `verify-kick-exe` **27/27**。
 
 ### 未验证 / 已知限制
 

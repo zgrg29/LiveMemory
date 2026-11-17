@@ -1,10 +1,60 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**Kick G5.1 开播监控完成**：离线频道可监控、开播自动记录、
-连续两次确认下播后结束、重启恢复、多频道独立；真实服务验收 16/16、十语 UI 20/20、
-EXE 27/27；**未发布、未合并 main、未 Tag/Release**，版本仍 `0.15.0`）
+最后更新：2026-11-17（**v0.16.0 正式发布**：Kick 成为第六个直播平台并带开播监控；
+`main` 已合并、Tag `v0.16.0`、GitHub Release Published；Build ID `ac0daca067b3`；
+全量 1,177 passed、正式 EXE 27/27）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.55 v0.16.0 正式发布：Kick 支持与自动开播监控（2026-11-17）✅ 已发布
+
+### 0.55.1 最终审计与合并
+
+- 发布分支 `feature/kick-g2` 工作区干净；G1–G5.1 全部提交保留；`main` 无用户未提交改动。
+- 合并提交 `4a2bcd6f5c54554cc20629257b3a548011cdf056`
+  （`merge: release Kick as the sixth live platform (v0.16.0)`，--no-ff）。
+- 版本 `0.15.0` → **`0.16.0`**（`package.json`、`APP_VERSION`、README、CHANGELOG、
+  Release Notes、EXE `--version` 与 bootstrap 全部一致）。
+- Schema 仍 16；无数据库迁移；五平台代码路径未重构。
+
+### 0.55.2 自动化测试（main 合并后）
+
+- 全量 `node --test --test-isolation=none`：**1,177 passed / 0 failed / 0 skipped**
+  （285,534 ms）。
+- 首轮全量出现 1 个既有 TikTok 时序失败
+  （`tiktok-local-adapter: a throttled anonymous cookie keeps the recording and retries`），
+  单独重跑 14/14 通过、二次全量 1,177/1,177 通过；判定为偶发时序，非 Kick 回归，未改断言。
+- Kick 专项 75、十语言字典 2,304 键、监控恢复、备份恢复、数据库兼容、打包完整性检查均通过。
+
+### 0.55.3 正式 EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `LiveMemory.exe` |
+| 版本 | `0.16.0`（`--version` 实测） |
+| Build ID | `ac0daca067b3` |
+| 构建提交 | `4a2bcd6f5c54554cc20629257b3a548011cdf056` |
+| 大小 | 99,342,336 bytes |
+| SHA-256 | `d6c39ee259ed5b8f35c4174eede54c2dfc436bd49edcd57b18e50f1591118094` |
+| Manifest | `requireAdministrator`（PE 复读） |
+| 签名 | 未签名（SmartScreen 可能提示） |
+| EXE 验收 | `verify-kick-exe.mjs` **27/27**（真实 Kick 双房间、身份、礼物、历史、AI、监控、停止） |
+| 自动化副本 | `LiveMemory-asInvoker.exe`，同 Build ID/源码，仅测试用 |
+
+**PE VERSIONINFO 已知问题（未修复）**：Windows 文件属性仍显示 Node 运行时
+（FileVersion/ProductVersion `24.21.0`、ProductName `Node.js`）。本轮没有安全的零依赖
+VERSIONINFO 资源重写方案；为避免破坏已通过验收的 EXE，未修改。应用内 `--version`、
+bootstrap、About 与 Release 元数据均为 `0.16.0` / `ac0daca067b3`。
+
+### 0.55.4 发布
+
+- Annotated Tag `v0.16.0`；Release Title
+  **`LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring`**。
+- Release URL：`https://github.com/zgrg29/LiveMemory/releases/tag/v0.16.0`。
+- 资产：`LiveMemory.exe`（99,342,336 B，SHA-256 同上）与 `SHA256SUMS.txt`。
+- 未覆盖/修改 `v0.15.0` 历史 Release。
+- 已知限制：Kick 非官方实时接口、重连可能漏消息、KICKs 非法币、部分赠订无稳定 ID、
+  关注需官方 Webhook、同频道跨两次开播的真实自然周期未完成观察；真实双击 UAC 未人工验证。
 
 ## 0.54 Kick G5.1：开播监控、自动录制与 EXE 补验（2026-11-17）✅ 候选
 
