@@ -202,7 +202,8 @@ Node SEA（Single Executable Application）+ postject 注入。
 
 ## 9. 已验证 / 未验证（v0.8.1 历史记录）
 
-> 本节保留 v0.8.1 的历史证据。它描述的 `requireAdministrator`、UAC 与 asInvoker 副本流程已被 RC0 P0-5 取代；当前发布形态与验收见 §12。
+> 本节保留 v0.8.1 的历史证据。它描述的 `requireAdministrator`、UAC 与 asInvoker 副本流程先后被
+> RC0 P0-5（`asInvoker`）和 §13（恢复 `requireAdministrator`）取代；当前发布形态与验收见 §13。
 
 已验证（本机，2026-11-10）：
 
@@ -244,9 +245,9 @@ Node SEA（Single Executable Application）+ postject 注入。
 ## 10. 发布与升级（M8）
 
 - 版本号写入 `package.json` 与 `src/shared/app-info.mjs`，二者必须一致（可加测试）。
-- 发布包：EXE + README + LICENSE + SHA256SUMS。
+- 发布包（当前形态）：`LiveMemory.exe` + `SHA256SUMS.txt`；早期版本曾使用 `LiveMemory-vX.Y.Z-windows-x64.zip`。
 - 升级：替换 EXE；数据目录不变；schema 迁移自动执行；旧 `app\<hash>` 目录可清理。
-- 发布 EXE 必须在新构建中重新验证 `asInvoker` Manifest、普通权限启动与本地 API 会话认证；不能只沿用旧 EXE 的结论。
+- 发布 EXE 必须在新构建中重新验证 `requireAdministrator` Manifest、UAC 行为与本地 API 会话认证；不能只沿用旧 EXE 的结论。
 - 权限变化不改变“数据目录优先、位置记录、迁移 staging/回滚、清空范围”规则。
 - 回滚：保留上一版本 EXE 与升级前数据库备份（M5 备份机制）。
 

@@ -1,6 +1,32 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **v0.17.0 已发布：快手 H5 预览接入 · 生产采集禁用** ·
+## 2026-11-17 文档审计与 README 重构（最新交接）
+
+本轮只做文档与信息架构，不改软件功能、业务逻辑、许可证或发布状态。
+
+### 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 目标 | 核验真实状态；把 README 重构为面向 GitHub 用户的三语首页；对齐 STATUS / HANDOFF / ROADMAP / RELEASE |
+| 版本 / 发布 | `0.17.0`；`v0.17.0` 已发布（Release `448828056`）；快手预览、采集禁用 |
+| 代码变更 | **无**（`src/`、`tests/`、`scripts/` 未改；仅新增文档检查脚本 `scripts/check-docs.mjs`） |
+| README | English → 简体中文 → 日本語；语言导航、平台表、下载/UAC、快速开始、AI、隐私、FAQ、开发入口、许可证 |
+| 发布文档 | `docs/RELEASE.md` 改为纯流程；历史证据迁至 `docs/RELEASE_HISTORY.md` |
+| 状态文档 | STATUS 新增 §0 当前状态快照；ROADMAP 新增当前阶段；旧章节标记为历史 |
+| 已修正 | I18N 键数（v0.15.0 2,271 / v0.16.0 2,304 / v0.17.0 2,351）；WINDOWS_RUNTIME 的 asInvoker 旧规则；PLATFORM_INTEGRATIONS 顶部平台状态；TEST_PLAN 的 v0.15.0 键数；RC0 “未发布”旧记录 |
+| 验收 | 三语顺序、相对链接、i18n 键集、`git diff --check`、无 `src/` 变更；i18n/locale 单元测试 **51 passed**；README 经 GitHub Markdown API 渲染（6 个表格、3 个语言 H2） |
+| 日志 | `log/2026-11-17-docs-audit-readme.md` |
+
+### 下一轮
+
+- 先读 `docs/STATUS.md` §0（当前状态快照）与 §0.6（开放问题/下一步）。
+- 当前没有已授权功能里程碑；不要自行开始新平台或恢复快手采集。
+- 真实 Windows UAC、干净账户、真实 Provider、未观测事件仍需用户授权/人工验收。
+
+> 以下“本轮（快手 H5 预览接入）”是上一次开发轮，保留为上一轮记录。
+
+上一轮：2026-11-17 · **v0.17.0 已发布：快手 H5 预览接入 · 生产采集禁用** ·
 main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATION.md`
 
 > **按用户指示停止登录 WS 研究，只采用 G1 匿名 H5。** URL 解析、comment 解析、
@@ -9,7 +35,7 @@ main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATIO
 > `KUAISHOU_AUTHORIZATION_REQUIRED`。未取得书面许可，未做真实许可下验收，
 > **不发布为已支持**。礼物/点赞仍 **NOT-OBSERVED**；跨场身份不合并。
 
-## 0. 本轮（快手 H5 预览接入）
+## 0A. 上一轮（快手 H5 预览接入）
 
 ### 0.1 结果
 
@@ -58,6 +84,11 @@ main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATIO
 | 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |
 
 ---
+
+## 历史交接记录（以下）
+
+> 以下各节按时间倒序保留，只用于追溯当时的判断与证据。当前状态、版本、平台与待办以
+> `docs/STATUS.md` §0 为准；发布证据以 `docs/RELEASE_HISTORY.md` 为准。
 
 上一轮：2026-11-17 · **快手 G1.6 登录态 WebSocket 复测** · 结论 **E（停止正式接入）** ·
 未接入、未改生产代码、未构建 EXE · 未 Push/Tag/Release ·
@@ -1621,7 +1652,7 @@ A session `ses_01M7H90WMS2MMC18X77V`，B session `ses_01M7H915E4VKBFGC34VF`；�
 > 本轮只准备发布材料；**未改产品代码/版本、未 Push、未创建本地或远程 Tag、未创建 Release、未上传资产**。
 > 发布包位于 `dist/`（gitignored），面向用户的 Notes 位于 `docs/release-notes/`。
 
-完整报告：`docs/STATUS.md` §0.32；Release Notes：`docs/release-notes/v0.13.2-rc.0.md`；发布流程：`docs/RELEASE.md` §10；日志：`log/2026-11-15-rc0-release-prep.md`。
+完整报告：`docs/STATUS.md` §0.32；Release Notes：`docs/release-notes/v0.13.2-rc.0.md`；发布记录：`docs/RELEASE_HISTORY.md`（v0.13.2-rc.0）；日志：`log/2026-11-15-rc0-release-prep.md`。
 
 ### 0.1 做了什么
 

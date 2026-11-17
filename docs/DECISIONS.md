@@ -563,3 +563,27 @@
   扫描继续保留。
 - 同一 Windows 用户的恶意软件风险仍在，且可能继承提权令牌；文档不得把提权描述为安全增强。
 - 版本、数据库 schema、结果 Schema、提示词版本与备份格式均不变。
+
+## ADR-038 文档职责分离与 README 三语首页（2026-11-17）
+
+**状态**：已采纳（文档审计轮，只改文档与检查脚本）
+
+**背景**：README 长期堆放发布时间线、内部实现细节与历史修复记录；`RELEASE.md` 同时包含发布流程
+与多个版本的验收证据；版本号、语言键数、平台数量在 STATUS / ROADMAP / README / AGENTS 多处
+重复维护，已出现「v0.15.0 是 2,304 键」「RC0 未发布」等与事实不一致的旧描述。
+
+**决定**：
+
+- README 只做面向 GitHub 用户的项目首页，语言顺序固定 **English → 简体中文 → 日本語**；
+  三语核心信息一致，历史细节通过链接指向专题文档。
+- `docs/STATUS.md` §0 作为当前状态唯一权威；`HANDOFF.md` 只保留最近交接，旧交接标为历史；
+  `ROADMAP.md` 顶部只保留当前阶段与下一步，P51 及更早标为已完成里程碑历史。
+- `docs/RELEASE.md` 只保留可重复执行的发布流程；已发生的 Tag、Release ID、资产与哈希归档到
+  `docs/RELEASE_HISTORY.md`。
+- 动态数量（版本号、平台数量、语言数量、测试数量）不在 AGENTS 中硬编码，改为引用
+  `docs/STATUS.md` §0、`docs/PLATFORM_INTEGRATIONS.md` §0 与 `src/shared/locales.mjs`。
+- 新增 `scripts/check-docs.mjs`，检查 README 语言顺序、相对链接、版本一致性与十语字典键集；
+  它只做文档一致性检查，不进入应用运行时。
+
+**后果**：文档入口更短、更稳定；历史证据仍可追溯；代价是发版或新增语言时需要同步
+STATUS / CHANGELOG / RELEASE_HISTORY，而未验证项仍必须由人工或真实环境补齐。

@@ -2,6 +2,34 @@
 
 状态标记：✅ 完成 · 🟡 部分完成 · ⬜ 未开始
 
+> **本文件回答“下一步做什么”，不是发布日志。** 当前真实状态、版本、平台与未完成项以
+> `docs/STATUS.md` §0 为准；已发生的发布证据以 `docs/RELEASE_HISTORY.md` 为准。
+> 下方的 P51 及更早条目是**已完成里程碑的历史记录**，其中“未发布/不发布”等字样只代表
+> 当时的阶段结论，不代表最终结果。
+
+## 当前阶段（2026-11-17）
+
+- ✅ **v0.17.0 已发布**：六个已发布平台（Bilibili / YouTube / Twitch / 抖音 / TikTok / Kick）
+  正常；快手为预览组件，实时 H5 采集默认禁用。
+- ✅ **当前没有进行中的功能开发里程碑**。本轮只做文档审计、状态对齐与 README 重构。
+- ⬜ **等待用户决定下一轮方向**。以下候选不是已授权计划：
+
+  1. **快手书面许可 / 官方接口**：取得前保持采集禁用；取得后重新做 G3–G5 验收。
+  2. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
+  3. **真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义；
+     需要用户提供 Key 并授权费用。
+  4. **未观测事件与长测**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
+     下播→再开播；继续标 `NOT-OBSERVED`，不得用 Mock 代替。
+  5. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 执行；不得为增加数量降低标准。
+
+- 🚫 **未授权事项**：不 Push、不创建 Tag/Release、不打开快手生产采集、不改许可证、
+  不改已确认的产品原则。新平台没有通过 G0 不得写代码。
+
+## 已完成里程碑（历史，P51 及更早，倒序）
+
+> 以下内容保留历史证据与决策。版本号、测试数量、平台数量与“未发布”状态均以
+> `docs/STATUS.md` §0 与 `docs/RELEASE_HISTORY.md` 为准。
+
 > v0.13.3（2026-11-16，TIKTOK-M6 合并 main）：开发者已在普通 Windows 桌面完成多直播间人工验收，正式批准合并。`feature/tiktok` 以 `--no-ff` 合并到本地 main，合并提交 `980de0f`（父 `410bfc3` + `e992534`），合并后树与功能分支一致。合并后全量 **1034 passed / 0 failed / 0 skipped**；main 重建 EXE Build ID `e48016f19362`（commit `980de0f`，SHA-256 `1b8cbe63…`，requireAdministrator），`verify-exe` 10/10、`verify-tiktok-exe` 22/22 + 2 NOT-OBSERVED、`verify-tiktok-multi-exe` 17/17。真实礼物/连送/订阅仍 **NOT-OBSERVED**；未 Push、未 Tag、未 Release、未删除功能分支。详见 `docs/STATUS.md` §0.44。
 > v0.13.3（2026-11-16，TIKTOK-M6）：允许同一平台多个**不同** TikTok 直播间并发记录。真实根因是 TikTok 面板把「存在任意 TikTok 记录」当成「该房间重复」，全局禁用开始按钮；后端 `SessionManager`/adapter 一直支持多场。修复收窄为同一 `platformRoomId`，新增逐场活动列表与独立停止；正式界面删除模拟直播标签/面板/顶部按钮，保留 `MockLiveSource` 与 `/api/simulate/*` 作为测试夹具。真实双房间 EXE `@aljazeeraenglish` + `@aljazeera` **17/17**（A 4 条 / B 1 条真实 chat，停 A 后 B 继续 1→2），全量 **1034 passed**；EXE `e48016f19362`（commit `4224f7c`，`96,730,112` B，requireAdministrator）。礼物仍 **NOT-OBSERVED**。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.43。
 > v0.13.3（2026-11-16，TIKTOK-M5）：TikTok 统一为**唯一匿名本地 webcast WebSocket 采集**：只使用任何访客都会获得的匿名 `ttwid`，不需要账号/扫码登录/Cookie 导入/浏览器中继，也不依赖付费或免费社区签名服务。新增 `webcast.mjs`、`local-adapter.mjs`、`state.mjs`、`legacy-cleanup.mjs`，重写 `service.mjs`；删除 TikTok 扫码登录、登录状态 UI、专用浏览器 Profile、浏览器中继、免费社区签名通道与通道选择；`/api/tiktok/login/*`、`/api/tiktok/transport` 现返回 404，`tiktokTransport` 设置被拒绝。UI 只保留链接/检查/开始/停止/自动监听与四项独立状态。真实 30 分钟长测与正式 EXE 验收通过；**真实礼物/连送/订阅 NOT-OBSERVED**（本轮在播房间无礼物）。协议为非官方、无续传游标。**未合并 main、未 Push/Tag/Release。** 详见 `docs/STATUS.md` §0.42。
@@ -31,7 +59,7 @@
 
 > v0.14.0 规划轮（2026-11-16，I18N/PLATFORM）：**只做规划、调查与文档，不改业务代码、不新增语言、不接入新平台、不打包、不发布。** 核实当前国际化真实结构（三语、每份字典 2,265 键、键集与占位符零差异），确认「界面语言」与「AI 输出语言」目前是默认耦合且无独立持久设置；定位到真实缺口（两份语言清单、3 项 Header 语言控件、`max-width:132px`、`LOCALE_NAME` 三语、`dedupe_key` 语言相关）。调查 Kick 三个候选开源项目（kixo / Kick-Live-Connector / kick-api）并确认官方 API 无「读取聊天」能力。新增 `docs/I18N.md`、`docs/PLATFORM_ADMISSION.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md`。详见 `docs/STATUS.md` §0.45。
 
-> v0.14.0 正式发布（2026-11-16，Multi-Platform Release）：五平台版本封版。产品版本 `0.13.3` → `0.14.0`，Tag `v0.14.0` 指向 `d268cf9`，GitHub Release 已发布。EXE Build ID `17f84b1956e1` / SHA-256 `6862079a…` / 97,769,984 bytes / `requireAdministrator`；发布包 `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`）。验收：**687 unit + 347 integration = 1034 passed**；`verify-exe` 10/10、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16。TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订仍 **NOT-OBSERVED**。**十语言、独立 AI 输出语言与 Kick 等新平台均为后续规划，不在本版。** 详见 `docs/STATUS.md` §0.46、`docs/RELEASE.md` §11。
+> v0.14.0 正式发布（2026-11-16，Multi-Platform Release）：五平台版本封版。产品版本 `0.13.3` → `0.14.0`，Tag `v0.14.0` 指向 `d268cf9`，GitHub Release 已发布。EXE Build ID `17f84b1956e1` / SHA-256 `6862079a…` / 97,769,984 bytes / `requireAdministrator`；发布包 `LiveMemory-v0.14.0-windows-x64.zip`（35,977,845 bytes / SHA-256 `5d7b7e65…`）。验收：**687 unit + 347 integration = 1034 passed**；`verify-exe` 10/10、`verify-p0-2-exe` 13/13、`verify-ai-token-exe` 16/16。TikTok 礼物/连送/订阅、抖音真实礼物、Twitch Bits/赠订仍 **NOT-OBSERVED**。**十语言、独立 AI 输出语言与 Kick 等新平台均为后续规划，不在本版。** 详见 `docs/STATUS.md` §0.46、`docs/RELEASE_HISTORY.md`（v0.14.0）。
 
 > v0.15.0 开发线（2026-11-16，P39 / I18N-M0）：**国际化基础架构整理完成，未新增语言、未发布。** 新增单一语言清单 `src/shared/locales.mjs`（Node 与浏览器同源），语言解析改为「用户偏好 / 系统检测 / 实际已安装资源」三层 + 语言族/script/region 逐级降级；`zh-HK` 当前安全降级 `zh-CN`，未来加入 `zh-TW` 后自动优先。Header 语言控件改为由 `/api/bootstrap` 动态生成：三种语言保持原三段按钮交互，>3 项或长名称自动使用原生下拉；删除 `max-width:132px/112px`。真实浏览器 **9/9** 布局截图通过（三语 1440/390 + 十语言夹具 1440/1024/820/390/黑暗），全量 **711 unit + 349 integration = 1060 passed / 0 failed**，三语 2,265 键/占位符零差异。P41 长期画像跨语言策略已由用户确定为**方案 B（允许混合并接受跨语言重复）**，仅记录文档，未改代码/DB/AI。**未 Push、未 Tag、未 Release。**
 
@@ -51,8 +79,9 @@
 - ✅ 自动监控：`MONITOR_PLATFORMS` 增加 `kuaishou`；基础 120 秒；目标键 `eid`；循环键 `kuaishou:<eid>:<liveStreamId>`；feed 601 权威结束，房间页连续 2 次 offline 结束，rate_limited/unknown 不结束。
 - ✅ 十语言：10 × **2,351** 键，新增 47 键，键集/占位符 0 差异。
 - ⚠️ 验收：全部 fake fetch / 研究样本；**真实 H5 未执行**；真实许可下长测、跨场身份、真实下播→再开播均未验证。
-- ⛔ **G6 阻塞**：无书面许可、无真实 H5 验收；**不发布为已支持**，不 Push/Tag/Release。
-- 📄 `docs/KUAISHOU_H5_INTEGRATION.md`；`docs/release-notes/v0.17.0.md`；`docs/RELEASE_CHECKLIST_v0.17.0.md`。
+- ⚠️ **发布结果**：开发阶段按 G6 阻塞处理（不 Push/Tag/Release）；后续经用户授权，快手预览组件已随
+  **v0.17.0 正式发布**，但实时 H5 采集仍默认禁用，不得写成“已支持快手采集”。
+- 📄 `docs/KUAISHOU_H5_INTEGRATION.md`；`docs/release-notes/v0.17.0.md`；`docs/RELEASE_CHECKLIST_v0.17.0.md`；`docs/RELEASE_HISTORY.md`。
 
 ## P50 快手 G1.6：登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 

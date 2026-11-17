@@ -8,7 +8,9 @@
 
 LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、免费、不需要开发者维护服务器。观众数据保存在用户自己的电脑上；AI 分析只由本地程序使用**用户自己配置的 API Key** 调用 Provider，不经过开发者服务器。
 
-第一版支持 Bilibili Live 与 YouTube Live；当前**六个已发布**真实直播平台为 Bilibili / YouTube / Twitch / 抖音 / TikTok / **Kick**，详见 `docs/PLATFORM_INTEGRATIONS.md`。其中 Kick 随 **v0.16.0** 正式发布，其余五个随 v0.15.0 及更早版本发布。**快手（Kuaishou）是 v0.17.0 正式发布的预览接入**：URL 解析、H5 弹幕适配器、SQLite、AI 分析/画像、自动监控、十语 UI 与候选 EXE 已集成，但**实时 H5 采集默认禁用**；未取得书面许可前不开放采集，不得把它描述为“已正式支持”，公开版本也不得把采集标记为可用。当前发布形态为 `LiveMemory.exe`，用户不应需要安装 Python、Node.js、npm 或数据库。
+**当前版本、已发布平台、预览平台、未完成项与下一步，以 `docs/STATUS.md` §0 为唯一权威来源；平台字段与限制以 `docs/PLATFORM_INTEGRATIONS.md` §0 及对应章节为准。** 本文件不重复维护会随版本变化的具体数量与发布状态。
+
+当前发布形态为 `LiveMemory.exe`，用户不应需要安装 Python、Node.js、npm 或数据库。快手（Kuaishou）是**预览接入**：组件可能已发布，但实时 H5 采集默认禁用；未取得书面许可前不开放采集，不得把它描述为“已正式支持”，公开版本也不得把采集标记为可用。
 
 ---
 
@@ -26,9 +28,28 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
    - 平台接入（六个已发布 + 快手预览）→ `docs/PLATFORM_INTEGRATIONS.md`
    - **新增直播平台 → `docs/PLATFORM_ADMISSION.md`（准入与验收门禁，必读）+ `docs/PLATFORM_EXPANSION_RESEARCH.md`（候选调查记录）**
    - **语言 / 翻译 / AI 输出语言 → `docs/I18N.md`（三层语言模型与十语言规划，必读）**
+   - **发布 / 版本 → `docs/RELEASE.md`（流程）+ `docs/RELEASE_HISTORY.md`（历史证据）+ `docs/CHANGELOG.md`**
 6. 检查实际代码与 `git status`，核对文档与代码是否一致。
 
 **不能只依据旧聊天记录判断项目状态。**
+
+### 2.1 文档职责（每种信息只有一个权威来源）
+
+| 文件 | 职责 | 不应用于 |
+| --- | --- | --- |
+| `README.md` | 面向用户的项目首页：产品价值、功能、平台状态、下载、快速开始、AI/隐私、FAQ | 记录内部算法、历史修复流水、发布证据 |
+| `AGENTS.md` | 工程规则、架构约束、开发入口、每轮阅读顺序 | 维护当前版本号/平台数量/进度 |
+| `docs/STATUS.md` | 当前真实工程状态、版本快照、未完成项（唯一进度来源） | 存放完整历史测试流水 |
+| `docs/HANDOFF.md` | 最近一次开发交接 | 代替 STATUS 的完整状态 |
+| `docs/ROADMAP.md` | 当前阶段与未来计划 | 作为发布日志或历史全量归档 |
+| `docs/CHANGELOG.md` | 逐版本功能变化 | 描述当前状态 |
+| `docs/RELEASE.md` | 稳定、可重复执行的发布流程 | 归档各版本 Tag/资产/哈希 |
+| `docs/RELEASE_HISTORY.md` | 已发生发布的证据归档 | 约束未来发布的规则 |
+| `docs/PLATFORM_INTEGRATIONS.md` | 平台协议、字段、验证边界（平台字段权威） | 宣传“已支持” |
+| `docs/I18N.md` | 三层语言模型、语言门禁 | 重复维护语言清单（清单在 `src/shared/locales.mjs`） |
+| `docs/*` 专题文档 | 架构、数据、AI、备份、Windows、隐私等详细规则 | 与 README 竞争产品首页 |
+
+**新增文档前先检查能否复用现有文档；不要为拆分制造重复文件。**
 
 ---
 
@@ -51,14 +72,14 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 ## 4. 目录结构（实际）
 
 ```text
-src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行十语、退出
+src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行多语言、退出
 src/server/          HTTP 服务、路由、设置存储、日志、SSE
 src/platforms/       平台适配器（六个已发布平台：bilibili、youtube/anonymous、twitch、douyin、tiktok、kick；kuaishou 为预览，采集默认禁用；mock 仅测试夹具）
   shared/            adapter 契约、ingest 写入管线、session manager、加密凭据存储
 src/storage/         database（连接/迁移）、repositories（SQL 访问）
 src/analytics/       sessions（时间线/汇总）、payments（币种合计）、viewers（画像读模型）
-src/ai/              export（分析包）、prompts（分语言说明与输出语言规则，当前 AI 输出十语）、schemas（结果 JSON Schema）
-src/web/             index.html、js/（app、pages、i18n、chart、theme）、styles/、i18n/*.json（当前十语）
+src/ai/              export（分析包）、prompts（分语言说明与输出语言规则）、schemas（结果 JSON Schema）
+src/web/             index.html、js/（app、pages、i18n、chart、theme）、styles/、i18n/*.json
 src/shared/          跨层纯逻辑：事件模型、Emoji/表情、文本安全截断、金额、语言、主题、时间、zip、错误
 tests/               unit / integration / helpers / fixtures
 scripts/             构建 EXE、SEA bootstrap、UI 截图、冒烟脚本
@@ -144,7 +165,7 @@ node scripts/build-windows.mjs
 - 颜色、间距、圆角、阴影全部通过 `src/web/styles/tokens.css` 的 CSS 变量使用，不得在组件里写死颜色。
 - 明亮与黑暗**分别设计**，不能简单反转。
 - 首次渲染不得出现主题闪烁：`data-theme` 由 `js/theme-boot.js` 在样式表之前设置。
-- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**当前已实现十种界面语言（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`，每份 2,351 键）与十种 AI 输出语言（同一注册表的 `aiOutput` 能力位全部为 true，P41）；界面语言与 AI 输出语言是两个独立持久设置（`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。详见 `docs/I18N.md`、`docs/i18n/GLOSSARY.md`。**
+- 全部界面文案放在 `src/web/i18n/*.json`，使用 `t('key', {params})`；禁止在页面中硬编码用户可见句子。**界面语言集合以 `src/shared/locales.mjs` 的 `available` 为准（当前注册表为十种界面语言，具体语言码与键数以该文件及 `docs/I18N.md` 为准，不在本文件维护固定数量）；AI 输出语言由同一注册表的 `aiOutput` 能力位决定。界面语言与 AI 输出语言是两个独立持久设置（`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。详见 `docs/I18N.md`、`docs/i18n/GLOSSARY.md`。**
 - 新增/修改文案必须**同时**更新清单内所有语言的字典，键集与 `{param}` 占位符必须完全一致；不得先只加英文再「以后再补」。
 - 启动器文案放在 `src/launcher/cli-i18n.mjs`，各语言键必须一致；控制台编码失败时必须走既有 ASCII 降级，不得输出乱码。
 - 语言名在语言选择器中**始终用该语言自身文字显示**（简体中文 / 日本語 / English / 한국어 …），不跟随界面语言翻译。
@@ -214,7 +235,7 @@ fix: prevent duplicate payment events
 - 不得在未验证的情况下宣称 EXE 已在“干净 Windows 环境”通过验收。
 - 不得为了绕过平台的授权或配额限制而改用抓取、未公开接口或共享凭据。YouTube 公开网页聊天是唯一接入路径，但必须遵守 §6.12 的不绕过访问控制、不描述为官方/合规、如实说明可能失效等边界；不得偷偷恢复官方 API 双轨实现。TikTok 的匿名 webcast WebSocket 是 §6.12 明确授权的唯一例外，并只能在该节边界内使用：不绕过访问控制、不登录、不依赖第三方签名服务、标注非官方/实验性、失败即如实报告。
 - 不得在文档或界面中把「模拟/假 API 验证」描述为「真实平台验收」。缺少真实凭据时必须如实写「阻塞」。真实凭据与 API Key 不得出现在代码、测试、文档、截图或提交中。
-- **不得把「计划支持」写成「已支持」**：十种**界面**语言（P40）与十种 **AI 分析输出语言**（P41）均已实现，但「界面十语 = AI 十语」只是能力集合相同，**仍是两个独立设置**（`locale` / `aiOutputLocale`）。翻译**阅读**语言只读取缓存、不重跑分析；每个任务的语言快照不可变。已发布版本 v0.15.0 有五个直播平台；**v0.16.0 新增 Kick**（已合并 `main`、Tag `v0.16.0`、GitHub Release Published），其余候选平台（虎牙、斗鱼、CHZZK、SOOP、Niconico、小红书、YY、Facebook Live）仍未实现。**快手为 v0.17.0 正式发布的预览组件**：组件已发布，但 H5 实时采集默认禁用、未取得书面许可、未完成真实许可下验收，**不得写成已支持快手采集**。README、界面、发布说明与 STATUS 只能描述实际存在的能力。
+- **不得把「计划支持」写成「已支持」**：已发布平台、预览平台、当前版本与未实现候选，以 `docs/STATUS.md` §0 与 `docs/PLATFORM_INTEGRATIONS.md` §0 为准。十种**界面**语言与十种 **AI 输出语言**均已实现，但「界面十语 = AI 十语」只是能力集合相同，**仍是两个独立设置**（`locale` / `aiOutputLocale`）。翻译**阅读**语言只读取缓存、不重跑分析；每个任务的语言快照不可变。快手是**预览组件**：即使已随版本发布，H5 实时采集默认禁用、未取得书面许可、未完成真实许可下验收，**不得写成已支持快手采集**。README、界面、发布说明与 STATUS 只能描述实际存在的能力。
 - **不得仅凭开源项目 README、示例或接口存在就宣称平台支持**：没有本仓库真实样本与真实 EXE 验收的一律标「待验证」，缺失的事件一律标 `NOT-OBSERVED`。
 - **不得为通过平台验证而绕过访问控制**：不破解验证码、不伪造登录态、不规避地区/年龄/权限限制、不购买第三方采集/签名服务、不引入运行时第三方依赖。失败即停止并如实报告。
 - **不得复制许可证不兼容的代码**：AGPL 代码不得直接进入 MIT 代码区；引用任何第三方实现必须按其许可证在 `THIRD_PARTY_NOTICES.md` 标注。

@@ -1,5 +1,9 @@
 # 测试计划与结果（TEST_PLAN）
 
+> **本文件是测试策略与历史结果记录，不是当前状态的唯一来源。** 当前版本的测试数量、
+> 发布验收与未完成项以 `docs/STATUS.md` §0 为准；发布证据以 `docs/RELEASE_HISTORY.md` 为准。
+> 下列章节按时间保留，其中的版本号、键数、EXE Build ID 只代表当时那次运行。
+
 ## 1. 策略
 
 | 层级 | 目的 | 位置 |
@@ -35,7 +39,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | 运行 | 结果 |
 | --- | --- |
 | 全量单元 + 集成 `--test-isolation=none` | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms） |
-| 十语言字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × **2,351** 键（v0.17.0 候选）；缺失 0 / 多余 0 / 占位符差异 0 / 空值 0 |
+| 十语言字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × **2,271** 键（v0.15.0 实际值）；缺失 0 / 多余 0 / 占位符差异 0 / 空值 0 |
 | 十语言注册表与 Schema 门禁 | `locale-registry` 与 `ai-prompt-locales` 通过；三个 Schema `locale.enum` = 10 |
 | 国际化关键集成 | `ai-i18n-locales` 4/4、`ai-i18n-translation` 全部通过 |
 

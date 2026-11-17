@@ -1,9 +1,104 @@
 # 工程状态（STATUS）
 
 最后更新：2026-11-17（**v0.17.0 已发布：快手 H5 预览接入，实时采集默认禁用**；
-未取得书面许可，未开放生产采集；六个已发布平台协议未改；详见 `docs/KUAISHOU_H5_INTEGRATION.md`）
+未取得书面许可，未开放生产采集；六个已发布平台协议未改；同日完成文档审计与 README 三语重构，
+详见 `docs/KUAISHOU_H5_INTEGRATION.md` 与 `docs/HANDOFF.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+> **先读 §0 当前状态快照**；§0.60 是最近一次发布的详细记录；§0.59 及更早是历史记录，
+> 只用于追溯，不代表当前状态。发布证据另见 `docs/RELEASE_HISTORY.md`。
+
+## 0. 当前状态快照（2026-11-17）
+
+> 本节只做摘要；详细证据在 §0.60 与 `docs/RELEASE_HISTORY.md`。若本节与后文冲突，
+> 以代码、Git/Release 事实与 `docs/RELEASE_HISTORY.md` 为准，并立即修正本节。
+
+### 0.1 版本与发布
+
+| 项目 | 当前值 |
+| --- | --- |
+| 产品版本 / 当前开发版本 | **`0.17.0`**（`package.json` = `APP_VERSION` = `0.17.0`；没有未发布的开发分支版本） |
+| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
+| 最新正式发布 | **`v0.17.0`** · Release ID `448828056` · Published `2026-11-17T15:31:37Z` |
+| 发布性质 | 正式发布，但**快手只是预览组件**；实时 H5 采集默认禁用，不是“已支持快手采集” |
+| 最新 Release 资产 | `LiveMemory.exe` 99,492,352 B · SHA-256 `58b21dc9…830471ac`；`SHA256SUMS.txt` 82 B |
+| 当前分支 | `main`（本地文档提交；**未 Push**；`origin/main` 仍为 `fa00273`） |
+| 当前 Tag | `v0.17.0`（annotated，`4cf356a` → `5807e3e`） |
+| 数据库 Schema | **16**（v0.17.0 无迁移） |
+| 当前开发里程碑 | **无进行中的功能里程碑**；等待用户决定下一步（见 §0.6） |
+| 最近文档整理 | 2026-11-17：README 三语重构；`docs/RELEASE.md` 拆为流程 + `docs/RELEASE_HISTORY.md`；新增 `scripts/check-docs.mjs` 一致性检查 |
+
+### 0.2 平台状态
+
+| 平台 | 状态 | 事实边界 |
+| --- | --- | --- |
+| Bilibili Live | 已发布 | 真实弹幕与稳定身份已验证；未登录可能昵称打码/UID=0；礼物真实事件未观测，SC/大航海有真实身份样本但未完整验收 |
+| YouTube Live | 已发布 | 公开网页聊天路径；不是官方稳定 API；真实聊天已验证 |
+| Twitch | 已发布 | 匿名 IRC；真实聊天、订阅/续订已验证；Bits/赠订未观测 |
+| 抖音 | 已发布 | 匿名聊天与稳定 UID 已验证；礼物需登录，真实手机扫码与真实礼物未完全验证 |
+| TikTok | 已发布（实验性） | 匿名本地 webcast；真实聊天/身份/消息 ID 已验证；礼物 `NOT-OBSERVED`；无续传游标 |
+| Kick | 已发布（v0.16.0） | 真实聊天、KICKs、赠订已验证；非官方接口；KICKs 不换算法币 |
+| 快手 | **预览，采集禁用** | 仅链接解析与本地 UI；`connect` 在请求前返回 403；无真实 H5 采集；礼物/点赞 `NOT-OBSERVED`；跨场身份不合并 |
+| 虎牙 / 斗鱼 / CHZZK / SOOP / Niconico / 小红书 / YY / Facebook Live | 未实现 | 仅调查候选，不是路线图承诺；不得描述为支持 |
+
+### 0.3 语言与 AI
+
+- **十种界面语言**：`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`；
+  十份字典各 **2,351** 个叶子键，键集与占位符一致。
+- **十种 AI 输出语言**：同一注册表 `aiOutput: true`；与界面语言是两个独立持久设置
+  （`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。任务创建时写语言快照，之后不可变。
+- **报告阅读翻译**：只读取/生成展示层译文，不重跑分析；原文、`viewer_id`、证据与事实状态不变。
+- **AI Provider**：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆/国际）、
+  阿里云百炼（北京/新加坡/美国/中国香港）、OpenRouter、自定义 OpenAI-compatible。
+- **真实 Provider 证据**：DeepSeek `deepseek-flash` 已完成单场、画像、跨语言与翻译验收；
+  其他 Provider 有实现与本地/Mock 测试，但**未逐一做真实付费验收**。
+
+### 0.4 数据、备份与 Windows
+
+- 数据默认写入 `%LOCALAPPDATA%\LiveMemory\`；只监听 `127.0.0.1`；本地 API 需要会话 Cookie。
+- API Key 与平台 Cookie 存在本地 AES-256-GCM 凭据库；不进入配置 JSON、日志、备份或 HTML。
+- `.livememory` 完整备份/恢复/迁移已实现；备份**未加密**，不包含凭据，但包含观众数据。
+- 发布 EXE 的 Manifest 为 **`requireAdministrator`**：双击显示标准 UAC；拒绝即取消启动。
+- EXE **未签名**，SmartScreen 可能提示未知发布者；不带 Python/Node/npm/数据库依赖。
+- **仍未人工验证**：真实双击 UAC 同意/拒绝、干净 Windows 账户、Windows 原生文件对话框点击、
+  真实浏览器自动打开、Ctrl+C 优雅退出。
+
+### 0.5 已验证 / 未验证（发布与验收口径）
+
+| 项目 | 当前结论 |
+| --- | --- |
+| 全量自动化（v0.17.0） | **1,226 passed / 0 failed / 0 skipped**（844 unit + 382 integration） |
+| 六平台回归 | 全量套件通过；协议未改 |
+| 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
+| 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| 真实 H5 / 真实 EXE 采集 | **未执行**（无快手书面许可） |
+| 真实付费 Provider（DeepSeek 以外） | **未逐一验收**；需要真实 Key 与费用授权 |
+| 真实 Windows UAC / 干净账户 | **未人工验证**；自动化只断言 Manifest 与 asInvoker 功能副本 |
+| 长时压力 / 10+ 场 | 未完成；已有 70 分钟 Kick 与 30 分钟 TikTok 真实长测，但不等于通用压力验收 |
+| 后台标签继续记录 | 切换页面/刷新不停止采集；专门的“隐藏但继续记录”交互未单独验收 |
+
+### 0.6 开放问题与下一步
+
+当前没有已授权的开发里程碑。下一步由用户决定，候选顺序建议：
+
+1. **快手书面许可/官方接口**：取得前保持采集禁用；取得后按
+   `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
+2. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
+3. **真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义；
+   需要用户提供 Key 与费用授权，不能以 Mock 代替。
+4. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
+   下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
+5. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
+   增加平台数量降低标准。
+
+### 0.7 历史记录
+
+- §0.60：v0.17.0 快手 H5 预览接入与发布记录（当前版本的详细证据）。
+- §0.59 及更早：历史里程碑、调查与验收记录，**只用于追溯**。
+- 发布资产、Tag、Release ID 与 SHA-256 的归档：`docs/RELEASE_HISTORY.md`。
+- 逐版本变化：`docs/CHANGELOG.md`。
+
+---
 
 ## 0.60 快手 H5 预览接入：组件完成、生产采集禁用（2026-11-17）⚠️ 已发布为预览 · 采集禁用
 
@@ -93,6 +188,14 @@
 
 > 快手在线采集仍未开放：Release Notes、README、界面与 API 均标注预览/采集禁用；
 > 真实 H5 采集、真实 EXE 采集、许可下长测、跨场身份与礼物/点赞仍未验证。
+
+---
+
+## 历史记录（§0.59 及更早）
+
+> 以下内容按时间倒序保留，只用于追溯当时的判断、证据与决策。它们**不代表当前状态**：
+> 版本号、平台数量、测试数量、未完成项与发布状态均以 §0 和代码/Release 事实为准。
+> 例如 §0.59–§0.52 曾记录“快手不接入/不发布”，那都是 v0.17.0 预览发布前的阶段结论。
 
 ## 0.59 快手 G1.6：修正旧 ID 后的登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
 
@@ -1159,7 +1262,7 @@ AI 输出语言设置、翻译缓存语义。未 Push、未 Tag、未 Release。
 
 - `package.json`、`src/shared/app-info.mjs`：版本号 `0.13.3` → `0.14.0`（唯一代码改动，2 行）。
 - `README.md`：当前能力标题版本号、去掉已合并分支的「阶段交付」表述。
-- 文档：`docs/release-notes/v0.14.0.md`（新增）、`docs/RELEASE.md` §11、`docs/CHANGELOG.md`、
+- 文档：`docs/release-notes/v0.14.0.md`（新增）、`docs/RELEASE_HISTORY.md`（v0.14.0）、`docs/CHANGELOG.md`、
   本文件、`docs/HANDOFF.md`、`docs/ROADMAP.md`、`log/2026-11-16-v0.14.0-release.md`。
 - 未改动任何采集/AI/画像/存储/恢复逻辑。
 
@@ -2567,9 +2670,13 @@ EXE 验证矩阵（全部针对该二进制；功能场景使用 `tests/.tmp/` �
 - **未执行**：全量测试（本轮无代码改动，不适用）；未 Push、未 Tag、未发布。
 - **等待用户确认**：是否按 Twitch 方案开始正式开发；抖音是否接受登录 Cookie 与 AGPL；TikTok 是否暂缓或采用用户自备 Euler Business Key 的实验方案。
 
-## 0.32 RC0-GITHUB-RELEASE-PREP：GitHub Release 发布准备（2026-11-15）✅（未发布）
+## 0.32 RC0-GITHUB-RELEASE-PREP：GitHub Release 发布准备（2026-11-15）✅ 发布准备（后续已发布）
 
-范围：只准备发布材料，**没有修改产品代码、版本号或功能**；**未 Push、未创建 Tag（本地或远程）、未创建 GitHub Release、未上传资产**。
+> **历史修正（2026-11-17 审计）**：本节记录的是发布准备阶段，当时确实尚未 Push/Tag/Release；
+> 后续 `v0.13.2-rc.0` 已于 2026-11-14T16:22:25Z 发布（Release ID `445425123`，资产为 Windows zip）。
+> 本节结尾的“未发布”只代表当时状态，不代表最终事实。发布证据见 `docs/RELEASE_HISTORY.md`。
+
+范围：只准备发布材料，**没有修改产品代码、版本号或功能**；准备阶段未 Push、未创建 Tag（本地或远程）、未创建 GitHub Release、未上传资产。
 
 ### 0.32.1 命名与目标
 
@@ -2610,9 +2717,9 @@ EXE 验证矩阵（全部针对该二进制；功能场景使用 `tests/.tmp/` �
 ### 0.32.4 文档与状态
 
 - 面向用户的 Release Notes：`docs/release-notes/v0.13.2-rc.0.md`（发布包内为 `RELEASE_NOTES.md`）。
-- 发布流程与选项：`docs/RELEASE.md` §10。
+- 发布记录与资产证据：`docs/RELEASE_HISTORY.md`（v0.13.2-rc.0）。
 - 开发日志：`log/2026-11-15-rc0-release-prep.md`。
-- **状态：发布材料已就绪；未发布，等待用户确认。**
+- **状态（当时）：发布材料已就绪；未发布，等待用户确认。** 后续已发布，见本节开头的审计说明。
 
 ## 0.31 RC0-ADMIN-MANIFEST：恢复双击自动请求管理员权限（2026-11-14）✅
 
