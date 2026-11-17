@@ -62,7 +62,16 @@
 | 现有五平台回归 | 随全量套件通过；未修改五平台代码 |
 | 真实与模拟区分 | 真实采集只在 `scripts/kick-poc.mjs`；所有 `node --test` 使用 fake transport，未访问 Kick |
 
-### 0.52.5 已知限制（必须保持如实）
+### 0.52.5 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g1`（基于 `main` `0a0f9b5`，即 v0.15.0 发布后的文档提交） |
+| 本地提交 | `4e4bbb161bbe894300620d9107263af5efe67052`（24 files, +3,981/−28） |
+| Push / Merge / Tag / Release | **均未执行**；`main`、`v0.15.0` Tag/Release 未改动 |
+| 工作区 | clean；`tests/.tmp/` 证据未提交 |
+
+### 0.52.6 已知限制（必须保持如实）
 
 - 订阅/续订、开播/下播、Host、投票：**NOT-OBSERVED**；赠送订阅与 KICKs 各只观测到 1 条，
   赠订只有用户名（无稳定 ID）、KICKs 无法币币种/金额语义，**不得声明支持**。

@@ -50,6 +50,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `feature/kick-g1`（基于 `main` `0a0f9b5`） |
+| 本地提交 | `4e4bbb161bbe894300620d9107263af5efe67052`（24 files, +3,981/−28） |
 | Push / Merge / Tag | **未做** |
 | 证据目录 | `tests/.tmp/kick-g1-run/`、`tests/.tmp/kick-g1-events/`（gitignored，未提交） |
 
