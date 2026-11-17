@@ -12,6 +12,7 @@ import {YouTubeService} from '../platforms/youtube/service.mjs';
 import {TwitchService} from '../platforms/twitch/service.mjs';
 import {DouyinService} from '../platforms/douyin/service.mjs';
 import {TikTokService} from '../platforms/tiktok/service.mjs';
+import {KickService} from '../platforms/kick/service.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
@@ -100,6 +101,9 @@ export async function startServer({
   tiktokFetchImpl = null,
   tiktokWebSocketImpl = null,
   tiktokTtwidProvider = null,
+  kickHttp = null,
+  kickAdapterOptions = null,
+  kickWebSocketImpl = null,
   beginLockMove = null,
   auto = null,
   buildInfo = null,
@@ -207,6 +211,19 @@ export async function startServer({
       ...(tiktokTtwidProvider ? {ttwidProvider: tiktokTtwidProvider} : {}),
       ...(tiktokAdapterOptions ? {adapterOptions: tiktokAdapterOptions} : {})
     });
+    // Kick has one capture path: the anonymous Centrifugo feed. No account,
+    // cookie, API key or third-party service; it uses the same
+    // SessionManager/EventIngest pipeline as every other platform.
+    const kick = new KickService({
+      sessionManager,
+      db,
+      settings: settingsStore,
+      logger,
+      now,
+      ...(kickHttp ? {http: kickHttp} : {}),
+      ...(kickWebSocketImpl ? {WebSocketImpl: kickWebSocketImpl} : {}),
+      ...(kickAdapterOptions ? {adapterOptions: kickAdapterOptions} : {})
+    });
     const monitoring = new MonitoringManager({
       db,
       sessionManager,
@@ -216,8 +233,7 @@ export async function startServer({
       douyin,
       tiktok,
       logger,
-      now,
-      onChange: () => {
+      now,      onChange: () => {
         try {
           hub.broadcast('monitoring', monitoring.status());
         } catch (error) {
@@ -254,6 +270,13 @@ export async function startServer({
       platforms: ['tiktok'],
       logger
     });
+    // Kick events follow the same 30-day raw-content policy, scoped to Kick.
+    runRetention(db, {
+      now: now(),
+      days: 30,
+      platforms: ['kick'],
+      logger
+    });
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
@@ -285,6 +308,7 @@ export async function startServer({
       twitch,
       douyin,
       tiktok,
+      kick,
       monitoring,
       providerConfigStore,
       analysisRunner,
@@ -330,6 +354,11 @@ export async function startServer({
     } catch (error) {
       logger?.error({event: 'shutdown.tiktok.failed', code: error?.code ?? 'unknown'});
     }
+    try {
+      await instance.kick?.shutdown();
+    } catch (error) {
+      logger?.error({event: 'shutdown.kick.failed', code: error?.code ?? 'unknown'});
+    }
     // SessionManager owns every adapter, including their per-stream timers.
     try {
       await instance.sessionManager.shutdown();
@@ -360,6 +389,7 @@ export async function startServer({
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
     get tiktok() { return runtime.tiktok; },
+    get kick() { return runtime.kick; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },
@@ -536,6 +566,7 @@ export async function startServer({
     get twitch() { return runtime.twitch; },
     get douyin() { return runtime.douyin; },
     get tiktok() { return runtime.tiktok; },
+    get kick() { return runtime.kick; },
     get monitoring() { return runtime.monitoring; },
     get providerConfigStore() { return runtime.providerConfigStore; },
     get analysisRunner() { return runtime.analysisRunner; },

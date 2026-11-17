@@ -76,7 +76,8 @@
       "youtube": "YouTube en direct",
       "twitch": "Twitch en direct",
       "douyin": "Douyin en direct",
-      "tiktok": "TikTok en direct"
+      "tiktok": "TikTok en direct",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "aucune donnée pendant trop longtemps",
       "tiktokActiveTitle": "Salons TikTok en cours d'enregistrement",
       "tiktokActiveCount": "{n} salon(s)",
-      "tiktokOtherRecordings": "{n} autre(s) salon(s) TikTok s'enregistrent en arrière-plan ; vous pouvez ajouter un salon différent."
+      "tiktokOtherRecordings": "{n} autre(s) salon(s) TikTok s'enregistrent en arrière-plan ; vous pouvez ajouter un salon différent.",
+      "kickTab": "Kick",
+      "kickIntro": "Enregistrez le chat public d'une chaîne Kick en direct. Le flux temps réel de Kick est celui utilisé par le site kick.com, pas une API officielle.",
+      "kickNoLoginNote": "Aucun compte, clé d'API ni service payant n'est requis. LiveMemory demande un jeton invité anonyme pour le chat public.",
+      "kickUnofficialNote": "Non officiel / expérimental : Kick peut modifier ce flux sans préavis et une reconnexion peut manquer des messages, faute de curseur de reprise.",
+      "kickUnavailable": "La capture Kick n'est pas disponible dans cette version.",
+      "kickLinkLabel": "Lien de la chaîne Kick",
+      "kickLinkPlaceholder": "https://kick.com/chaine",
+      "kickChatroom": "ID du salon de chat",
+      "kickCaptureTitle": "Capture Kick",
+      "kickActiveTitle": "Chaînes Kick en cours d'enregistrement",
+      "kickCaptureStateRateLimited": "Kick limite les requêtes ; attente",
+      "kickTokenRefreshes": "Renouvellements du jeton invité : {n}",
+      "kickTechnicalProtocol": "Protocole : {protocol} · salon {room}",
+      "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · abonnements {memberships} · publications {publications}",
+      "kickCaptureNotCompleteNote": "Le flux Kick n'a pas de curseur de reprise : les messages pendant une reconnexion peuvent être manqués et ne sont pas récupérés. LiveMemory ne prétend pas à un journal complet.",
+      "kickPolicyBody": "Le texte du chat, les badges et les libellés Kick de plus de {days} jours sont supprimés ; les compteurs et les ID stables sont conservés.",
+      "kickRetentionApplied": "{count} lignes Kick expirées supprimées."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "La capture TikTok n'est pas disponible dans cette version.",
     "tiktokStopped": "La capture TikTok est arrêtée.",
     "tiktokError": "L'opération TikTok a échoué.",
-    "tiktokSocketFailed": "La connexion au direct TikTok n'a pas pu être ouverte."
+    "tiktokSocketFailed": "La connexion au direct TikTok n'a pas pu être ouverte.",
+    "kickLinkInvalid": "Saisissez un lien de chaîne Kick comme https://kick.com/chaine. Les rediffusions, clips, catégories et recherches ne sont pas des chaînes en direct.",
+    "kickRoomNotFound": "Cette chaîne Kick n'existe pas.",
+    "kickRoomOffline": "Cette chaîne Kick n'est pas en direct. Lancez l'enregistrement à la diffusion.",
+    "kickRoomUnavailable": "Kick a refusé le chat de cette chaîne.",
+    "kickBlocked": "Kick a bloqué la requête (politique de sécurité). Réessayez plus tard ; LiveMemory ne la contourne pas.",
+    "kickRateLimit": "Kick limite les requêtes. Réessayez plus tard.",
+    "kickNetwork": "Impossible de joindre Kick. Vérifiez le réseau et réessayez.",
+    "kickProtocol": "Kick a renvoyé une réponse temps réel inattendue. Le flux non officiel a peut-être changé.",
+    "kickConnectTimeout": "La connexion au chat Kick a expiré.",
+    "kickSocketFailed": "La connexion au chat Kick a échoué.",
+    "kickNotConfigured": "La capture Kick n'est pas disponible dans cette version.",
+    "kickStopped": "La capture Kick a été arrêtée.",
+    "kickError": "La capture Kick a échoué."
   },
   "toast": {
     "saved": "Enregistré",

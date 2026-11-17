@@ -76,7 +76,8 @@
       "youtube": "YouTube Live",
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
-      "tiktok": "TikTok Live"
+      "tiktok": "TikTok Live",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "zu lange keine Daten",
       "tiktokActiveTitle": "TikTok-Räume in Aufzeichnung",
       "tiktokActiveCount": "{n} Raum/Räume",
-      "tiktokOtherRecordings": "{n} weitere TikTok-Räume werden im Hintergrund aufgezeichnet; Sie können einen anderen Raum hinzufügen."
+      "tiktokOtherRecordings": "{n} weitere TikTok-Räume werden im Hintergrund aufgezeichnet; Sie können einen anderen Raum hinzufügen.",
+      "kickTab": "Kick",
+      "kickIntro": "Zeichnet den öffentlichen Chat eines laufenden Kick-Kanals auf. Der Echtzeit-Feed von Kick ist der, den auch kick.com selbst nutzt – keine offizielle API.",
+      "kickNoLoginNote": "Kein Login, kein API-Schlüssel und kein bezahlter Dienst nötig. LiveMemory fordert ein anonymes Gast-Token für den öffentlichen Chat an.",
+      "kickUnofficialNote": "Inoffiziell / experimentell: Kick kann diesen Feed jederzeit ändern; bei einer Wiederverbindung können Nachrichten fehlen, da es keinen Fortsetzungs-Cursor gibt.",
+      "kickUnavailable": "Kick-Aufzeichnung ist in diesem Build nicht verfügbar.",
+      "kickLinkLabel": "Kick-Kanallink",
+      "kickLinkPlaceholder": "https://kick.com/kanal",
+      "kickChatroom": "Chatroom-ID",
+      "kickCaptureTitle": "Kick-Aufzeichnung",
+      "kickActiveTitle": "Aufgezeichnete Kick-Kanäle",
+      "kickCaptureStateRateLimited": "Kick begrenzt Anfragen; warte",
+      "kickTokenRefreshes": "Gast-Token-Aktualisierungen: {n}",
+      "kickTechnicalProtocol": "Protokoll: {protocol} · Chatroom {room}",
+      "kickTechnicalCounters": "Chats {chats} · KICKs {gifts} · Mitgliedschaften {memberships} · Publikationen {publications}",
+      "kickCaptureNotCompleteNote": "Der Kick-Feed hat keinen Fortsetzungs-Cursor: Nachrichten während einer Wiederverbindung können fehlen und werden nicht nachgeladen. LiveMemory behauptet kein vollständiges Chat-Protokoll.",
+      "kickPolicyBody": "Kick-Chattext, Badges und Anzeige-Labels, die älter als {days} Tage sind, werden gelöscht; Zähler und stabile IDs bleiben erhalten.",
+      "kickRetentionApplied": "{count} abgelaufene Kick-Zeilen entfernt."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "Die TikTok-Erfassung ist in dieser Version nicht verfügbar.",
     "tiktokStopped": "Die TikTok-Erfassung wurde gestoppt.",
     "tiktokError": "Der TikTok-Vorgang ist fehlgeschlagen.",
-    "tiktokSocketFailed": "Die TikTok-Livestream-Verbindung konnte nicht geöffnet werden."
+    "tiktokSocketFailed": "Die TikTok-Livestream-Verbindung konnte nicht geöffnet werden.",
+    "kickLinkInvalid": "Gib einen Kick-Kanallink wie https://kick.com/kanal ein. VODs, Clips, Kategorien und Suchseiten sind keine Live-Kanäle.",
+    "kickRoomNotFound": "Dieser Kick-Kanal existiert nicht.",
+    "kickRoomOffline": "Dieser Kick-Kanal ist offline. Starte die Aufzeichnung, wenn der Stream live ist.",
+    "kickRoomUnavailable": "Kick hat den Chat dieses Kanals abgelehnt.",
+    "kickBlocked": "Kick hat die Anfrage blockiert (Sicherheitsrichtlinie). Versuche es später erneut; LiveMemory umgeht sie nicht.",
+    "kickRateLimit": "Kick begrenzt Anfragen. Versuche es später erneut.",
+    "kickNetwork": "Kick ist nicht erreichbar. Prüfe das Netzwerk und versuche es erneut.",
+    "kickProtocol": "Kick hat eine unerwartete Echtzeit-Antwort geliefert. Der inoffizielle Feed hat sich möglicherweise geändert.",
+    "kickConnectTimeout": "Zeitüberschreitung beim Verbinden mit dem Kick-Chat.",
+    "kickSocketFailed": "Die Verbindung zum Kick-Chat ist fehlgeschlagen.",
+    "kickNotConfigured": "Kick-Aufzeichnung ist in diesem Build nicht verfügbar.",
+    "kickStopped": "Kick-Aufzeichnung wurde beendet.",
+    "kickError": "Kick-Aufzeichnung ist fehlgeschlagen."
   },
   "toast": {
     "saved": "Gespeichert",

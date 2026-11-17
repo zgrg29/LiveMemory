@@ -167,29 +167,26 @@
   版本号已由发布轮的 0.14.0 更新为 0.15.0）
 - 详见 `docs/STATUS.md` §0.50、`docs/I18N.md` §2.9、`log/2026-11-16-p42-i18n-m3.md`
 
-## P43 KICK-M0/G1：Kick 技术预研与 G1 真实连接验证（v0.16.x）🟢 G1 通过、未接入产品
+## P43 KICK-G2–G5：Kick 正式接入与候选 EXE（v0.16.x）🟢 G5 完成、等待试玩
 
-- ✅ G0 调查完成（2026-11-16）：三个候选项目存在性/维护状态/许可证已核实
-  （kixo MIT，2026-10 活跃；Kick-Live-Connector MIT，2024-11 停更；kick-api Apache-2.0，Rust，不适配）
-- ✅ 确认官方 Public API **没有**读取聊天的 scope/端点（只有 `chat:write`、`events:subscribe` webhook）
-- ✅ 确认免登录路径的技术轮廓（公开房间端点取 `chatroom.id`；`web.kick.com/api/v1/realtime/*` 取匿名配置；
-  Centrifugo guest token；topic `chatrooms.<chatroomId>.v2` + 另外四条 feed）
-- ✅ 确认消息字段含 `sender.id`（稳定 ID）、`sender.username`、消息 UUID `id`、`created_at`
-- ✅ **G1 真实连接完成（2026-11-17）**：双直播间 966 秒、1,936 条真实聊天、字段 100%、
-  0 重复 / 0 串台、强制断线 5.7 秒恢复、停止无重连
-- ✅ `feature/kick-g1` 新增最小骨架 + 真实采集 PoC + 离线测试（41 单测 + 5 集成）
-- ⬜ **G2 未开始**：产品路由/UI/十语言、礼物与订阅真实样本、≥60 分钟长测、G4/G5
-- 未验证：订阅/续订/上下播/Host/投票（NOT-OBSERVED）；赠送订阅与 KICKs 各观测 1 条，
-  但赠订无稳定 ID、KICKs 无法币币种；45 分钟真实到期；限流形态
-- 风险：非官方端点一年内已迁移过一次（Pusher → Centrifugo，Pusher 已失效）；
-  `kick.com` 公开接口需 HTTP/2；Node 内置 WebSocket 不发 `Origin`；无续传游标
-- 详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/PLATFORM_EXPANSION_RESEARCH.md` §2
+- ✅ G1（2026-11-17）：双直播间 966 秒、1,936 条真实聊天；字段 100%、0 重复/0 串台
+- ✅ G2：`KickService` + `/api/kick/{status,room,connect,disconnect,retention/apply}` + capabilities；
+  KICKs 礼物（交易 ID、sender.id、KICKs 数量、无金额）、赠订（赠送者 + 接收者、无身份）；
+  多房间隔离、停止、30 天保留；历史/画像/AI 复用既有管线
+- ✅ G3：直播页第六个平台页签；十语 2,302 键；真实浏览器 20/20（10 语 × 4 宽度 × 明暗，真实 2 场）
+- ✅ G4：70.2 分钟真实长测；34,766 聊天、3,438 观众、0 重复、7 次真实重连、**1 次真实 token 刷新**；
+  全量 1,169 passed / 0 failed
+- ✅ G5：候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` 19/19；
+  正式 EXE `requireAdministrator`，自动化使用同 Build ID 的 asInvoker 副本
+- ⬜ G6：**未执行**。需用户试玩确认后决定版本号、Tag、Release；当前未 Push / 未合并 `main`
+- 未观测：订阅/续订、开播下播、Host、投票（`NOT-OBSERVED`）；关注仅官方 webhook → 本地不支持
+- 详见 `docs/KICK_G2_G5_ACCEPTANCE.md`、`docs/KICK_G1_ACCEPTANCE.md`
 
 ## P44 PLATFORM-EXPANSION：候选平台调查与准入评估（持续）🟡
 
 调查优先级（**不是无条件开发承诺**，命中暂停条件即跳过）：
 
-1. Kick 🟢 G1 通过、待 G2｜2. 虎牙 ⬜｜3. 斗鱼 ⬜｜4. CHZZK ⬜（官方 API 违反条件一）｜
+1. Kick 🟢 G5 完成、等待试玩与 G6 判断｜2. 虎牙 ⬜｜3. 斗鱼 ⬜｜4. CHZZK ⬜（官方 API 违反条件一）｜
 5. SOOP ⬜｜6. 快手 ⬜｜7. Niconico ⬜（很可能需登录）｜8. 小红书 ⬜（未发现维护中实现）｜
 9. YY 直播 ⬜（未发现维护中实现）｜10. Facebook Live ⬜（预判不满足条件一）
 

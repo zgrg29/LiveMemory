@@ -6,6 +6,9 @@ import {
   kickEventKind,
   mapKickBadges,
   mapKickChatEvent,
+  mapKickEvent,
+  mapKickGiftEvent,
+  mapKickGiftedSubscriptions,
   parseKickEmotes,
   parseKickTimestamp,
   splitFrameText
@@ -164,4 +167,90 @@ test('the guest JWT payload is readable without trusting the signature', () => {
   assert.deepEqual(decodeJwtPayload(token), {sub: 'guest:1', exp: 1794852380, iat: 1794849680});
   assert.equal(decodeJwtPayload('not-a-jwt'), null);
   assert.equal(decodeJwtPayload(null), null);
+});
+
+const GIFT = {
+  gift_transaction_id: '8805437e-e571-4ce1-a30b-ca177ebd4936',
+  message: '',
+  sender: {id: 21608659, username: 'Gifter', username_color: '#E4D88F'},
+  gift: {gift_id: 'full_send', name: 'Full Send', amount: 100, type: 'BASIC', tier: 'BASIC'},
+  created_at: '2026-11-16T17:58:56.976408449Z'
+};
+
+test('a KICKs gift keeps its transaction id, sender id and KICKs count but no fiat value', () => {
+  const {drafts, kind} = mapKickEvent('KicksGifted', GIFT, {sessionId: 's', room: ROOM, receivedAt: RECEIVED});
+  assert.equal(kind, 'kicks_gifted');
+  assert.equal(drafts.length, 1);
+  const gift = drafts[0];
+  assert.equal(gift.event_type, 'gift');
+  assert.equal(gift.external_id, GIFT.gift_transaction_id);
+  assert.equal(gift.viewer_uid, '21608659');
+  assert.equal(gift.display_name, 'Gifter');
+  assert.equal(gift.gift_id, 'full_send');
+  assert.equal(gift.gift_name, 'Full Send');
+  assert.equal(gift.gift_quantity, 1);
+  assert.equal(gift.amount_minor, null);
+  assert.equal(gift.currency, null);
+  assert.equal(gift.value_kind, 'unknown');
+  assert.equal(gift.is_paid, true);
+  assert.equal(gift.amount_display, '100 KICKs · BASIC/BASIC');
+  assert.equal(gift.occurred_at, Date.parse('2026-11-16T17:58:56.976408449Z'));
+  assert.equal(gift.source_quality, 'verified');
+});
+
+test('a gift without a sender id is still recorded but gets no identity', () => {
+  const {drafts} = mapKickGiftEvent({...GIFT, sender: {username: 'Anon'}}, {room: ROOM, receivedAt: RECEIVED});
+  assert.equal(drafts[0].viewer_uid, null);
+  assert.equal(drafts[0].source_quality, 'unknown');
+});
+
+test('gifted subscriptions keep the recipients as free events and the gifter as one paid event', () => {
+  const data = {
+    chatroom_id: 2393554,
+    correlation_id: 'corr-1',
+    gifted_usernames: ['one', 'two', 'three'],
+    gifter_username: 'Generous',
+    gifted_total: 3,
+    gifter_total: 36,
+    chunk_details: null
+  };
+  const {drafts} = mapKickGiftedSubscriptions(data, {sessionId: 's', room: ROOM, receivedAt: RECEIVED});
+  assert.equal(drafts.length, 4);
+  const gifter = drafts[0];
+  assert.equal(gifter.event_type, 'membership');
+  assert.equal(gifter.external_id, 'corr-1');
+  assert.equal(gifter.display_name, 'Generous');
+  assert.equal(gifter.gift_quantity, 3);
+  assert.equal(gifter.is_paid, true);
+  assert.equal(gifter.amount_minor, null);
+  const recipients = drafts.slice(1);
+  assert.deepEqual(recipients.map((draft) => draft.display_name), ['one', 'two', 'three']);
+  assert.deepEqual(recipients.map((draft) => draft.external_id), ['corr-1:recipient:0', 'corr-1:recipient:1', 'corr-1:recipient:2']);
+  assert.ok(recipients.every((draft) => draft.is_paid === false && draft.viewer_uid === null));
+  assert.ok(recipients.every((draft) => draft.source_quality === 'verified'));
+});
+
+test('gifted subscriptions without correlation ids still dedupe deterministically', () => {
+  const data = {gifted_usernames: ['a', 'b'], gifter_username: 'G', gifted_total: 2};
+  const first = mapKickGiftedSubscriptions(data, {room: ROOM, receivedAt: 1}).drafts.map((draft) => draft.external_id);
+  const second = mapKickGiftedSubscriptions(data, {room: ROOM, receivedAt: 2}).drafts.map((draft) => draft.external_id);
+  assert.deepEqual(first, second);
+});
+
+test('subscription and unsupported events are classified, not invented', () => {
+  const sub = mapKickEvent('App\\Events\\SubscriptionEvent', {username: 'Subber', months: 3}, {room: ROOM, receivedAt: RECEIVED});
+  assert.equal(sub.kind, 'subscription');
+  assert.equal(sub.drafts[0].event_type, 'membership');
+  assert.equal(sub.drafts[0].display_name, 'Subber');
+  assert.equal(sub.drafts[0].viewer_uid, null);
+  assert.equal(sub.drafts[0].amount_display, '3 mo');
+
+  const ban = mapKickEvent('App\\Events\\UserBannedEvent', {id: 'x'}, {room: ROOM, receivedAt: RECEIVED});
+  assert.deepEqual(ban.drafts, []);
+  assert.equal(ban.reason, 'unsupported_event');
+  assert.equal(ban.kind, 'user_banned');
+
+  const unknown = mapKickEvent('App\\Events\\SomethingNew', {}, {room: ROOM, receivedAt: RECEIVED});
+  assert.deepEqual(unknown.drafts, []);
+  assert.equal(unknown.reason, 'unknown_event');
 });

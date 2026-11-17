@@ -1,7 +1,7 @@
 import {CONNECTION_STATE, PlatformAdapter} from '../shared/adapter.mjs';
 import {KICK_ERRORS, KickError, isKickError} from './errors.mjs';
 import {KickHttp} from './http.mjs';
-import {kickEventKind, isKickChatEvent, mapKickChatEvent} from './messages.mjs';
+import {kickEventKind, isKickChatEvent, mapKickChatEvent, mapKickEvent} from './messages.mjs';
 import {KickChatSocket, fetchChatConnection, fetchGuestToken, resolveChannel} from './transport.mjs';
 
 /**
@@ -110,6 +110,12 @@ export class KickAdapter extends PlatformAdapter {
       reconnects: 0,
       publications: 0,
       chats: 0,
+      gifts: 0,
+      memberships: 0,
+      kicksGifted: 0,
+      giftedSubscriptions: 0,
+      subscriptions: 0,
+      tokenRefreshes: 0,
       skipped: 0,
       decodeErrors: 0,
       crossRoomIgnored: 0,
@@ -167,8 +173,26 @@ export class KickAdapter extends PlatformAdapter {
       }
     }
     if (!isKickChatEvent(eventName)) {
-      if (kickEventKind(eventName) === 'unknown') this.counters.unknownEvents += 1;
-      else this.counters.knownNonChat += 1;
+      const kind = kickEventKind(eventName);
+      const {drafts, reason} = mapKickEvent(eventName, publication.data, {
+        sessionId: this.sessionId,
+        room: this.channel,
+        receivedAt: this.now()
+      });
+      if (drafts.length === 0) {
+        if (reason === 'unknown_event') this.counters.unknownEvents += 1;
+        else this.counters.knownNonChat += 1;
+        return;
+      }
+      if (kind === 'kicks_gifted') this.counters.kicksGifted += 1;
+      if (kind === 'gifted_subscriptions') this.counters.giftedSubscriptions += 1;
+      if (kind === 'subscription') this.counters.subscriptions += 1;
+      for (const draft of drafts) {
+        if (draft.event_type === 'gift') this.counters.gifts += 1;
+        else if (draft.event_type === 'membership') this.counters.memberships += 1;
+        this.lastEventAt = this.now();
+        this.onEvent(draft);
+      }
       return;
     }
     // Defense in depth: one adapter only ever accepts its own chatroom's topic.
@@ -234,6 +258,7 @@ export class KickAdapter extends PlatformAdapter {
     this.tokenRefreshTimer = setTimeout(() => {
       this.tokenRefreshTimer = null;
       if (this.stopping || this.socket !== socket) return;
+      this.counters.tokenRefreshes += 1;
       this.logger?.info({event: 'kick.token.refresh', ttlSec});
       socket.close({code: 4002, reason: 'token_refresh'});
     }, delay);
@@ -461,16 +486,55 @@ export class KickAdapter extends PlatformAdapter {
     };
   }
 
+  /**
+   * UI-facing capture summary. Categories mirror the existing platform cards:
+   * a connected socket with no event yet is `waiting_events`, not "working".
+   */
   capture() {
     const snapshot = this.snapshot();
+    const counters = snapshot.counters;
+    const events = counters.chats + counters.gifts + counters.memberships;
+    let category = 'idle';
+    if (snapshot.state === CONNECTION_STATE.CONNECTED) {
+      category = events > 0 ? 'normal' : 'waiting_events';
+    } else if (snapshot.state === CONNECTION_STATE.CONNECTING) {
+      category = 'connecting';
+    } else if (snapshot.state === CONNECTION_STATE.RECONNECTING) {
+      category = this.consecutiveFailures <= 1 ? 'temporary' : 'auto_reconnect';
+    } else if (snapshot.state === CONNECTION_STATE.RATE_LIMITED) {
+      category = 'rate_limit';
+    } else if (snapshot.state === CONNECTION_STATE.FAILED) {
+      category = 'failed';
+    } else if (snapshot.state === CONNECTION_STATE.STOPPED) {
+      category = this.stopReason === 'platform_ended' ? 'ended' : 'stopped';
+    }
     return {
       transport: 'centrifugo-ws',
       protocol: 'kick-centrifugo',
       connection: snapshot.state,
-      messages: snapshot.counters.chats,
+      category,
+      captureState: category,
+      messages: events,
+      eventsReceived: events,
+      eventsVerified: events > 0,
+      chatroomId: snapshot.chatroomId,
+      channelId: snapshot.channelId,
+      slug: snapshot.slug,
+      connectedAt: snapshot.connectedAt,
+      disconnectedAt: snapshot.disconnectedAt,
       lastEventAt: snapshot.lastEventAt,
-      reconnects: snapshot.counters.reconnects,
-      stats: snapshot.counters
+      reconnectAttempts: snapshot.reconnectAttempts,
+      reconnects: counters.reconnects,
+      tokenRefreshes: counters.tokenRefreshes,
+      nextRetryAt: snapshot.nextRetryAt,
+      lastFailure: snapshot.lastError,
+      gaps: snapshot.gaps,
+      lastGap: snapshot.lastGap,
+      possibleGap: snapshot.gaps.length > 0,
+      counters,
+      stats: counters,
+      host: snapshot.socket?.url ?? null,
+      checkedAt: this.now()
     };
   }
 }

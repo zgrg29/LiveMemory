@@ -76,7 +76,8 @@
       "youtube": "YouTube 라이브",
       "twitch": "Twitch 라이브",
       "douyin": "Douyin 라이브",
-      "tiktok": "TikTok 라이브"
+      "tiktok": "TikTok 라이브",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "오랫동안 데이터 없음",
       "tiktokActiveTitle": "기록 중인 TikTok 라이브룸",
       "tiktokActiveCount": "라이브룸 {n}개",
-      "tiktokOtherRecordings": "다른 TikTok 라이브룸 {n}개가 백그라운드에서 기록 중입니다. 다른 라이브룸을 추가할 수 있습니다."
+      "tiktokOtherRecordings": "다른 TikTok 라이브룸 {n}개가 백그라운드에서 기록 중입니다. 다른 라이브룸을 추가할 수 있습니다.",
+      "kickTab": "Kick",
+      "kickIntro": "방송 중인 Kick 채널의 공개 채팅을 기록합니다. Kick의 실시간 피드는 kick.com 자체 페이지가 사용하는 경로이며 공식 API가 아닙니다.",
+      "kickNoLoginNote": "로그인, API 키, 유료 서비스가 필요 없습니다. LiveMemory는 공개 채팅용 익명 게스트 토큰을 요청합니다.",
+      "kickUnofficialNote": "비공식 / 실험적: Kick은 예고 없이 이 경로를 바꿀 수 있고, 재연결 중에는 이어받기 커서가 없어 메시지를 놓칠 수 있습니다.",
+      "kickUnavailable": "이 빌드에서는 Kick 수집을 사용할 수 없습니다.",
+      "kickLinkLabel": "Kick 채널 링크",
+      "kickLinkPlaceholder": "https://kick.com/채널",
+      "kickChatroom": "채팅방 ID",
+      "kickCaptureTitle": "Kick 수집",
+      "kickActiveTitle": "기록 중인 Kick 채널",
+      "kickCaptureStateRateLimited": "Kick이 요청을 제한하고 있습니다. 대기 중",
+      "kickTokenRefreshes": "게스트 토큰 갱신 횟수: {n}",
+      "kickTechnicalProtocol": "프로토콜: {protocol} · 채팅방 {room}",
+      "kickTechnicalCounters": "채팅 {chats} · KICKs {gifts} · 멤버십 {memberships} · 푸시 {publications}",
+      "kickCaptureNotCompleteNote": "Kick 피드에는 이어받기 커서가 없습니다. 재연결 중 메시지는 누락될 수 있고 복구되지 않습니다. LiveMemory는 완전한 채팅 로그를 주장하지 않습니다.",
+      "kickPolicyBody": "{days}일이 지난 Kick 채팅 원문, 배지, 표시 라벨은 삭제됩니다. 건수와 안정 ID는 유지됩니다.",
+      "kickRetentionApplied": "만료된 Kick 레코드 {count}개를 삭제했습니다."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "이 빌드에서는 TikTok 수집을 사용할 수 없습니다.",
     "tiktokStopped": "TikTok 수집이 중지되었습니다.",
     "tiktokError": "TikTok 작업에 실패했습니다.",
-    "tiktokSocketFailed": "TikTok 라이브 연결을 열 수 없습니다."
+    "tiktokSocketFailed": "TikTok 라이브 연결을 열 수 없습니다.",
+    "kickLinkInvalid": "https://kick.com/channel 형식의 Kick 채널 링크를 입력하세요. 다시보기, 클립, 카테고리, 검색 페이지는 라이브 채널이 아닙니다.",
+    "kickRoomNotFound": "해당 Kick 채널이 없습니다.",
+    "kickRoomOffline": "이 Kick 채널은 방송 중이 아닙니다. 방송이 시작된 후 기록하세요.",
+    "kickRoomUnavailable": "Kick이 이 채널의 채팅을 거부했습니다.",
+    "kickBlocked": "Kick이 보안 정책으로 요청을 차단했습니다. 나중에 다시 시도하세요. LiveMemory는 이를 우회하지 않습니다.",
+    "kickRateLimit": "Kick이 요청을 제한하고 있습니다. 나중에 다시 시도하세요.",
+    "kickNetwork": "Kick에 연결할 수 없습니다. 네트워크를 확인하세요.",
+    "kickProtocol": "Kick이 예상치 못한 실시간 응답을 반환했습니다. 비공식 경로가 바뀌었을 수 있습니다.",
+    "kickConnectTimeout": "Kick 채팅 연결 시간이 초과되었습니다.",
+    "kickSocketFailed": "Kick 채팅 연결에 실패했습니다.",
+    "kickNotConfigured": "이 빌드에서는 Kick 수집을 사용할 수 없습니다.",
+    "kickStopped": "Kick 수집이 중지되었습니다.",
+    "kickError": "Kick 수집에 실패했습니다."
   },
   "toast": {
     "saved": "저장됨",

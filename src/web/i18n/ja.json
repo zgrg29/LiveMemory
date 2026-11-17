@@ -76,7 +76,8 @@
       "youtube": "YouTube ライブ",
       "twitch": "Twitch ライブ",
       "douyin": "Douyin ライブ",
-      "tiktok": "TikTok 直播"
+      "tiktok": "TikTok 直播",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "長時間データがありません",
       "tiktokActiveTitle": "記録中の TikTok ルーム",
       "tiktokActiveCount": "{n} 件",
-      "tiktokOtherRecordings": "他に {n} 件の TikTok ルームをバックグラウンドで記録中です。別のルームを追加できます。"
+      "tiktokOtherRecordings": "他に {n} 件の TikTok ルームをバックグラウンドで記録中です。別のルームを追加できます。",
+      "kickTab": "Kick",
+      "kickIntro": "ライブ中の Kick チャンネルの公開チャットを記録します。Kick のリアルタイム配信は kick.com 自身のページが使う経路であり、公式 API ではありません。",
+      "kickNoLoginNote": "ログイン、API キー、有料サービスは不要です。LiveMemory は公開チャット用に匿名ゲストトークンを取得します。",
+      "kickUnofficialNote": "非公式 / 実験的：Kick は予告なく経路を変更できます。再開時には続きのカーソルがないため、メッセージを取りこぼす可能性があります。",
+      "kickUnavailable": "このビルドでは Kick の取得を利用できません。",
+      "kickLinkLabel": "Kick チャンネルリンク",
+      "kickLinkPlaceholder": "https://kick.com/チャンネル名",
+      "kickChatroom": "チャットルーム ID",
+      "kickCaptureTitle": "Kick 取得",
+      "kickActiveTitle": "記録中の Kick チャンネル",
+      "kickCaptureStateRateLimited": "Kick がレート制限中です。待機しています",
+      "kickTokenRefreshes": "ゲストトークンの更新回数：{n}",
+      "kickTechnicalProtocol": "プロトコル：{protocol} · チャットルーム {room}",
+      "kickTechnicalCounters": "チャット {chats} · KICKs {gifts} · メンバー {memberships} · 配信 {publications}",
+      "kickCaptureNotCompleteNote": "Kick の経路には再生カーソルがありません。再接続中のメッセージは欠落し、補完されません。LiveMemory は完全なチャットログを主張しません。",
+      "kickPolicyBody": "{days} 日を超えた Kick のチャット本文・バッジ・表示ラベルは削除されます。件数と安定 ID は保持されます。",
+      "kickRetentionApplied": "期限切れの Kick レコードを {count} 件削除しました。"
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "このビルドでは TikTok の取得を利用できません。",
     "tiktokStopped": "TikTok の取得は停止しました。",
     "tiktokError": "TikTok の操作に失敗しました。",
-    "tiktokSocketFailed": "TikTok のライブ接続を開けませんでした。"
+    "tiktokSocketFailed": "TikTok のライブ接続を開けませんでした。",
+    "kickLinkInvalid": "https://kick.com/channel のような Kick チャンネルリンクを入力してください。アーカイブ、クリップ、カテゴリ、検索ページはライブ配信ではありません。",
+    "kickRoomNotFound": "その Kick チャンネルは存在しません。",
+    "kickRoomOffline": "この Kick チャンネルは配信していません。配信開始後に記録してください。",
+    "kickRoomUnavailable": "Kick がこのチャンネルのチャットを拒否しました。",
+    "kickBlocked": "Kick がセキュリティポリシーでリクエストを遮断しました。後でもう一度お試しください。LiveMemory は回避しません。",
+    "kickRateLimit": "Kick がリクエストを制限しています。後でもう一度お試しください。",
+    "kickNetwork": "Kick に接続できません。ネットワークを確認してください。",
+    "kickProtocol": "Kick から想定外のリアルタイム応答が返りました。非公式経路が変更された可能性があります。",
+    "kickConnectTimeout": "Kick チャットへの接続がタイムアウトしました。",
+    "kickSocketFailed": "Kick チャットへの接続に失敗しました。",
+    "kickNotConfigured": "このビルドでは Kick の取得を利用できません。",
+    "kickStopped": "Kick の取得は停止しました。",
+    "kickError": "Kick の取得に失敗しました。"
   },
   "toast": {
     "saved": "保存しました",

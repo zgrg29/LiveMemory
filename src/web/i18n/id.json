@@ -76,7 +76,8 @@
       "youtube": "YouTube Live",
       "twitch": "Twitch Live",
       "douyin": "Douyin Live",
-      "tiktok": "TikTok Live"
+      "tiktok": "TikTok Live",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "tidak ada data terlalu lama",
       "tiktokActiveTitle": "Ruang TikTok yang sedang direkam",
       "tiktokActiveCount": "{n} ruang",
-      "tiktokOtherRecordings": "{n} ruang TikTok lain sedang direkam di latar belakang; Anda dapat menambahkan ruang yang berbeda."
+      "tiktokOtherRecordings": "{n} ruang TikTok lain sedang direkam di latar belakang; Anda dapat menambahkan ruang yang berbeda.",
+      "kickTab": "Kick",
+      "kickIntro": "Rekam obrolan publik kanal Kick yang sedang live. Feed realtime Kick adalah yang dipakai halaman kick.com sendiri, bukan API resmi.",
+      "kickNoLoginNote": "Tidak perlu login, kunci API, atau layanan berbayar. LiveMemory meminta token tamu anonim untuk obrolan publik.",
+      "kickUnofficialNote": "Tidak resmi / eksperimental: Kick dapat mengubah feed ini tanpa pemberitahuan, dan saat menyambung ulang pesan bisa terlewat karena tidak ada kursor lanjutan.",
+      "kickUnavailable": "Perekaman Kick tidak tersedia di build ini.",
+      "kickLinkLabel": "Tautan kanal Kick",
+      "kickLinkPlaceholder": "https://kick.com/kanal",
+      "kickChatroom": "ID ruang obrolan",
+      "kickCaptureTitle": "Perekaman Kick",
+      "kickActiveTitle": "Kanal Kick yang direkam",
+      "kickCaptureStateRateLimited": "Kick sedang membatasi permintaan; menunggu",
+      "kickTokenRefreshes": "Penyegaran token tamu: {n}",
+      "kickTechnicalProtocol": "Protokol: {protocol} · ruang {room}",
+      "kickTechnicalCounters": "Obrolan {chats} · KICKs {gifts} · keanggotaan {memberships} · publikasi {publications}",
+      "kickCaptureNotCompleteNote": "Feed Kick tidak memiliki kursor lanjutan: pesan selama sambung ulang bisa terlewat dan tidak dipulihkan. LiveMemory tidak mengklaim log obrolan lengkap.",
+      "kickPolicyBody": "Teks obrolan, lencana, dan label tampilan Kick yang lebih lama dari {days} hari dihapus; jumlah dan ID stabil tetap disimpan.",
+      "kickRetentionApplied": "{count} baris Kick kedaluwarsa dihapus."
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "Pengambilan data TikTok tidak tersedia dalam build ini.",
     "tiktokStopped": "Pengambilan data TikTok telah berhenti.",
     "tiktokError": "Operasi TikTok gagal.",
-    "tiktokSocketFailed": "Koneksi live TikTok tidak dapat dibuka."
+    "tiktokSocketFailed": "Koneksi live TikTok tidak dapat dibuka.",
+    "kickLinkInvalid": "Masukkan tautan kanal Kick seperti https://kick.com/kanal. VOD, klip, kategori, dan halaman pencarian bukan kanal live.",
+    "kickRoomNotFound": "Kanal Kick itu tidak ada.",
+    "kickRoomOffline": "Kanal Kick ini sedang offline. Mulai merekam setelah siaran live.",
+    "kickRoomUnavailable": "Kick menolak obrolan kanal ini.",
+    "kickBlocked": "Kick memblokir permintaan (kebijakan keamanan). Coba lagi nanti; LiveMemory tidak mengatasinya dengan cara menyimpang.",
+    "kickRateLimit": "Kick sedang membatasi permintaan. Coba lagi nanti.",
+    "kickNetwork": "Tidak dapat menghubungi Kick. Periksa jaringan dan coba lagi.",
+    "kickProtocol": "Kick mengembalikan respons realtime yang tidak terduga. Feed tidak resmi mungkin telah berubah.",
+    "kickConnectTimeout": "Waktu koneksi ke obrolan Kick habis.",
+    "kickSocketFailed": "Koneksi obrolan Kick gagal.",
+    "kickNotConfigured": "Perekaman Kick tidak tersedia di build ini.",
+    "kickStopped": "Perekaman Kick dihentikan.",
+    "kickError": "Perekaman Kick gagal."
   },
   "toast": {
     "saved": "Tersimpan",

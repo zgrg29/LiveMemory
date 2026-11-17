@@ -1,10 +1,62 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**Kick G1 真实本地采集验证完成**：免登录、双直播间、
-1,936 条真实聊天、`sender.id` 100%、强制断线 5.7 秒恢复；**Kick 未接入产品**，
-无路由/界面/十语言文案，版本仍 **`0.15.0`**，未合并 `main`、未 Push/Tag/Release）
+最后更新：2026-11-17（**Kick G2–G5 完成，候选 EXE 已构建**：正式后台接入 + 十语言 UI +
+70.2 分钟真实长测（34,766 条聊天、1 次真实 token 刷新）+ 真实 EXE 验收 19/19；
+**未发布、未合并 main、未 Tag/Release**，版本仍 `0.15.0`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.53 Kick G2–G5：正式接入、完整验收与候选 EXE（2026-11-17）✅ 候选
+
+用户要求连续推进 G2–G5，每个阶段独立验收，出现 P0/P1 先修复再继续，最终交付可试玩的
+Windows 候选 EXE，但**不执行 G6、不发布**。本轮从 `feature/kick-g1` 的 `74b39fa` 继续。
+
+### 0.53.1 范围与结果
+
+| 阶段 | 结果 |
+| --- | --- |
+| G2 正式后台接入 | ✅ `KickService` + `/api/kick/{status,room,connect,disconnect,retention/apply}` + capabilities + SessionManager/EventIngest/历史上限 |
+| G2 礼物与互动 | ✅ KICKs（交易 ID、sender.id、KICKs 数量、金额未知）、赠订（赠送者 + 每位接收者，无身份）；订阅/开播/Host/投票仍 `NOT-OBSERVED` |
+| G3 UI 与十语言 | ✅ 直播页第六个平台页签；十份字典各 **2,302** 键；真实浏览器矩阵 **20/20**（10 语 × 1440/1024/820/390 × 明暗，真实 2 场录制） |
+| G4 真实长测 | ✅ **70.2 分钟**、3 场真实 session、**34,766** 条聊天、**1 次真实 token 刷新**、7 次平台侧重连、0 重复 |
+| G4 自动化回归 | ✅ 全量 **1,169 passed / 0 failed / 0 skipped**（463,240 ms）；G1 的两个偶发时序失败未复现 |
+| G5 EXE | ✅ 候选 `dist/LiveMemory.exe`，Build ID `5314bd79a0f3`，`verify-kick-exe` **19/19**；正式 EXE `requireAdministrator`，自动化使用同 Build ID 的 asInvoker 副本 |
+
+### 0.53.2 G4 真实长测（`tests/.tmp/kick-g4/`）
+
+| 项目 | 值 |
+| --- | --- |
+| 主房间 | kinocasinogaming（02:57:29–04:07:39 UTC，70.2 分钟） |
+| 替补 | odablock 03:19:18 下播自动停止；paymoneywubby 03:19:48 接入至结束 |
+| 聊天 | 20,304 + 3,304 + 11,158 = **34,766** |
+| 字段 | `sender.id` / 消息 ID / `occurred_at` 均 **100%** |
+| 观众 | **3,438** 个稳定 `kick:<id>`（主房间 1,471） |
+| 重复 | 0（`external_id` 无重复；`UNIQUE(session_id, dedupe_key)` 兜底） |
+| 重连 | 7 次（3/3/1），平台侧断开自动恢复；无续传，空档可能漏消息 |
+| Token 刷新 | **1 次**：03:59:37 UTC `tokenRefreshes=1`、状态 `connected`；前后 30 秒内继续收消息（17,442→17,587） |
+| 事件 | 111 KICKs + 41 membership（18 paid / 23 free）；KICKs 的 `amount_minor`/`currency` 100% 为 NULL |
+| 停止 | `/api/kick/disconnect` 后 `liveSessionsAfterStop=0`、`recordingsAfterStop=0` |
+
+### 0.53.3 候选 EXE（G5）
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe`（正式候选）、`dist/LiveMemory-asInvoker.exe`（同源 asInvoker 测试副本） |
+| 版本 / Build ID | `0.15.0` / `5314bd79a0f3` |
+| 大小 | 99,329,024 bytes |
+| SHA-256（候选） | `__FINAL_EXE_SHA__` |
+| Manifest | `requireAdministrator`（构建断言 + 注入后复读）；副本 `asInvoker` |
+| 打包 | 244 个文件；Kick 7 模块 + 十份字典 + 全部提示词/Schema |
+| EXE 验收 | `verify-kick-exe.mjs` **19/19**：注册、URL、双房间真实聊天、身份、历史、AI 入口、停止、十语资源 |
+| 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户、EXE 未签名 |
+
+### 0.53.4 测试与限制
+
+- 全量 **1,169 passed / 0 failed / 0 skipped**；Kick 相关单测/集成覆盖 URL、字段、Emote、reply、
+  礼物/赠订、token 刷新、109、退避、双房间、停止、服务/路由、UI 键与打包清单。
+- 十语言门禁：10 × 2,302 键，缺失/多余/占位符/空值/英文残留均为 0。
+- P2：订阅/续订、开播下播、Host、投票未观测；赠订只有用户名；无续传；非官方协议可能失效。
+- P3：HTTP/2 与 WebSocket `Origin` 依赖；EXE 未签名；真实 UAC 未人工验证。
 
 ## 0.52 Kick G1 真实本地采集验证（2026-11-17）✅ 未接入产品
 

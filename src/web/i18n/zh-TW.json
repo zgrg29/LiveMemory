@@ -76,7 +76,8 @@
       "youtube": "YouTube 直播",
       "twitch": "Twitch 直播",
       "douyin": "抖音直播",
-      "tiktok": "TikTok 直播"
+      "tiktok": "TikTok 直播",
+      "kick": "Kick"
     }
   },
   "format": {
@@ -498,7 +499,24 @@
       "tiktokReasonIdle": "長時間沒有資料",
       "tiktokActiveTitle": "正在記錄的 TikTok 直播間",
       "tiktokActiveCount": "{n} 個直播間",
-      "tiktokOtherRecordings": "另有 {n} 個 TikTok 直播間正在背景記錄；你可以再加入不同的直播間。"
+      "tiktokOtherRecordings": "另有 {n} 個 TikTok 直播間正在背景記錄；你可以再加入不同的直播間。",
+      "kickTab": "Kick",
+      "kickIntro": "記錄 Kick 正在直播頻道的公開聊天。Kick 的即時通道就是 kick.com 自己頁面使用的通道，不是官方 API。",
+      "kickNoLoginNote": "無需登入、無需 API Key、無付費服務。LiveMemory 會為公開聊天通道申請匿名訪客權杖。",
+      "kickUnofficialNote": "非官方 / 實驗性：Kick 可能隨時更改該通道；重新連線期間可能漏訊息（沒有續傳游標）。",
+      "kickUnavailable": "此版本未提供 Kick 擷取。",
+      "kickLinkLabel": "Kick 頻道連結",
+      "kickLinkPlaceholder": "https://kick.com/頻道名",
+      "kickChatroom": "聊天室 ID",
+      "kickCaptureTitle": "Kick 擷取",
+      "kickActiveTitle": "正在記錄的 Kick 頻道",
+      "kickCaptureStateRateLimited": "Kick 正在限流，等待中",
+      "kickTokenRefreshes": "訪客權杖刷新次數：{n}",
+      "kickTechnicalProtocol": "協定：{protocol} · 聊天室 {room}",
+      "kickTechnicalCounters": "聊天 {chats} · KICKs {gifts} · 會員 {memberships} · 推送 {publications}",
+      "kickCaptureNotCompleteNote": "Kick 通道沒有續傳游標：重新連線期間的訊息可能遺漏且不會補錄。LiveMemory 不聲稱彈幕完整。",
+      "kickPolicyBody": "超過 {days} 天的 Kick 聊天原文、徽章與展示標籤會被清理；訊息計數與穩定 ID 保留。",
+      "kickRetentionApplied": "已清理 {count} 筆過期 Kick 記錄。"
     }
   },
   "history": {
@@ -2041,7 +2059,20 @@
     "tiktokNotConfigured": "此組建不提供 TikTok 採集功能。",
     "tiktokStopped": "TikTok 採集已停止。",
     "tiktokError": "TikTok 操作失敗。",
-    "tiktokSocketFailed": "無法開啟 TikTok 直播連線。"
+    "tiktokSocketFailed": "無法開啟 TikTok 直播連線。",
+    "kickLinkInvalid": "請輸入 Kick 頻道連結，例如 https://kick.com/頻道名。回放、剪輯、分類和搜尋頁不是直播間。",
+    "kickRoomNotFound": "找不到這個 Kick 頻道。",
+    "kickRoomOffline": "該 Kick 頻道目前未開播。請在開播後開始記錄。",
+    "kickRoomUnavailable": "Kick 拒絕了這個頻道的聊天。",
+    "kickBlocked": "Kick 以安全策略攔截了請求。請稍後再試；LiveMemory 不會繞過該限制。",
+    "kickRateLimit": "Kick 正在限流，請稍後再試。",
+    "kickNetwork": "無法連線 Kick，請檢查網路後重試。",
+    "kickProtocol": "Kick 回傳了異常的即時回應，非官方通道可能已變更。",
+    "kickConnectTimeout": "連線 Kick 聊天逾時。",
+    "kickSocketFailed": "Kick 聊天連線失敗。",
+    "kickNotConfigured": "此版本未提供 Kick 擷取。",
+    "kickStopped": "Kick 擷取已停止。",
+    "kickError": "Kick 擷取失敗。"
   },
   "toast": {
     "saved": "已儲存",

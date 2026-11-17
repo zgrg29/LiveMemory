@@ -35,7 +35,7 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 | 运行 | 结果 |
 | --- | --- |
 | 全量单元 + 集成 `--test-isolation=none` | **747 unit + 355 integration = 1102 passed / 0 failed / 0 skipped**（`--test-isolation=none`，合计 292,904 ms；单元单独 747 passed / 13,754 ms） |
-| 十语言字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × 2,271 键；缺失 0 / 多余 0 / 占位符差异 0 / 空值 0 |
+| 十语言字典门禁（`tests/unit/i18n.test.mjs`） | 10 份 × 2,302 键；缺失 0 / 多余 0 / 占位符差异 0 / 空值 0 |
 | 十语言注册表与 Schema 门禁 | `locale-registry` 与 `ai-prompt-locales` 通过；三个 Schema `locale.enum` = 10 |
 | 国际化关键集成 | `ai-i18n-locales` 4/4、`ai-i18n-translation` 全部通过 |
 

@@ -1,5 +1,32 @@
 # 版本变化（CHANGELOG）
 
+## 未发布 — v0.16.0 候选（Kick G2–G5，未 Tag / 未 Release）
+
+> 本分支（`feature/kick-g2`）的测试候选，**不是正式版本**。版本号仍 `0.15.0`，未合并 `main`，
+> 未 Push / Tag / Release，未覆盖 `v0.15.0` 资产。
+
+### 新增
+
+- **第六个直播平台 Kick（免登录）**：粘贴 `https://kick.com/<频道名>` 即采集公开聊天；
+  匿名 guest token + Centrifugo 五条 feed；HTTP/2 读取公开频道；无需 API Key、Cookie 或付费服务。
+- 稳定身份 `kick:<sender.id>`、消息 UUID 去重、Emote 元数据、reply 诊断字段、30 天原文保留。
+- KICKs 礼物（交易 ID、发送者 ID、KICKs 数量；不换算法币）与赠送订阅（赠送者 + 每位接收者）。
+- 直播页第六个平台页签、添加/检查/开始/停止/状态/历史/画像/AI；十语言（每份 2,302 键）。
+- `verify-kick-exe.mjs`：真实 EXE 内的注册、URL 解析、双房间真实聊天、身份、历史、停止与十语资源检查。
+
+### 验证
+
+- 全量 `node --test --test-isolation=none`：**1,169 passed / 0 failed / 0 skipped**。
+- 十语言 Kick UI：**20/20**（1440/1024/820/390，明暗，10 语言，真实 2 场录制）。
+- 真实长测（≥60 分钟）：见 `docs/KICK_G2_G5_ACCEPTANCE.md`。
+- 候选 EXE：Build ID / SHA-256 / 99,329,024 B，`verify-kick-exe` **19/19**。
+
+### 未验证 / 已知限制
+
+- 订阅/续订、开播/下播、Host、投票：`NOT-OBSERVED`；关注仅官方 webhook → 本地形态不支持。
+- 没有续传游标，重连期间可能漏消息；非官方协议可能失效。
+- 真实双击 UAC（同意/拒绝）、干净 Windows 账户未人工验证；自动化只验证 Manifest 与 asInvoker 副本。
+
 ## 0.15.0 — 2026-11-17（十语言国际化正式发布：10-Language Internationalization）
 
 **正式稳定版**，Tag `v0.15.0`。相对 `v0.14.0` 新增七种界面语言、十语言 AI 输出、独立 AI 输出语言、

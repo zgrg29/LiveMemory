@@ -1,6 +1,53 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **Kick G1 真实本地采集验证完成** · 分支 `feature/kick-g1` ·
+本轮：2026-11-17 · **Kick G2–G5 完成** · 分支 `feature/kick-g2` · 第六个平台接入产品 ·
+十语言 UI 20/20 · 70.2 分钟真实长测（1 次真实 token 刷新）· 候选 EXE `5314bd79a0f3`
+· **未发布 / 未合并 main / 未 Push / 未 Tag**
+
+> 从 G1 `74b39fa` 继续，把 Kick 接入正式 service/routes/capabilities/UI/十语言/历史/AI/画像，
+> 完成 ≥60 分钟真实长测、全量回归与 Windows 候选 EXE 验收。**版本仍 `0.15.0`，未执行 G6。**
+> 用户可直接试玩候选 EXE；真实双击 UAC、干净 Windows 账户、订阅/开播事件仍未覆盖。
+
+## 0. 本轮（Kick G2–G5）
+
+### 0.1 结果
+
+| 阶段 | 结果 |
+| --- | --- |
+| G2 | `KickService` + 5 个 `/api/kick/*` 路由 + capabilities；KICKs 111 条、赠订 41 条真实入库；身份 `kick:<id>` |
+| G3 | 第六个平台页签；十语 2,302 键；真实浏览器 **20/20**（10 语、4 宽度、明暗、真实 2 场） |
+| G4 | **70.2 分钟**真实长测：34,766 聊天、3,438 观众、0 重复、7 次重连、**1 次真实 token 刷新** |
+| G5 | 候选 EXE Build ID `5314bd79a0f3`、99,329,024 B、`verify-kick-exe` **19/19** |
+| 回归 | 全量 **1,169 passed / 0 failed / 0 skipped**；五平台未改协议 |
+
+### 0.2 关键文件
+
+- `src/platforms/kick/service.mjs`（新增）、`adapter/messages/transport`（礼物/赠订与计数）
+- `src/server/index.mjs`、`src/server/routes.mjs`（注册、路由、capabilities、保留）
+- `src/web/js/pages/live.js`（Kick 页签/面板）、十份字典（+31 键）
+- `scripts/kick-g4-longrun.mjs`、`scripts/verify-kick-ui.mjs`、`scripts/verify-kick-exe.mjs`
+- `tests/unit/kick-*.test.mjs`、`tests/integration/kick-{ingest,service}.test.mjs`
+- `docs/KICK_G2_G5_ACCEPTANCE.md`（完整验收）
+
+### 0.3 下一轮（需用户确认）
+
+1. 用户试玩候选 EXE：普通双击（接受 UAC）→ 新建记录 → Kick → 粘贴链接 → 开始/停止 → 历史/AI/画像。
+2. 真实双击 UAC 同意/拒绝、干净 Windows 账户人工验收。
+3. 视需要等待订阅/续订、开播下播、Host 的真实样本；未观测前保持 `NOT-OBSERVED`。
+4. G6 发布判断：用户确认后再决定版本号、Tag、Release；**不得自动发布**。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `feature/kick-g2`（继承 `feature/kick-g1` 全部提交） |
+| 提交 | 见最终报告（本轮提交 hash） |
+| Push / Merge / Tag / Release | **均未执行** |
+| 版本 / Schema | `0.15.0` / 16；未改五平台协议 |
+
+---
+
+上一轮：2026-11-17 · **Kick G1 真实本地采集验证完成** · 分支 `feature/kick-g1` ·
 免登录双直播间 966 秒 / 1,936 条真实聊天 · **Kick 未接入产品** · **未 Push/Merge/Tag/Release**
 
 > 本轮按用户要求以既有 G0 调查为起点，对 Kick 做源码核实、真实连接与最小 PoC；
@@ -9,7 +56,7 @@
 > 未新增路由/UI/十语言文案，未构建 EXE，未 Push/Merge/Tag/Release。**
 > 礼物/订阅等事件仍为 `NOT-OBSERVED`，不得在界面或 README 宣称支持 Kick。
 
-## 0. 本轮（Kick G1）
+## 0. 上一轮（Kick G1）
 
 ### 0.1 结果
 

@@ -196,6 +196,236 @@ export function mapKickChatEvent(data, {sessionId = null, room = null, receivedA
   return {draft, reason: null, assumedUtc: timestamp.assumedUtc};
 }
 
+/**
+ * KICKs gift (`KicksGifted`, published on `channel_<channelId>`).
+ *
+ * Kick reports how many KICKs were sent but never a fiat amount or currency, so
+ * the event keeps the KICKs count as display-only text and leaves
+ * `amount_minor`/`currency` NULL with `value_kind=unknown`. The transaction id
+ * becomes `external_id`, and the sender id is the stable viewer identity.
+ */
+export function mapKickGiftEvent(data, {sessionId = null, room = null, receivedAt = Date.now()} = {}) {
+  if (!data || typeof data !== 'object') return {drafts: [], reason: 'not_object'};
+  const sender = data.sender && typeof data.sender === 'object' ? data.sender : null;
+  const gift = data.gift && typeof data.gift === 'object' ? data.gift : null;
+  const displayName = typeof sender?.username === 'string' && sender.username ? sender.username : null;
+  if (!displayName) return {drafts: [], reason: 'username_missing'};
+  if (!gift || typeof gift !== 'object') return {drafts: [], reason: 'gift_missing'};
+
+  const transactionId = typeof data.gift_transaction_id === 'string' && data.gift_transaction_id
+    ? data.gift_transaction_id
+    : null;
+  const timestamp = parseKickTimestamp(data.created_at);
+  const amount = Number(gift.amount);
+  const typeParts = [gift.type, gift.tier].filter((part) => typeof part === 'string' && part);
+  const displayParts = [];
+  if (Number.isFinite(amount) && amount >= 0) displayParts.push(`${Math.trunc(amount)} KICKs`);
+  if (typeParts.length > 0) displayParts.push(typeParts.join('/'));
+  const message = typeof data.message === 'string' && data.message ? data.message : null;
+
+  const draft = {
+    session_id: sessionId,
+    platform: 'kick',
+    event_type: 'gift',
+    external_id: transactionId,
+    viewer_uid: positiveId(sender?.id),
+    display_name: displayName,
+    content: message,
+    occurred_at: timestamp.ms ?? receivedAt,
+    received_at: receivedAt,
+    emotes: null,
+    badges: mapKickBadges(sender?.identity),
+    gift_id: typeof gift.gift_id === 'string' && gift.gift_id ? gift.gift_id : null,
+    gift_name: typeof gift.name === 'string' && gift.name ? gift.name : null,
+    gift_type: 'paid',
+    gift_quantity: 1,
+    // KICKs are not a fiat currency: no amount, no currency, no income total.
+    amount_minor: null,
+    unit_amount_minor: null,
+    currency: null,
+    value_kind: 'unknown',
+    amount_display: displayParts.length > 0 ? displayParts.join(' · ').slice(0, 80) : null,
+    is_paid: true,
+    source_quality: transactionId && timestamp.ms && positiveId(sender?.id) ? 'verified' : 'unknown',
+    _kick: {
+      chatroomId: positiveId(data.chatroom_id) ?? positiveId(room?.chatroomId),
+      channelId: positiveId(room?.channelId),
+      slug: room?.slug ?? null,
+      transactionId,
+      kicks: Number.isFinite(amount) ? Math.trunc(amount) : null,
+      giftType: typeof gift.type === 'string' ? gift.type : null,
+      giftTier: typeof gift.tier === 'string' ? gift.tier : null,
+      timestampSource: timestamp.ms ? 'created_at' : 'received_at'
+    }
+  };
+  return {drafts: [draft], reason: null};
+}
+
+/**
+ * Gifted subscriptions (`GiftedSubscriptionsEvent`, published on
+ * `chatroom_<chatroomId>`).
+ *
+ * The platform event carries only usernames: `gifter_username` and
+ * `gifted_usernames[]`, with no stable user ids. Following the existing
+ * YouTube gifted-membership shape, the gifter becomes one paid membership event
+ * with the gifted total, and every recipient becomes one free membership event.
+ * No recipient gets a viewer identity, and no fiat amount is invented.
+ */
+export function mapKickGiftedSubscriptions(data, {sessionId = null, room = null, receivedAt = Date.now()} = {}) {
+  if (!data || typeof data !== 'object') return {drafts: [], reason: 'not_object'};
+  const gifter = typeof data.gifter_username === 'string' && data.gifter_username ? data.gifter_username : null;
+  const names = Array.isArray(data.gifted_usernames)
+    ? data.gifted_usernames.filter((name) => typeof name === 'string' && name).slice(0, 100)
+    : [];
+  if (!gifter && names.length === 0) return {drafts: [], reason: 'gifted_subscription_empty'};
+
+  const rawTotal = Number(data.gifted_total);
+  const total = Number.isFinite(rawTotal) && rawTotal > 0
+    ? Math.min(Math.trunc(rawTotal), 100000)
+    : Math.max(1, names.length);
+  const correlationId = typeof data.correlation_id === 'string' && data.correlation_id ? data.correlation_id : null;
+  // A stable dedupe id even if Kick omits correlation_id: the event has no
+  // message id of its own, and the usernames/total identify it well enough.
+  const base = (correlationId
+    ?? `giftsub:${positiveId(data.chatroom_id) ?? positiveId(room?.chatroomId) ?? ''}:${gifter ?? 'unknown'}:${total}:${names.join(',')}`)
+    .slice(0, 180);
+
+  const drafts = [];
+  if (gifter) {
+    drafts.push({
+      session_id: sessionId,
+      platform: 'kick',
+      event_type: 'membership',
+      external_id: base,
+      viewer_uid: null,
+      display_name: gifter,
+      content: null,
+      occurred_at: receivedAt,
+      received_at: receivedAt,
+      emotes: null,
+      badges: null,
+      gift_id: 'gifted-subscriptions',
+      gift_name: null,
+      gift_type: 'paid',
+      gift_quantity: total,
+      amount_minor: null,
+      unit_amount_minor: null,
+      currency: null,
+      value_kind: 'unknown',
+      amount_display: null,
+      is_paid: true,
+      source_quality: correlationId ? 'verified' : 'unknown',
+      _kick: {
+        chatroomId: positiveId(data.chatroom_id) ?? positiveId(room?.chatroomId),
+        channelId: positiveId(room?.channelId),
+        slug: room?.slug ?? null,
+        correlationId,
+        gifterTotal: Number.isFinite(Number(data.gifter_total)) ? Number(data.gifter_total) : null,
+        recipientCount: names.length
+      }
+    });
+  }
+  names.forEach((name, index) => {
+    drafts.push({
+      session_id: sessionId,
+      platform: 'kick',
+      event_type: 'membership',
+      external_id: `${base}:recipient:${index}`.slice(0, 200),
+      viewer_uid: null,
+      display_name: name,
+      content: null,
+      occurred_at: receivedAt,
+      received_at: receivedAt,
+      emotes: null,
+      badges: null,
+      gift_id: 'gifted-subscription-received',
+      gift_name: null,
+      gift_type: 'free',
+      gift_quantity: 1,
+      amount_minor: null,
+      unit_amount_minor: null,
+      currency: null,
+      value_kind: 'unknown',
+      amount_display: null,
+      // The recipient did not pay: never counted as a payer.
+      is_paid: false,
+      source_quality: correlationId ? 'verified' : 'unknown',
+      _kick: {
+        chatroomId: positiveId(data.chatroom_id) ?? positiveId(room?.chatroomId),
+        channelId: positiveId(room?.channelId),
+        slug: room?.slug ?? null,
+        correlationId,
+        recipientIndex: index
+      }
+    });
+  });
+  return {drafts, reason: null};
+}
+
+/**
+ * A plain subscription/renewal (`SubscriptionEvent`). Never observed live so
+ * far; the documented shape is `{username, months}` with no user id. Kept
+ * mapped so a real event is not dropped, and marked as no stable identity.
+ */
+export function mapKickSubscriptionEvent(data, {sessionId = null, room = null, receivedAt = Date.now()} = {}) {
+  if (!data || typeof data !== 'object') return {drafts: [], reason: 'not_object'};
+  const username = typeof data.username === 'string' && data.username ? data.username : null;
+  if (!username) return {drafts: [], reason: 'username_missing'};
+  const months = Number(data.months);
+  return {
+    drafts: [{
+      session_id: sessionId,
+      platform: 'kick',
+      event_type: 'membership',
+      external_id: null,
+      viewer_uid: null,
+      display_name: username,
+      content: null,
+      occurred_at: receivedAt,
+      received_at: receivedAt,
+      emotes: null,
+      badges: null,
+      gift_id: 'subscription',
+      gift_name: null,
+      gift_type: 'paid',
+      gift_quantity: 1,
+      amount_minor: null,
+      unit_amount_minor: null,
+      currency: null,
+      value_kind: 'unknown',
+      amount_display: Number.isFinite(months) && months > 0 ? `${Math.trunc(months)} mo` : null,
+      is_paid: true,
+      source_quality: 'unknown',
+      _kick: {
+        chatroomId: positiveId(data.chatroom_id) ?? positiveId(room?.chatroomId),
+        channelId: positiveId(room?.channelId),
+        slug: room?.slug ?? null,
+        months: Number.isFinite(months) ? Math.trunc(months) : null
+      }
+    }],
+    reason: null
+  };
+}
+
+/**
+ * Route one non-chat publication to its canonical drafts.
+ * Unknown/unsupported events return an empty list so the adapter can count them
+ * without inventing a user-visible event.
+ */
+export function mapKickEvent(eventName, data, context = {}) {
+  const kind = kickEventKind(eventName);
+  switch (kind) {
+    case 'kicks_gifted':
+      return {...mapKickGiftEvent(data, context), kind};
+    case 'gifted_subscriptions':
+      return {...mapKickGiftedSubscriptions(data, context), kind};
+    case 'subscription':
+      return {...mapKickSubscriptionEvent(data, context), kind};
+    default:
+      return {drafts: [], reason: kind === 'unknown' ? 'unknown_event' : 'unsupported_event', kind};
+  }
+}
+
 /** Decode the JWT payload of the anonymous guest token (no signature trust). */
 export function decodeJwtPayload(token) {
   try {
