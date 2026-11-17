@@ -50,7 +50,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建，未 Push） |
-| 本地提交 | 见本轮提交 Hash；`main` 未改 |
+| 本地提交 | `a1a99ce`（`docs: verify Kuaishou G1 dual-route feasibility (C)`）；`main` 未改 |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 工作区 | 提交后干净 |
 

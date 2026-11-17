@@ -908,7 +908,7 @@ node research/kuaishou-g1/probe.mjs cleanup
 | `main` | `6f71f56`（未改） |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 本轮分支 | `kuaishou-g1`（从 `kuaishou-g0` 创建，未 Push） |
-| 提交 | 见 `docs/STATUS.md` §0.57 与本文件提交 Hash |
+| 提交 | `a1a99ce`（`docs: verify Kuaishou G1 dual-route feasibility (C)`）；记录提交见 STATUS §0.57.5 |
 
 ## 附录 C：G1.5 最小实验协议（需用户授权账号与手机）
 

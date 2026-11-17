@@ -57,7 +57,8 @@
 ### 0.57.5 Git
 
 - 分支：`kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建；未 Push）。
-- 本地提交：见本轮提交；`main` 未改，v0.16.0 资产未动。
+- 本地提交：`a1a99ce`（`docs: verify Kuaishou G1 dual-route feasibility (C)`）；
+  随后以 `docs: record the Kuaishou G1 commit` 记录本 Hash。`main` 未改，v0.16.0 资产未动。
 - 工作区：提交后干净（仅本轮文档/脚本）。
 
 ### 0.57.6 验证
