@@ -1,7 +1,8 @@
 # 发布流程（RELEASE）
 
 > 本文件描述正式发布（M8）应执行的步骤。**v0.16.0 已按本流程发布**（Tag `v0.16.0`、
-> GitHub Release Published）；后续版本仍必须在用户明确授权后执行 Tag / Release。
+> GitHub Release Published）；**v0.17.0 已按本流程发布为快手 H5 预览版**
+> （Tag `v0.17.0`、Release ID `448828056`；快手在线采集未开放）。后续版本仍需用户明确授权。
 
 ## 1. 版本规则
 

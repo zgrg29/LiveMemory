@@ -51,6 +51,7 @@ main 合并、Tag、GitHub Release 完成 · 详见 `docs/KUAISHOU_H5_INTEGRATIO
 | 功能提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
 | main 合并提交 | `9ae4a37f406a79ce8ae8addeb6e74c3b2ad90cf9`（`merge: release Kuaishou H5 preview (v0.17.0)`） |
 | 发布 Tag | `v0.17.0`（annotated，object `4cf356a` → commit `5807e3e`） |
+| 发布记录提交 | `de3b041`（`docs: record the published v0.17.0 preview release`） |
 | Release | `448828056` · `https://github.com/zgrg29/LiveMemory/releases/tag/v0.17.0` · Published |
 | 版本 / Schema | `0.17.0` / 16 |
 | v0.16.0 | Tag/Release/EXE 未动 |

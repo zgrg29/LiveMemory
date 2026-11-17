@@ -82,7 +82,7 @@
 | Release URL | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.17.0` |
 | Release ID | `448828056` |
 | 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-17T15:31:37Z` |
-| Push | `main`：`6f71f56..5807e3e`；Tag `v0.17.0` 新推送 |
+| Push | `main`：`6f71f56..5807e3e`；Tag `v0.17.0` 新推送；发布记录提交 `de3b041` 随后 Push |
 | Tag | annotated `v0.17.0`（object `4cf356a27ea73e402520bb0df0ccb38455c60bae` → commit `5807e3e7dcb183fdd09515baacf0c4193591a7c2`） |
 | 资产 1 | `LiveMemory.exe`：99,492,352 B，SHA-256 `58b21dc9cb362a8f4918924aae6ab12792b198ee342f0a805ddbcb8d830471ac` |
 | 资产 2 | `SHA256SUMS.txt`：82 B，SHA-256 `dfa9716b10e291104877999a114197a2410a15164e7c2f5cf49303a377001879` |
