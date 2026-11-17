@@ -42,6 +42,22 @@
 > 十份字典各 **2,271** 键、十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；
 > 五平台与数据库 Schema（16）未变，**未新增直播平台**。详见 `docs/STATUS.md` §0.51。
 
+## P47 快手 G0 技术调查（2026-11-17）✅ 调查完成 · 结论 B
+
+- ✅ **找到免登录实时公开聊天路径**：快手 H5 `GET /wap/live/feed?liveStreamId=&cursor=`，
+  无 Cookie/签名/登录/浏览器；3 秒增量，cursor 重放 0 重复。
+- ✅ 真实样本 **126 条**（主样本 91 条 / 5 个在播房间，其中 3 个并发）：昵称、数字 `userId`、毫秒 `time`、
+  公开头像 **100%**；消息 ID **0%**；事件仅 `comment`（礼物 **NOT-OBSERVED**）。
+- ✅ 公开直播间 SSR `liveStream.id` 判断在播/不在播；真实下播→再开播 **未观测**。
+- ✅ 桌面 WS + protobuf（字段最全）确认要求**登录票据 + `__NS_hxfalcon` 签名**；
+  匿名 `websocketinfo`/`livedetail` 返回 `result:2` → **不满足条件一，不接入**。
+- ⚠️ **最高风险**：`livev.m.chenzhongtech.com/robots.txt` 对 `User-agent: *` 为 `Disallow: /`；
+  产品化前必须做条款/合规判断；若不允许 → **C（暂缓）**。
+- ⚠️ **长期画像限制**：`userId` 跨场/跨日稳定性未验证；不得直接声称 `kuaishou:<id>` 稳定。
+- 📄 完整报告 `docs/KUAISHOU_G0_FEASIBILITY.md`；脚本 `research/kuaishou-g0/`；
+  评分 **78/100**；**未接入生产代码、未改 v0.16.0、未 Push/Tag/Release**。
+- ⬜ 等待用户/法务决定是否允许自动访问 H5 域名，再决定是否进入 G1。
+
 ## P46 v0.15.0 十语言正式发布（2026-11-17）🚀
 
 - ✅ 合并：`feature/p42-i18n-m3` 以 `--no-ff` 合并到 `main`（合并提交 `37a075e1f0e726742c9133dad8a4dad232effc6b`），

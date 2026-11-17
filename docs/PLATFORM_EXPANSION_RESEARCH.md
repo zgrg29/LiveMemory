@@ -1,11 +1,13 @@
 # 直播平台扩展：候选调查记录
 
-状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17）**。
+状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0 实测更新于 2026-11-17）**。
 2026-11-16 本轮**没有接入任何新平台、没有连接任何新平台、没有安装依赖、
 没有复制任何第三方代码**；2026-11-17 的 G1 轮**真实连接了 Kick**，
 结果与证据见 `docs/KICK_G1_ACCEPTANCE.md`，本文 §2.8 只做摘要。
-除已明确标注者外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」得出，
-**除 Kick 的 G1 已验证项外一律为「待验证」**。
+2026-11-17 的 Kuaishou G0 轮**真实请求了公开快手直播间**（无登录、无 Cookie、无签名），
+结果见 `docs/KUAISHOU_G0_FEASIBILITY.md`，本文 §3.5 只做摘要。
+除 Kick G1 与 Kuaishou G0 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
+**一律为「待验证」**。
 
 准入判据与门禁流程见 `docs/PLATFORM_ADMISSION.md`。本文件只记录「调查到了什么」。
 
@@ -236,10 +238,27 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 
 ### 3.5 快手 Kuaishou
 
-- 线索：`ordinaryroad` 支持 Kuaishou（Protobuf WebSocket，README 引用了其协议分析文章）；
-  也有 `BarrageGrab` 类工具覆盖抖音/快手。
-- 待验证：稳定 UID；礼物信息完整性（README 自评「礼物信息不全」）；协议变动。
-- 风险：Protobuf 结构随版本变化；直播间 id 解析依赖页面。
+**2026-11-17 G0 更新：结论 B（有条件进入 G1），完整报告 `docs/KUAISHOU_G0_FEASIBILITY.md`。**
+
+- **已找到并实测免登录实时公开聊天**：快手 H5 分享页的
+  `GET https://livev.m.chenzhongtech.com/wap/live/feed?liveStreamId=<id>&cursor=<cursor>`，
+  无 Cookie、无签名、无登录、无浏览器；3 秒增量，cursor 重放 0 重复。
+- 真实样本 **126 条**（主样本 91 条 / 5 个在播房间，其中 3 个并发）：昵称、数字 `userId`、毫秒 `time`、公开头像
+  **100% 可得**；**消息 ID 0%**；事件类型只有 `comment`（**礼物 NOT-OBSERVED**）。
+- 公开直播间页 `https://live.kuaishou.com/u/<eid>` 的 SSR `liveStream.id` 可判断在播/不在播；
+  **真实下播→再开播本轮未观测**。
+- 桌面 WebSocket + protobuf 路线字段最全（comment/like/gift/share/system），但 2026 年实现
+  （catbus、KuaiShou-Spider）要求**登录票据 + `__NS_hxfalcon` 签名**；
+  匿名 `websocketinfo`/`livedetail` 本轮均返回 `result:2`。不满足条件一，不作为接入路线。
+- 2024 年 UniBarrage 的匿名移动 token 端点 `rest/k/live/byUser` 本轮返回
+  `{"result":2,"error_msg":"操作太快了，请稍微休息一下"}`；其 issue #5 也报告快手失效。
+- **最高风险**：`livev.m.chenzhongtech.com/robots.txt` 对 `User-agent: *` 为 `Disallow: /`；
+  产品化前必须做条款/合规判断。若不允许自动访问该 H5 域名 → 降为 **C（暂缓）**。
+- **长期画像限制**：`userId` 形态像账号级 ID、运行内昵称零变化、覆盖率 100%；
+  但**跨场/跨日稳定性未验证**，不得直接声称 `kuaishou:<id>` 已稳定。
+- 评分：H5 拉取 **78/100**（实时 22 / 稳定 ID 16 / 免登录 20 / 监控 12 / 许可 7 / 礼物 1）。
+- 未接入任何生产代码；实验脚本在 `research/kuaishou-g0/`。
+
 
 ### 3.6 Niconico
 
@@ -275,7 +294,9 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 3. **Kick 页面结构** ✅ `/api/v2/channels/{slug}` 仍公开返回 `chatroom.id`（无 Cookie、匿名、HTTP/2）。
 4. **Kick 稳定性** ✅ 部分：token TTL 2700 秒；未见 429；Centrifugo 为唯一返回的 provider，
    Pusher 不再返回。长时间稳定性与真实 45 分钟到期仍待 G2。
-5. **虎牙 / 斗鱼 / 快手**：确认「免登录可读」是否对所有房间成立，还是仅部分房间；
+5. **快手** ✅ **G0 已完成（2026-11-17）**：匿名 H5 feed 实测可用，126 条真实消息；
+   稳定 ID 跨场/跨日与真实下播转换待 G1；详见 `docs/KUAISHOU_G0_FEASIBILITY.md`。
+   虎牙 / 斗鱼：确认「免登录可读」是否对所有房间成立，还是仅部分房间；
    抽取真实样本统计稳定 UID 覆盖比例。
 6. **SOOP**：确认读聊天是否需要登录。
 7. **CHZZK**：确认非官方库当前是否可用；若不可用则整条线暂停。

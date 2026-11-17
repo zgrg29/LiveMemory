@@ -1,10 +1,60 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.16.0 正式发布**：Kick 成为第六个直播平台并带开播监控；
-`main` 已合并、Tag `v0.16.0`、GitHub Release Published；Build ID `ac0daca067b3`；
-全量 1,177 passed、正式 EXE 27/27）
+最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G0 技术调查**，
+结论 **B（有条件进入 G1）**，详见 `docs/KUAISHOU_G0_FEASIBILITY.md`；
+未接入平台、未改生产代码、未 Push/Tag/Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.56 快手（Kuaishou）G0 技术调查（2026-11-17）✅ 调查完成 · 结论 B
+
+### 0.56.1 结论
+
+- **找到了真正免登录的实时公开聊天路径**：快手 H5 分享页的
+  `GET https://livev.m.chenzhongtech.com/wap/live/feed?liveStreamId=<id>&cursor=<cursor>`，
+  无 Cookie、无签名、无登录、无浏览器；3 秒增量，cursor 重放 0 重复。
+- 真实样本 **126 条**（主样本 91 条 / 5 个在播房间，其中 3 个并发）：昵称、数字 `userId`、毫秒 `time`、公开头像
+  **100% 可得**；**消息 ID 0%**；事件类型只有 `comment`（**礼物 NOT-OBSERVED**）。
+- 公开直播间页 SSR 的 `liveStream.id` 可判断在播/不在播（无 Cookie）；**真实下播→再开播未观测**。
+- 桌面 WebSocket + protobuf 路线字段最全，但 2026 年实现要求**登录票据 + `__NS_hxfalcon` 签名**；
+  匿名 `websocketinfo`/`livedetail` 均返回 `result:2`。不满足条件一，不作为接入路线。
+- **最高风险**：`livev.m.chenzhongtech.com/robots.txt` 对 `User-agent: *` 为 `Disallow: /`；
+  产品化前必须做条款/合规判断。若不允许自动访问该 H5 域名 → 降为 **C（暂缓）**。
+- **长期画像限制**：`userId` 形态像账号级 ID，运行内昵称零变化、ID 100% 覆盖；
+  但**跨场/跨日稳定性未验证**，不得直接声称 `kuaishou:<id>` 已稳定。
+
+### 0.56.2 评分
+
+| 方案 | 总分 | 关键限制 |
+| --- | ---: | --- |
+| H5 增量拉取（推荐调查路线） | **78/100** | 无消息 ID、无礼物、跨场 ID 未验证、robots 风险 |
+| 桌面 WS + protobuf（登录+sig4） | 78/100 | **免登录 0 分 → 不可准入**；需签名/登录 |
+| 登录浏览器拦截 | 63/100 | 需 Chromium + 登录 |
+| MITM 代理 | 59/100 | 需代理/客户端 + AGPL |
+| 官方 API | 8/100 | 无公开聊天读取 |
+
+### 0.56.3 本轮产物
+
+- `docs/KUAISHOU_G0_FEASIBILITY.md`（完整报告：项目清单、源码审查、实验、评分、G1 目标）。
+- `research/kuaishou-g0/feed-probe.mjs`（零依赖匿名 feed 探针；只输出聚合，不存原文）。
+- `research/kuaishou-g0/cdp-probe.mjs`（匿名浏览器 CDP 观察脚本；本机沙箱阻止 Chromium，未成功）。
+- `THIRD_PARTY_NOTICES.md` 新增「快手协议参考」段（未复制任何代码）。
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5 更新。
+- `docs/ROADMAP.md` 新增 P47；`log/2026-11-17-kuaishou-g0.md`。
+
+### 0.56.4 未做 / 禁止
+
+- 未新增 `src/platforms/kuaishou/`，未改路由/UI/数据库/监控生产代码。
+- 未改版本号、未改 v0.16.0 Tag/Release/EXE。
+- 未引入依赖、未复制第三方代码、未使用登录/Cookie/扫码/签名/云端。
+- 未 Push、未 Merge main、未创建 Tag/Release。
+- 未验证：跨日身份、真实下播→再开播、礼物/点赞/进入/关注、高聊天率截断、10+ 房间并发。
+
+### 0.56.5 Git
+
+- 分支：`kuaishou-g0`（从 `main` `6f71f56` 创建；未 Push）。
+- 本地提交：见本轮文档提交；`main` 未改，v0.16.0 资产未动。
+- 工作区：调查结束时干净（仅本轮文档/脚本已提交）。
 
 ## 0.55 v0.16.0 正式发布：Kick 支持与自动开播监控（2026-11-17）✅ 已发布
 

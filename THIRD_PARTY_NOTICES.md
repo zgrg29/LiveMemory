@@ -77,3 +77,29 @@ The Kick realtime feed and `kick.com` website endpoints are **not** an official
 API. They are what kick.com's own front end uses, can change without notice,
 and are used only as described in `docs/KICK_G1_ACCEPTANCE.md` (anonymous guest
 token, no login, no access-control bypass).
+
+## Kuaishou protocol reference — no code bundled
+
+The Kuaishou G0 investigation (`docs/KUAISHOU_G0_FEASIBILITY.md`,
+`research/kuaishou-g0/`) read third-party projects only to confirm public
+protocol behaviour. **No source file, snippet, protobuf descriptor, model or
+binary from any of them is copied, rewritten into `src/`, or bundled.**
+
+| Project | License | How it was used |
+| --- | --- | --- |
+| [cv-cat/catbus](https://github.com/cv-cat/catbus) | MIT | Read `live.ts`, `commands.ts`, `api.ts`, `client.ts` for the desktop WebSocket/protobuf and login/sig4 requirements. |
+| [cv-cat/KuaiShou-Spider](https://github.com/cv-cat/KuaiShou-Spider) | **No LICENSE** | Read-only protocol reference (`live_api.py`, `live_proto.py`). No code may be copied. |
+| [BarryWangQwQ/UniBarrage](https://github.com/BarryWangQwQ/UniBarrage) | GPL-3.0 + commercial restriction | Read-only (`kuaishou/kuaishou.go`, `LICENSE`). GPL code is not copied into the MIT area. |
+| [ykaiqx/Live-Barrage](https://github.com/ykaiqx/Live-Barrage) | MIT | Read-only (`Kwai/barrage.py`); the anonymous H5 feed shape was independently re-requested in 2026. |
+| [Superheroff/kuaishou_websocket](https://github.com/Superheroff/kuaishou_websocket) | MIT | Read-only (`main.py`, `kuaishou_pb2.py`); used to confirm `SCWebFeedPush` fields and login/browser requirements. |
+| [atvkh/kuaishou-live-mate](https://github.com/atvkh/kuaishou-live-mate) | MIT | Read-only (`README.md`, `src/danmu.py`, `src/platforms/kuaishou.py`); confirmed QR login + Playwright interception. |
+| [wushuaihua520/BarrageGrab](https://github.com/wushuaihua520/BarrageGrab) | AGPL-3.0 | Metadata/positioning only; not executed, not copied. |
+| [Ikaros-521/AI-Vtuber](https://github.com/Ikaros-521/AI-Vtuber) | GPL-3.0 | Metadata only; its Kuaishou implementation was not copied. |
+| [xuanxuan123xuan/simple-live-kuaishou](https://github.com/xuanxuan123xuan/simple-live-kuaishou) | GPL-3.0 | Metadata only; not copied. |
+| [frostynight-furry/furryup-live-connect](https://github.com/frostynight-furry/furryup-live-connect) | MIT | Metadata only; not copied. |
+
+The Kuaishou live H5 feed and desktop WebSocket are **not** an official API.
+They are what Kuaishou's own web clients use, can change without notice, and
+are subject to Kuaishou's terms and `robots.txt`. See
+`docs/KUAISHOU_G0_FEASIBILITY.md` §12 for the platform-rule risk.
+

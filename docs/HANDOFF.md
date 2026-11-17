@@ -1,12 +1,64 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **v0.16.0 正式发布** · Kick 第六平台 + 开播监控 · `main` 合并 ·
+本轮：2026-11-17 · **快手 G0 技术调查** · 结论 **B（有条件进入 G1）** · 未接入、未改生产代码 ·
+未 Push/Tag/Release · 详见 `docs/KUAISHOU_G0_FEASIBILITY.md`
+
+> 找到并实测了快手**免登录** H5 实时聊天路径（`livev.m.chenzhongtech.com/wap/live/feed`）：
+> 126 条真实消息，昵称/数字 userId/毫秒时间/头像 100%，消息 ID 0%，礼物 NOT-OBSERVED；
+> 公开直播间 SSR 可判在播/不在播。桌面 WS 需要登录+sig4，不可准入。
+> 最高风险是 H5 域名 `robots.txt` 对普通 agent `Disallow: /`，产品化前必须做合规判断；
+> 跨场稳定 ID 与真实下播→再开播仍未验证。**G0 结束，等待用户决定是否进入 G1。**
+
+## 0. 本轮（快手 G0）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **B — 有条件进入 G1**（不是 A：稳定 ID/下播转换未验证；不是 C：匿名聊天已验证） |
+| 推荐路线 | 快手 H5 匿名增量拉取（HTTP JSON，3 秒，cursor） |
+| 评分 | **78/100**（实时 22 / 稳定 ID 16 / 免登录 20 / 监控 12 / 许可 7 / 礼物 1） |
+| 真实样本 | 126 条消息、5 个在播房间（主样本 91 条，其中 3 个并发） |
+| 字段 | 昵称 100%、数字 userId 100%、time 100%、头像 100%、消息 ID 0% |
+| 延迟 | p50 2.7–3.3s、p95 4.5–4.9s（含 3s 轮询周期） |
+| 重复 | 0；cursor 重放 0 |
+| 事件 | 只有 `comment`；礼物/点赞/进入/关注 **NOT-OBSERVED** |
+| 开播检测 | SSR `liveStream.id` 已验证；真实下播/再开播 **未观测** |
+| 最高风险 | `livev.m.chenzhongtech.com/robots.txt` → `User-agent: * Disallow: /` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G0_FEASIBILITY.md`（完整报告）
+- `research/kuaishou-g0/feed-probe.mjs`（匿名 feed 探针，零依赖）
+- `research/kuaishou-g0/cdp-probe.mjs`（浏览器 CDP 观察；沙箱阻止，未成功）
+- `THIRD_PARTY_NOTICES.md`（快手协议参考；未复制代码）
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5、`docs/ROADMAP.md` P47
+- `log/2026-11-17-kuaishou-g0.md`
+
+### 0.3 下一轮（需用户确认）
+
+1. 用户/法务先回答：是否允许 LiveMemory 自动访问 `livev.m.chenzhongtech.com` 的公开 H5 feed。
+2. 若允许 → G1：跨场/跨日稳定 ID、真实开播/下播、≥2 小时长测、覆盖率/去重、零依赖 Node 原型。
+3. 若不允许 → 标记 C（暂缓），保留报告与脚本，不写生产代码。
+4. **不得**为快手默认引入登录、Cookie、扫码、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g0`（从 `main` `6f71f56` 创建，未 Push） |
+| `main` | 未改；v0.16.0 Tag/Release/EXE 未动 |
+| 工作区 | 本轮文档/脚本提交后 clean |
+
+---
+
+上一轮：2026-11-17 · **v0.16.0 正式发布** · Kick 第六平台 + 开播监控 · `main` 合并 ·
 Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/27 · 全量 1,177 passed
 
 > v0.16.0 已作为正式稳定版发布：Kick 免登录采集、礼物/赠订、历史/AI/画像、
 > 十语言 UI、离线开播监控与自动录制；原有五平台、Schema 16 与数据语义未变。
 
-## 0. 本轮（v0.16.0 正式发布）
+## 0. 上一轮（v0.16.0 正式发布）
 
 ### 0.1 结果
 
