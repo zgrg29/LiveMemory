@@ -74,10 +74,14 @@ export async function detectLiveStatus(eid, {request = requestJson, timeoutMs = 
   const rooms = parseHomeList(body);
   const found = rooms.find((r) => r.eid === String(eid));
   if (found) return {state: 'live', liveStreamId: found.liveStreamId, room: found, roomsSeen: rooms.length};
-  // A successful, non-empty list that does not contain the room is a real
-  // offline observation. An empty list is suspicious and stays unknown.
+  // `home/list` is a rotating recommendation snapshot, not a complete inventory:
+  // G1.6 observed 48 different rooms on nearly every request, and rooms that were
+  // definitely live were absent from the next snapshot. Absence therefore proves
+  // nothing. Only a room-specific response (or a complete inventory) may say
+  // `offline`; without one, keep `unknown` so a live room is never reported as
+  // ended just because it rotated out of the recommendation list.
   if (rooms.length === 0) return {state: 'unknown', reason: 'EMPTY_LIST', roomsSeen: 0};
-  return {state: 'offline', roomsSeen: rooms.length};
+  return {state: 'unknown', reason: 'NOT_IN_RECOMMENDATION_SNAPSHOT', roomsSeen: rooms.length};
 }
 
 export function assertLive(status) {

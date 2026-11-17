@@ -42,6 +42,26 @@
 > 十份字典各 **2,271** 键、十语言 AI 输出、独立 `aiOutputLocale`、十语言阅读翻译与启动器；
 > 五平台与数据库 Schema（16）未变，**未新增直播平台**。详见 `docs/STATUS.md` §0.51。
 
+## P50 快手 G1.6：登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
+
+- ✅ **第二次真人扫码登录成功**：`qr/start → scanResult=1 → acceptResult=1 → passToken →`
+  直播站换票 `result=1` → `userLogin=1`；未实现签名/设备指纹/验证码/TLS 伪装。
+- ❌ **WS token 被 gate**：登录后重新取 `home/list`，对 8 个最新在播房间
+  （最高 9,427 watching）逐个请求 `websocketinfo`，**8/8 HTTP 200 `result:2`、0 token、0 URL**。
+- ✅ **排除旧 ID/下播/全站限流**：同会话 `home/list` 正常（48 房间）；G1.5 `gift-list` 曾返回 token；
+  只有 token 端点一致拒绝。
+- ✅ **研究缺陷修正**：`home/list` 是轮播推荐列表（连续请求房间不同），缺席不再判 `offline`，
+  改为 `unknown + NOT_IN_RECOMMENDATION_SNAPSHOT`；单测 **10/10**。
+- ❌ **授权未取得**：官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口是
+  app_id + roomCode + sign、面向已入驻玩法开发者，不是任意公开主播聊天读取 API。
+- ⛔ **不进入 G2**：不新增 `src/platforms/kuaishou/`，不加路由/UI/监控/DB，不构建候选 EXE，
+  不重新启用 H5，不 Push/Tag/Release。
+- ✅ 回归：原型 **10/10**；全量 **1,177 passed / 0 failed / 0 skipped**（326,590 ms）；
+  十份字典各 2,304 键，键集一致。
+- 📄 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`；`research/kuaishou-g1_5/live-probe.mjs`；
+  脱敏证据 `evidence/g1.6-websocket-probe.json`。
+- ⬜ 等待用户：向快手申请书面许可/官方接口；在明确允许范围前保持 E。
+
 ## P49 快手 G1.5 匿名 H5 + 登录 WebSocket 双模式验证（2026-11-17）✅ 验证完成 · 结论 D
 
 - ❌ **匿名 H5 判 POLICY-BLOCKED**：官方《快手软件许可及服务协议》七、1.1 / 七、1.4 / 八、1 / 十、1

@@ -138,8 +138,10 @@ test('status: home list parsing and rate-limit is never offline', async () => {
   assert.equal(live.state, 'live');
   assert.equal(live.liveStreamId, 'L9');
 
-  const offline = await detectLiveStatus('eid2', {request: async () => ({json: body})});
-  assert.equal(offline.state, 'offline');
+  // G1.6 regression: `home/list` rotates, so absence is not proof of offline.
+  const absent = await detectLiveStatus('eid2', {request: async () => ({json: body})});
+  assert.equal(absent.state, 'unknown');
+  assert.equal(absent.reason, 'NOT_IN_RECOMMENDATION_SNAPSHOT');
 
   const limited = await detectLiveStatus('eid1', {request: async () => ({json: {data: {result: 2}}})});
   assert.equal(limited.state, 'rate_limited');

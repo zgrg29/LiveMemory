@@ -1,13 +1,15 @@
 # 直播平台扩展：候选调查记录
 
-状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0/G1/G1.5 实测更新于 2026-11-17）**。
+状态：**调查记录（2026-11-16，Kick G1 实测更新于 2026-11-17，Kuaishou G0/G1/G1.5/G1.6 实测更新于 2026-11-17）**。
 2026-11-16 本轮**没有接入任何新平台、没有连接任何新平台、没有安装依赖、
 没有复制任何第三方代码**；2026-11-17 的 G1 轮**真实连接了 Kick**，
 结果与证据见 `docs/KICK_G1_ACCEPTANCE.md`，本文 §2.8 只做摘要。
 2026-11-17 的 Kuaishou G0 轮**真实请求了公开快手直播间**（无登录、无 Cookie、无签名），
 结果见 `docs/KUAISHOU_G0_FEASIBILITY.md`；G1 轮**真实复测了匿名 H5、扫码 start 与软限流**，
 结论 **C（暂缓）**，见 `docs/KUAISHOU_G1_POC.md`；G1.5 轮**完成一次真实扫码登录并审查官方条款**，
-结论 **D（暂缓）**，见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`，本文 §3.5 只做摘要。
+结论 **D（暂缓）**，见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`；G1.6 轮**修正旧 ID 方法后再次真人扫码**，
+8 个最新在播房间的 `websocketinfo` 全部 `result:2`，结论 **E（停止正式接入）**，见
+`docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`，本文 §3.5 只做摘要。
 除 Kick G1 与 Kuaishou G0/G1/G1.5 的已验证项外，本文其余结论仍为「读代码 / 读文档 / 读公开 API 元数据」，
 **一律为「待验证」**。
 
@@ -240,6 +242,17 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 
 ### 3.5 快手 Kuaishou
 
+**2026-11-17 G1.6 更新：结论 E（停止正式接入），完整报告 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`。**
+
+- **旧 ID 解释被排除**：第二次真人扫码登录成功（`userLogin=1`）后，重新取 `home/list`，
+  对 8 个最新在播房间（最高 9,427 watching）逐个请求 `websocketinfo`；
+  **8/8 HTTP 200 `result:2`、0 token、0 URL**。
+- **不是下播/全站限流/未登录**：同一会话 `home/list` 正常返回 48 房间；G1.5 中 `gift-list` 返回 token；
+  `userLogin=1`。只有 token 端点一致拒绝。
+- **结论**：缺少的 gate 只能通过签名/设备指纹/浏览器风控能力满足，均在禁止范围；不写正式适配器。
+- **研究修正**：`home/list` 是轮播推荐列表，缺席不再判 `offline`；单测 10/10。
+- **授权**：官方条款要求书面许可；小玩法接口是 app_id + roomCode + sign，非通用聊天读取 API。
+
 **2026-11-17 G1.5 更新：结论 D（暂缓，不进入 G2），完整报告 `docs/KUAISHOU_G1_5_DUAL_MODE.md`。**
 
 - **匿名 H5 判 POLICY-BLOCKED**：官方《快手软件许可及服务协议》七、1.1 / 七、1.4 / 八、1 / 十、1
@@ -249,9 +262,9 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 - **正常扫码登录端到端真实成功**：无签名 `qr/start` → 真人扫码 → `scanResult=1` → `acceptResult=1`
   → `passToken` → 直播站换票 `result=1` → `userLogin=1`。未使用 sig4、设备指纹、webweapon、
   验证码求解或 TLS 伪装。
-- **登录后 WS token 仍未验证**：唯一一次 `websocketinfo` 返回 `result:2`、无 token，但调用使用了
-  7 分钟前的旧 `liveStreamId`，目标随后确认下播 → 不能据此判定“签名是唯一障碍”。需按报告 §5.3
-  做一次修正后的扫码复测（先重新确认在播，再调用，20 秒后重试）。
+- **登录后 WS token（G1.5 当时未验证）**：唯一一次 `websocketinfo` 返回 `result:2`、无 token，
+  但调用使用了 7 分钟前的旧 `liveStreamId`，目标随后确认下播 → 当时不能据此判定。
+  **G1.6 已按 §5.3 完成修正复测：8 个最新房间全部 `result:2`，见上方 G1.6 段。**
 - **身份/礼物/再开播**：跨场/跨日/跨路线均无证据；礼物/点赞/分享 CODE-SUPPORTED 但 NOT-OBSERVED；
   原始 WS 协议含 feed `id`，但没有真实帧；`h5:` / `ws:` 强制命名空间隔离。
 - **官方接口**：`liveopen.kuaishou.com` 是云直播推流/拉流，`open.kuaishou.com` 是小程序文档，
@@ -331,8 +344,9 @@ LiveMemory 若实现必须自行重写，不得复制代码。
 3. **Kick 页面结构** ✅ `/api/v2/channels/{slug}` 仍公开返回 `chatroom.id`（无 Cookie、匿名、HTTP/2）。
 4. **Kick 稳定性** ✅ 部分：token TTL 2700 秒；未见 429；Centrifugo 为唯一返回的 provider，
    Pusher 不再返回。长时间稳定性与真实 45 分钟到期仍待 G2。
-5. **快手** ✅ **G0 已完成（2026-11-17）**：匿名 H5 feed 实测可用，126 条真实消息；
-   稳定 ID 跨场/跨日与真实下播转换待 G1；详见 `docs/KUAISHOU_G0_FEASIBILITY.md`。
+5. **快手** ❌ **G1.6 已停止（2026-11-17）**：G0 匿名 H5 技术可用但 POLICY-BLOCKED；
+   G1.5/G1.6 两次真实扫码登录成功，但登录态 `websocketinfo` 对 8 个最新在播房间全部
+   `result:2`，无法取得 WS token；结论 E。见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`。
    虎牙 / 斗鱼：确认「免登录可读」是否对所有房间成立，还是仅部分房间；
    抽取真实样本统计稳定 UID 覆盖比例。
 6. **SOOP**：确认读聊天是否需要登录。

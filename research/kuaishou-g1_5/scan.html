@@ -17,12 +17,12 @@
 <body>
   <h1>用快手 App 扫这个二维码</h1>
   <p>手机打开快手 App → 首页左上角「扫一扫」→ 对着本屏幕扫描 → 在手机上点「确认登录」。</p>
-  <div class="frame"><img id="qr" src=".state/qr-large.png" alt="快手登录二维码"></div>
+  <div class="frame"><img id="qr" src=".state/qr.png" alt="快手登录二维码"></div>
   <p class="hint">本页每 3 秒自动加载最新码；旧码过期会自动换新，不用手动刷新。<br>
   仅技术验证：不保存 Cookie/Token，不发送弹幕、点赞或礼物。</p>
   <script>
     var img = document.getElementById('qr');
-    setInterval(function () { img.src = '.state/qr-large.png?t=' + Date.now(); }, 3000);
+    setInterval(function () { img.src = '.state/qr.png?t=' + Date.now(); }, 3000);
   </script>
 </body>
 </html>

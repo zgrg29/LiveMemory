@@ -1,17 +1,63 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **快手 G1.5 双模式验证** · 结论 **D（暂缓，不进入 G2）** ·
-未接入、未改生产代码 · 未 Push/Tag/Release · 详见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`
+本轮：2026-11-17 · **快手 G1.6 登录态 WebSocket 复测** · 结论 **E（停止正式接入）** ·
+未接入、未改生产代码、未构建 EXE · 未 Push/Tag/Release ·
+详见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`
 
-> **匿名 H5 被官方条款明文禁止**（机器人/蜘蛛监视、复制；数据使用需书面许可），
-> 且 H5 `robots.txt` 为 `Disallow: /` → **不得作为正式默认采集器**，不再发起新的 H5 请求。
-> **正常扫码登录端到端真实成功**：`qr/start` → 真人扫码 → `acceptResult` → `passToken` →
-> 直播站换票 → `userLogin` 全部 `result:1`，全程未用签名/设备指纹/验证码/TLS 伪装。
-> **登录后 `websocketinfo` 返回 `result:2`、无 token**，但用的是 7 分钟前的旧 `liveStreamId`，
-> 目标随后下播 → **不能据此判定 WS 不可用**；需一次修正后的扫码复测。
-> **跨场身份、礼物、真实再开播均无证据**；G2 不启动。
+> **扫码登录再次真实成功**：第二次真人扫码，`passToken` → 直播站换票 → `userLogin=1`；
+> 未使用签名/设备指纹/验证码/TLS 伪装。
+> **旧 ID 解释被排除**：登录后对 8 个最新在播房间（最高 9,427 watching）请求
+> `websocketinfo`，**8/8 `result:2`、无 token、无 URL**；不是下播，也不是全站限流。
+> **WS 路径在当前边界内不可用**：剩余 gate 需要被禁止的签名/设备指纹/浏览器风控能力。
+> **没有真实弹幕/礼物/身份样本**；不写正式适配器、不构建候选 EXE、不发布。
+> 官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口不等同于任意公开主播聊天 API。
 
-## 0. 本轮（快手 G1.5）
+## 0. 本轮（快手 G1.6）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **E — 停止正式接入** |
+| 扫码登录 | **REAL-VERIFIED（第二次）**：QR→扫码→确认→passToken→换票→`userLogin=1` |
+| WS token | **BLOCKED**：8/8 最新房间 HTTP 200 `result:2`，0 token / 0 URL |
+| 归因 | 旧 ID、下播、全站限流、未登录均排除；剩余 gate 不可在不绕过访问控制的前提下实现 |
+| 弹幕/礼物/身份 | **NOT-OBSERVED / UNPROVEN**；WS 无样本，命名空间仍隔离 |
+| 授权 | **未取得**；官方条款要求书面许可 |
+| 研究修正 | `home/list` 是轮播列表，缺席改判 `unknown`，不再误报 `offline` |
+| 单测 | 原型 **10 passed / 0 failed** |
+| 回归 | 全量 **1,177 passed / 0 failed / 0 skipped**（326,590 ms） |
+| 生产代码 | **无变更**；无 `src/platforms/kuaishou/`、无路由/UI/监控/DB |
+| 候选 EXE | **无**（不制造“已支持”假象） |
+| Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`（完整报告：时间线、8 房间证据、授权、停止条件）
+- `research/kuaishou-g1_5/live-probe.mjs`（登录后多 ID token 探测）
+- `research/kuaishou-g1_5/lib/status.mjs`（轮播列表修正）
+- `research/kuaishou-g1_5/evidence/g1.6-websocket-probe.json`（脱敏证据）
+- `research/kuaishou-g1_5/README.md`、`docs/STATUS.md` §0.59、`docs/ROADMAP.md` P50
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否向快手申请书面许可/商务合作**：明确第三方便携客户端读取公开聊天、保存、分析、
+   公开分发的范围；没有它，即使技术打通也不能发布。
+2. 若快手给出官方接口文档、允许房间范围、字段与配额 → 重新做 G1/G2，只按官方接口实现。
+3. 若只关心自己的直播间 → 可评估官方直播伴侣/小玩法能力，但不得描述为“监听任意公开主播”。
+4. **不要**使用第三方签名、Cookie 导入、设备指纹、验证码破解、TLS 伪装、换 IP 或浏览器中继。
+5. 在授权与接口明确前，保持 E；不重新启用匿名 H5。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（从 `ca804ab` 继续，未 Push） |
+| 本轮提交 | 见本轮最终回复与 `git log` |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净（`.state/` 未跟踪） |
+
+## 0A. 上一轮（快手 G1.5）
 
 ### 0.1 结果
 

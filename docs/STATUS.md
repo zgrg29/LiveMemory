@@ -1,10 +1,67 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1.5 双模式验证**，
-结论 **D（暂缓，不进入 G2）**，详见 `docs/KUAISHOU_G1_5_DUAL_MODE.md`；
-未接入平台、未改生产代码、未 Push/Tag/Release）
+最后更新：2026-11-17（**v0.16.0 已发布**；本轮新增**快手 G1.6 登录态 WebSocket 复测**，
+结论 **E（停止正式接入：8 个最新在播房间均无法取得 WS token）**，
+详见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`；
+未接入平台、未改生产代码、未构建 EXE、未 Push/Tag/Release）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
+
+## 0.59 快手 G1.6：修正旧 ID 后的登录态 WebSocket 复测（2026-11-17）❌ 结论 E · 停止正式接入
+
+### 0.59.1 结论
+
+- **扫码登录再次真实成功（REAL-VERIFIED）**：第二次真人扫码完成
+  `qr/start → scanResult=1 → acceptResult=1 → passToken → 直播站换票 result=1 → userLogin=1`；
+  全程未实现 `__NS_hxfalcon` / `__NS_sig3`、设备指纹、webweapon/gdfp、验证码、TLS 伪装。
+- **旧 ID 解释被排除**：登录后重新取 `home/list`，对 8 个最新在播房间（9,427 → 819 watching）
+  逐个调用 `websocketinfo`；**8/8 HTTP 200、`result:2`、无 token、无 websocketUrl**。
+- **不是全站 IP 限流**：同一会话下 `home/list` 正常（48 房间）；G1.5 中 `gift-list` 也曾返回 token；
+  只有 `websocketinfo` 一致拒绝。
+- **技术 gate 未通过**：在不实现签名/设备指纹/验证码/TLS 伪装的前提下无法取得 token，
+  因此**没有真实弹幕、没有礼物、没有正式适配器**。
+- **授权仍未取得**：官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口是
+  app_id + roomCode + sign、面向已入驻玩法开发者的服务端能力，不是“任意公开主播聊天读取 API”。
+- **结论 E（停止正式接入）**：不写 `src/platforms/kuaishou/`，不加路由/UI/监控/数据库，不构建候选 EXE，
+  不发布；不重新启用 POLICY-BLOCKED 的匿名 H5 作为替代。
+
+### 0.59.2 关键证据
+
+| 项目 | 结果 |
+| --- | --- |
+| 第二次真人扫码 | **REAL-VERIFIED**；QR/扫码/确认/换票/登录全部 `result:1` |
+| 候选房间 | 8 个，来自登录后同一份 `home/list` 快照；最高 9,427 watching |
+| `websocketinfo` | **8/8 `result:2`**，HTTP 200，无 token，无 URL |
+| 归因 | 旧 `liveStreamId` / 下播 / 全站限流 / 未登录均被排除；剩余 gate 未知但不可绕过 |
+| `home/list` 行为 | 连续请求返回不同的 48 个房间；**不是完整库存**，缺席不能判下播 |
+| 身份/礼物 | WS 无样本；`NOT-OBSERVED` / `UNSUPPORTED` |
+| 单测 | 原型 **10 passed / 0 failed**（含“轮播列表缺席 → unknown”回归） |
+| 全量回归 | **1,177 passed / 0 failed / 0 skipped**（`--test-isolation=none`，326,590 ms） |
+| 十语言 | 十份字典各 **2,304** 键，键集对齐 0 缺失 / 0 多余；未改 UI |
+| 产物 | `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`、`live-probe.mjs`、脱敏证据 JSON |
+
+### 0.59.3 本轮修正
+
+- 新增 `research/kuaishou-g1_5/live-probe.mjs`：登录前取快照、登录后重新取快照、
+  对多个最新 ID 逐个探测；失败时写脱敏 `ws-token-probe.json`。
+- 修正 `lib/status.mjs`：`home/list` 未包含目标房间时返回 `unknown + NOT_IN_RECOMMENDATION_SNAPSHOT`，
+  不再误判 `offline`；更新对应测试。
+- `scan.html` 改为直接加载 `.state/qr.png`（原先引用的 `qr-large.png` 不存在），
+  二维码由浏览器放大显示，自动刷新。
+- 未改 `src/`、`package.json`、`scripts/`、`dist/`、版本号。
+
+### 0.59.4 未做 / 禁止
+
+- 未实现签名、设备指纹、webweapon、验证码、TLS/JA3 伪装、代理换 IP、Cookie 导入、浏览器中继。
+- 未构建 EXE、未生成候选版本、未改 v0.16.0 Tag/Release。
+- 未 Push、未 Merge main、未创建新 Tag/Release。
+- 未把 H5 匿名路线重新作为默认采集器。
+
+### 0.59.5 Git
+
+- 分支：`kuaishou-g1_5`（从 G1.5 `ca804ab` 继续；未 Push）。
+- 本轮提交 Hash 见交付回复与 `docs/HANDOFF.md`；`main` 仍 `6f71f56`，v0.16.0 资产未动。
+- 工作区提交后应干净（`.state/` 未跟踪）。
 
 ## 0.58 快手 G1.5：匿名 H5 + 登录 WebSocket 双模式验证（2026-11-17）✅ 验证完成 · 结论 D
 
@@ -24,7 +81,8 @@
   原型强制 `h5:` / `ws:` 命名空间隔离，只有显式证据才允许合并。
 - **礼物/点赞/分享零真实样本**：协议字段存在（含 feed `id`）→ CODE-SUPPORTED / NOT-OBSERVED。
 - **开播监控**：匿名 `home/list` 两次返回 48 个在播房间；发现并修复“无顶层 `result` 被误判为错误”的缺陷；
-  目标房间“从列表消失=下播”已真实观察；真实“再开播”未观察。
+  目标房间从列表消失已观察；**G1.6 修正：`home/list` 是轮播推荐列表，缺席不能单独判定下播**；
+  真实“再开播”未观察。
 - **结论 D（暂缓，不进入 G2）**：H5 授权不允许；WS 监听未验证；身份/礼物/长测均缺证据；
   即使 WS 技术复测通过，仍缺平台书面许可。
 
@@ -37,7 +95,7 @@
 | QR 生成 | 无 Cookie/无签名 `result:1`，125×125 PNG，约 58 秒过期，自动换码 3 次 |
 | 真人扫码 | `scanResult=1` → `acceptResult=1` → callback `passToken` → 直播站换票 `result=1` → `userLogin=1` |
 | `websocketinfo` | `result:2`、无 token；旧 `liveStreamId`（7 分钟前），目标随后 offline → **受污染，不作结论** |
-| 在播列表 | 18:34 / 18:43 均 48 个房间；18:44 目标不在列表 → `offline` |
+| 在播列表 | 18:34 / 18:43 均 48 个房间；18:44 目标不在列表（G1.6 修正：轮播列表缺席只能判 `unknown`，不能单独判 `offline`） |
 | 单测 | `research/kuaishou-g1_5/tests/prototype.test.mjs` **10 passed / 0 failed** |
 
 ### 0.58.3 本轮产物
