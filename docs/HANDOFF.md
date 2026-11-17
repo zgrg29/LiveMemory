@@ -18,8 +18,8 @@ Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/2
 | 正式 EXE | Build ID `ac0daca067b3`；99,342,336 B；SHA-256 `d6c39ee2…18094`；`requireAdministrator` |
 | EXE 验收 | **27/27**（真实 Kick 双房间、身份、礼物、历史、AI、离线监控、自动录制、手动停止） |
 | PE VERSIONINFO | **未修复**：Windows 文件属性仍显示 Node `24.21.0`/`Node.js`；应用内版本与 bootstrap 为 `0.16.0`，已如实记录 |
-| Tag / Release | annotated `v0.16.0`；Release `LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring` Published |
-| 资产 | `LiveMemory.exe` + `SHA256SUMS.txt`；未覆盖 `v0.15.0` |
+| Tag / Release | annotated `v0.16.0`；Release `LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring` Published（ID `448187380`，`2026-11-17T05:32:48Z`） |
+| 资产 | `LiveMemory.exe` + `SHA256SUMS.txt`；GitHub 下载复核 SHA-256 一致；未覆盖 `v0.15.0` |
 | Release URL | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.16.0` |
 
 ### 0.2 发布后

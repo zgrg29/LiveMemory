@@ -50,9 +50,11 @@ bootstrap、About 与 Release 元数据均为 `0.16.0` / `ac0daca067b3`。
 
 - Annotated Tag `v0.16.0`；Release Title
   **`LiveMemory v0.16.0 — Kick Support & Auto Live Monitoring`**。
-- Release URL：`https://github.com/zgrg29/LiveMemory/releases/tag/v0.16.0`。
-- 资产：`LiveMemory.exe`（99,342,336 B，SHA-256 同上）与 `SHA256SUMS.txt`。
-- 未覆盖/修改 `v0.15.0` 历史 Release。
+- Release URL：`https://github.com/zgrg29/LiveMemory/releases/tag/v0.16.0`
+  （Release ID `448187380`，Published `2026-11-17T05:32:48Z`，非 Draft / 非 Pre-release）。
+- 资产：`LiveMemory.exe`（99,342,336 B，SHA-256 同上）与 `SHA256SUMS.txt`；
+  从 GitHub 重新下载 EXE 复核，大小与 SHA-256 均与本地正式构建一致。
+- 未覆盖/修改 `v0.15.0` 历史 Release（复核仍可访问）。
 - 已知限制：Kick 非官方实时接口、重连可能漏消息、KICKs 非法币、部分赠订无稳定 ID、
   关注需官方 Webhook、同频道跨两次开播的真实自然周期未完成观察；真实双击 UAC 未人工验证。
 
