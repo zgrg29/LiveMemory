@@ -487,3 +487,32 @@ CORS 与 SameSite 只约束**浏览器**如何发送/读取跨站请求；本机
 - 抖音弹幕原文、展示标签与过期昵称按 30 天清理（`platform='douyin'` 独立 scope）；保留事件行、计数、稳定 UID。
 - 清理发生在启动、场次结束与手动触发时；原文清理后 AI 证据明确标注不可用，不会伪造引用。
 - 这与 Bilibili/YouTube/Twitch 的保留口径一致；不等同于完全删除个人数据。
+
+---
+
+## 33. 快手预览（v0.17.0 候选，2026-11-17）
+
+### 33.1 访问状态
+
+- **实时 H5 采集默认禁用**：快手平台条款禁止未经授权的自动采集，H5 `robots.txt` 为
+  `Disallow: /`。未取得书面许可前，LiveMemory 不请求 `live.kuaishou.com` 或
+  `livev.m.chenzhongtech.com`。
+- 默认 `/api/kuaishou/connect` 在任何网络请求前返回 403 `KUAISHOU_AUTHORIZATION_REQUIRED`；
+  `/api/kuaishou/room` 只做本地链接解析。
+- 内部许可测试需同时设置 `LIVEMEMORY_KUAISHOU_H5_OPT_IN=1` 与
+  `LIVEMEMORY_KUAISHOU_AUTHORIZATION_ACK=<引用>`；引用值不写日志、不进 API/数据库，
+  该开关不代表产品能自动取得或验证授权。
+- 不实现登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理或浏览器中继。
+
+### 33.2 身份与最小化
+
+- 只映射 `comment`；`external_id=NULL`（H5 无消息 ID）；`source_quality=unknown`。
+- 观众 ID 为会话内临时 `h5:<rawUserId>@<localSessionId>`，**不跨场合并**；昵称不是身份。
+- 礼物/点赞不映射（`NOT-OBSERVED`）；不产生金额，不换算收入。
+
+### 33.3 保留
+
+- 快手弹幕原文与展示昵称按 30 天清理（`platform='kuaishou'` 独立 scope）；
+  保留事件行、计数、会话内 ID 与分析结果。
+- 清理发生在启动、场次结束与手动触发时；原文清理后 AI 证据明确标注不可用。
+- 与既有平台口径一致；**保留聚合不等于完全删除个人数据**，用户应把数据目录视为敏感数据。

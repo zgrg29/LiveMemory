@@ -728,6 +728,75 @@ WSS  realtime.<region>.platform.kick.com/connection/websocket
   G5 真实 EXE（`verify-kick-exe.mjs`）。G6 已合并 `main`、Tag `v0.16.0` 并发布 GitHub Release。
   详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/KICK_G2_G5_ACCEPTANCE.md`。
 
+## 3E. 快手 Kuaishou（v0.17.0 候选预览，实时采集默认禁用）
+
+### 3E.1 接入边界与状态
+
+- **不是已发布/已正式支持的平台**。快手平台条款禁止未经授权的自动采集，H5 域名
+  `robots.txt` 为 `Disallow: /`；G1.5 已记录法律声明原文。**未取得书面许可前不启用实时采集。**
+- 唯一候选路径：G1 已验证的匿名 H5（`livev.m.chenzhongtech.com/wap/live/feed` +
+  房间页 SSR）。不实现登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理或浏览器中继；
+  不做登录态 WebSocket。
+- 代码：`src/platforms/kuaishou/{link,policy,http,transport,messages,status,adapter,service}.mjs`；
+  监控 `src/monitoring/detectors/kuaishou.mjs`。
+- 默认 `access.enabled=false`：`/api/kuaishou/connect` 在任何网络请求前返回
+  `KUAISHOU_AUTHORIZATION_REQUIRED`；`/api/kuaishou/room` 只做本地解析。
+  内部许可测试需同时设置 `LIVEMEMORY_KUAISHOU_H5_OPT_IN=1` 与
+  `LIVEMEMORY_KUAISHOU_AUTHORIZATION_ACK=<引用>`；该开关不取得授权，引用不进日志/API/DB。
+
+### 3E.2 连接流程（仅在授权后）
+
+```text
+GET https://live.kuaishou.com/u/<eid>                       → liveStream.id / 房间状态
+GET https://livev.m.chenzhongtech.com/wap/live/feed
+    ?liveStreamId=<id>&cursor=<cursor>                      → {result, cursor, liveStreamFeeds}
+```
+
+- 只处理 `type=comment`；`gift/like/enter/follow/share` 只计数、不写事件。
+- 3.2 秒增量；网络/超时/限流指数退避（≤60 秒、连续失败 8 次进入 failed）；
+  风控/拒绝/房间不存在立即如实失败。
+- `result=601/671` 结束；`result=2` 限流；`result=109` 需登录 → 视为不可用；未知 result 不当作成功。
+- 无续传游标：重连期间可能漏消息，不声称完整。
+
+### 3E.3 字段、身份与去重
+
+| 字段 | 值 |
+| --- | --- |
+| `event_type` | 仅 `chat` |
+| `content` | H5 原文，不翻译/不替换 |
+| `display_name` | `author.userName` |
+| `viewer_uid` | `h5:<author.userId>@<localSessionId>` |
+| `viewer_id` | `kuaishou:h5:<author.userId>@<localSessionId>` |
+| `external_id` | **NULL**（H5 无消息 ID） |
+| `occurred_at` | feed `time`（毫秒），非法时用接收时间 |
+| `source_quality` | `unknown` |
+
+- **昵称不是身份**；`userId=0`/缺失 → `viewer_uid=NULL`，不建档。
+- **跨场/跨日稳定性未证明**：同一 `userId` 在两场直播中保持两个观众记录；不自动合并。
+  长期画像仅在单场内可用；未来证据齐全后才可设计新身份模式，且不得改写旧数据。
+- 去重：适配器 `userId+time+content` 指纹 + `UNIQUE(session_id, dedupe_key)`；
+  无消息 ID 的已知限制写入文档与 UI。
+- 礼物/点赞/进入/关注：`NOT-OBSERVED`，不映射、不显示为支持、不产生金额。
+
+### 3E.4 状态、监控与多房间
+
+- 房间页：`liveStream.id` → live；真实房间页无活动流 → offline；`请求过快`/风控壳 →
+  rate_limited；其他 → unknown。`home/list` 轮播列表缺席**永不**判下播（G1.6）。
+- 适配器每 60 秒状态检查；连续 2 次 offline 结束；rate_limited/unknown 不结束；
+  新 `liveStreamId` 结束旧场，不拼接两场。
+- 每房间独立 adapter/session/停止；同 `kuaishou+eid` 拒绝重复启动。
+- `MONITOR_PLATFORMS` 增加 `kuaishou`；基础 120 秒、抖动 90–180 秒、错误退避到 30 分钟；
+  目标键 `eid`，循环键 `kuaishou:<eid>:<liveStreamId>`；授权关闭时拒绝创建且不发请求。
+
+### 3E.5 保留、UI 与验证状态
+
+- 30 天保留 scoped `kuaishou`；清理原文与展示昵称，保留计数、会话内 ID 与分析结果。
+- UI：直播页第七个页签；十语言 2,351 键；始终显示用户要求的告知；禁用状态只解析链接，
+  开始按钮不可用并说明原因；展示会话内身份、无消息 ID、礼物/点赞未观测。
+- 验证：G0/G1 已完成；G2 仅研究样本；G3 未通过；G4 仅 fake fetch 自动化；G5 仅候选 EXE
+  组件验收；G6 **阻塞**（无书面许可、无真实 H5 验收）。
+- 详见 `docs/KUAISHOU_H5_INTEGRATION.md`；**不得在 README/UI/发布说明中写成已支持**。
+
 ## 4. 统一事件模型
 
 `src/shared/events.mjs` 的 canonical event 是唯一跨平台格式：

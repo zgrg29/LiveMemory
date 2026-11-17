@@ -38,3 +38,10 @@ desktop.ini
 # Test artifacts
 tests/.tmp/
 coverage/
+
+# Research-only temporary checkouts and probe state (never committed)
+research/.upstream/
+research/kuaishou-g1/.state/
+research/kuaishou-g1_5/.state/
+research/kuaishou-g1_5/_*
+research/kuaishou-g1_5/scan.png

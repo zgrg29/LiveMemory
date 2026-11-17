@@ -135,6 +135,15 @@ export function liveCycleKey(platform, target, observation) {
     if (channelId && Number.isFinite(startedAt) && startedAt > 0) return `kick:${channelId}:${startedAt}`;
     return null;
   }
+  if (platform === 'kuaishou') {
+    // The H5 liveStreamId changes for every broadcast of the same room; it is
+    // the only reliable cycle key. Without it, a manual stop stays suppressed
+    // until the room is confirmed offline.
+    const eid = String(observation?.eid ?? target?.target_key ?? target?.targetKey ?? '');
+    const liveId = String(observation?.liveStreamId ?? observation?.liveId ?? '');
+    if (eid && liveId) return `kuaishou:${eid}:${liveId}`;
+    return null;
+  }
   return null;
 }
 

@@ -1,0 +1,34 @@
+{
+  "schema": "livememory.kuaishou.g1_6.websocket-probe.v1",
+  "at": "2026-11-17T12:18:55.861Z",
+  "localTime": "2026-11-17T20:18:55+08:00",
+  "login": {
+    "realPhoneScan": true,
+    "qrStart": "result:1",
+    "scanResult": "result:1",
+    "acceptResult": "result:1",
+    "passToken": true,
+    "liveTicket": "result:1",
+    "userLogin": "result:1",
+    "signedOrFingerprinted": false
+  },
+  "candidateSource": "live_api/home/list fresh snapshot after login",
+  "roomsSeen": 48,
+  "probes": [
+    {"eid": "KGOU5678", "liveStreamId": "cpOytdXqitM", "watching": "9427", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "gy321321321", "liveStreamId": "UPd7_X9Ok5U", "watching": "3321", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "zj2632726957", "liveStreamId": "I68s9IFb5_A", "watching": "2890", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "dd9898990", "liveStreamId": "8ffqQOLdZQk", "watching": "2832", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "aa546515091", "liveStreamId": "3btEb9XVm8Y", "watching": "1624", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "3xhzsckti2mhh5e", "liveStreamId": "VgLsJqlTLf4", "watching": "1343", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "beimu0315", "liveStreamId": "9s1rdPsJF3U", "watching": "820", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0},
+    {"eid": "SANQIANOOO", "liveStreamId": "TxH7hAdm-gE", "watching": "819", "httpStatus": 200, "result": 2, "hasToken": false, "urlCount": 0}
+  ],
+  "summary": {
+    "tested": 8,
+    "tokenFound": 0,
+    "websocketUrlFound": 0,
+    "chatObserved": 0,
+    "conclusion": "The token endpoint rejects the clean authenticated client on all fresh ids; stale-id explanation ruled out."
+  }
+}

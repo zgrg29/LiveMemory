@@ -77,7 +77,8 @@
       "twitch": "Twitch 直播",
       "douyin": "抖音直播",
       "tiktok": "TikTok 直播",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "快手直播"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "準備就緒",
       "title": "新增記錄",
-      "subtitleIdle": "選擇 Bilibili、YouTube、Twitch、抖音或 TikTok，連線到正在直播的直播間。已在進行的記錄會繼續在背景執行。",
+      "subtitleIdle": "選擇 Bilibili、YouTube、Twitch、抖音、TikTok、Kick 或快手預覽，連接一場正在直播的直播間；已有記錄會繼續在背景執行。",
       "subtitleRunning": "還有 {n} 場直播在背景繼續記錄。新增記錄不會停止它們。",
       "background": "背景仍有 {n} 場直播正在記錄，你可隨時開啟它們的分頁。",
       "activeTitle": "正在記錄 {n} 場直播",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "聊天 {chats} · KICKs {gifts} · 會員 {memberships} · 推送 {publications}",
       "kickCaptureNotCompleteNote": "Kick 通道沒有續傳游標：重新連線期間的訊息可能遺漏且不會補錄。LiveMemory 不聲稱彈幕完整。",
       "kickPolicyBody": "超過 {days} 天的 Kick 聊天原文、徽章與展示標籤會被清理；訊息計數與穩定 ID 保留。",
-      "kickRetentionApplied": "已清理 {count} 筆過期 Kick 記錄。"
+      "kickRetentionApplied": "已清理 {count} 筆過期 Kick 記錄。",
+      "kuaishouTab": "快手",
+      "kuaishouIntro": "記錄快手直播間的公開彈幕。適配器解析直播間連結並保存彈幕，沿用與其他平台相同的 AI 分析與長期畫像能力。",
+      "kuaishouNotice": "快手平台對未經授權的自動資料蒐集設有相關限制。LiveMemory 並非快手官方產品。使用者應遵守快手平台協議，並確保擁有必要的資料存取權限。第三方介面可能隨時變更或停止服務。",
+      "kuaishouNoLoginNote": "不需要登入、API Key、Cookie 或付費服務。取得蒐集授權後，LiveMemory 直接讀取公開 H5 直播間頁面與彈幕介面。",
+      "kuaishouUnofficialNote": "非官方 / 實驗性：此 H5 介面不是快手公開 API，可能隨時變更或停止服務；由於沒有續傳游標，重新連線期間可能漏訊息。",
+      "kuaishouLinkLabel": "快手直播間連結或 ID",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "解析連結",
+      "kuaishouEid": "直播間 ID",
+      "kuaishouCaptureTitle": "快手擷取",
+      "kuaishouActiveTitle": "正在記錄的快手直播間",
+      "kuaishouAccessTitle": "蒐集授權",
+      "kuaishouAccessRequired": "此建置未啟用即時蒐集。整合與本機分析可用，但在營運者記錄書面許可前，LiveMemory 不會請求快手資料。",
+      "kuaishouAccessEnabled": "目前為內部授權建置，已啟用蒐集。請自行確保使用範圍不超過取得的許可。",
+      "kuaishouIdentityNote": "觀眾 ID 為臨時身分，僅限本場工作階段內。跨直播間與跨日穩定性尚未證明，因此 LiveMemory 不會跨場合併快手觀眾。",
+      "kuaishouMessageIdNote": "H5 彈幕沒有訊息 ID，也沒有續傳游標。重複訊息依「使用者 + 時間 + 內容」去重；重新連線期間可能漏訊息。",
+      "kuaishouGiftNote": "研究樣本中未觀測到禮物或按讚，LiveMemory 不聲稱支援快手的禮物或按讚。",
+      "kuaishouStatusUnknown": "快手未確認該直播間是否在播。狀態確認前不會開始蒐集。",
+      "kuaishouPolicyBody": "超過 {days} 天的快手彈幕原文與顯示暱稱會被清除；計數、工作階段內 ID 與分析結果保留。",
+      "kuaishouRetentionApplied": "已清除 {count} 筆過期快手資料。",
+      "kuaishouStartDisabled": "取得授權並確認直播間在播後才能開始記錄。",
+      "kuaishouCaptureNotCompleteNote": "沒有續傳游標：重新連線期間可能漏訊息且無法補回。LiveMemory 不聲稱擁有完整彈幕記錄。",
+      "kuaishouTechnicalCounters": "輪詢 {polls} · 彈幕 {chats} · 重複 {duplicates} · 忽略的非彈幕 {ignored}",
+      "kuaishouTechnicalIdentity": "身分模式：{mode} · 穩定使用者 ID：{stable} · 訊息 ID：{messageId}",
+      "kuaishouStateRateLimited": "快手正在限流，等待中",
+      "kuaishouStartRequiresAuthorization": "未取得蒐集授權前無法開始記錄。",
+      "kuaishouMonitorRequiresAuthorization": "取得蒐集授權後才會提供自動監控。",
+      "kuaishouUnavailable": "此建置不提供快手整合。",
+      "kuaishouIdentityModeSession": "工作階段內臨時身分",
+      "kuaishouIdentityStableUnproven": "未證明",
+      "kuaishouIdentityMessageIdNone": "未提供"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "Kick 聊天連線失敗。",
     "kickNotConfigured": "此版本未提供 Kick 擷取。",
     "kickStopped": "Kick 擷取已停止。",
-    "kickError": "Kick 擷取失敗。"
+    "kickError": "Kick 擷取失敗。",
+    "kuaishouLinkInvalid": "請輸入快手直播間連結，例如 https://live.kuaishou.com/u/… 。個人主頁、短影音、回放和其他平台都不是直播間。",
+    "kuaishouAuthorizationRequired": "在營運者記錄書面許可前，快手即時蒐集保持停用。連結解析與本機分析仍可使用。",
+    "kuaishouAccessDenied": "快手拒絕了請求（存取權限、登入或風控）。LiveMemory 不會繞過。",
+    "kuaishouRoomOffline": "該快手直播間目前未開播。開播後再試。",
+    "kuaishouRoomNotFound": "該快手直播間不存在。",
+    "kuaishouRateLimit": "快手正在限流，請稍後再試。",
+    "kuaishouNetwork": "無法連線快手，請檢查網路後重試。",
+    "kuaishouProtocol": "快手傳回非預期回應，非官方 H5 介面可能已變更。",
+    "kuaishouStatusUnknown": "快手未確認直播間狀態，可能被限流或頁面已變更；LiveMemory 不會猜測。",
+    "kuaishouConnectTimeout": "連接快手逾時。",
+    "kuaishouNotConfigured": "此建置未設定快手蒐集。",
+    "kuaishouStopped": "快手蒐集已停止。",
+    "kuaishouError": "快手蒐集失敗。"
   },
   "toast": {
     "saved": "已儲存",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "TikTok 直播連結或 @使用者名稱",
       "tiktokLabel": "TikTok 直播連結或 @使用者名稱",
       "kickPlaceholder": "Kick 直播連結或頻道名稱",
-      "kickLabel": "Kick 直播連結或頻道名稱"
+      "kickLabel": "Kick 直播連結或頻道名稱",
+      "kuaishouPlaceholder": "快手直播連結或房間 ID",
+      "kuaishouLabel": "快手直播連結或房間 ID"
     },
     "hero": {
       "autoChip": "自動監看",

@@ -1,12 +1,255 @@
 # 交接文档（HANDOFF）
 
-本轮：2026-11-17 · **v0.16.0 正式发布** · Kick 第六平台 + 开播监控 · `main` 合并 ·
+本轮：2026-11-17 · **快手 H5 预览接入完成 · 生产采集禁用 · v0.17.0 候选未发布** ·
+未 Push/Tag/Release · 详见 `docs/KUAISHOU_H5_INTEGRATION.md`
+
+> **按用户指示停止登录 WS 研究，只采用 G1 匿名 H5。** URL 解析、comment 解析、
+> 会话内身份、去重、SQLite、AI 分析/画像、自动监控、异常恢复、十语 UI 与内部候选 EXE
+> 已集成。**默认不发起任何 H5 请求**；`connect` 在任何网络请求前返回 403
+> `KUAISHOU_AUTHORIZATION_REQUIRED`。未取得书面许可，未做真实许可下验收，
+> **不发布为已支持**。礼物/点赞仍 **NOT-OBSERVED**；跨场身份不合并。
+
+## 0. 本轮（快手 H5 预览接入）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **组件完成；生产采集禁用；候选未发布** |
+| 代码 | `src/platforms/kuaishou/` 8 模块 + `src/monitoring/detectors/kuaishou.mjs` |
+| 服务端 | 5 个 `/api/kuaishou/*` 路由；capabilities `state:'preview'`、`captureEnabled:false` |
+| 数据 | 仅 comment → chat；无消息 ID；会话内临时身份；30 天保留 |
+| 监控 | 共享调度器；feed 601 / 连续 2 次 offline；rate_limited/unknown 不结束 |
+| UI | 第七个页签；强制告知；禁用状态只解析；十语 2,351 键 |
+| 真实 H5 | **未执行**（无许可） |
+| 测试 | **844 unit + 382 integration = 1,226 passed / 0 failed**；Kuaishou 专项 49 passed；UI 80/80 |
+| EXE | 候选 `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `413a4b59…ede7b5`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_H5_INTEGRATION.md`（完整范围、门禁、身份、监控、G0–G6、阻碍）
+- `src/platforms/kuaishou/{link,policy,http,transport,messages,status,adapter,service}.mjs`
+- `src/monitoring/detectors/kuaishou.mjs`；`src/monitoring/{constants,model,manager}.mjs`
+- `tests/unit/kuaishou-*.test.mjs`、`tests/integration/kuaishou-*.test.mjs`、`tests/fixtures/kuaishou.mjs`
+- `scripts/build-windows.mjs`（必需模块与 EXE 标记）
+- `docs/release-notes/v0.17.0.md`、`docs/RELEASE_CHECKLIST_v0.17.0.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **取得快手书面许可/官方接口**：明确第三方读取公开聊天、保存、分析、分发范围。
+2. 获得许可后，才在隔离环境设置内部开关做真实 G4/G5：≥30 分钟、≥2 房间、真实结束、断线恢复。
+3. 补齐 G3：跨场/跨日身份证据；证据前保持会话内隔离，禁止自动合并。
+4. 不实现/恢复：登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理、浏览器中继。
+5. 无许可时保持禁用；不要 Tag/Release、不要把快手写成已支持。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（未 Push） |
+| 本轮提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
+| 版本 / Schema | `0.17.0` / 16 |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |
+
+---
+
+上一轮：2026-11-17 · **快手 G1.6 登录态 WebSocket 复测** · 结论 **E（停止正式接入）** ·
+未接入、未改生产代码、未构建 EXE · 未 Push/Tag/Release ·
+详见 `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`
+
+> **扫码登录再次真实成功**：第二次真人扫码，`passToken` → 直播站换票 → `userLogin=1`；
+> 未使用签名/设备指纹/验证码/TLS 伪装。
+> **旧 ID 解释被排除**：登录后对 8 个最新在播房间（最高 9,427 watching）请求
+> `websocketinfo`，**8/8 `result:2`、无 token、无 URL**；不是下播，也不是全站限流。
+> **WS 路径在当前边界内不可用**：剩余 gate 需要被禁止的签名/设备指纹/浏览器风控能力。
+> **没有真实弹幕/礼物/身份样本**；不写正式适配器、不构建候选 EXE、不发布。
+> 官方条款要求书面许可；`open.kuaishou.com` 的弹幕玩法接口不等同于任意公开主播聊天 API。
+
+## 0. 本轮（快手 G1.6）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **E — 停止正式接入** |
+| 扫码登录 | **REAL-VERIFIED（第二次）**：QR→扫码→确认→passToken→换票→`userLogin=1` |
+| WS token | **BLOCKED**：8/8 最新房间 HTTP 200 `result:2`，0 token / 0 URL |
+| 归因 | 旧 ID、下播、全站限流、未登录均排除；剩余 gate 不可在不绕过访问控制的前提下实现 |
+| 弹幕/礼物/身份 | **NOT-OBSERVED / UNPROVEN**；WS 无样本，命名空间仍隔离 |
+| 授权 | **未取得**；官方条款要求书面许可 |
+| 研究修正 | `home/list` 是轮播列表，缺席改判 `unknown`，不再误报 `offline` |
+| 单测 | 原型 **10 passed / 0 failed** |
+| 回归 | 全量 **1,177 passed / 0 failed / 0 skipped**（326,590 ms） |
+| 生产代码 | **无变更**；无 `src/platforms/kuaishou/`、无路由/UI/监控/DB |
+| 候选 EXE | **无**（不制造“已支持”假象） |
+| Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_6_WEBSOCKET_BLOCKED.md`（完整报告：时间线、8 房间证据、授权、停止条件）
+- `research/kuaishou-g1_5/live-probe.mjs`（登录后多 ID token 探测）
+- `research/kuaishou-g1_5/lib/status.mjs`（轮播列表修正）
+- `research/kuaishou-g1_5/evidence/g1.6-websocket-probe.json`（脱敏证据）
+- `research/kuaishou-g1_5/README.md`、`docs/STATUS.md` §0.59、`docs/ROADMAP.md` P50
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否向快手申请书面许可/商务合作**：明确第三方便携客户端读取公开聊天、保存、分析、
+   公开分发的范围；没有它，即使技术打通也不能发布。
+2. 若快手给出官方接口文档、允许房间范围、字段与配额 → 重新做 G1/G2，只按官方接口实现。
+3. 若只关心自己的直播间 → 可评估官方直播伴侣/小玩法能力，但不得描述为“监听任意公开主播”。
+4. **不要**使用第三方签名、Cookie 导入、设备指纹、验证码破解、TLS 伪装、换 IP 或浏览器中继。
+5. 在授权与接口明确前，保持 E；不重新启用匿名 H5。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（从 `ca804ab` 继续，未 Push） |
+| 本轮提交 | 见本轮最终回复与 `git log` |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净（`.state/` 未跟踪） |
+
+## 0A. 上一轮（快手 G1.5）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **D — 暂缓，不进入 G2** |
+| 匿名 H5 | 技术 REAL-VERIFIED（G1），但 **POLICY-BLOCKED**（官方条款 + robots）；保留证据，不再请求 |
+| 扫码登录 | **REAL-VERIFIED（首次端到端）**：无签名完成到直播站 `userLogin=1` |
+| WS token | **未验证**：`websocketinfo` `result:2`，旧 `liveStreamId`，目标已下播 → 不作结论 |
+| WS 弹幕/礼物 | **NOT-OBSERVED**（未建立连接） |
+| 身份 | 跨场/跨日/跨路线均未证明；`h5:` / `ws:` 强制隔离 |
+| 监控 | `home/list` 48 房间；修复“无 result 误判”；“消失=下播”已观察；再开播未观察 |
+| 验证 | 原型单测 **10 passed / 0 failed**；`node --check` 通过；无 `src/` 变更 |
+| Git | 分支 `kuaishou-g1_5`（从 `83a2c30` 创建，未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_5_DUAL_MODE.md`（完整报告：合规原文、登录时间线、WS 复测方案、G2 清单）
+- `research/kuaishou-g1_5/probe.mjs`（policy / rooms / status / h5 / login / selftest / cleanup）
+- `research/kuaishou-g1_5/lib/`（双 transport、normalizer、identity、status、login、protocol）
+- `research/kuaishou-g1_5/tests/prototype.test.mjs`（10 个离线单测）
+- `research/kuaishou-g1_5/scan.html`（真人扫码大图页，自动换码）
+- `THIRD_PARTY_NOTICES.md` G1.5 附录；`docs/ROADMAP.md` P49；`log/2026-11-17-kuaishou-g1_5.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否做一次修正后的扫码复测**：`login --room <在播eid> --wait 600 --listen 120 --probe`；
+   该命令会先重新确认在播，再调 `websocketinfo`，并在 20 秒后重试，用于区分“签名要求”和“限流”。
+2. **是否向快手申请书面许可/合作**：没有它，即使 WS 技术通过也不能产品化。
+3. **若 WS 复测确认必须签名** → 登录路线按 D 处理（对 LiveMemory 不可用）；不要找替代签名服务。
+4. **若用户希望做身份实验**：需授权测试账号在 2 个直播间各发 1 条弹幕，并最好跨日重复。
+5. **不得**默认引入登录、Cookie 复制、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1_5`（从 `kuaishou-g1` `83a2c30` 创建，未 Push） |
+| 本地提交 | `939f416`（`docs: verify Kuaishou G1.5 login and dual-mode boundaries`） |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净（`.state/`、`scan.png` 未提交） |
+
+## 1. 上一轮（快手 G1）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **C — 暂缓**（不是 A/B：登录 WS 与稳定 ID 未验证；不是 D：匿名聊天与 QR start 真实可用） |
+| 评分 | 登录 WS **68/100**；匿名 H5 **55/100** |
+| 登录 WS | QR start **REAL-VERIFIED**；scan/callback/换票/websocketinfo/WS **[未执行]** |
+| 匿名 H5 | 3 房间/45 秒 6 条；2 小时 3 房间 **555 条 / 229 用户 / 0 重复 / 0 HTTP 错误** |
+| 跨房身份 | 229 个用户跨 3 房间重叠 **0** → 无跨场证据 |
+| 下播 | `juedidatou` 约 13 分钟后 `result:601` / “直播已停止”；再开播未观察 |
+| 最高风险 | H5 `robots.txt` `Disallow: /`；SSR 软限流；登录≠采集授权 |
+| 验证 | unit **805 passed / 0 failed**；`node --check` 通过；无 `src/` 变更 |
+| Git | 分支 `kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建；未 Push）；`main` 仍 `6f71f56` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G1_POC.md`（完整报告）
+- `research/kuaishou-g1/probe.mjs`（零依赖 PoC：discover/status/watch/ws-anon/qr-probe/login/auth/cleanup）
+- `research/kuaishou-g1/README.md`（用法与安全边界）
+- `THIRD_PARTY_NOTICES.md`（G1 addendum；未复制代码）
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5、`docs/ROADMAP.md` P48
+- `log/2026-11-17-kuaishou-g1.md`
+
+### 0.3 下一轮（需用户决定）
+
+1. **是否授权一次真人扫码的 G1.5**：只验证“无签名扫码 → 直播站换票 → websocketinfo → 一条真实弹幕 →
+   另一个公开主播房间”；不写生产代码，不实现签名/指纹/验证码。
+2. **合规结论**：是否允许自动访问 `livev.m.chenzhongtech.com` 与登录态直播接口。
+3. 若扫码后 `websocketinfo` 要求 sig4/滑块 → **停止登录路线**，按 D 处理；不要找替代签名服务。
+4. 若合规不允许 H5 → 保持 C，不进入 G2。
+5. **不得**默认引入登录、Cookie 复制、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g1`（从 `kuaishou-g0` `25ee5a9` 创建，未 Push） |
+| 本地提交 | `a1a99ce`（`docs: verify Kuaishou G1 dual-route feasibility (C)`）；`main` 未改 |
+| v0.16.0 | Tag/Release/EXE 未动 |
+| 工作区 | 提交后干净 |
+
+## 1. 上一轮（快手 G0）
+
+### 0.1 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 结论 | **B — 有条件进入 G1**（不是 A：稳定 ID/下播转换未验证；不是 C：匿名聊天已验证） |
+| 推荐路线 | 快手 H5 匿名增量拉取（HTTP JSON，3 秒，cursor） |
+| 评分 | **78/100**（实时 22 / 稳定 ID 16 / 免登录 20 / 监控 12 / 许可 7 / 礼物 1） |
+| 真实样本 | 126 条消息、5 个在播房间（主样本 91 条，其中 3 个并发） |
+| 字段 | 昵称 100%、数字 userId 100%、time 100%、头像 100%、消息 ID 0% |
+| 延迟 | p50 2.7–3.3s、p95 4.5–4.9s（含 3s 轮询周期） |
+| 重复 | 0；cursor 重放 0 |
+| 事件 | 只有 `comment`；礼物/点赞/进入/关注 **NOT-OBSERVED** |
+| 开播检测 | SSR `liveStream.id` 已验证；真实下播/再开播 **未观测** |
+| 验证 | 全量 unit `805 passed / 0 failed`（`--test-isolation=none`）；研究脚本 `node --check` 通过；无 `src/` 变更 |
+| 最高风险 | `livev.m.chenzhongtech.com/robots.txt` → `User-agent: * Disallow: /` |
+
+### 0.2 关键文件
+
+- `docs/KUAISHOU_G0_FEASIBILITY.md`（完整报告）
+- `research/kuaishou-g0/feed-probe.mjs`（匿名 feed 探针，零依赖）
+- `research/kuaishou-g0/cdp-probe.mjs`（浏览器 CDP 观察；沙箱阻止，未成功）
+- `THIRD_PARTY_NOTICES.md`（快手协议参考；未复制代码）
+- `docs/PLATFORM_EXPANSION_RESEARCH.md` §3.5、`docs/ROADMAP.md` P47
+- `log/2026-11-17-kuaishou-g0.md`
+
+### 0.3 下一轮（需用户确认）
+
+1. 用户/法务先回答：是否允许 LiveMemory 自动访问 `livev.m.chenzhongtech.com` 的公开 H5 feed。
+2. 若允许 → G1：跨场/跨日稳定 ID、真实开播/下播、≥2 小时长测、覆盖率/去重、零依赖 Node 原型。
+3. 若不允许 → 标记 C（暂缓），保留报告与脚本，不写生产代码。
+4. **不得**为快手默认引入登录、Cookie、扫码、浏览器中继、签名服务或云端中转。
+
+### 0.4 Git
+
+| 项目 | 值 |
+| --- | --- |
+| 分支 | `kuaishou-g0`（从 `main` `6f71f56` 创建，未 Push） |
+| 本地提交 | `fb964ca`（`docs: investigate Kuaishou G0 feasibility (anonymous H5 feed)`） |
+| `main` | 未改；v0.16.0 Tag/Release/EXE 未动 |
+| 工作区 | 本轮文档/脚本提交后 clean |
+
+---
+
+上一轮：2026-11-17 · **v0.16.0 正式发布** · Kick 第六平台 + 开播监控 · `main` 合并 ·
 Tag `v0.16.0` · GitHub Release Published · Build ID `ac0daca067b3` · EXE 27/27 · 全量 1,177 passed
 
 > v0.16.0 已作为正式稳定版发布：Kick 免登录采集、礼物/赠订、历史/AI/画像、
 > 十语言 UI、离线开播监控与自动录制；原有五平台、Schema 16 与数据语义未变。
 
-## 0. 本轮（v0.16.0 正式发布）
+## 0. 上一轮（v0.16.0 正式发布）
 
 ### 0.1 结果
 

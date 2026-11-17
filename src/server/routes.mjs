@@ -124,6 +124,7 @@ import {restoreBackup} from './backup/restore.mjs';
 import {APP_NAME, APP_VERSION, APP_HOMEPAGE} from '../shared/app-info.mjs';
 import {toApiError as youtubeError} from '../platforms/youtube/service.mjs';
 import {toApiError as kickToApiError} from '../platforms/kick/service.mjs';
+import {toApiError as kuaishouToApiError} from '../platforms/kuaishou/service.mjs';
 import {sessionIdRequiredError} from '../shared/recording.mjs';
 
 /**
@@ -589,6 +590,11 @@ function kickError(error) {
   return kickToApiError(error);
 }
 
+/** Kuaishou failures keep the permission/room/status distinction. */
+function kuaishouError(error) {
+  return kuaishouToApiError(error);
+}
+
 export function createRouter(routes, deps) {
   const compiled = routes.map((route) => {
     const names = [];
@@ -681,9 +687,9 @@ export function buildRoutes() {
           locales: localePayload(deps),
           status: statusPayload(deps),
           capabilities: {
-            // The product records the five real live platforms only. Simulation
-            // remains an internal test fixture (`/api/simulate/*`) and is no
-            // longer advertised or reachable from the user interface.
+            // Six released real live platforms, plus the Kuaishou preview whose
+            // live H5 collection is disabled until written permission exists.
+            // Simulation remains an internal test fixture (`/api/simulate/*`).
             platforms: [
               {id: 'bilibili', label: 'Bilibili Live', state: 'available'},
               {
@@ -723,6 +729,25 @@ export function buildRoutes() {
                 requiresPaidService: false,
                 requiresBrowser: false,
                 events: ['chat', 'emote', 'gift', 'membership']
+              },
+              {
+                id: 'kuaishou',
+                label: 'Kuaishou Live',
+                // Preview: parsing/UI/storage/AI/monitoring are integrated, but
+                // live H5 collection is disabled until written permission is
+                // recorded. Never advertise this as a released platform.
+                state: 'preview',
+                mode: 'anonymous-h5',
+                unofficial: true,
+                authorizationRequired: true,
+                captureEnabled: false,
+                requiresLogin: false,
+                requiresApiKey: false,
+                requiresPaidService: false,
+                requiresBrowser: false,
+                events: ['chat'],
+                gifts: 'not-observed',
+                likes: 'not-observed'
               }
             ],
             ai: {automated: true, export: false, import: false, schemaVersion: RESULT_SCHEMA_VERSION},
@@ -2894,6 +2919,73 @@ export function buildRoutes() {
       handler: async ({req, res, deps}) => {
         await readOptionalJson(req);
         const result = deps.kick.applyRetention();
+        sendJson(res, 200, result);
+      }
+    },
+    {
+      method: 'GET',
+      path: '/api/kuaishou/status',
+      handler: ({res, deps}) => {
+        sendJson(res, 200, deps.kuaishou.status());
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kuaishou/room',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          // While collection is disabled this is a pure parser: the response
+          // states that authorization is required and makes no network request.
+          const room = await deps.kuaishou.checkRoom(body.url ?? body.eid ?? body.input);
+          sendJson(res, 200, {room});
+        } catch (error) {
+          throw kuaishouError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kuaishou/connect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.kuaishou.connect(body.url ?? body.eid ?? body.input);
+          sendJson(res, 201, {
+            session: serializeSessionRow(result.session),
+            room: result.room,
+            connection: result.connection
+          });
+        } catch (error) {
+          throw kuaishouError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kuaishou/disconnect',
+      handler: async ({req, res, deps}) => {
+        const body = await readOptionalJson(req);
+        try {
+          const result = await deps.kuaishou.disconnect({sessionId: body.sessionId ?? null});
+          if (!result?.stopped && result?.reason === 'session_id_required') {
+            throw sessionIdRequiredError({count: result.count, platform: 'kuaishou'});
+          }
+          sendJson(res, 200, {
+            stopped: Boolean(result?.stopped),
+            session: serializeSessionRow(result?.session ?? null)
+          });
+        } catch (error) {
+          throw kuaishouError(error);
+        }
+      }
+    },
+    {
+      method: 'POST',
+      path: '/api/kuaishou/retention/apply',
+      handler: async ({req, res, deps}) => {
+        await readOptionalJson(req);
+        const result = deps.kuaishou.applyRetention();
         sendJson(res, 200, result);
       }
     }

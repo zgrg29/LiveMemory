@@ -77,7 +77,8 @@
       "twitch": "Twitch 라이브",
       "douyin": "Douyin 라이브",
       "tiktok": "TikTok 라이브",
-      "kick": "Kick"
+      "kick": "Kick",
+      "kuaishou": "Kuaishou 라이브"
     }
   },
   "format": {
@@ -117,7 +118,7 @@
     "new": {
       "eyebrow": "기록 준비 완료",
       "title": "새 기록",
-      "subtitleIdle": "Bilibili, YouTube, Twitch, Douyin 또는 TikTok 을 선택하고 방송 중인 라이브룸에 연결하십시오. 이미 진행 중인 기록은 백그라운드에서 계속됩니다.",
+      "subtitleIdle": "Bilibili, YouTube, Twitch, Douyin, TikTok, Kick 또는 Kuaishou 미리보기를 선택해 진행 중인 방송에 연결하세요. 기존 기록은 백그라운드에서 계속됩니다.",
       "subtitleRunning": "라이브 방송 {n}개가 백그라운드에서 계속 기록됩니다. 새 기록을 시작해도 이들은 중지되지 않습니다.",
       "background": "라이브 방송 {n}개가 아직 백그라운드에서 기록 중입니다. 언제든 해당 탭을 열 수 있습니다.",
       "activeTitle": "기록 중인 방송 {n}개",
@@ -516,7 +517,38 @@
       "kickTechnicalCounters": "채팅 {chats} · KICKs {gifts} · 멤버십 {memberships} · 푸시 {publications}",
       "kickCaptureNotCompleteNote": "Kick 피드에는 이어받기 커서가 없습니다. 재연결 중 메시지는 누락될 수 있고 복구되지 않습니다. LiveMemory는 완전한 채팅 로그를 주장하지 않습니다.",
       "kickPolicyBody": "{days}일이 지난 Kick 채팅 원문, 배지, 표시 라벨은 삭제됩니다. 건수와 안정 ID는 유지됩니다.",
-      "kickRetentionApplied": "만료된 Kick 레코드 {count}개를 삭제했습니다."
+      "kickRetentionApplied": "만료된 Kick 레코드 {count}개를 삭제했습니다.",
+      "kuaishouTab": "Kuaishou",
+      "kuaishouIntro": "Kuaishou 라이브 방송의 공개 채팅을 기록합니다. 방송 링크를 분석해 채팅을 저장하고 다른 플랫폼과 동일한 AI 분석 및 장기 프로필을 사용합니다.",
+      "kuaishouNotice": "Kuaishou는 승인되지 않은 자동 데이터 수집을 제한합니다. LiveMemory는 Kuaishou의 공식 제품이 아닙니다. 사용자는 Kuaishou 플랫폼 약관을 준수하고 필요한 데이터 접근 권한을 보유해야 합니다. 제3자 인터페이스는 사전 예고 없이 변경되거나 중단될 수 있습니다.",
+      "kuaishouNoLoginNote": "로그인, API 키, 쿠키, 유료 서비스가 필요하지 않습니다. 수집이 승인되면 LiveMemory는 공개 H5 방송 페이지와 채팅 피드를 직접 읽습니다.",
+      "kuaishouUnofficialNote": "비공식 / 실험적: 이 H5 인터페이스는 Kuaishou 공개 API가 아닙니다. 예고 없이 변경되거나 중단될 수 있으며, 재개 커서가 없어 재연결 중 메시지를 놓칠 수 있습니다.",
+      "kuaishouLinkLabel": "Kuaishou 라이브 링크 또는 ID",
+      "kuaishouLinkPlaceholder": "https://live.kuaishou.com/u/…",
+      "kuaishouCheck": "링크 분석",
+      "kuaishouEid": "방송 ID",
+      "kuaishouCaptureTitle": "Kuaishou 수집",
+      "kuaishouActiveTitle": "기록 중인 Kuaishou 방송",
+      "kuaishouAccessTitle": "수집 승인",
+      "kuaishouAccessRequired": "이 빌드에서는 실시간 수집이 비활성화되어 있습니다. 연동과 로컬 분석은 사용할 수 있지만, 운영자가 서면 허가를 기록하기 전까지 LiveMemory는 Kuaishou 데이터를 요청하지 않습니다.",
+      "kuaishouAccessEnabled": "내부 승인 빌드로 수집이 활성화되어 있습니다. 받은 허가 범위를 넘지 않도록 사용자가 직접 확인해야 합니다.",
+      "kuaishouIdentityNote": "시청자 ID는 임시이며 이 세션에만 한정됩니다. 방송 간·일자 간 안정성이 입증되지 않아 LiveMemory는 Kuaishou 시청자를 세션 간에 병합하지 않습니다.",
+      "kuaishouMessageIdNote": "H5 피드에는 메시지 ID와 재개 커서가 없습니다. 중복은 \"사용자 + 시간 + 내용\"으로 제거하며, 재연결 중 메시지를 놓칠 수 있습니다.",
+      "kuaishouGiftNote": "연구 샘플에서 선물이나 좋아요는 관측되지 않았습니다. LiveMemory는 Kuaishou의 선물·좋아요 지원을 주장하지 않습니다.",
+      "kuaishouStatusUnknown": "Kuaishou가 이 방송의 진행 여부를 확인하지 못했습니다. 상태가 확인되기 전까지 수집을 시작하지 않습니다.",
+      "kuaishouPolicyBody": "{days}일이 지난 Kuaishou 채팅 원문과 표시 이름은 삭제됩니다. 건수, 세션 내 ID, 분석 결과는 유지됩니다.",
+      "kuaishouRetentionApplied": "만료된 Kuaishou 데이터 {count}건을 삭제했습니다.",
+      "kuaishouStartDisabled": "승인이 활성화되고 방송이 진행 중임을 확인한 후 기록을 시작하세요.",
+      "kuaishouCaptureNotCompleteNote": "재개 커서가 없어 재연결 중 메시지를 놓칠 수 있으며 복구되지 않습니다. LiveMemory는 완전한 채팅 기록을 주장하지 않습니다.",
+      "kuaishouTechnicalCounters": "폴링 {polls} · 채팅 {chats} · 중복 {duplicates} · 무시된 비채팅 {ignored}",
+      "kuaishouTechnicalIdentity": "신원 모드: {mode} · 안정 사용자 ID: {stable} · 메시지 ID: {messageId}",
+      "kuaishouStateRateLimited": "Kuaishou가 속도 제한 중입니다. 대기 중",
+      "kuaishouStartRequiresAuthorization": "수집 승인이 활성화되기 전에는 기록할 수 없습니다.",
+      "kuaishouMonitorRequiresAuthorization": "자동 모니터링은 수집 승인이 활성화된 후에 사용할 수 있습니다.",
+      "kuaishouUnavailable": "이 빌드에서는 Kuaishou 연동을 사용할 수 없습니다.",
+      "kuaishouIdentityModeSession": "세션 내 임시 신원",
+      "kuaishouIdentityStableUnproven": "미입증",
+      "kuaishouIdentityMessageIdNone": "제공되지 않음"
     }
   },
   "history": {
@@ -2072,7 +2104,20 @@
     "kickSocketFailed": "Kick 채팅 연결에 실패했습니다.",
     "kickNotConfigured": "이 빌드에서는 Kick 수집을 사용할 수 없습니다.",
     "kickStopped": "Kick 수집이 중지되었습니다.",
-    "kickError": "Kick 수집에 실패했습니다."
+    "kickError": "Kick 수집에 실패했습니다.",
+    "kuaishouLinkInvalid": "Kuaishou 라이브 링크(예: https://live.kuaishou.com/u/…)를 입력하세요. 프로필, 짧은 영상, 다시보기, 다른 플랫폼은 라이브 방송이 아닙니다.",
+    "kuaishouAuthorizationRequired": "운영자가 서면 허가를 기록하기 전까지 Kuaishou 실시간 수집은 비활성화됩니다. 링크 분석과 로컬 분석은 계속 사용할 수 있습니다.",
+    "kuaishouAccessDenied": "Kuaishou가 요청을 거부했습니다(접근 권한, 로그인 또는 위험 관리). LiveMemory는 이를 우회하지 않습니다.",
+    "kuaishouRoomOffline": "이 Kuaishou 방송은 현재 진행 중이 아닙니다. 방송이 시작된 후 다시 시도하세요.",
+    "kuaishouRoomNotFound": "해당 Kuaishou 방송이 존재하지 않습니다.",
+    "kuaishouRateLimit": "Kuaishou가 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도하세요.",
+    "kuaishouNetwork": "Kuaishou에 연결할 수 없습니다. 네트워크를 확인하고 다시 시도하세요.",
+    "kuaishouProtocol": "Kuaishou가 예상하지 못한 응답을 반환했습니다. 비공식 H5 인터페이스가 변경되었을 수 있습니다.",
+    "kuaishouStatusUnknown": "Kuaishou가 방송 상태를 확인하지 못했습니다. 속도 제한 중이거나 페이지가 변경되었을 수 있습니다. LiveMemory는 추측하지 않습니다.",
+    "kuaishouConnectTimeout": "Kuaishou 연결 시간이 초과되었습니다.",
+    "kuaishouNotConfigured": "이 빌드에서는 Kuaishou 수집이 구성되지 않았습니다.",
+    "kuaishouStopped": "Kuaishou 수집이 중지되었습니다.",
+    "kuaishouError": "Kuaishou 수집에 실패했습니다."
   },
   "toast": {
     "saved": "저장됨",
@@ -2410,7 +2455,9 @@
       "tiktokPlaceholder": "TikTok 라이브 URL 또는 @사용자 이름",
       "tiktokLabel": "TikTok 라이브 URL 또는 @사용자 이름",
       "kickPlaceholder": "Kick 라이브 링크 또는 채널 이름",
-      "kickLabel": "Kick 라이브 링크 또는 채널 이름"
+      "kickLabel": "Kick 라이브 링크 또는 채널 이름",
+      "kuaishouPlaceholder": "Kuaishou 라이브 링크 또는 방송 ID",
+      "kuaishouLabel": "Kuaishou 라이브 링크 또는 방송 ID"
     },
     "hero": {
       "autoChip": "자동 모니터링",
