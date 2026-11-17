@@ -51,9 +51,9 @@ detector + policy + `MonitoringManager` 生命周期，**Kick 在平台注册、
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| Build ID | `8bfc48086b20` |
+| Build ID | `8bfc48086b20`（提交 `5976c78d0626de3a286aa94cafb290332c6d1edc`） |
 | 大小 | 99,342,336 bytes |
-| SHA-256 | `__FINAL_SHA__` |
+| SHA-256 | `8a2b21a248cc68c3a87777d5a698472a666c57e6c5001c2535657b92e6eb32ed` |
 | Manifest | `requireAdministrator`（自动化使用同 Build ID 的 asInvoker 副本） |
 | EXE 验收 | **27/27**：含 Kick 监控 policy、离线 `xqc` 添加/waiting/无空 session、真实频道自动录制、真实聊天与身份、不重复、手动停止不立即重启 |
 | 未验证 | 真实双击 UAC；EXE 内重启恢复（源码真实服务已验）；真实下播/下一次开播窗口 |

@@ -100,9 +100,9 @@ live_stopped → 确认 offline → 新 livestream id 开播 → 新 session」�
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| Build ID | `8bfc48086b20` |
+| Build ID | `8bfc48086b20`（提交 `5976c78d0626de3a286aa94cafb290332c6d1edc`） |
 | 大小 | 99,342,336 bytes（94.7 MiB） |
-| SHA-256 | `__FINAL_SHA__` |
+| SHA-256 | `8a2b21a248cc68c3a87777d5a698472a666c57e6c5001c2535657b92e6eb32ed` |
 | Manifest | `requireAdministrator` |
 | EXE 验收 | `verify-kick-exe.mjs` **27/27**，含真实监控场景 |
 | 监控相关 | policy=90s；离线 `xqc` 添加为 `waiting` 且无空 session；真实在播频道自动 `recording`、真实聊天、稳定身份、未重复；手动停止后 `live_stopped` |
