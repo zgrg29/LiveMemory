@@ -8,7 +8,7 @@
 
 LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、免费、不需要开发者维护服务器。观众数据保存在用户自己的电脑上；AI 分析只由本地程序使用**用户自己配置的 API Key** 调用 Provider，不经过开发者服务器。
 
-第一版支持 Bilibili Live 与 YouTube Live；当前已实现**六个**真实直播平台（Bilibili / YouTube / Twitch / 抖音 / TikTok / **Kick**），详见 `docs/PLATFORM_INTEGRATIONS.md`。其中 Kick 是 v0.16.0 候选版接入（未发布），其余五个已随 v0.15.0 发布。当前发布形态为 `LiveMemory.exe`，用户不应需要安装 Python、Node.js、npm 或数据库。
+第一版支持 Bilibili Live 与 YouTube Live；当前已实现**六个**真实直播平台（Bilibili / YouTube / Twitch / 抖音 / TikTok / **Kick**），详见 `docs/PLATFORM_INTEGRATIONS.md`。其中 Kick 已随 **v0.16.0** 正式发布，其余五个随 v0.15.0 及更早版本发布。当前发布形态为 `LiveMemory.exe`，用户不应需要安装 Python、Node.js、npm 或数据库。
 
 ---
 
@@ -214,7 +214,7 @@ fix: prevent duplicate payment events
 - 不得在未验证的情况下宣称 EXE 已在“干净 Windows 环境”通过验收。
 - 不得为了绕过平台的授权或配额限制而改用抓取、未公开接口或共享凭据。YouTube 公开网页聊天是唯一接入路径，但必须遵守 §6.12 的不绕过访问控制、不描述为官方/合规、如实说明可能失效等边界；不得偷偷恢复官方 API 双轨实现。TikTok 的匿名 webcast WebSocket 是 §6.12 明确授权的唯一例外，并只能在该节边界内使用：不绕过访问控制、不登录、不依赖第三方签名服务、标注非官方/实验性、失败即如实报告。
 - 不得在文档或界面中把「模拟/假 API 验证」描述为「真实平台验收」。缺少真实凭据时必须如实写「阻塞」。真实凭据与 API Key 不得出现在代码、测试、文档、截图或提交中。
-- **不得把「计划支持」写成「已支持」**：十种**界面**语言（P40）与十种 **AI 分析输出语言**（P41）均已实现，但「界面十语 = AI 十语」只是能力集合相同，**仍是两个独立设置**（`locale` / `aiOutputLocale`）。翻译**阅读**语言只读取缓存、不重跑分析；每个任务的语言快照不可变。已发布版本（v0.15.0）只有五个直播平台；**Kick 是 v0.16.0 候选版新增**（G2–G5 已完成，未发布、未合并 `main`），其余候选平台（虎牙、斗鱼、CHZZK、SOOP、快手、Niconico、小红书、YY、Facebook Live）仍未实现。README、界面、发布说明与 STATUS 只能描述实际存在的能力。
+- **不得把「计划支持」写成「已支持」**：十种**界面**语言（P40）与十种 **AI 分析输出语言**（P41）均已实现，但「界面十语 = AI 十语」只是能力集合相同，**仍是两个独立设置**（`locale` / `aiOutputLocale`）。翻译**阅读**语言只读取缓存、不重跑分析；每个任务的语言快照不可变。已发布版本 v0.15.0 有五个直播平台；**v0.16.0 新增 Kick**（已合并 `main`、Tag `v0.16.0`、GitHub Release Published），其余候选平台（虎牙、斗鱼、CHZZK、SOOP、快手、Niconico、小红书、YY、Facebook Live）仍未实现。README、界面、发布说明与 STATUS 只能描述实际存在的能力。
 - **不得仅凭开源项目 README、示例或接口存在就宣称平台支持**：没有本仓库真实样本与真实 EXE 验收的一律标「待验证」，缺失的事件一律标 `NOT-OBSERVED`。
 - **不得为通过平台验证而绕过访问控制**：不破解验证码、不伪造登录态、不规避地区/年龄/权限限制、不购买第三方采集/签名服务、不引入运行时第三方依赖。失败即停止并如实报告。
 - **不得复制许可证不兼容的代码**：AGPL 代码不得直接进入 MIT 代码区；引用任何第三方实现必须按其许可证在 `THIRD_PARTY_NOTICES.md` 标注。

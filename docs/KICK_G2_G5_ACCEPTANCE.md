@@ -1,8 +1,8 @@
 # Kick G2–G5：正式接入、完整验收与 Windows EXE 候选
 
-状态：**G2–G5 完成，等待用户试玩确认（2026-11-17）**。Kick 已成为产品第六个平台，
+状态：**G2–G5 完成（2026-11-17）**。Kick 已成为产品第六个平台，
 出现在正式界面、十语言、历史/AI/画像/备份流程中；候选 EXE 已构建并通过真实房间验收。
-**未发布、未合并 `main`、未 Tag、未 Release**；版本仍 `0.15.0`。G6 待用户决定。
+**当时未发布、未合并 `main`、未 Tag、未 Release**；版本仍 `0.15.0`。**后经 G5.1/G6 随 v0.16.0 正式发布。**
 
 - 继承：`docs/KICK_G1_ACCEPTANCE.md`（G1 真实连接与字段证据），未重写 G1 代码，只在其上接入产品。
 - 代码：`src/platforms/kick/{link,http,messages,transport,adapter,service,errors}.mjs`；

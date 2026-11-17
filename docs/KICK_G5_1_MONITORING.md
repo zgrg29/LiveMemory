@@ -2,7 +2,7 @@
 
 状态：**G5.1 完成（2026-11-17）**。Kick 现在与其余五个平台一样支持「添加未开播频道 →
 低频只读检查 → 开播自动记录 → 下播结束 → 继续等待下一场」，并已完成真实离线/开播/重启/
-多频道验收与重新构建的候选 EXE 验收。**未发布、未合并 `main`、未 Tag/Release**。
+多频道验收与重新构建的候选 EXE 验收。**当时未发布；后随 v0.16.0 正式发布（Tag `v0.16.0`、GitHub Release Published）。**
 
 - 相关：`docs/KICK_G2_G5_ACCEPTANCE.md`（G2–G5）、`docs/PLATFORM_INTEGRATIONS.md` §3D、
   `docs/PLATFORM_ADMISSION.md` G4、`src/monitoring/`。

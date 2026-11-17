@@ -669,7 +669,7 @@ TikTok 面板只保留普通用户需要的东西：直播间链接/`@用户名`
   若平台明确拒绝访问，必须停止该路径并报告。
 
 
-## 3D. Kick（v0.16.0 候选，G2–G5 完成，未发布）
+## 3D. Kick（v0.16.0 正式支持，G2–G6 完成）
 
 ### 3D.1 接入边界与代码结构
 
@@ -725,7 +725,7 @@ WSS  realtime.<region>.platform.kick.com/connection/websocket
 - 30 天原文保留策略，平台作用域 `kick`；清理 `content/emotes/badges/amount_display`，保留计数与稳定 ID。
 - UI：直播页第六个平台页签；十语言 2,304 键；添加房间 / 检查 / 开始 / 停止 / 开播监控 / 状态 / 历史 / 画像 / AI 全部复用现有页面。
 - 验证：G1 真实连接（3,040 条聊天）→ G2 产品接入 → G3 十语言 UI → G4 ≥60 分钟长测 →
-  G5 真实 EXE（`verify-kick-exe.mjs`）。未发布：版本仍 `0.15.0`，未合并 `main`。
+  G5 真实 EXE（`verify-kick-exe.mjs`）。G6 已合并 `main`、Tag `v0.16.0` 并发布 GitHub Release。
   详见 `docs/KICK_G1_ACCEPTANCE.md`、`docs/KICK_G2_G5_ACCEPTANCE.md`。
 
 ## 4. 统一事件模型
