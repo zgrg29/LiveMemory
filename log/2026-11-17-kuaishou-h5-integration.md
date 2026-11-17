@@ -48,3 +48,10 @@
 - 未实现登录、扫码、签名、设备指纹、验证码、TLS 伪装、代理、浏览器中继。
 - 未映射礼物/点赞；未跨场合并身份。
 - 未 Push / Tag / Release。
+
+## Git
+
+- 分支 `kuaishou-g1_5`；本地提交
+  `d49047af32f18b271b00043c1e19db44dd796fb8`
+  （`feat: integrate Kuaishou H5 preview with collection disabled`）。
+- `main` 仍 `6f71f56`；v0.16.0 Tag/Release 未动。

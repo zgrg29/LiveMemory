@@ -49,7 +49,7 @@
 | 六平台回归 | 全量套件通过；Bilibili/YouTube/Twitch/抖音/TikTok/Kick 协议与测试未改 |
 | 十语言字典 | 10 × 2,351；缺失/多余/占位符/空值/英文残留 0 |
 | 真实浏览器 UI | **80/80**（10 语 × 1440/1024/820/390 × 明暗；告知/授权/身份/礼物说明可见，无溢出，无原始键；每语 1440 light 执行链接解析 + 禁用开始按钮检查） |
-| 候选 EXE | `dist/LiveMemory.exe`；**99,492,352 bytes**；SHA-256 `90be8be19c4709102834a2db0c94f8dcf34cdd5d407e05a119100740b3981c29`；Build ID `47b42dc8417b`；Manifest **requireAdministrator** |
+| 候选 EXE | `dist/LiveMemory.exe`；**99,492,352 bytes**；SHA-256 `413a4b59268400f9cb71042ba8d1f16802a753838d8b066909cab81a79ede7b5`；Build ID `47b42dc8417b`；提交 `d49047af32f18b271b00043c1e19db44dd796fb8`；Manifest **requireAdministrator** |
 | EXE 验收 | `verify-kuaishou-exe.mjs` **10/10**；`verify-exe.mjs` **11/11**；`verify-help-exe.mjs` **14/14** |
 | 真实 H5 | **未执行**（无许可） |
 | 真实 EXE 采集 | **未执行** |
@@ -67,6 +67,8 @@
 ### 0.60.5 Git
 
 - 分支：`kuaishou-g1_5`（继续；未 Push）。
+- 本轮代码/测试/文档提交：`d49047af32f18b271b00043c1e19db44dd796fb8`
+  （`feat: integrate Kuaishou H5 preview with collection disabled`）。
 - `main` 仍 `6f71f56`；v0.16.0 Tag/Release/资产未动。
 - 本轮提交 Hash 见交付回复与 `docs/HANDOFF.md`。
 

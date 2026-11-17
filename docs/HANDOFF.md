@@ -23,7 +23,7 @@
 | UI | 第七个页签；强制告知；禁用状态只解析；十语 2,351 键 |
 | 真实 H5 | **未执行**（无许可） |
 | 测试 | **844 unit + 382 integration = 1,226 passed / 0 failed**；Kuaishou 专项 49 passed；UI 80/80 |
-| EXE | 候选 `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `90be8be1…b3981c29`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| EXE | 候选 `dist/LiveMemory.exe`；99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `413a4b59…ede7b5`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
 | Git | 分支 `kuaishou-g1_5`（未 Push）；`main` 仍 `6f71f56` |
 
 ### 0.2 关键文件
@@ -48,7 +48,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 分支 | `kuaishou-g1_5`（未 Push） |
-| 本轮提交 | 见最终回复与 `git log` |
+| 本轮提交 | `d49047af32f18b271b00043c1e19db44dd796fb8`（`feat: integrate Kuaishou H5 preview with collection disabled`） |
 | 版本 / Schema | `0.17.0` / 16 |
 | v0.16.0 | Tag/Release/EXE 未动 |
 | 工作区 | 提交后应干净（`tests/.tmp/`、`dist/`、`build/` 未提交） |

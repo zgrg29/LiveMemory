@@ -13,7 +13,7 @@ URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（�
 | 版本 / Schema | `0.17.0` / 16（无迁移） |
 | 发布状态 | **未 Tag、未 Release、未 Push** |
 | 真实 H5 | **未执行（无许可）** |
-| 候选 EXE | 99,492,352 B；Build ID `47b42dc8417b`；SHA-256 `90be8be19c4709102834a2db0c94f8dcf34cdd5d407e05a119100740b3981c29`；`requireAdministrator`；Kuaishou 10/10 |
+| 候选 EXE | 99,492,352 B；Build ID `47b42dc8417b`；提交 `d49047af32f18b271b00043c1e19db44dd796fb8`；SHA-256 `413a4b59268400f9cb71042ba8d1f16802a753838d8b066909cab81a79ede7b5`；`requireAdministrator`；Kuaishou 10/10 |
 
 ### 新增
 
