@@ -71,6 +71,7 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；第三次全量通过） |
+| 本轮 EXE（2026-11-18） | Build `f05fe173fda3`；99,503,104 B；SHA-256 `8e3a9cf8…be81`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；产物在 `build/`（`dist` 被其它进程占用） |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
 | 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
@@ -266,9 +267,15 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 
 | 项目 | 值 |
 | --- | --- |
-| 构建 | 见本节下方“构建结果”与 `docs/HANDOFF.md` |
-| Manifest | 构建断言 `requireAdministrator` |
-| `verify-exe` / `verify-help-exe` | 构建后执行 |
+| 构建 | `buildId` **`f05fe173fda3`**；commit **`032508cdcbda7bad3d8c81893ce1e96ae06f2baa`**；builtAt `2026-11-18T11:58:16.876Z`；256 files / 70 required modules |
+| 文件 / 大小 | `build/LiveMemory-0.17.0-opencode.exe`（**99,503,104 bytes**） |
+| SHA-256 | `8e3a9cf88c65f725175e2a4bfde359a2e14e829fb8a98638530199e0a252be81` |
+| Manifest | **`requireAdministrator`**（构建断言 + 注入后复读） |
+| `verify-exe` | **11/11 passed**：fresh data、SQLite、live console、restart、crash recovery、denied folder、another folder、extracted-app reuse、十语 i18n、CLI |
+| `verify-help-exe` | **14/14 passed** |
+| `verify-ai-token-exe` | **16/16 passed**：真实 EXE 内 mock Provider 的画像、usage、断点恢复、认证、备份 |
+| 构建路径说明 | `dist/LiveMemory.exe` 被另一个进程以独占方式占用（`EBUSY`，已确认不是权限问题），无法覆盖；本次用**同一源码、同一构建脚本**在隔离副本中构建并验收，产物保存到 `build/LiveMemory-0.17.0-opencode.exe`。`dist/` 仍是上一版文件，**不是**本轮产物。 |
+| 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户；EXE 未签名 |
 
 ### 0.61.6 未完成 / 限制
 

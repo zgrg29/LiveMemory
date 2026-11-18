@@ -20,7 +20,7 @@
 | 版本 / Schema | `0.17.0` / 16（无迁移）；**未 Push / Tag / Release** |
 | 测试 | 新增 12 unit + 3 integration；全量 **1,241 passed / 0 failed / 0 skipped** |
 | 真实 API | **未执行（无 Key）**；不得写成已通过 |
-| EXE | 本轮构建并验证，数字见下方与 `docs/STATUS.md` §0.61.5 |
+| EXE | Build ID `f05fe173fda3`、commit `032508c`、99,503,104 B、SHA-256 `8e3a9cf8…be81`、`requireAdministrator`；`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16；产物 `build/LiveMemory-0.17.0-opencode.exe`（`dist/LiveMemory.exe` 被其它进程占用，未能覆盖） |
 
 ### 关键文件
 

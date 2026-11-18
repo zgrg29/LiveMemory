@@ -131,7 +131,7 @@ ses_<sha256(scope parts) 前 32 位>
 | `tests/integration/opencode-provider.test.mjs`（新增 3） | **3 passed / 0 failed** |
 | 全量单元 | **856 passed / 0 failed / 0 skipped**（23,973 ms） |
 | 全量单元 + 集成 | **1,241 passed / 0 failed / 0 skipped**（328,824 ms，`--test-isolation=none`） |
-| `node scripts/check-docs.mjs` | 见下方结果 |
+| `node scripts/check-docs.mjs` | **通过**：README 三语顺序、104 个相对链接、版本一致性、10 × 2,351 键与占位符 |
 
 新增测试覆盖：
 
@@ -167,7 +167,25 @@ ses_<sha256(scope parts) 前 32 位>
 
 ## 5. Windows EXE
 
-构建与验收结果记录于 `docs/STATUS.md` §0.61.5。**未 Push、未 Tag、未 Release。**
+`dist/LiveMemory.exe` 被另一个进程独占（`EBUSY`；`Rename`/覆盖均失败，已排除普通 ACL 与沙箱
+模式），因此用**同一源码、同一构建脚本、同一构建元数据**在隔离副本
+`tests/.tmp/lm-exe-build/` 中构建（`.git` 仅写入真实提交号供 `readGitCommit` 读取），
+产物保存到 `build/LiveMemory-0.17.0-opencode.exe`。
+
+| 项目 | 值 |
+| --- | --- |
+| Build ID / commit | `f05fe173fda3` / `032508cdcbda7bad3d8c81893ce1e96ae06f2baa` |
+| 大小 / SHA-256 | 99,503,104 B / `8e3a9cf88c65f725175e2a4bfde359a2e14e829fb8a98638530199e0a252be81` |
+| 资源 / 模块 | 256 files / 70 required modules |
+| Manifest | `requireAdministrator`（构建断言 + 注入后复读） |
+| `verify-exe` | **11/11**（fresh data、SQLite、live console、restart、crash recovery、denied folder、another folder、extracted-app reuse、十语 i18n、CLI；`--version` 显示 `0.17.0`、commit `032508c`） |
+| `verify-help-exe` | **14/14** |
+| `verify-ai-token-exe` | **16/16**（EXE 内 mock Provider 画像、usage、断点恢复、认证、备份） |
+| 自动化副本 | 同源码、同 build ID 的 `--as-invoker` 构建；正式产物仍为 `requireAdministrator` |
+| 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户；EXE 未签名 |
+
+`dist/LiveMemory.exe` 仍是上一版本文件，**不是**本轮产物；本环境无法覆盖，已在
+`docs/STATUS.md` §0.61.5 如实记录。**未 Push、未 Tag、未 Release。**
 
 ## 6. 未完成 / 限制
 
