@@ -2365,7 +2365,7 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 - **未提供真实 OpenCode API Key**：没有真实推理、真实 200/429/5xx、真实输出、真实账单。
 - 免费层模型对第三方客户端 403。
 - `json_schema` 未声明；`temperature: false` 模型（Claude 系列）的 Console 翻译行为未验证。
-- Windows EXE：Build ID `f05fe173fda3`、commit `032508c`、99,503,104 B、
-  SHA-256 `8e3a9cf8…be81`、`requireAdministrator`；`verify-exe` **11/11**、
+- Windows EXE（v0.18.0）：Build ID `902109197d8b`、commit `3149ffc`、99,503,104 B、
+  SHA-256 `285cfd82…2957f`、`requireAdministrator`；`verify-exe` **11/11**、
   `verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
-  `dist/LiveMemory.exe` 被其它进程占用，产物在 `build/LiveMemory-0.17.0-opencode.exe`。
+  `dist/LiveMemory.exe` 被其它进程占用，正式产物为 `build/LiveMemory-0.18.0.exe`。
