@@ -1,6 +1,8 @@
 import {joinUrl, assertSafeResolvedUrl} from './url-safety.mjs';
-import {getProvider, isReasoningModelId} from './catalog.mjs';
-import {perMillionFromTokenPrice, pricingFromOpenRouterModel} from './pricing.mjs';
+import {getProvider, getRegion, isReasoningModelId} from './catalog.mjs';
+import {perMillionFromTokenPrice, pricingFromOpenCodeModel, pricingFromOpenRouterModel} from './pricing.mjs';
+import {providerSessionId} from './session.mjs';
+import {APP_VERSION} from '../../shared/app-info.mjs';
 import {parseRetryAfter} from '../runtime/json.mjs';
 import {consumeEventStream, createStreamAccumulator, StreamIdleTimeoutError} from '../runtime/stream.mjs';
 import {ERROR_KIND, ATTEMPT_PHASE} from '../runtime/attempt.mjs';
@@ -234,6 +236,18 @@ function errorFromResponse(response, payload, providerId) {
   if (status === 401 || status === 403) {
     return new ProviderHttpError(PROVIDER_ERROR.AUTH, {...base, kind: ERROR_KIND.CLIENT});
   }
+  // OpenCode Console rejects a request that lacks its session header with HTTP
+  // 400 and error type `MissingSessionID`, before it even checks the key. It is a
+  // client configuration problem, not a credential or rate-limit failure, so it
+  // maps to PROVIDER_CONFIG_INVALID while the provider's own message stays in
+  // the technical detail shown by the UI.
+  if (String(type ?? '').toLowerCase() === 'missingsessionid') {
+    return new ProviderHttpError(PROVIDER_ERROR.CONFIG, {
+      ...base,
+      detail: (detail ?? 'session-header-required').slice(0, 300),
+      kind: ERROR_KIND.CONFIG
+    });
+  }
   if (status === 404) {
     return new ProviderHttpError(PROVIDER_ERROR.NOT_FOUND, {...base, kind: ERROR_KIND.CLIENT});
   }
@@ -262,6 +276,54 @@ function cancelError(providerId, extra = {}) {
     retryable: false,
     ...extra
   });
+}
+
+/**
+ * Provider-specific request headers.
+ *
+ * Only facts declared by the provider catalogue are applied here; every other
+ * OpenAI-compatible service keeps the previous minimal header set. Two headers
+ * exist for OpenCode Console:
+ *
+ *   - `user-agent`: Console asks harnesses to identify themselves instead of
+ *     presenting themselves as a generic SDK or HTTP library;
+ *   - `x-opencode-session`: one stable conversation id per analysis job so
+ *     Console can route the conversation and reuse its prompt cache. The Go
+ *     endpoint requires it (verified: HTTP 400 `MissingSessionID` otherwise).
+ *
+ * The function never logs and never receives the API key, so a session id or a
+ * credential can not leak through it. A required-but-missing session id raises
+ * a configuration error *before* any network request is sent.
+ */
+function providerRequestHeaders(config, {sessionId = null} = {}) {
+  const provider = getProvider(config.providerId);
+  const headers = {};
+  if (!provider) return headers;
+  if (provider.userAgent) headers['user-agent'] = `${provider.userAgent}/${APP_VERSION}`;
+  if (provider.sessionHeader) {
+    const region = getRegion(provider.id, config.regionId);
+    const required = provider.requiresSession === true || region?.requiresSession === true;
+    if (sessionId) {
+      headers[provider.sessionHeader] = String(sessionId).slice(0, 200);
+    } else if (required) {
+      throw new ProviderHttpError(PROVIDER_ERROR.CONFIG, {
+        detail: `${provider.sessionHeader}-required`,
+        providerId: config.providerId,
+        kind: ERROR_KIND.CONFIG
+      });
+    }
+  }
+  return headers;
+}
+
+/** Model catalogue URL: per-region when declared, otherwise `baseUrl/models`. */
+function modelsUrlFor(config) {
+  const region = config.regionId ? getRegion(config.providerId, config.regionId) : null;
+  const provider = getProvider(config.providerId);
+  return config.modelsUrl
+    ?? region?.modelsUrl
+    ?? provider?.modelsUrl
+    ?? joinUrl(config.baseUrl, '/models');
 }
 
 /**
@@ -444,7 +506,7 @@ function emptyContentError({
 
 /* -------------------------------------------------------------- OpenAI family */
 
-const STREAM_USAGE_PROVIDERS = new Set(['openai', 'deepseek', 'openrouter', 'dashscope']);
+const STREAM_USAGE_PROVIDERS = new Set(['openai', 'deepseek', 'openrouter', 'dashscope', 'opencode']);
 
 function openAiStreamOptions(config) {
   // `stream_options` is an OpenAI extension. Sending it to an unknown
@@ -476,6 +538,7 @@ export async function callOpenAICompatible({
   streaming = false,
   now = Date.now,
   onProgress = null,
+  sessionId = null,
   headers = {}
 }) {
   const provider = getProvider(config.providerId);
@@ -486,6 +549,9 @@ export async function callOpenAICompatible({
     });
   }
   const auth = apiKey ? {authorization: `Bearer ${apiKey}`} : {};
+  // Throws before any request when the selected region requires a conversation
+  // id and the caller did not supply one.
+  const providerHeaders = providerRequestHeaders(config, {sessionId});
   const answerTokens = Math.max(64, Math.min(Number(maxTokens) || 4096, 32000));
   const completionLimit = Number(maxCompletionTokens);
   const reasoningModel = config.providerId === 'openai' && isReasoningModelId(config.modelId);
@@ -568,7 +634,8 @@ export async function callOpenAICompatible({
         'content-type': 'application/json',
         accept: streaming ? 'text/event-stream, application/json' : 'application/json',
         ...auth,
-        ...headers
+        ...headers,
+        ...providerHeaders
       },
       body: bodyText,
       signal: control.signal
@@ -788,7 +855,8 @@ export async function callAnthropic({
   idleTimeoutMs = 60000,
   streaming = false,
   now = Date.now,
-  onProgress = null
+  onProgress = null,
+  sessionId = null
 }) {
   if (!apiKey) {
     throw new ProviderHttpError(PROVIDER_ERROR.CONFIG, {
@@ -797,6 +865,7 @@ export async function callAnthropic({
       kind: ERROR_KIND.CONFIG
     });
   }
+  const providerHeaders = providerRequestHeaders(config, {sessionId});
   const system = messages
     .filter((message) => message.role === 'system')
     .map((message) => String(message.content ?? ''))
@@ -829,7 +898,8 @@ export async function callAnthropic({
         'content-type': 'application/json',
         accept: streaming ? 'text/event-stream, application/json' : 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': getProvider('anthropic')?.anthropicVersion ?? '2023-06-01'
+        'anthropic-version': getProvider('anthropic')?.anthropicVersion ?? '2023-06-01',
+        ...providerHeaders
       },
       body: bodyText,
       signal: control.signal
@@ -1038,12 +1108,24 @@ export async function listProviderModels({
   fetchImpl = globalThis.fetch,
   signal = null,
   timeoutMs = 30000,
-  now = Date.now
+  now = Date.now,
+  sessionId = null
 }) {
-  await assertSafeResolvedUrl(config.baseUrl, {
+  const url = modelsUrlFor(config);
+  await assertSafeResolvedUrl(url, {
     allowLocalNetwork: config.allowLocalNetwork === true
   });
-  const headers = {accept: 'application/json'};
+  const headers = {
+    accept: 'application/json',
+    ...providerRequestHeaders(config, {
+      // A catalogue request is not a conversation, but Console asks clients to
+      // send a session id on every request. A stable per-provider/region id is
+      // enough; it never mixes two providers or plans.
+      sessionId: sessionId ?? providerSessionId(
+        'models', config.providerId, config.regionId ?? '', config.baseUrl ?? ''
+      )
+    })
+  };
   if (apiKey) {
     if (config.protocol === 'anthropic') {
       headers['x-api-key'] = apiKey;
@@ -1055,7 +1137,7 @@ export async function listProviderModels({
   const control = createRequestControl({externalSignal: signal, headerTimeoutMs: timeoutMs});
   let response;
   try {
-    response = await fetchImpl(joinUrl(config.baseUrl, '/models'), {
+    response = await fetchImpl(url, {
       method: 'GET',
       headers,
       signal: control.signal
@@ -1079,17 +1161,31 @@ export async function listProviderModels({
     : (Array.isArray(payload?.models) ? payload.models : (Array.isArray(payload) ? payload : []));
   return list
     .map((entry) => normalizeModelEntry(entry, config))
-    .filter((entry) => entry.id);
+    .filter((entry) => entry && entry.id);
 }
 
 function normalizeModelEntry(entry, config) {
+  // OpenCode's catalogue can also advertise image/embedding entries. LiveMemory
+  // only performs text analysis, so a non-chat entry is never offered.
+  if (config.providerId === 'opencode' && entry?.type && entry.type !== 'chat') return null;
   const id = String(entry?.id ?? entry?.name ?? '').trim();
   const name = String(entry?.name ?? entry?.display_name ?? id).trim();
-  const contextLength = Number(entry?.context_length ?? entry?.context_window ?? entry?.top_provider?.context_length ?? NaN);
+  const contextLength = Number(
+    entry?.context_length
+    ?? entry?.context_window
+    ?? entry?.limit?.context
+    ?? entry?.top_provider?.context_length
+    ?? NaN
+  );
   let pricingStatus = null;
   let pricing = null;
   if (config.providerId === 'openrouter') {
     const parsed = pricingFromOpenRouterModel(entry);
+    pricingStatus = parsed.pricingStatus;
+    pricing = parsed.pricing;
+  }
+  if (config.providerId === 'opencode') {
+    const parsed = pricingFromOpenCodeModel(entry);
     pricingStatus = parsed.pricingStatus;
     pricing = parsed.pricing;
   }
@@ -1103,6 +1199,7 @@ function normalizeModelEntry(entry, config) {
     }
   }
   const supported = Array.isArray(entry?.supported_parameters) ? entry.supported_parameters : [];
+  const structuredHint = entry?.capabilities?.structured_output;
   return {
     id,
     name,
@@ -1112,7 +1209,9 @@ function normalizeModelEntry(entry, config) {
     pricing,
     structuredOutputs: supported.includes('structured_outputs')
       ? true
-      : (supported.includes('response_format') ? 'response_format' : null),
+      : (supported.includes('response_format')
+        ? 'response_format'
+        : (typeof structuredHint === 'boolean' ? structuredHint : null)),
     description: typeof entry?.description === 'string' ? entry.description.slice(0, 500) : null,
     free: pricingStatus === 'api_free',
     raw: entry

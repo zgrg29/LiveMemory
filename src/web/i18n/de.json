@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "KI-API-Konfigurationen",
         "hint": "Schlüssel werden auf diesem Gerät verschlüsselt",
-        "desc": "Unterstützt OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter und eigene OpenAI-kompatible Endpunkte.",
+        "desc": "Unterstützt OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode und eigene OpenAI-kompatible Endpunkte.",
         "empty": "Es ist noch keine API konfiguriert.",
         "default": "Standard",
         "makeDefault": "Als Standard festlegen",
@@ -2518,7 +2518,7 @@
         "title": "Eigenen KI-Anbieter und API-Schlüssel konfigurieren",
         "lead": "Die KI-Analyse verwendet nur den API-Schlüssel, den Sie bei einem KI-Anbieter bezogen haben, und wird direkt vom lokalen Programm aufgerufen. Ein Entwicklungsserver ist nicht beteiligt.",
         "step1": "Öffnen Sie die Einstellungen, suchen Sie den Bereich KI-Anbieter und klicken Sie auf Konfiguration hinzufügen.",
-        "step2": "Wählen Sie einen KI-Anbieter (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter oder einen eigenen OpenAI-kompatiblen Endpunkt) und tragen Sie bei Bedarf Base-URL und Modell-ID ein.",
+        "step2": "Wählen Sie einen KI-Anbieter (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode oder einen eigenen OpenAI-kompatiblen Endpunkt) und tragen Sie bei Bedarf Base-URL und Modell-ID ein.",
         "step3": "Erstellen Sie einen API-Schlüssel auf der Website des KI-Anbieters und fügen Sie ihn in das Schlüsselfeld ein. Der Schlüssel wird im lokalen verschlüsselten Anmeldedatenspeicher abgelegt und erscheint nie in Konfigurations-JSON, Protokollen, Sicherungen oder HTML.",
         "step4": "Klicken Sie auf Fähigkeiten testen und prüfen Sie, ob das Modell gültiges JSON zurückgibt. Schlägt der Test fehl, prüfen Sie Schlüssel, Region, Base-URL, Guthaben und Modell-ID und versuchen Sie es erneut.",
         "step5": "Alle Preisfelder sind optional. Mit Preisen werden geschätzte Kosten angezeigt; ohne Preise analysiert das Programm weiterhin und zählt nur Token.",

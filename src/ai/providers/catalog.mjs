@@ -190,6 +190,44 @@ export const PROVIDER_CATALOG = Object.freeze([
     ])
   }),
   Object.freeze({
+    id: 'opencode',
+    label: 'OpenCode',
+    protocol: PROVIDER_PROTOCOL.OPENAI,
+    docsUrl: 'https://opencode.ai/docs/console/api',
+    keyHint: 'oc_sk_…',
+    supportsModelList: true,
+    supportsStructuredOutputs: false,
+    // OpenCode Console serves every text model through the OpenAI Chat
+    // Completions path and translates it to the model's native API. Requests of
+    // one conversation are grouped with a stable session header so Console can
+    // route consistently and reuse its prompt cache. The Go plan requires the
+    // header; the pay-as-you-go endpoint accepts it as well.
+    sessionHeader: 'x-opencode-session',
+    userAgent: 'LiveMemory',
+    // The model catalogue lives one segment above the compatibility endpoints
+    // (`/inference/v1/models`, not `/inference/openai/v1/models`).
+    regions: Object.freeze([
+      Object.freeze({
+        id: 'payg',
+        label: 'Pay-as-you-go',
+        baseUrl: 'https://opencode.ai/inference/openai/v1',
+        modelsUrl: 'https://opencode.ai/inference/v1/models',
+        currency: 'USD'
+      }),
+      Object.freeze({
+        id: 'go',
+        label: 'Go subscription',
+        baseUrl: 'https://opencode.ai/inference/go/openai/v1',
+        modelsUrl: 'https://opencode.ai/inference/go/v1/models',
+        currency: 'USD',
+        // Verified 2026-11-18: without the header the Go endpoint answers HTTP
+        // 400 `MissingSessionID` before it even checks the key.
+        requiresSession: true,
+        docsUrl: 'https://opencode.ai/docs/console/go'
+      })
+    ])
+  }),
+  Object.freeze({
     id: 'custom',
     label: '自定义 OpenAI-compatible',
     protocol: PROVIDER_PROTOCOL.OPENAI,

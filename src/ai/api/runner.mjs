@@ -25,6 +25,7 @@ import {createSessionAnalysisJob, createViewerMemoryJob} from '../export/split-j
 import {ANALYSIS_MODE, TASK_KIND} from '../constants.mjs';
 import {countFactQuality} from '../quality/facts.mjs';
 import {callProvider, ProviderHttpError} from '../providers/adapters.mjs';
+import {providerSessionId} from '../providers/session.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
 import {addUsage, countRequestWithoutUsage} from '../providers/pricing.mjs';
 import {AnalysisState} from '../runtime/state.mjs';
@@ -4361,6 +4362,15 @@ export class AnalysisRunner {
     const {provider, signal} = context;
     const scheduler = this.#schedulerFor(provider);
     await this.#ensureSafeProviderUrl(provider);
+    // One stable provider conversation id per child job. The job row survives
+    // pause, restart and Resume, so batches, aggregate merges, repairs and
+    // automatic retries of the same task reuse one id, while different tasks
+    // (session report vs. long-term profiles, or another broadcast) stay apart.
+    const stateEntry = this.state.get(context.sessionId);
+    const jobId = jobIdForRequestKind(stateEntry, kind);
+    const providerSession = jobId
+      ? providerSessionId('job', jobId)
+      : providerSessionId('task', context.sessionId, kind);
     const answerTokens = Math.max(256, Number(outputTokens) || 8000);
     const estimatedInputTokens = Math.max(0, Number(prompt?.estimatedTokens) || 0);
     const maxCompletionTokens = resolveMaxCompletionTokens({
@@ -4445,6 +4455,7 @@ export class AnalysisRunner {
           idleTimeoutMs: idleTimeout,
           streaming,
           now: this.now,
+          sessionId: providerSession,
           onProgress: reportProgress
         }), {signal});
         const usage = result.usage ?? null;

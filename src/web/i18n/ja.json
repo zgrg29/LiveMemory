@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "AI API 設定",
         "hint": "キーは端末内で暗号化",
-        "desc": "OpenAI、Anthropic、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、カスタム OpenAI 互換サービスに対応します。",
+        "desc": "OpenAI、Anthropic、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、OpenCode、カスタム OpenAI 互換サービスに対応します。",
         "empty": "API 設定がありません。",
         "default": "デフォルト",
         "makeDefault": "デフォルトにする",
@@ -2518,7 +2518,7 @@
         "title": "自分の AI Provider と API Key を設定する",
         "lead": "AI 分析は、あなたが Provider の公式サイトで取得した API Key だけを使い、ローカルのプログラムから直接呼び出します。開発者のサーバーは経由しません。",
         "step1": "「設定」を開き、AI Provider のセクションで「設定を追加」を押します。",
-        "step2": "Provider を選びます（OpenAI、Anthropic、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、カスタム OpenAI 互換）。必要に応じて Base URL と Model ID を入力します。",
+        "step2": "Provider を選びます（OpenAI、Anthropic、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、OpenCode、カスタム OpenAI 互換）。必要に応じて Base URL と Model ID を入力します。",
         "step3": "Provider の公式サイトで API Key を作成し、キー欄に貼り付けます。保存後、キーはこの PC の暗号化された資格情報ストアに保存され、設定 JSON、ログ、バックアップ、HTML には表示されません。",
         "step4": "「能力をテスト」を押し、モデルが正しい JSON を返せることを確認します。失敗した場合は、キー、地域、Base URL、残高、モデル名を確認して再試行します。",
         "step5": "価格の入力はすべて任意です。入力すると推定費用が表示され、未入力でも分析でき、その場合は Token のみを集計します。",

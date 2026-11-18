@@ -89,6 +89,36 @@ export function pricingFromOpenRouterModel(model) {
   return {pricingStatus: free ? PRICING_STATUS.API_FREE : PRICING_STATUS.PAID, pricing};
 }
 
+/**
+ * Interpret an OpenCode Console model descriptor.
+ *
+ * The catalogue reports `cost.text.input.price` / `cost.text.output.price` in
+ * USD per million tokens (verified against the published per-1M pricing table,
+ * e.g. Claude Sonnet 5.5 = 2 / 10). An absent cost block stays unknown; an
+ * explicit 0 / 0 is the provider's own statement that the model is free. Free
+ * *tier* models still answer HTTP 403 to non-OpenCode clients, so the price
+ * label never implies "usable for free".
+ */
+export function pricingFromOpenCodeModel(model) {
+  const input = Number(model?.cost?.text?.input?.price);
+  const output = Number(model?.cost?.text?.output?.price);
+  if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) {
+    return {pricingStatus: PRICING_STATUS.UNKNOWN, pricing: null};
+  }
+  const cacheRead = Number(model?.cost?.text?.input?.cache?.read);
+  return {
+    pricingStatus: input === 0 && output === 0 ? PRICING_STATUS.API_FREE : PRICING_STATUS.PAID,
+    pricing: {
+      currency: 'USD',
+      inputPerMillion: input,
+      outputPerMillion: output,
+      cachedInputPerMillion: Number.isFinite(cacheRead) && cacheRead >= 0 ? cacheRead : null,
+      sourceUrl: 'https://opencode.ai/docs/console/models',
+      confirmedAt: null
+    }
+  };
+}
+
 export function estimateTokensFromText(text) {
   return Math.ceil(Buffer.byteLength(String(text ?? ''), 'utf8') / 3);
 }

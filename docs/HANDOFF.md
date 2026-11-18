@@ -1,6 +1,51 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-17 文档审计与 README 重构（最新交接）
+## 2026-11-18 OpenCode Provider 接入（最新交接）
+
+本轮在既有 AI Provider 架构中新增 **OpenCode**，按“最小改动、最大程度复用”执行：
+只做 Provider 注册、默认 Endpoint、动态模型列表、Provider 专属请求头与少量兼容处理。
+**没有重构 AI 系统，没有新增运行时依赖，没有改数据库 Schema，没有改其他 Provider。**
+
+### 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 协议 | OpenAI Chat Completions（复用现有适配器）；官方另有 Responses / Anthropic / Gemini，本程序不使用 |
+| Endpoint | Pay-as-you-go `https://opencode.ai/inference/openai/v1`；Go `https://opencode.ai/inference/go/openai/v1` |
+| 模型列表 | `/inference/v1/models`、`/inference/go/v1/models`；真实 87 个 chat 模型；手动 Model ID 保留 |
+| 请求头 | `User-Agent: LiveMemory/<version>`、`x-opencode-session`（Go 必需；缺失实测 400 `MissingSessionID`） |
+| Session | 由 `ai_jobs.id` / 翻译任务 / 能力检测确定性推导 `ses_<hash>`；批次、重试、暂停/重启/Resume 复用；任务隔离 |
+| 计费 | Pay-as-you-go 与 Go 用 Region 选择器区分；未新增套餐开关；价格可选；`usage.cost` 单独保存 |
+| 免费层 | 第三方客户端 403；不声称免费模型可用 |
+| 版本 / Schema | `0.17.0` / 16（无迁移）；**未 Push / Tag / Release** |
+| 测试 | 新增 12 unit + 3 integration；全量 **1,241 passed / 0 failed / 0 skipped** |
+| 真实 API | **未执行（无 Key）**；不得写成已通过 |
+| EXE | 本轮构建并验证，数字见下方与 `docs/STATUS.md` §0.61.5 |
+
+### 关键文件
+
+- `src/ai/providers/catalog.mjs`、`adapters.mjs`、`pricing.mjs`、`verify.mjs`、**新增** `session.mjs`
+- `src/ai/api/runner.mjs`、`src/ai/translation/service.mjs`
+- `tests/unit/opencode-provider.test.mjs`、`tests/integration/opencode-provider.test.mjs`
+- `docs/AI_PROVIDER_COMPATIBILITY.md` §2 / §2.1、`docs/AI_CONTRACT.md` §28
+- `log/2026-11-18-opencode-provider.md`
+
+### 下一轮
+
+1. 有真实 OpenCode Key 时做付费验收：能力检测、单场、画像、翻译、429/5xx、真实账单；
+   未通过前保持 L2，不得写成真实通过。
+2. 如真实请求显示 Claude 等模型拒绝 `temperature` 或 `response_format`，按最小兼容修复，
+   并补测试；不得静默改写结果。
+3. 不 Push、不 Tag、不发布，除非用户明确授权。
+
+### Git
+
+- 本地提交：见本轮最终回复与 `git log -1`。
+- 版本 / Schema：`0.17.0` / 16；未 Push、未 Tag、未 Release。
+
+---
+
+## 2026-11-17 文档审计与 README 重构（上一轮）
 
 本轮只做文档与信息架构，不改软件功能、业务逻辑、许可证或发布状态。
 

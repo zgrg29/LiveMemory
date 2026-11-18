@@ -33,6 +33,7 @@
 | DeepSeek | OpenAI-compatible `/chat/completions` | Bearer | 仅 `json_object`（官方文档无 `json_schema`） | `max_tokens`（1–384K）；**显式关闭 thinking** | SSE；官方文档说明最后一帧总带 usage | `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，prompt 含缓存 | **L3（`deepseek-flash`，§9）** |
 | DashScope / Qwen | compatible-mode `/chat/completions` | Bearer | `json_object`（不发 `json_schema`） | `max_tokens` + `max_completion_tokens`（回答 + 16K 思考预留） | SSE | `prompt_tokens_details.cached_tokens`；`reasoning_content` 只计字符数 | **L2** |
 | OpenRouter | `/api/v1/chat/completions` | Bearer + `HTTP-Referer`/`X-Title` | 按模型；能力测试通过后 `json_schema`，拒绝则降级 | `max_tokens`（透传） | SSE | `prompt_tokens_details.cached_tokens`；`usage.cost` 记录为 `providerReportedCost` | **L2**（本轮新增 provider 自报费用采集） |
+| OpenCode | Chat Completions `/inference/openai/v1/chat/completions`（Go：`/inference/go/openai/v1/...`） | Bearer `oc_sk_…` + `x-opencode-session`（Go 必需，pay-as-you-go 建议）+ `User-Agent: LiveMemory/<version>` | 仅 `json_object`（目录声明 false；官方未声明 Chat Completions 接受 `json_schema`） | `max_tokens`；`temperature: 0` | SSE；`stream_options.include_usage`（官方文档明确支持） | `prompt_tokens`/`completion_tokens`；`usage.cost`（USD）记录为 `providerReportedCost`；`usage.opencode.tokens` 未解析 | **L1 + L2（Mock；真实 Key 验收待办）** |
 | Anthropic | Messages `/messages` | `x-api-key` + `anthropic-version` | 无 `response_format`；Schema 只在提示词里，本地校验 | `max_tokens`（≤32,000） | SSE `message_start` / `content_block_delta` / `message_delta` | `input_tokens` **不含**缓存；`cache_read_input_tokens` + `cache_creation_input_tokens` 归一为总输入 | **L2** |
 | MiniMax | OpenAI-compatible（中国/国际区域分开） | Bearer | `json_object`（不发 `json_schema`） | `max_tokens` | SSE；未发送 `stream_options`，usage 可能未知 | 若返回 usage 则按 OpenAI 字段归一；否则 `unknown`，不填 0 | **L2**（仅通用 OpenAI-compatible 路径，无真实样本） |
 | 自定义 OpenAI-compatible | 用户 Base URL `/chat/completions` | Bearer（可选） | 能力测试通过后 `json_schema`；拒绝时一次降级 | `max_tokens` | 支持 SSE；拒绝 stream 时一次非流式回退 | 同 OpenAI 字段；自定义服务器可能完全不返回 usage | **L2**（测试中大量使用） |
@@ -64,6 +65,63 @@
    其他值原样记录，不猜测语义。
 7. 缓存与推理 Token 的计费折扣依赖用户是否填写缓存单价；未填写时按普通输入价估算，并标记
    `cachePriced=false`，不虚构折扣。
+
+### 2.1 OpenCode Console（2026-11-18 接入）
+
+官方文档：<https://opencode.ai/docs/console/api>、<https://opencode.ai/docs/console/api/inference>、
+<https://opencode.ai/docs/console/models>、<https://opencode.ai/docs/console/harnesses>、
+<https://opencode.ai/docs/console/go>。
+
+**协议结论：OpenCode Console 是一个多协议网关。** 文本模型可以用 OpenAI Chat Completions、
+OpenAI Responses、Anthropic Messages 或 Gemini 调用；Console 会把请求翻译到模型的原生 API。
+LiveMemory **只复用已有的 OpenAI-compatible 适配器**（Chat Completions），没有新增第二个适配器。
+
+| 事实 | 值（2026-11-18 核实） |
+| --- | --- |
+| Pay-as-you-go Base URL | `https://opencode.ai/inference/openai/v1`（文案中的通用前缀是 `https://opencode.ai/inference`） |
+| Go Base URL | `https://opencode.ai/inference/go/openai/v1` |
+| 模型列表 | Pay-as-you-go：`https://opencode.ai/inference/v1/models`；Go：`https://opencode.ai/inference/go/v1/models`。**不在** `/openai/v1/models` |
+| 鉴权 | `Authorization: Bearer oc_sk_…`（个人 Key 或 Service account Key） |
+| 必需请求头 | Go：`x-opencode-session` 必填；缺省时 **HTTP 400 `MissingSessionID`**，且在鉴权之前返回。Pay-as-you-go：不强制，但官方建议“每个对话发送稳定 session id” |
+| 客户端标识 | 官方要求客户端用自己的 User-Agent，而不是通用 SDK/HTTP 库名 |
+| 流式 usage | Chat Completions 的 `stream_options.include_usage` 受支持 |
+| 费用字段 | `usage.cost`（USD，实际扣费）；`usage.opencode.billing_source/list_cost/tokens` |
+| 模型元数据 | `cost.text.input.price` / `cost.text.output.price` 为 **USD / 1M tokens**；`limit.context`；`capabilities.structured_output`；`type: "chat"` |
+| 模型数量 | 2026-11-18 实测 **87** 个 `type=chat` 模型；11 个免费层模型 |
+| 免费层限制 | 官方明确：免费层聊天模型**只在 OpenCode 客户端内可用**，其它客户端即使带 Key 也返回 **HTTP 403**。LiveMemory 不是 OpenCode，因此只声明付费模型可用；免费模型会如实失败 |
+| 计费模式 | Pay-as-you-go（余额）与 Go 订阅是**不同 Base URL**。两者均可在 LiveMemory 中选择（复用既有 Region 选择器，未新增套餐 UI） |
+
+**为什么需要两个 Region 而不是一个套餐开关**：Base URL 与模型列表 URL 都不同，Go 缺少
+`x-opencode-session` 时直接 400。这不是“为了区分套餐加 UI”，而是接入正确性要求；既有
+MiniMax / 百炼已经用同一套 Region 选择器表达“不同平台/区域”，OpenCode 沿用该机制。
+
+**LiveMemory 侧实现（最小改动）**：
+
+1. `src/ai/providers/catalog.mjs` 新增 `opencode` 条目（protocol `openai`、两个 region、
+   `modelsUrl`、`sessionHeader`、`userAgent`）。
+2. `src/ai/providers/adapters.mjs` 仅新增 Provider 专属请求头与模型列表 URL 解析：
+   `User-Agent: LiveMemory/<APP_VERSION>`、`x-opencode-session`（值由调用方提供；
+   Go 缺失时在**发起网络请求前**抛 `PROVIDER_CONFIG_INVALID` 且 detail=`x-opencode-session-required`），
+   以及 `MissingSessionID` → `PROVIDER_CONFIG_INVALID` 的明确映射。
+3. `src/ai/providers/session.mjs` 把 session id 定义为**确定性哈希**：`ses_` + sha256 前 32 位。
+   同一 `ai_jobs.id` 的批次、聚合、补答、自动重试、暂停/重启/Resume 全部得到同一 id；
+   不同任务、翻译任务、能力检测各自隔离。没有新增数据库列，也没有持久化第二个标识。
+4. `src/ai/providers/pricing.mjs` 解析 `cost`；缺失价格保持 `unknown`，零价格才是 `api_free`。
+5. 其余（分批、结构化输出回退、Token 统计、费用估算、断点恢复、翻译）**完全复用**现有链路。
+
+**未验证 / 剩余限制（不得写成已通过）**：
+
+- 没有真实 OpenCode API Key：**没有发出任何真实推理请求**；真实 200/429/5xx、真实模型输出、
+  真实账单、真实 `usage.cost` 均待用户提供 Key 后验收。
+- `json_schema` 未声明：官方文档未承诺 Chat Completions 接受 `response_format: json_schema`，
+  因此目录设 `supportsStructuredOutputs: false`，走“Schema 在提示词 + 本地校验”的既有路径。
+- 部分模型元数据标注 `temperature: false`（Claude 系列）。请求仍按既有 OpenAI-compatible
+  形状发送 `temperature: 0`；Console 翻译层是否丢弃该参数未经验证。若真实请求返回 400，
+  应作为待修复兼容项记录，不得静默改写成“通过”。
+- Go 官方定位是“OpenCode 与其它编码代理”，并说明会监测滥用流量。LiveMemory 按官方要求
+  发送自身 User-Agent 与稳定 session id，**不伪装成编码代理**；若平台限制非编码代理流量，
+  请求会如实失败，不得绕过。
+- 免费层模型对第三方客户端 403；模型列表里会显示其 `$0` 价格，但**不代表 LiveMemory 可用**。
 
 ---
 

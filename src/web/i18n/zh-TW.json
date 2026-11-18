@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "AI API 組態",
         "hint": "金鑰加密儲存在本機",
-        "desc": "支援 OpenAI、Anthropic、DeepSeek、MiniMax、阿里雲百煉、OpenRouter 與自訂 OpenAI-compatible 端點。",
+        "desc": "支援 OpenAI、Anthropic、DeepSeek、MiniMax、阿里雲百煉、OpenRouter、OpenCode 與自訂 OpenAI-compatible 端點。",
         "empty": "尚未設定任何 API。",
         "default": "預設",
         "makeDefault": "設為預設",
@@ -2518,7 +2518,7 @@
         "title": "設定自己的 AI 服務商與 API 金鑰",
         "lead": "AI 分析只使用你向服務商申請的 API 金鑰，並由本機程式直接呼叫，不經過開發者伺服器。",
         "step1": "開啟「設定」，找到 AI 服務商區段，點選「新增組態」。",
-        "step2": "選擇服務商（OpenAI、Anthropic、DeepSeek、MiniMax、阿里雲百煉、OpenRouter 或自訂 OpenAI-compatible 端點），必要時填寫 Base URL 與 Model ID。",
+        "step2": "選擇服務商（OpenAI、Anthropic、DeepSeek、MiniMax、阿里雲百煉、OpenRouter、OpenCode 或自訂 OpenAI-compatible 端點），必要時填寫 Base URL 與 Model ID。",
         "step3": "在服務商網站建立 API 金鑰並貼到金鑰欄位。金鑰會存放在本機加密憑證庫，絕不會出現在組態 JSON、日誌、備份或頁面 HTML 中。",
         "step4": "點選「測試能力」，確認模型能回傳有效的 JSON。若失敗，請檢查金鑰、區域、Base URL、餘額與 Model ID，再重試。",
         "step5": "價格欄位全部為選填。填寫價格會顯示預估費用；未填寫時程式仍會分析，只統計 Token。",

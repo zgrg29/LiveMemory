@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "AI API configurations",
         "hint": "Keys are encrypted on this device",
-        "desc": "Supports OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter and custom OpenAI-compatible endpoints.",
+        "desc": "Supports OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode and custom OpenAI-compatible endpoints.",
         "empty": "No API is configured yet.",
         "default": "Default",
         "makeDefault": "Make default",
@@ -2518,7 +2518,7 @@
         "title": "Configure your own AI provider and API key",
         "lead": "AI analysis uses only the API key you obtained from a provider and is called directly by the local program. No developer server is involved.",
         "step1": "Open Settings, find the AI provider section and click Add configuration.",
-        "step2": "Choose a provider (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter or a custom OpenAI-compatible endpoint) and fill in the base URL and model id if needed.",
+        "step2": "Choose a provider (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode or a custom OpenAI-compatible endpoint) and fill in the base URL and model id if needed.",
         "step3": "Create an API key on the provider's site and paste it into the key field. The key is stored in the local encrypted credential store and never appears in configuration JSON, logs, backups or HTML.",
         "step4": "Click Test capability and confirm the model returns valid JSON. If it fails, check the key, region, base URL, balance and model id, then try again.",
         "step5": "Every price field is optional. Filling prices shows estimated cost; without them the app still analyses and only counts tokens.",

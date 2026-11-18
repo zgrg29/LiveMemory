@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "Configurations API d'IA",
         "hint": "Les clés sont chiffrées sur cet appareil",
-        "desc": "Prend en charge OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter et les points de terminaison personnalisés compatibles OpenAI.",
+        "desc": "Prend en charge OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode et les points de terminaison personnalisés compatibles OpenAI.",
         "empty": "Aucune API n'est encore configurée.",
         "default": "Par défaut",
         "makeDefault": "Définir par défaut",
@@ -2518,7 +2518,7 @@
         "title": "Configurer votre propre fournisseur d'IA et votre clé d'API",
         "lead": "L'analyse IA utilise uniquement la clé d'API que vous avez obtenue auprès d'un fournisseur, et le programme local l'appelle directement. Aucun serveur du développeur n'intervient.",
         "step1": "Ouvrez les paramètres, trouvez la section Fournisseur d'IA et cliquez sur Ajouter une configuration.",
-        "step2": "Choisissez un fournisseur (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter ou un point de terminaison compatible OpenAI personnalisé) et renseignez l'URL de base et l'ID du modèle si nécessaire.",
+        "step2": "Choisissez un fournisseur (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode ou un point de terminaison compatible OpenAI personnalisé) et renseignez l'URL de base et l'ID du modèle si nécessaire.",
         "step3": "Créez une clé d'API sur le site du fournisseur et collez-la dans le champ de clé. La clé est stockée dans le magasin d'identifiants chiffré local et n'apparaît jamais dans le JSON de configuration, les journaux, les sauvegardes ou le HTML.",
         "step4": "Cliquez sur Tester la capacité et vérifiez que le modèle renvoie un JSON valide. En cas d'échec, vérifiez la clé, la région, l'URL de base, le solde et l'ID du modèle, puis réessayez.",
         "step5": "Chaque champ de prix est facultatif. Renseigner les prix affiche un coût estimé ; sans prix, l'application analyse quand même et compte uniquement les tokens.",

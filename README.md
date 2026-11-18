@@ -29,7 +29,7 @@ Everything runs on your computer. There is no LiveMemory account, no developer-r
 - **Six live platforms** — Bilibili, YouTube, Twitch, Douyin, TikTok and Kick.
 - **Multiple rooms at once** — each recording has its own tab, connection state and stop button.
 - **Ten interface languages** — plus ten independent AI output languages.
-- **Bring your own AI key** — OpenAI, Anthropic Claude, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter or any OpenAI-compatible endpoint.
+- **Bring your own AI key** — OpenAI, Anthropic Claude, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode or any OpenAI-compatible endpoint.
 
 ![LiveMemory live console with platform tabs](docs/screenshots/kuaishou-preview-zh-CN-1440-light.png)
 
@@ -102,7 +102,7 @@ Direct links for the latest release:
 
 ### AI analysis
 
-- **You bring the provider and the key.** LiveMemory does not include a shared AI service and does not provide an anonymous free AI. Supported providers: OpenAI, Anthropic Claude, DeepSeek, MiniMax (China mainland / international), Alibaba Cloud Model Studio (Beijing / Singapore / US / Hong Kong), OpenRouter and custom OpenAI-compatible endpoints.
+- **You bring the provider and the key.** LiveMemory does not include a shared AI service and does not provide an anonymous free AI. Supported providers: OpenAI, Anthropic Claude, DeepSeek, MiniMax (China mainland / international), Alibaba Cloud Model Studio (Beijing / Singapore / US / Hong Kong), OpenRouter, OpenCode (pay-as-you-go or Go) and custom OpenAI-compatible endpoints.
 - **Requests go directly to your provider.** The local program sends the request from your computer to the base URL you configured. LiveMemory's developers do not operate a proxy or relay for AI traffic.
 - **AI usage may cost money.** You pay your provider directly. Prices shown in the app are estimates based on the values you enter; they are not a bill.
 - **AI output can be wrong.** Summaries, inferred interests and profile facts may be inaccurate or incomplete. Treat them as suggestions, not facts. Evidence and certainty labels are shown so you can check them.
@@ -222,7 +222,7 @@ LiveMemory 是一款**本地优先的 Windows 直播记录与观众记忆工具*
 - **六个直播平台** —— Bilibili、YouTube、Twitch、抖音、TikTok、Kick。
 - **多个直播间同时记录** —— 每场独立标签、独立状态、独立停止。
 - **十种界面语言** —— 以及十种彼此独立的 AI 输出语言。
-- **自备 AI 密钥** —— OpenAI、Anthropic Claude、DeepSeek、MiniMax、阿里云百炼、OpenRouter 或任意 OpenAI 兼容端点。
+- **自备 AI 密钥** —— OpenAI、Anthropic Claude、DeepSeek、MiniMax、阿里云百炼、OpenRouter、OpenCode 或任意 OpenAI 兼容端点。
 
 ![LiveMemory 直播记录界面](docs/screenshots/kuaishou-preview-zh-CN-1440-light.png)
 
@@ -295,7 +295,7 @@ LiveMemory 是一款**本地优先的 Windows 直播记录与观众记忆工具*
 
 ### AI 分析说明
 
-- **Provider 与 API Key 由你自行配置。** LiveMemory 不提供共享 AI 服务，也不提供匿名免费 AI。支持的 Provider：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆版 / 国际版）、阿里云百炼（北京 / 新加坡 / 美国 / 中国香港）、OpenRouter，以及自定义 OpenAI 兼容端点。
+- **Provider 与 API Key 由你自行配置。** LiveMemory 不提供共享 AI 服务，也不提供匿名免费 AI。支持的 Provider：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆版 / 国际版）、阿里云百炼（北京 / 新加坡 / 美国 / 中国香港）、OpenRouter、OpenCode（按量付费或 Go 订阅），以及自定义 OpenAI 兼容端点。
 - **请求直接发往你配置的 Provider。** 本地程序从你的电脑直接请求你填写的 Base URL，不经过 LiveMemory 开发者维护的服务器或中转。
 - **AI 服务可能产生第三方费用。** 费用由你直接向 Provider 支付；应用内显示的价格只是根据你填写的价格估算，不是账单。
 - **AI 结果可能不准确。** 摘要、推断的兴趣与画像事实可能错误或不完整，应作为参考而不是事实。界面会显示证据与可信度，便于核对。
@@ -415,7 +415,7 @@ LiveMemory は、**配信者のためのローカル優先 Windows アプリ**�
 - **6 つのライブ配信プラットフォーム** — Bilibili、YouTube、Twitch、Douyin、TikTok、Kick。
 - **複数配信の同時記録** — 配信ごとに独立したタブ、接続状態、停止操作を持ちます。
 - **10 種類の UI 言語** — AI 出力言語は UI とは独立した設定です。
-- **自分の AI キーを持ち込み** — OpenAI、Anthropic Claude、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、または OpenAI 互換の任意のエンドポイント。
+- **自分の AI キーを持ち込み** — OpenAI、Anthropic Claude、DeepSeek、MiniMax、Alibaba Cloud Model Studio、OpenRouter、OpenCode、または OpenAI 互換の任意のエンドポイント。
 
 ![LiveMemory のライブ画面](docs/screenshots/kuaishou-preview-zh-CN-1440-light.png)
 
@@ -488,7 +488,7 @@ Kuaishou から自動収集の書面許可を得ていないため、公開ビ�
 
 ### AI 分析について
 
-- **プロバイダーと API キーは自分で用意します。** LiveMemory は共有の AI サービスや匿名の無料 AI を提供しません。対応プロバイダーは OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国本土版 / 国際版）、Alibaba Cloud Model Studio（北京 / シンガポール / 米国 / 香港）、OpenRouter、および OpenAI 互換のカスタムエンドポイントです。
+- **プロバイダーと API キーは自分で用意します。** LiveMemory は共有の AI サービスや匿名の無料 AI を提供しません。対応プロバイダーは OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国本土版 / 国際版）、Alibaba Cloud Model Studio（北京 / シンガポール / 米国 / 香港）、OpenRouter、OpenCode（従量課金または Go サブスクリプション）、および OpenAI 互換のカスタムエンドポイントです。
 - **リクエストは設定したプロバイダーへ直接送信されます。** ローカルプログラムが、入力した Base URL へ PC から直接リクエストします。LiveMemory の開発者が運用する中継サーバーはありません。
 - **AI の利用には料金がかかる場合があります。** 料金はプロバイダーへ直接支払います。アプリ内の表示は入力した価格に基づく概算であり、請求額ではありません。
 - **AI の出力は正確とは限りません。** 要約、推測された興味、プロフィールの事実は誤っていたり不完全だったりします。根拠と確度を確認し、参考情報として扱ってください。

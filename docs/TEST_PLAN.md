@@ -2342,3 +2342,27 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 - 翻译缓存的真实 Provider 运行：**未执行**。
 - 十语言母语人工审校、十语言真实浏览器截图矩阵、逐语言控制台 `chcp 65001`：**P42**。
 - 干净 Windows 账户、真实双击 UAC：**未执行**。
+
+## 59. OpenCode Provider（2026-11-18）
+
+### 59.1 新增自动化
+
+| 文件 | 用例 | 覆盖 |
+| --- | --- | --- |
+| `tests/unit/opencode-provider.test.mjs` | 12 | Provider 目录与两个 Region、官方 Endpoint、Bearer/UA/session 头、流式 `include_usage`、Go 缺头前置失败、payg 不强制、Anthropic 适配器头、`MissingSessionID` 映射、模型列表 URL（payg/go）与解析、价格、session 确定性与隔离、`usage.cost` |
+| `tests/integration/opencode-provider.test.mjs` | 3 | 真实 HTTP 路由下的 Provider 选择与配置、能力检测 5 个请求共用检测 session、分析重试与“重启 + Resume”复用任务 session、两个并行任务 session 隔离 |
+
+### 59.2 全量回归
+
+| 运行 | 结果 |
+| --- | --- |
+| 全量单元 | **856 passed / 0 failed / 0 skipped**（23,973 ms） |
+| 全量单元 + 集成 | **1,241 passed / 0 failed / 0 skipped**（328,824 ms，`--test-isolation=none`） |
+| 说明 | 首轮 `memory-privacy` 保留断言因测试夹具使用真实 `received_at` 而失败，已固定到合成时间线；次轮 `ai-memory-output-recovery` 批次计数偶发时序抖动，单跑 8/8 通过；第三轮全量通过。未改任何产品断言。 |
+
+### 59.3 未验证
+
+- **未提供真实 OpenCode API Key**：没有真实推理、真实 200/429/5xx、真实输出、真实账单。
+- 免费层模型对第三方客户端 403。
+- `json_schema` 未声明；`temperature: false` 模型（Claude 系列）的 Console 翻译行为未验证。
+- Windows EXE 构建结果见 `docs/STATUS.md` §0.61.5。

@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "Konfigurasi API AI",
         "hint": "Kunci dienkripsi di perangkat ini",
-        "desc": "Mendukung OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, dan endpoint kustom yang kompatibel dengan OpenAI.",
+        "desc": "Mendukung OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode, dan endpoint kustom yang kompatibel dengan OpenAI.",
         "empty": "Belum ada API yang dikonfigurasi.",
         "default": "Bawaan",
         "makeDefault": "Jadikan bawaan",
@@ -2518,7 +2518,7 @@
         "title": "Mengonfigurasi penyedia AI dan kunci API Anda sendiri",
         "lead": "Analisis AI hanya memakai kunci API yang Anda peroleh dari penyedia; program lokal memanggil layanan AI secara langsung. Tidak ada server pengembang yang terlibat.",
         "step1": "Buka Pengaturan, temukan bagian penyedia AI, lalu klik Tambah konfigurasi.",
-        "step2": "Pilih penyedia (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, atau endpoint kompatibel OpenAI kustom) dan isi base URL serta ID model bila diperlukan.",
+        "step2": "Pilih penyedia (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode, atau endpoint kompatibel OpenAI kustom) dan isi base URL serta ID model bila diperlukan.",
         "step3": "Buat kunci API di situs penyedia dan tempelkan ke kolom kunci. Kunci disimpan di penyimpanan kredensial terenkripsi lokal dan tidak pernah muncul di JSON konfigurasi, log, cadangan, atau HTML.",
         "step4": "Klik Uji kemampuan dan pastikan model mengembalikan JSON yang valid. Jika gagal, periksa kunci, wilayah, base URL, saldo, dan ID model, lalu coba lagi.",
         "step5": "Semua kolom harga bersifat opsional. Jika diisi, biaya perkiraan akan ditampilkan; tanpa harga, aplikasi tetap menganalisis dan hanya menghitung token.",

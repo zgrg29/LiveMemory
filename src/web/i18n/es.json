@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "Configuraciones de API de IA",
         "hint": "Las claves se cifran en este equipo",
-        "desc": "Compatible con OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter y endpoints compatibles con OpenAI personalizados.",
+        "desc": "Compatible con OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode y endpoints compatibles con OpenAI personalizados.",
         "empty": "Aún no hay ninguna API configurada.",
         "default": "Por defecto",
         "makeDefault": "Usar por defecto",
@@ -2518,7 +2518,7 @@
         "title": "Configurar tu propio proveedor de IA y tu clave de API",
         "lead": "El análisis con IA usa solo la clave de API que hayas obtenido de un proveedor y la llama directamente el programa local. No interviene ningún servidor del desarrollador.",
         "step1": "Abre Ajustes, busca la sección de proveedores de IA y haz clic en Añadir configuración.",
-        "step2": "Elige un proveedor (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter o un endpoint compatible con OpenAI personalizado) y, si hace falta, rellena la Base URL y el ID del modelo.",
+        "step2": "Elige un proveedor (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode o un endpoint compatible con OpenAI personalizado) y, si hace falta, rellena la Base URL y el ID del modelo.",
         "step3": "Crea una clave de API en el sitio del proveedor y pégala en el campo de la clave. La clave se guarda en el almacén de credenciales cifrado local y nunca aparece en el JSON de configuración, los registros, las copias de seguridad ni el HTML.",
         "step4": "Haz clic en Probar capacidad y confirma que el modelo devuelve JSON válido. Si falla, revisa la clave, la región, la Base URL, el saldo y el ID del modelo, y vuelve a intentarlo.",
         "step5": "Todos los campos de precio son opcionales. Si rellenas los precios se muestra el coste estimado; sin ellos, la aplicación sigue analizando y solo cuenta tokens.",

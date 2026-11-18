@@ -4,6 +4,47 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
+## 未发布（0.17.0 之后）— OpenCode Provider
+
+新增 **OpenCode Console** 作为正式可选择的 AI 服务商。**仅 Provider 注册、默认 Endpoint、
+动态模型列表、Provider 专属请求头与少量兼容处理**；没有重构 AI 系统、没有新增运行时依赖、
+没有改数据库 Schema、没有改版本号、没有发布。
+
+### 新增
+
+- Provider 目录新增 `opencode`（`protocol: openai`），两个 Region：
+  `payg`（`https://opencode.ai/inference/openai/v1`）与
+  `go`（`https://opencode.ai/inference/go/openai/v1`）；模型列表分别使用
+  `/inference/v1/models` 与 `/inference/go/v1/models`。复用既有 Region 选择器。
+- 请求头：`User-Agent: LiveMemory/<APP_VERSION>`（官方要求客户端表明身份）与
+  `x-opencode-session`（Go 必需，pay-as-you-go 建议）。API Key 仍只在
+  `Authorization: Bearer` 中发送，不进入日志、结果、配置 JSON 或 HTML。
+- `src/ai/providers/session.mjs`：`ses_<sha256 前 32 位>`，由分析子任务 `ai_jobs.id`
+  （翻译任务用 `session + 目标语言`，能力检测用单次检测标识）确定性推导。同一任务的分批、
+  聚合、补答、自动重试、暂停/重启/Resume 复用同一 id；不同任务互相隔离；不新增数据库列。
+- 模型列表解析 OpenCode 的 `cost.text.*.price`（USD / 1M tokens）、`limit.context`、
+  `capabilities.structured_output`；价格可留空，缺失价格保持 `unknown`，零价格才是 `api_free`。
+- `MissingSessionID`（HTTP 400）映射为 `PROVIDER_CONFIG_INVALID` 并保留 Provider 文案；
+  Go Region 缺少 session id 时在**发起请求前**失败（`x-opencode-session-required`）。
+- 十语 Provider 列表与使用说明加入 OpenCode；**键数仍 2,351，无新增 i18n 键**。
+
+### 验证（详见 `docs/STATUS.md` §0.61 与 `log/2026-11-18-opencode-provider.md`）
+
+- 新增 `tests/unit/opencode-provider.test.mjs` 12 项与
+  `tests/integration/opencode-provider.test.mjs` 3 项：Endpoint、鉴权、两个 Region、
+  普通/流式请求头、Go 缺头前置失败、模型列表解析、价格、重试与重启 Resume 的 session 复用、
+  两个并行任务的 session 隔离。
+- 全量回归与 Windows EXE 构建结果见 §0.61。
+
+### 未完成
+
+- **没有真实 OpenCode API Key**：没有发出真实推理请求；真实 200/429/5xx、真实模型输出、
+  真实账单与 `usage.cost` 均待用户提供 Key 与费用授权后验收。
+- 免费层模型对第三方客户端返回 403，LiveMemory 不声称可用。
+- `response_format: json_schema` 未声明（目录为 false），继续走提示词 Schema + 本地校验。
+- Go 的官方定位是编码代理；LiveMemory 按要求表明身份并发送 session id，不伪装编码代理，
+  若平台限制此类流量则如实失败。
+
 ## 0.17.0 — 2026-11-17（快手 H5 预览接入：Kuaishou H5 Preview，采集默认禁用）
 
 **正式发布（预览组件；实时 H5 采集未开放）**。相对 `0.16.0` 新增第七个平台页签「快手」，定位为**预览**：

@@ -9,7 +9,7 @@ P42 真实 Provider 验收：十语单场 10/10、十语画像 10/10、跨语言
 
 - **唯一正式路径是用户自备 API Key 的自动分析。** 匿名免费 AI、手动复制提示词、粘贴/上传 JSON 均已在 v0.13.1 移除。
 - 软件在本地生成内部分析包，调用用户配置的 Provider，校验、组装、事务导入并保存报告；用户不接触 JSON。
-- 多 Provider 保留：OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、自定义 OpenAI-compatible。
+- 多 Provider 保留：OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、OpenCode（pay-as-you-go / Go）、自定义 OpenAI-compatible。
 - 协议版本化；字段名不随界面语言变化；AI 输出不修改本地金额与计数。
 - 采用**文本优先**策略：普通 Unicode Emoji 直接保留；平台表情优先保留平台提供的文字名称/代码；不要求还原图片。
 - 所有弹幕文本与 AI 返回内容都属于**不可信数据**；其中的任何指令、HTML、脚本、URL 都不得执行。
@@ -1360,6 +1360,7 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 | DeepSeek | `max_tokens` | 0 | `system` | `response_format` 只有 `json_object` |
 | DashScope | `max_tokens` + `max_completion_tokens` | 0 | `system` | 思考 Token 单独计费 |
 | OpenRouter / MiniMax / 自定义 | `max_tokens` | 0 | `system` | 透传；按模型能力降级 |
+| OpenCode（Chat Completions 网关） | `max_tokens` | 0 | `system` | 透传；Go 需 `x-opencode-session`，全部请求带 `User-Agent: LiveMemory/<version>`；`response_format` 只用 `json_object` |
 | Anthropic | `max_tokens` | 0 | 顶层 `system` 字段 | 无 `response_format` |
 
 - 推理预留只是**上限**，未使用的 Token 不计费；不得理解为“每次会花 16K”。
@@ -1370,7 +1371,11 @@ finalInputLimit  = clamp(context - finalOutputReserve - 500, 1000, 192000)
 - OpenAI 缓存写入：`prompt_tokens_details.cache_write_tokens`（本轮修复）。
 - 缓存/推理 Token 不重复相加：`inputTokens` 已含缓存读取；`reasoningTokens` 已含在
   `outputTokens` 内，仅单独展示。
-- `providerReportedCost`（OpenRouter `usage.cost`）与本地估算 `cost` 分开保存；
+- `providerReportedCost`（OpenRouter / OpenCode `usage.cost`）与本地估算 `cost` 分开保存；
   部分请求有自报费用时用 `providerCostRequests` 标记，不冒充完整账单。
+- OpenCode session：[`src/ai/providers/session.mjs`](../src/ai/providers/session.mjs) 由
+  `ai_jobs.id`（分析）或 `session + 目标语言`（翻译）或一次能力检测推导出稳定的
+  `ses_<hash>`。同一任务的批次、聚合、补答、重试、暂停/重启/Resume 复用同一 id；
+  不同任务互相隔离；该 id 不含聊天内容、Key 或本地路径，也不写入数据库。
 
 

@@ -1,8 +1,8 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-17（**v0.17.0 已发布：快手 H5 预览接入，实时采集默认禁用**；
-未取得书面许可，未开放生产采集；六个已发布平台协议未改；同日完成文档审计与 README 三语重构，
-详见 `docs/KUAISHOU_H5_INTEGRATION.md` 与 `docs/HANDOFF.md`）
+最后更新：2026-11-18（**OpenCode Provider 已接入，未发布**；无真实 Key，真实付费验收待办。
+v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认禁用。详见 §0.61 与
+`log/2026-11-18-opencode-provider.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 > **先读 §0 当前状态快照**；§0.60 是最近一次发布的详细记录；§0.59 及更早是历史记录，
@@ -25,7 +25,8 @@
 | 当前分支 | `main`（本地文档提交；**未 Push**；`origin/main` 仍为 `fa00273`） |
 | 当前 Tag | `v0.17.0`（annotated，`4cf356a` → `5807e3e`） |
 | 数据库 Schema | **16**（v0.17.0 无迁移） |
-| 当前开发里程碑 | **无进行中的功能里程碑**；等待用户决定下一步（见 §0.6） |
+| 当前开发里程碑 | **P52 OpenCode Provider（本轮完成，未发布）**；无真实 Key，真实付费验收待办 |
+| 最近开发 | 2026-11-18：OpenCode Provider 接入（payg / Go、动态模型、会话头）；未改其他 Provider；无真实 Key |
 | 最近文档整理 | 2026-11-17：README 三语重构；`docs/RELEASE.md` 拆为流程 + `docs/RELEASE_HISTORY.md`；新增 `scripts/check-docs.mjs` 一致性检查 |
 
 ### 0.2 平台状态
@@ -49,8 +50,10 @@
   （`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。任务创建时写语言快照，之后不可变。
 - **报告阅读翻译**：只读取/生成展示层译文，不重跑分析；原文、`viewer_id`、证据与事实状态不变。
 - **AI Provider**：OpenAI、Anthropic Claude、DeepSeek、MiniMax（中国大陆/国际）、
-  阿里云百炼（北京/新加坡/美国/中国香港）、OpenRouter、自定义 OpenAI-compatible。
+  阿里云百炼（北京/新加坡/美国/中国香港）、OpenRouter、OpenCode（pay-as-you-go / Go）、
+  自定义 OpenAI-compatible。
 - **真实 Provider 证据**：DeepSeek `deepseek-flash` 已完成单场、画像、跨语言与翻译验收；
+  OpenCode 有实现与本地/Mock 测试，但**无真实 Key、未做真实付费验收**；
   其他 Provider 有实现与本地/Mock 测试，但**未逐一做真实付费验收**。
 
 ### 0.4 数据、备份与 Windows
@@ -67,7 +70,7 @@
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 全量自动化（v0.17.0） | **1,226 passed / 0 failed / 0 skipped**（844 unit + 382 integration） |
+| 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；第三次全量通过） |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
 | 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
@@ -84,8 +87,10 @@
 1. **快手书面许可/官方接口**：取得前保持采集禁用；取得后按
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
 2. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
-3. **真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义；
-   需要用户提供 Key 与费用授权，不能以 Mock 代替。
+3. **真实 Provider 补验**：OpenCode / OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter /
+   自定义；需要用户提供 Key 与费用授权，不能以 Mock 代替。
+   - OpenCode：本轮已接入并有 Mock/集成测试；真实 200/429/5xx、真实模型输出、真实账单与
+     `usage.cost` **全部待办**。免费层模型对第三方客户端 403。
 4. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
    下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
 5. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
@@ -188,6 +193,93 @@
 
 > 快手在线采集仍未开放：Release Notes、README、界面与 API 均标注预览/采集禁用；
 > 真实 H5 采集、真实 EXE 采集、许可下长测、跨场身份与礼物/点赞仍未验证。
+
+---
+
+## 0.61 OpenCode Provider 接入：Provider 注册、官方 Endpoint、模型列表与会话头（2026-11-18）⚠️ 无真实 Key · 未发布
+
+### 0.61.1 结论
+
+- **OpenCode 已作为正式可选择的 AI 服务商接入**。复用既有 OpenAI-compatible 适配器
+  （Chat Completions），未新增第二个请求协议、未重构 AI 系统、未新增运行时依赖。
+- **自动 Endpoint**：选择 OpenCode 后只需填 API Key、选 Region、选/填 Model ID；
+  Pay-as-you-go 与 Go 分别使用官方 Base URL 与模型列表 URL（复用既有 Region 选择器）。
+- **动态模型列表**：官方 `/inference/v1/models` 真实返回 87 个 `type=chat` 模型；
+  解析 `cost`（USD/1M）、`limit.context`、`capabilities.structured_output`。
+  手动填写 Model ID 仍然保留。
+- **必要请求头**：`User-Agent: LiveMemory/<version>` 与 `x-opencode-session`。
+  Go 缺该头会在鉴权前返回 **HTTP 400 `MissingSessionID`**（已实测）；LiveMemory 在 Go Region
+  缺失 id 时**请求前**失败，不浪费请求。
+- **会话稳定性**：session id 由 `ai_jobs.id`（翻译用 session+目标语言，能力检测用单次标识）
+  确定性推导为 `ses_<hash>`。同一任务的分批、聚合、补答、自动重试、暂停/重启/Resume 复用
+  同一 id；并行任务互相隔离；未新增数据库列。
+- **价格可选**：不填价格照常分析；不虚构价格；Provider 自报的 `usage.cost` 作为
+  `providerReportedCost` 单独保存。
+- **十语**：Provider 列表与使用说明加入 OpenCode；**键数仍 2,351，无新键**。
+- **版本 / Schema**：仍 `0.17.0` / **16**（无迁移）；**未发布**。
+
+### 0.61.2 官方 API 事实（2026-11-18 实测）
+
+| 项目 | 结果 |
+| --- | --- |
+| 文档 | `https://opencode.ai/docs/console/api`、`/inference`、`/models`、`/harnesses`、`/go` |
+| 协议 | OpenAI Chat Completions（另有 Responses / Anthropic / Gemini；LiveMemory 只用 Chat Completions） |
+| Pay-as-you-go Base URL | `https://opencode.ai/inference/openai/v1` |
+| Go Base URL | `https://opencode.ai/inference/go/openai/v1` |
+| 模型列表 | `/inference/v1/models` 与 `/inference/go/v1/models`；公开可读，带无效 Key 返回 401 |
+| 鉴权 | `Authorization: Bearer oc_sk_…` |
+| Go 必需头 | `x-opencode-session`；缺失时 **400 `MissingSessionID`**（带任意非空值后进入鉴权 → 401） |
+| 流式 usage | `stream_options.include_usage`（官方文档声明） |
+| 费用字段 | `usage.cost`（USD）；`usage.opencode.billing_source/list_cost/tokens` |
+| 免费层 | 第三方客户端对免费聊天模型返回 **403**；LiveMemory 只声称付费模型可用 |
+
+### 0.61.3 修改范围
+
+| 文件 | 变更 |
+| --- | --- |
+| `src/ai/providers/catalog.mjs` | 新增 `opencode` Provider 与 `payg` / `go` Region、`modelsUrl`、`sessionHeader`、`userAgent` |
+| `src/ai/providers/session.mjs` | **新增**确定性 `providerSessionId()`（`ses_<sha256 前 32 位>`） |
+| `src/ai/providers/adapters.mjs` | Provider 专属头（UA / session）、模型列表 URL、OpenCode 价格/上下文解析、`MissingSessionID` 明确错误、`stream_options` 白名单 |
+| `src/ai/providers/pricing.mjs` | **新增** `pricingFromOpenCodeModel()` |
+| `src/ai/api/runner.mjs` | 按 `ai_jobs.id` 传稳定 session id |
+| `src/ai/providers/verify.mjs` | 能力检测的 5 个请求共用一个检测 session |
+| `src/ai/translation/service.mjs` | 翻译按 `session + 目标语言` 使用独立 session |
+| `src/web/i18n/*.json` | 十语 Provider 列表与使用说明加入 OpenCode（仅改值，键数不变） |
+| `scripts/build-windows.mjs` | 必需模块加入 `session.mjs` |
+| README / docs / log | Provider 列表、协议矩阵、AI 契约、路线图、变更记录、测试计划、开发日志 |
+
+未改：其他 Provider 行为、数据库 Schema、金额/身份/去重、AI 任务语言快照、提示词与 Schema、
+备份设置白名单（无新设置键）、平台采集代码。
+
+### 0.61.4 测试（真实执行）
+
+| 运行 | 结果 |
+| --- | --- |
+| 新增单元 `tests/unit/opencode-provider.test.mjs` | **12 passed / 0 failed** |
+| 新增集成 `tests/integration/opencode-provider.test.mjs` | **3 passed / 0 failed** |
+| 全量单元 | **856 passed / 0 failed / 0 skipped**（23,973 ms） |
+| 全量单元 + 集成 | **1,241 passed / 0 failed / 0 skipped**（328,824 ms，`--test-isolation=none`） |
+| 全量首轮/次轮 | 各 1 个**既有时间敏感测试**失败：`memory-privacy` 的 30 天保留断言依赖真实接收时间（已修正测试夹具，非产品缺陷）；`ai-memory-output-recovery` 的批次计数为既有时序抖动（单跑 8/8 通过）。第三次全量 1,241/1,241 通过。 |
+| 真实 OpenCode API | **未执行**（无 Key） |
+
+### 0.61.5 Windows EXE
+
+| 项目 | 值 |
+| --- | --- |
+| 构建 | 见本节下方“构建结果”与 `docs/HANDOFF.md` |
+| Manifest | 构建断言 `requireAdministrator` |
+| `verify-exe` / `verify-help-exe` | 构建后执行 |
+
+### 0.61.6 未完成 / 限制
+
+- **无真实 OpenCode Key**：未发真实推理、未验证真实 200/429/5xx、真实模型输出、真实账单。
+- 免费层模型对第三方客户端 403；模型列表会显示 `$0`，但不代表 LiveMemory 可用。
+- `json_schema` 未声明（官方未承诺 Chat Completions 支持），继续用提示词 Schema + 本地校验。
+- Claude 等模型元数据标注 `temperature: false`；请求仍按既有形状发 `temperature: 0`，
+  Console 是否丢弃该参数未验证。
+- Go 官方定位为编码代理；LiveMemory 按要求发送自身 UA 与 session id，不伪装编码代理；
+  若平台限制非编码代理流量则如实失败，不绕过。
+- 真实双击 UAC、干净 Windows 账户仍未人工验证。
 
 ---
 

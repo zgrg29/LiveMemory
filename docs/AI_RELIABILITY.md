@@ -157,7 +157,7 @@
 | --- | --- | --- |
 | OpenAI Chat Completions | SSE `choices[].delta` | `response_format` 沿用 |
 | Anthropic Messages | SSE `message_start` / `content_block_delta` / `message_delta` | prompt 约束（无 json_schema 参数） |
-| OpenAI-compatible（含 DashScope/MiniMax/DeepSeek/OpenRouter/自定义） | 支持 SSE；`stream_options.include_usage` 仅对已知支持者发送 | 按配置能力选择 `json_schema` / `json_object` |
+| OpenAI-compatible（含 DashScope/MiniMax/DeepSeek/OpenRouter/OpenCode/自定义） | 支持 SSE；`stream_options.include_usage` 仅对已知支持者发送 | 按配置能力选择 `json_schema` / `json_object` |
 
 ---
 

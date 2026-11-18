@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "AI API 配置",
         "hint": "密钥加密保存在本机",
-        "desc": "支持 OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter 与自定义 OpenAI-compatible 服务。",
+        "desc": "支持 OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、OpenCode 与自定义 OpenAI-compatible 服务。",
         "empty": "尚未配置任何 API。",
         "default": "默认",
         "makeDefault": "设为默认",
@@ -2518,7 +2518,7 @@
         "title": "配置自己的 AI Provider 和 API Key",
         "lead": "AI 分析只使用你在 Provider 官网申请的 API Key，由本地程序直接调用，不经过开发者服务器。",
         "step1": "打开「设置」，找到 AI Provider 区域，点击「添加配置」。",
-        "step2": "选择 Provider：OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter 或自定义 OpenAI-compatible；如需要，填写 Base URL 与 Model ID。",
+        "step2": "选择 Provider：OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、OpenCode 或自定义 OpenAI-compatible；如需要，填写 Base URL 与 Model ID。",
         "step3": "在 Provider 官网创建 API Key 并粘贴到密钥输入框；保存后密钥进入本机加密凭据库，不会出现在配置 JSON、日志、备份或页面 HTML 中。",
         "step4": "点击「测试能力」，确认模型能返回合法 JSON。测试失败时按提示检查 Key、区域、Base URL、余额与模型名，再重试。",
         "step5": "价格字段全部可选：填写后会显示估算费用；不填写也能分析，只是只统计 Token。",

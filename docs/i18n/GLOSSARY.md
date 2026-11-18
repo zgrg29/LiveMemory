@@ -204,7 +204,7 @@ P41 追加 A19/A20 两个 AI 输出语言术语。本表是十份界面字典（
 | 货币代码 | `CNY`、`USD`、`JPY` | 原样 |
 | 身份写法 | `bilibili:12345`、`platform:uid` | 原样（`platform:` 前缀不译） |
 | 占位符 | `{name}`、`{n}`、`{locale}` | 原样 |
-| 品牌/服务商 | `OpenAI`、`Anthropic`、`DeepSeek`、`MiniMax`、`OpenRouter` | 原样 |
+| 品牌/服务商 | `OpenAI`、`Anthropic`、`DeepSeek`、`MiniMax`、`OpenRouter`、`OpenCode` | 原样 |
 
 ---
 

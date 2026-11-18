@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "AI API 구성",
         "hint": "키는 이 기기에 암호화되어 저장됩니다",
-        "desc": "OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter 및 사용자 정의 OpenAI-compatible 엔드포인트를 지원합니다.",
+        "desc": "OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode 및 사용자 정의 OpenAI-compatible 엔드포인트를 지원합니다.",
         "empty": "아직 구성된 API가 없습니다.",
         "default": "기본",
         "makeDefault": "기본으로 설정",
@@ -2518,7 +2518,7 @@
         "title": "직접 사용할 AI 제공자와 API 키 구성",
         "lead": "AI 분석은 제공자로부터 직접 발급받은 API 키만 사용하며 로컬 프로그램이 직접 호출합니다. 개발자 서버는 관여하지 않습니다.",
         "step1": "설정을 열고 AI 제공자 영역을 찾아 구성 추가를 클릭합니다.",
-        "step2": "제공자를 선택하고(OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter 또는 사용자 지정 OpenAI-compatible 엔드포인트) 필요하면 Base URL과 모델 ID를 입력합니다.",
+        "step2": "제공자를 선택하고(OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode 또는 사용자 지정 OpenAI-compatible 엔드포인트) 필요하면 Base URL과 모델 ID를 입력합니다.",
         "step3": "제공자 사이트에서 API 키를 발급받아 키 입력란에 붙여 넣습니다. 키는 로컬 암호화 자격 증명 저장소에 보관되며 구성 JSON, 로그, 백업, HTML에 나타나지 않습니다.",
         "step4": "기능 테스트를 클릭해 모델이 유효한 JSON을 반환하는지 확인합니다. 실패하면 키, 리전, Base URL, 잔액, 모델 ID를 확인한 뒤 다시 시도합니다.",
         "step5": "가격 입력란은 모두 선택 사항입니다. 가격을 입력하면 예상 비용이 표시되며, 입력하지 않아도 분석은 가능하고 토큰만 집계됩니다.",

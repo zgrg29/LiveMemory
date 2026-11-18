@@ -1,6 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {callProvider, listProviderModels, ProviderHttpError, PROVIDER_ERROR} from './adapters.mjs';
 import {PRICING_STATUS} from './catalog.mjs';
+import {providerSessionId} from './session.mjs';
 import {addUsage, estimateTokensFromText} from './pricing.mjs';
 import {assertSafeResolvedUrl} from './url-safety.mjs';
 import {resolveMaxCompletionTokens} from '../batching/tokens.mjs';
@@ -203,6 +204,17 @@ export async function verifyProviderConfig({
   multiline = false
 } = {}) {
   const startedAt = now();
+  // A capability test is its own short conversation: every probe stage shares
+  // one id, and a new test run gets a new one. It never leaks into a real
+  // analysis job.
+  const probeSessionId = providerSessionId(
+    'verify',
+    config.id ?? config.providerId,
+    config.regionId ?? '',
+    config.modelId ?? '',
+    config.baseUrl ?? '',
+    startedAt
+  );
   const stages = {};
   try {
     await assertSafeResolvedUrl(config.baseUrl, {
@@ -254,7 +266,7 @@ export async function verifyProviderConfig({
     const started = now();
     try {
       if (config.supportsModelList && apiKey) {
-        await listProviderModels({config, apiKey, fetchImpl, signal, timeoutMs});
+        await listProviderModels({config, apiKey, fetchImpl, signal, timeoutMs, sessionId: probeSessionId});
         capabilities.network = true;
         capabilities.auth = true;
         setStage('network', 'passed', {durationMs: now() - started});
@@ -313,7 +325,8 @@ export async function verifyProviderConfig({
         responseFormat: format,
         fetchImpl,
         signal,
-        timeoutMs
+        timeoutMs,
+        sessionId: probeSessionId
       });
       capabilities.network = true;
       capabilities.auth = true;

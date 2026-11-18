@@ -70,6 +70,7 @@ const REQUIRED_MODULES = [
   'src/ai/api/runner.mjs',
   'src/ai/aggregate/hierarchy.mjs',
   'src/ai/providers/adapters.mjs',
+  'src/ai/providers/session.mjs',
   'src/ai/batching/tokens.mjs',
   'src/ai/runtime/stream.mjs',
   'src/ai/runtime/attempt.mjs',

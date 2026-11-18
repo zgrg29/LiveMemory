@@ -1554,7 +1554,7 @@
       "providers": {
         "title": "Configurações de API de IA",
         "hint": "As chaves são criptografadas neste dispositivo",
-        "desc": "Compatível com OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter e endpoints personalizados compatíveis com OpenAI.",
+        "desc": "Compatível com OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode e endpoints personalizados compatíveis com OpenAI.",
         "empty": "Nenhuma API está configurada ainda.",
         "default": "Padrão",
         "makeDefault": "Definir como padrão",
@@ -2518,7 +2518,7 @@
         "title": "Configurar seu próprio provedor de IA e sua chave de API",
         "lead": "A análise com IA usa apenas a chave de API que você obteve em um provedor e é chamada diretamente pelo programa local. Nenhum servidor do desenvolvedor participa.",
         "step1": "Abra Configurações, localize a seção de provedor de IA e clique em Adicionar configuração.",
-        "step2": "Escolha um provedor (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter ou um endpoint compatível com OpenAI personalizado) e preencha a Base URL e o ID do modelo, se necessário.",
+        "step2": "Escolha um provedor (OpenAI, Anthropic, DeepSeek, MiniMax, Alibaba Cloud Model Studio, OpenRouter, OpenCode ou um endpoint compatível com OpenAI personalizado) e preencha a Base URL e o ID do modelo, se necessário.",
         "step3": "Crie uma chave de API no site do provedor e cole-a no campo de chave. A chave é armazenada no cofre de credenciais criptografado local e nunca aparece no JSON de configuração, nos logs, nos backups ou no HTML.",
         "step4": "Clique em Testar capacidade e confirme se o modelo retorna JSON válido. Se o teste falhar, verifique a chave, a região, a Base URL, o saldo e o ID do modelo e tente novamente.",
         "step5": "Todos os campos de preço são opcionais. Preencher os preços exibe o custo estimado; sem eles, o aplicativo ainda analisa e apenas conta os tokens.",

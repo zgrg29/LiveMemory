@@ -231,6 +231,10 @@ test('raw chat purging downgrades evidence instead of silently keeping it', asyn
   try {
     addBroadcaster(db);
     const session = seedSession(db, {messageCount: 10, viewerCount: 1});
+    // Ingest stamps `received_at` with the real wall clock. Pin it to the
+    // synthetic timeline so the 30-day purge assertion cannot depend on the
+    // calendar date the test happens to run on.
+    db.prepare('UPDATE events SET received_at = ? WHERE session_id = ?').run(T0 + 1000, session.id);
     const seeded = await seedMemory({db, exportsDir, sessionId: session.id});
     const memory = getMemory(db, {broadcasterId: BROADCASTER, viewerId: seeded.viewerId});
     assert.equal(listFacts(db, memory.id)[0].evidenceStatus, 'available');

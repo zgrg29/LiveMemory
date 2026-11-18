@@ -1,4 +1,5 @@
 import {callProvider} from '../providers/adapters.mjs';
+import {providerSessionId} from '../providers/session.mjs';
 import {assertSafeResolvedUrl} from '../providers/url-safety.mjs';
 import {addUsage, countRequestWithoutUsage} from '../providers/pricing.mjs';
 import {providerFromConfig} from '../api/runner.mjs';
@@ -325,6 +326,15 @@ export class ReportTranslationService {
   async #run({sessionId, targetLocale, sourceLocale, config, run, items, pending, progress, signal}) {
     const provider = providerFromConfig(config, {responseMode: 'non_streaming'});
     await this.#ensureSafeProviderUrl(provider);
+    // Reading translation is a conversation of its own: one stable id for every
+    // chunk and retry of this run, distinct per session and target language, and
+    // distinct from the analysis jobs that produced the report.
+    const providerSession = providerSessionId(
+      'translate',
+      config.id ?? config.providerId,
+      sessionId,
+      targetLocale
+    );
     this.logger?.info?.({
       event: 'ai.translation.start',
       sessionId,
@@ -366,7 +376,8 @@ export class ReportTranslationService {
             timeoutMs: provider.timeoutMs,
             idleTimeoutMs: this.idleTimeoutMs ?? provider.timeoutMs,
             streaming: false,
-            now: this.now
+            now: this.now,
+            sessionId: providerSession
           });
           usage = this.#addUsage(usage, result.usage, provider.pricing);
           answer = this.#parseAnswer(result.text, ids);
