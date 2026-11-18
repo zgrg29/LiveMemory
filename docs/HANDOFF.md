@@ -1,6 +1,51 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-18 v0.18.0 正式发布：OpenCode AI Provider（最新交接）
+## 2026-11-18 v0.18.0 发布后修复：AI Provider 配置保存可靠性（最新交接）
+
+本轮针对“点击保存提示 API 配置无效、开发者无法复现”做专项调查。用隔离数据目录与真实本地
+HTTP 路由复现出多个独立缺陷，并做最小修复。**未改 Provider 协议、数据库 Schema（仍 16）、
+平台采集、备份、金额/身份/去重、任务语言快照、UAC/ACL 规则。**
+
+### 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 / Schema | `0.18.0`（未发布修复）/ 16 |
+| 真实根因 | Base URL 原始字符串比较（尾斜杠误判换端点，自定义 Provider 静默丢 Key）；Key 尾部换行被拒；所有错误统一成 `aiProviderConfigInvalid`；凭据写入非事务且损坏库会被覆盖；自定义 OpenCode 缺会话头；`contextLength:null` 变 0 |
+| 修复 | `sameBaseUrl()`；Key 先 trim 后校验；20 个具体错误 + 2 个 UI 诊断键；凭据“先写新→保存配置→成功后删旧/失败回滚”；`loadDetailed`/`strictKey` 拒绝覆盖损坏库；配置损坏保留备份；自定义 OpenCode 仅在官方主机补会话头；按钮旁错误码/路径 |
+| 十语 | 10 × **2,373** 键（+22），键集/占位符零差异 |
+| 测试 | 新增 unit 14 + integration 13；全量 **871 unit + 398 integration = 1,269 passed / 0 failed / 0 skipped** |
+| EXE | Build `70db54b950e7` / commit `a2d06e6` / 99,551,744 B / SHA-256 `e8f9751f…26f9f4` / `requireAdministrator`；`verify-provider-save-exe` **14/14**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| 未验证 | 真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实删除权限提示；真实 Provider Key 非保存前置 |
+| 发布 | **未 Push / Tag / Release**，等待用户确认 |
+
+### 关键文件
+
+- `src/ai/providers/store.mjs`、`url-safety.mjs`、`adapters.mjs`
+- `src/platforms/shared/secret-store.mjs`
+- `src/server/routes.mjs`
+- `src/web/js/pages/ai-settings.js`
+- `src/web/i18n/*.json`
+- `tests/unit/provider-config-save.test.mjs`、`tests/integration/provider-config-save.test.mjs`、
+  `tests/helpers/faulty-fs.mjs`、`scripts/verify-provider-save-exe.mjs`
+- `docs/AI_PROVIDER_COMPATIBILITY.md` §2.2、`docs/WINDOWS_RUNTIME.md` §4.2、
+  `log/2026-11-18-provider-save-reliability.md`
+
+### 下一轮
+
+1. 用户确认后再决定是否把本修复作为补丁版本发布（需要版本号、构建、Tag/Release 授权）。
+2. 人工验证真实双击 UAC（同意/拒绝）、干净账户、跨管理员账户启动与删除权限提示。
+3. OpenCode 真实付费验收与自定义 OpenCode 端点的真实请求仍待 Key。
+4. 不打开快手生产采集；新平台仍按 G0–G6。
+
+### Git
+
+- 本地提交：见本轮最终回复与 `git log -1`；未 Push、未 Tag、未 Release。
+- 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
+
+---
+
+## 2026-11-18 v0.18.0 正式发布：OpenCode AI Provider（上一轮）
 
 本轮按用户授权执行正式发布：版本 `0.17.0` → **`0.18.0`**，新增 OpenCode AI Provider。
 未改其他 Provider、数据库 Schema（仍 16）、金额/身份/去重、提示词与平台采集。

@@ -616,8 +616,10 @@ paused（用户暂停；正在进行的 recording 不受影响）
 ## 16. API 配置原地编辑（v0.13.1，无 schema 变化）
 
 - `config/ai-providers.json` 的配置记录保持同一 `id`；编辑不删除重建。
-- `secrets/ai-keys.json` 的 credential reference 在仅改模型/名称/并发/价格时不变；Provider/区域/Base URL 变化时生成新 reference 并要求新 Key。
-- 模型变化后 `capabilities`、`lastTestStatus`、`modelLabel`、`contextLength`、旧价格都会失效；不把旧模型能力写入新模型。
+- `secrets/ai-keys.json` 的 credential reference 在仅改模型/名称/并发/价格时不变；Provider/区域/Base URL 变化时生成新 reference 并要求新 Key。尾斜杠、主机大小写、默认端口经 `sameBaseUrl()` 归一后不算变化。
+- 凭据写入顺序为“新凭据 → 配置 JSON → 成功后清理旧引用”；配置保存失败会回滚新凭据并恢复旧 Key。凭据库/每安装密钥不可读时拒绝写入，原文件保持不变。
+- 损坏或未知版本的 `config/ai-providers.json` 会先保存为 `ai-providers.json.<reason>-<timestamp>.json`，再以空列表继续；`/api/ai/providers` 返回 `loadState`。
+- 模型变化后 `capabilities`、`lastTestStatus`、`modelLabel`、`contextLength`、旧价格都会失效；不把旧模型能力写入新模型。完整表单 PATCH 的 `null` 不会变成 `0`。
 - `ai_jobs` 仍保存启动时的 provider/model/pricing 快照；历史 `ai_results` 与 `viewer_memories` 不因配置编辑而改写。
 
 ## 17. 报告翻译展示缓存（schema 14 / v0.13.2）

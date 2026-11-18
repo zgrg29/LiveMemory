@@ -1,7 +1,7 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-18（**v0.18.0 正式发布：OpenCode AI Provider**；无真实 Key，
-真实付费推理未验收。详见 §0.61 与 `docs/release-notes/v0.18.0.md`）
+最后更新：2026-11-18（**v0.18.0 发布后修复：AI Provider 配置保存可靠性**；
+未发布、未 Push/Tag/Release。详见 §0.62 与 `log/2026-11-18-provider-save-reliability.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 > **先读 §0 当前状态快照**；§0.61 是当前版本（v0.18.0）的详细记录；§0.60 及更早是历史记录，
@@ -17,15 +17,15 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 产品版本 / 当前开发版本 | **`0.18.0`**（`package.json` = `APP_VERSION` = `0.18.0`） |
-| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
-| 最新正式发布 | **`v0.18.0`** · Release ID `449956670` · Published `2026-11-18T12:30:18Z` |
+| 下一版本 | **未定**；本轮为 `0.18.0` 的未发布保存流程修复，未 Push/Tag/Release |
+| 最新正式发布 | **`v0.18.0`** · Release ID `449956670` · Published `2026-11-18T12:30:18Z`（不含本轮修复） |
 | 发布性质 | 正式发布：新增 OpenCode AI Provider；直播平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,503,104 B · SHA-256 `285cfd82…2957f`；`SHA256SUMS.txt` 82 B |
 | 当前分支 | `main`（发布提交与发布记录已 Push；Tag `v0.18.0` 已 Push） |
 | 当前 Tag | `v0.18.0`（annotated，object `79a76e9` → commit `3149ffc`） |
 | 数据库 Schema | **16**（v0.18.0 无迁移） |
-| 当前开发里程碑 | **P52 OpenCode Provider（已随 v0.18.0 发布）**；真实付费验收待办 |
-| 最近开发 | 2026-11-18：OpenCode Provider 接入并发布；未改其他 Provider；无真实 Key |
+| 当前开发里程碑 | **P52 OpenCode Provider（已随 v0.18.0 发布）**；**v0.18.0 保存流程修复（未发布）**；OpenCode 真实付费验收待办 |
+| 最近开发 | 2026-11-18：修复 Provider 配置保存（Base URL 规范化、Key 换行、凭据回滚、错误分类、自定义 OpenCode 会话头）；未改其他 Provider 协议 |
 | 最近文档整理 | 2026-11-17：README 三语重构；`docs/RELEASE.md` 拆为流程 + `docs/RELEASE_HISTORY.md`；新增 `scripts/check-docs.mjs` 一致性检查 |
 
 ### 0.2 平台状态
@@ -44,7 +44,7 @@
 ### 0.3 语言与 AI
 
 - **十种界面语言**：`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`；
-  十份字典各 **2,351** 个叶子键，键集与占位符一致。
+  十份字典各 **2,373** 个叶子键（本次 Provider 保存诊断新增 22 键），键集与占位符一致。
 - **十种 AI 输出语言**：同一注册表 `aiOutput: true`；与界面语言是两个独立持久设置
   （`locale` / `aiOutputLocale`，后者默认 `follow-ui`）。任务创建时写语言快照，之后不可变。
 - **报告阅读翻译**：只读取/生成展示层译文，不重跑分析；原文、`viewer_id`、证据与事实状态不变。
@@ -69,10 +69,11 @@
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；v0.18.0 发布回归 344,314 ms） |
-| 本轮 EXE（2026-11-18） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；`dist/LiveMemory.exe` 已同步为 0.18.0 |
+| 全量自动化（2026-11-18 保存修复） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单进程模式；unit 20,859 ms / integration 374,382 ms） |
+| 本轮 EXE（2026-11-18 保存修复） | Build `70db54b950e7`；99,551,744 B；SHA-256 `e8f9751f…26f9f4`；`requireAdministrator`；`verify-provider-save-exe` **14/14**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
-| 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
+| 十语言字典 / UI 矩阵 | 10 × **2,373** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
 | 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
 | 真实 H5 / 真实 EXE 采集 | **未执行**（无快手书面许可） |
 | 真实付费 Provider（DeepSeek 以外） | **未逐一验收**；需要真实 Key 与费用授权 |
@@ -91,8 +92,10 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
 3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
 4. **其他真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
-5. **用户反馈专项**：Provider 切换需重新输入 Key 的 UX、通过自定义端点配置 OpenCode
-   时的会话头错误、手动删除 AppData 配置文件的权限问题；本轮未复现为发布阻断，留待专项调查。
+5. **用户反馈专项（2026-11-18 已处理，未发布）**：Provider 切换需重新输入 Key 仍是安全设计
+   （密钥不能发往未经确认的新地址），但错误提示已具体化；自定义端点 OpenCode 的会话头错误
+   已修复；AppData 手动删除权限问题已定位为运行中文件占用/跨管理员账户 ACL，并在
+   `docs/WINDOWS_RUNTIME.md` §4.2 记录。保存流程根因与修复见 §0.62。
 6. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
    下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
 7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
@@ -100,7 +103,8 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 
 ### 0.7 历史记录
 
-- §0.61：v0.18.0 OpenCode Provider 接入、发布与证据（当前版本的详细记录）。
+- §0.62：v0.18.0 发布后 AI Provider 配置保存可靠性修复（未发布，当前详细记录）。
+- §0.61：v0.18.0 OpenCode Provider 接入、发布与证据。
 - §0.60：v0.17.0 快手 H5 预览接入与发布记录。
 - §0.59 及更早：历史里程碑、调查与验收记录，**只用于追溯**。
 - 发布资产、Tag、Release ID 与 SHA-256 的归档：`docs/RELEASE_HISTORY.md`。
@@ -311,6 +315,108 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 
 > OpenCode 真实付费推理仍未验收（无 Key）；Go 未真实验收；免费层模型对第三方客户端 403。
 > 快手在线采集仍未开放。
+
+---
+
+## 0.62 AI Provider 配置保存可靠性修复（2026-11-18）🟡 已修复并本地提交 · 未发布
+
+### 0.62.1 结论与真实根因
+
+用户反馈“点击保存提示 API 配置无效、开发者无法复现”。本轮用隔离数据目录与真实本地 HTTP
+路由复现出**多个独立缺陷**，不是单一原因：
+
+1. **Base URL 原始字符串比较**（`src/ai/providers/store.mjs`、`src/web/js/pages/ai-settings.js`）：
+   旧配置 `https://api.deepseek.com/` 与表单发送的规范值 `https://api.deepseek.com` 被当成
+   “换了端点”。官方 Provider 因此返回 `AI_PROVIDER_REGION_KEY_REQUIRED`，自定义 Provider
+   则轮换 `credentialReference` 却**不写新 Key**，造成静默丢 Key。已复现：旧 DeepSeek /
+   OpenCode 配置保存返回 400；旧自定义配置保存后 `hasCredential=false`。
+2. **API Key 尾部换行**（`store.mjs:#validateKey`）：代码在 `trim()` 之前拒绝 `\r\n`，而前端
+   直接发送输入框原值。从服务商页面复制 Key 常带尾部换行，于是合法 Key 被拒绝，UI 又只显示
+   “API 配置无效”。已复现：`sk-valid\n` 返回 400 `AI_PROVIDER_KEY_INVALID`。
+3. **所有错误统一成 `errors.aiProviderConfigInvalid`**（`src/server/routes.mjs`）：已知错误码
+   虽然不同，`messageKey` 全部是同一句；凭据权限、文件锁、磁盘满、损坏配置也都落入该提示。
+4. **凭据写入非事务**（`store.mjs`、`src/platforms/shared/secret-store.mjs`）：旧 `update()`
+   在写新 Key/保存配置前删除旧 Key；`create()` 先写 Key 再写配置；凭据库损坏时
+   `load()` 返回 `null`，下一次保存会把整个库覆盖成只剩新 Key。
+5. **自定义端点 OpenCode 缺少会话头**（`src/ai/providers/adapters.mjs`）：自定义 Provider 没有
+   `sessionHeader`，Go 端点在鉴权前返回 400 `MissingSessionID`。
+6. **完整表单保存把 `contextLength: null` 变成 `0`**（`store.mjs:#validate`）：`merged` 中已有
+   `null`，`Number(null) === 0` 被当成有效值。
+
+### 0.62.2 修复
+
+| 文件 | 修复 |
+| --- | --- |
+| `src/ai/providers/url-safety.mjs` | 新增 `sameBaseUrl()` / `canonicalBaseUrlKey()`：尾斜杠、主机大小写、默认端口视为同一端点 |
+| `src/ai/providers/store.mjs` | 外层 trim 后再校验 Key；已知 Provider 写回规范 Base URL；端点未变保留 credential reference；先写新凭据→保存配置→成功后删旧；失败回滚；损坏凭据库/配置拒绝覆盖并保留备份；`contextLength` null 不再变 0 |
+| `src/platforms/shared/secret-store.mjs` | 新增 `CredentialStoreError`、`loadDetailed()`、`strictKey`；区分文件缺失/损坏/密钥损坏，Provider 库任何不可读状态都拒绝写入 |
+| `src/ai/providers/adapters.mjs` | 仅对 `opencode.ai` / `*.opencode.ai` 的自定义 Base URL 补发 `x-opencode-session` 与 `User-Agent` |
+| `src/server/routes.mjs` | `providerConfigError()` 返回具体 code/messageKey/httpStatus；EACCES/EPERM、EBUSY、EROFS、ENOSPC、ENOENT、凭据库错误分别映射；GET 返回 `loadState` 与 `credentialError` |
+| `src/web/js/pages/ai-settings.js` | 保存/测试错误显示在按钮旁（`role=alert`），显示可复制错误码与路径；修正尾斜杠比较；发送前 trim Key；配置加载失败与凭据库不可读顶部告警 |
+| `src/web/i18n/*.json` | 十语新增 20 个具体错误 + 2 个 UI 诊断键（2,351 → **2,373**），键集/占位符一致 |
+| `src/launcher/launcher.mjs` | 启动日志新增 `data-dir.identity`（当前账户、USERPROFILE、LOCALAPPDATA、数据目录、source、crossProfile） |
+
+**没有改变**：Provider 协议、请求格式、数据库 Schema（仍 16）、任务语言快照、金额/身份/去重、
+平台采集、备份白名单、UAC/Manifest、ACL 规则、本地 API 会话认证与凭据加密算法。保存仍然
+**不调用 Provider 网络**；能力检测仍是独立按钮。
+
+### 0.62.3 复现与自动化测试
+
+| 场景 | 结果 |
+| --- | --- |
+| 全新安装、无配置 | ✅ 集成：providers 列表 8 个、configs 空、loadState 正常 |
+| 已有有效配置 | ✅ 集成：保存/编辑/重启保留 |
+| 已有无效/不完整配置 | ✅ 单元：损坏 JSON、未知 Provider 记录、空 credentialReference |
+| 旧版本升级 | ✅ 单元/集成：旧字段忽略、尾斜杠 Base URL、旧配置读取 |
+| OpenCode → DeepSeek | ✅ 集成：无新 Key 明确 400 `AI_PROVIDER_REGION_KEY_REQUIRED`；有新 Key 保存成功且不重复 |
+| DeepSeek → 自定义 Provider | ✅ 集成：新 Key 保存成功 |
+| API Key 更新/重新保存 | ✅ 单元/集成：同引用更新、失败回滚、重启后仍存在 |
+| 本地凭据文件不可写 | ✅ 单元/集成：EACCES → 500 `AI_PROVIDER_CREDENTIAL_PERMISSION`，旧 Key 保留 |
+| 配置文件被锁定 | ✅ 单元/集成：EBUSY → 409 `AI_PROVIDER_FILE_LOCKED`，原配置保留 |
+| 网络断开但格式合法 | ✅ 集成：保存期间 `fetch` 一旦调用即失败；POST/PATCH 仍成功 |
+| 保存失败后再次保存 | ✅ 集成：锁失败后恢复并重试成功 |
+| 重启 EXE 后配置仍存在 | ✅ 集成重启；Windows EXE 结果见 §0.62.4 |
+| 真实 Provider Key | **未执行**：保存流程不需要真实 Key；能力检测/真实推理仍待 Key |
+
+自动化结果：
+
+- 新增 `tests/unit/provider-config-save.test.mjs` **14 passed**；
+  `tests/integration/provider-config-save.test.mjs` **13 passed**；
+  新增 `tests/helpers/faulty-fs.mjs`。
+- 全量单元 **871 passed / 0 failed / 0 skipped**（20,859 ms）。
+- 全量集成 **398 passed / 0 failed / 0 skipped**（374,382 ms）。
+- 合计 **1,269 passed / 0 failed / 0 skipped**（分两次以 `--test-isolation=none` 运行）。
+- 十语言字典：10 × **2,373**，键集/占位符/空值/英文残留 0。
+
+### 0.62.4 Windows EXE 验收
+
+| 项目 | 值 |
+| --- | --- |
+| 构建 | `dist/LiveMemory.exe`；Build ID **`70db54b950e7`**；commit **`a2d06e6`**；builtAt `2026-11-18T13:11:15.824Z`；256 files / 70 required modules |
+| 大小 / SHA-256 | **99,551,744 B** / `e8f9751f61651d22dc0d2c1935e10463009b8e53b5d69d88364f049c4226f9f4` |
+| Manifest | **`requireAdministrator`**（构建断言 + 注入后复读） |
+| 新验收 | `scripts/verify-provider-save-exe.mjs` **14/14 passed**：真实 EXE 内 fresh install、DeepSeek 保存、Key 尾换行、配置/Key 重启保留、旧尾斜杠保存、OpenCode→DeepSeek、DeepSeek→自定义、凭据写失败、失败重试、损坏凭据库不覆盖、损坏配置保留备份 |
+| 回归 | `scripts/verify-exe.mjs` **11/11**；`scripts/verify-help-exe.mjs` **14/14**；`scripts/verify-ai-token-exe.mjs` **16/16**（真实 EXE 内 mock Provider 的画像、usage、断点恢复、认证、备份） |
+| 说明 | 正式 EXE 为 `requireAdministrator`；自动化使用同源码/同 buildId 的 `asInvoker` 副本（`prepareTestExe`），不修改正式 EXE、不绕过 UAC |
+| 发布资产 | `dist/release-v0.18.0/`、`v0.18.0` Tag/Release 与旧 `SHA256SUMS.txt` **未修改**；`dist/LiveMemory.exe` 是本地未发布构建 |
+| 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实 Windows 删除权限提示 |
+
+### 0.62.5 兼容性与升级结论
+
+- **数据库 / 业务数据**：Schema 仍 16，无迁移；直播记录、观众、画像、AI 任务与报告不变。
+- **已有配置 / 凭据**：读取路径兼容；不改写正常配置；仅当配置损坏/未知格式时保留
+  `ai-providers.json.<reason>-<timestamp>.json` 备份。正常保存不删除其他 Provider 的 Key。
+- **是否必须升级**：**是**。`v0.18.0` 正式发布资产仍包含上述保存缺陷；本修复只存在于本地
+  未发布提交，用户升级到包含本提交的新构建后才能获得。
+- **仍需人工验证**：真实双击 UAC（同意/拒绝）、干净 Windows 账户、不同管理员账户的
+  over-the-shoulder 启动、真实 Windows 原生删除/权限提示。本轮不声称这些已通过。
+- **未 Push / Tag / Release**：按用户要求，等待确认。
+
+### 0.62.6 Git
+
+- 代码/测试提交：`a2d06e6`（`fix: make AI provider configuration saves reliable`）。
+- 文档/验收记录提交：见本轮最终回复与 `git log -1`；未 Push、未 Tag、未 Release。
+- 版本 / Schema：`0.18.0`（未发布修复）/ 16。
 
 ---
 

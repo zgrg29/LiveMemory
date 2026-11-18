@@ -832,9 +832,12 @@ PATCH /api/ai/providers/configs/:id
   -> body 未提供 pricing 时不要传入 null（否则会误清空）
   -> ProviderConfigStore.update(id, patch)
        - 同一 id，不删除重建
-       - credentialReference 不变（provider/region/baseUrl 未变）
+       - credentialReference 不变（provider/region/baseUrl 未变；Base URL 按
+         `sameBaseUrl()` 规范化比较，尾斜杠/主机大小写/默认端口不算变化）
        - 显式非空 apiKey 才替换；空/缺省保留旧 Key
-       - provider/region/baseUrl 变化：轮换 reference；非自定义 provider 必须有新 Key
+       - provider/region/baseUrl 真正变化：轮换 reference；已有凭据时必须先提供新 Key
+       - 写入顺序：新凭据 -> 配置 JSON -> 成功后清理旧引用；配置保存失败回滚新凭据/恢复旧 Key
+       - 凭据库不可读（损坏/密钥不可读）时拒绝写入，不覆盖原文件
        - modelId 变化：capabilities=空、lastTestStatus=untested、
          pricing=null/unknown、contextLength=null、modelLabel=新 modelId
        - name/concurrency/pricing 等非模型字段变化不否定能力

@@ -93,6 +93,30 @@
   - **不会回退到默认目录并创建空数据库**。
 - `--data-dir` / `LIVE_MEMORY_DATA_DIR` 仍优先于位置记录，便于临时排查；它们不会自动改写位置记录。
 
+### 4.2 跨管理员账户、requireAdministrator 与凭据文件（2026-11-18 调查）
+
+`requireAdministrator` 只表示 Windows 会显示 UAC；**不保证进程仍运行在双击它的那个账户下**。
+如果标准用户在 UAC 中输入了另一个管理员账户的凭据（over-the-shoulder elevation），进程的
+`%LOCALAPPDATA%` / `%USERPROFILE%` 属于那个管理员账户，默认数据目录也随之改变。
+
+当前实现的事实与边界：
+
+- 打包启动时，如果当前账户的默认目录没有数据库，启动器扫描
+  `C:\Users\<name>\AppData\Local|Roaming\LiveMemory\database\livememory.db`：
+  **恰好一个**现有数据库时使用它；**多个**时报 `DATA_DIR_AMBIGUOUS`，不猜测；没有则新建。
+- `data-location.json` 位于当前账户的 `%LOCALAPPDATA%` / `%APPDATA%`，**不会跨账户共享**；
+  换一个管理员账户启动时可能看不到原位置记录，只能依赖上面的 profile 扫描。
+- `secrets/ai-keys.json` 与 `ai-keys.key` 用 `icacls /inheritance:r /grant:r <当前账户>:(R,W)`
+  限制为当前账户；另一个 Windows 账户不能读取。应用运行时会占用数据库/WAL；在资源管理器里
+  手动删除 `config/ai-providers.json` 或 `secrets/` 可能得到 `EBUSY`/`EPERM`，这不是 API 配置
+  格式错误。
+- 启动日志新增 `data-dir.identity`，记录 `currentUser`、`userProfile`、`localAppData`、
+  `dataDir`、`source` 与 `crossProfile`（是否复用了另一个本地用户配置的数据库）。这些字段
+  只有路径和账户名，不含 API Key、Cookie 或聊天内容。
+- 手动清理的正确顺序：先完全退出 LiveMemory（包括其他窗口），再用**创建数据目录的同一个
+  Windows 账户**删除；或使用设置页的备份/迁移/重置流程。不要为了修复保存错误而先删除
+  `secrets/` 或整个数据目录。
+
 ## 5. 权限
 
 - 打包 EXE 的 Manifest 为 `requireAdministrator`（RC0-ADMIN-MANIFEST）：双击时 Windows 显示标准 UAC 确认，同意后以管理员权限运行；拒绝则 Windows 取消启动，程序不额外设计绕过机制。

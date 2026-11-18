@@ -30,6 +30,38 @@ node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.t
 
 测试通过 `tests/helpers/temp-dir.mjs` 在 `tests/.tmp/` 下创建隔离数据目录，绝不触碰真实用户数据。API 集成测试使用 `port: 0`（系统分配端口）；位置记录/备份目录通过 `LIVE_MEMORY_LOCATION_DIR` / `LIVE_MEMORY_BACKUP_DIR` 指向临时目录。
 
+## 2.0-PROVIDER-SAVE AI Provider 配置保存可靠性（2026-11-18，未发布）
+
+隔离数据目录 + 真实本地 HTTP 路由；Provider 出站 `fetch` 在保存场景中替换为“一调用即失败”。
+新增 `tests/helpers/faulty-fs.mjs` 注入 EACCES/EBUSY，不修改真实文件权限。
+
+| 场景 | 测试 |
+| --- | --- |
+| 全新安装、无配置 | integration：providers 8 个 / configs 空 / loadState 正常 |
+| 已有有效配置、API Key 更新、重启保留 | unit + integration |
+| 无效/不完整配置、空 credentialReference、旧字段 | unit + integration |
+| 旧版本升级、Base URL 尾斜杠/大小写/默认端口 | unit + integration |
+| OpenCode → DeepSeek（无/有新 Key） | integration |
+| DeepSeek → 自定义 Provider | integration |
+| 凭据文件不可写（EACCES） | unit + integration，旧 Key 保留 |
+| 配置文件锁定（EBUSY） | unit + integration，原配置保留 |
+| 网络断开但格式合法 | integration：保存期间 0 次 fetch |
+| 保存失败后重试、失败回滚 | unit + integration |
+| 损坏凭据库/每安装密钥不覆盖 | unit：原文件字节不变 |
+| 损坏 Provider 配置保留备份并报告 | unit + integration |
+| 自定义 OpenCode 会话头 / 任意主机不发 | unit |
+| 十语具体错误键 | i18n 门禁 + 英文残留门禁 |
+
+运行：
+
+```bat
+node --test --test-isolation=none "tests/unit/provider-config-save.test.mjs" "tests/integration/provider-config-save.test.mjs"
+```
+
+结果（2026-11-18）：新增 unit **14 passed**、integration **13 passed**；全量 **871 unit +
+398 integration = 1,269 passed / 0 failed / 0 skipped**；Windows EXE
+`verify-provider-save-exe` **14/14**。
+
 ## 2.0-V015 v0.15.0 发布回归（2026-11-17）
 
 发布状态为 `main` 上 `0.15.0` 的提交，使用受限环境的单进程模式运行。

@@ -123,6 +123,34 @@ MiniMax / 百炼已经用同一套 Region 选择器表达“不同平台/区域�
   请求会如实失败，不得绕过。
 - 免费层模型对第三方客户端 403；模型列表里会显示其 `$0` 价格，但**不代表 LiveMemory 可用**。
 
+### 2.2 保存流程、联网测试与错误分类（2026-11-18 修复）
+
+**保存与联网测试是两条独立路径。** `POST/PATCH /api/ai/providers/configs` 只做本地格式校验、
+加密凭据写入与 JSON 持久化；**不会**调用 Provider 的 `/models` 或 `/chat/completions`。
+能力检测是单独的 `POST /api/ai/providers/configs/:id/test`，网络失败、超时、429/5xx 只会
+记录为测试失败，不能阻止一个格式合法的配置保存。新增集成测试在保存/编辑期间把 `fetch`
+替换为“一调用就失败”的实现，证明保存路径不触网。
+
+本次定位并修复的真实缺陷：
+
+| 缺陷 | 根因 | 修复 |
+| --- | --- | --- |
+| 旧配置 Base URL 末尾有 `/` 时，保存要求重新输入 Key；自定义 Provider 甚至会静默丢失 Key | 前端和服务端都用**原始字符串**比较 Base URL；表单保存会发送官方规范 URL，于是 `https://api.x.com/` 与 `https://api.x.com` 被误判为换端点。自定义路径因此轮换 `credentialReference` 却不写新 Key | 新增 `sameBaseUrl()` / `endpointKey()`，按 URL 规范化后比较（尾斜杠、主机大小写、默认端口等同）；已知 Provider 保存时写回目录中的规范 URL；端点未变时保留原 `credentialReference` 与 Key |
+| 从 Provider 官网复制到带尾部换行的 Key，保存报「API 配置无效」 | `#validateKey()` 在 `trim()` **之前**拒绝 `\r\n`；前端直接发送输入框原值 | 前后端都先 trim 外层空白；内部 CR/LF/NUL 仍拒绝（避免损坏 Authorization 头） |
+| 所有错误都显示「API 配置无效」 | `providerConfigError()` 对每个已知代码都返回 `errors.aiProviderConfigInvalid`；UI 只读 `messageKey` | 每个校验/存储代码有独立 `messageKey`：必填字段、URL 格式/私网/非 https、未知 Provider/Region、Key 格式、凭据权限、文件锁、磁盘满、只读、数据目录缺失、凭据库不可读、配置不可读、通用保存失败 |
+| 凭据写入失败时配置只保存一半，或旧 Key 先被删除 | `create()` 先写 Key 再写配置；`update()` 在写新 Key/保存配置**之前**删除旧 Key | 改为“先校验 → 写新凭据（旧引用保留）→ 保存配置 → 成功后清理旧凭据”；保存失败回滚新凭据并恢复内存配置；同引用覆盖新 Key 失败时恢复旧 Key |
+| 凭据库损坏时，下一次保存会覆盖全部已有 Key/平台 Cookie | `EncryptedJsonStore.load()` 对文件缺失、密文损坏、密钥损坏都返回 `null`；`#secretData()` 当成空库 | 新增 `loadDetailed()` 区分 `MISSING` / `INVALID` / `UNREADABLE` / `KEY_MISSING` / `KEY_INVALID`；Provider 凭据库使用 `strictKey`，**任何不可读状态都拒绝写入**，原文件保持字节不变 |
+| Provider 配置 JSON 损坏后被静默当成空列表 | `load()` `catch` 后清空，下一次保存覆盖原文件 | 保留原文件为 `ai-providers.json.<reason>-<timestamp>.json`，在 `/api/ai/providers` 的 `loadState` 中报告；部分记录无法识别时也先备份 |
+| 通过“自定义 OpenAI-compatible”配置 OpenCode 仍报会话头错误 | 自定义 Provider 没有 `sessionHeader`，Go 端点在鉴权前返回 400 `MissingSessionID` | 仅当 Base URL 主机是 `opencode.ai` 或 `*.opencode.ai` 时，为自定义端点补发 `x-opencode-session` 与 `User-Agent: LiveMemory/<version>`；任意其他自定义主机绝不发送该头 |
+
+**错误展示**：保存/测试错误显示在按钮旁的 `role="alert"` 区域，包含本地化消息、稳定错误码
+（如 `AI_PROVIDER_CREDENTIAL_PERMISSION`）与必要的路径；不显示 Key、Authorization 头、
+Cookie 或 Token。配置加载失败与凭据库不可读会在 Provider 卡片顶部单独告警。
+
+**Windows 管理员账户边界**：`requireAdministrator` 可能让进程运行在另一个管理员账户下，
+`%LOCALAPPDATA%` 随该账户变化；凭据文件只授予当前账户。详见 `docs/WINDOWS_RUNTIME.md` §4.2。
+本次未改变 UAC、数据目录校验、ACL 或删除范围规则。
+
 ---
 
 ## 3. 本轮修复的确定性缺陷（离线可复现）

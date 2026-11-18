@@ -4,6 +4,51 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
+## Unreleased — AI Provider 配置保存可靠性（2026-11-18，基于 0.18.0）
+
+**未发布、未 Push/Tag/Release。** 专项修复用户反馈的“点击保存提示 API 配置无效”：
+用隔离数据目录与真实本地 HTTP 路由复现出多个独立缺陷，而不是单一原因。
+
+### 修复
+
+- **Base URL 等价性**：尾斜杠、主机大小写、默认端口不再被当成换端点。旧 DeepSeek/OpenCode
+  配置不因 `https://api.x.com/` 与 `https://api.x.com` 的差异要求重新输入 Key；自定义
+  Provider 不再静默轮换 `credentialReference` 并丢失已保存 Key。
+- **Key 尾部换行**：前端发送前与服务端校验前都 trim 外层空白；内部 CR/LF/NUL 仍拒绝。
+- **具体错误**：新增 20 个 `errors.aiProvider*` 与 2 个 UI 诊断键（十语 2,351 → **2,373**）。
+  必填字段、URL 格式/私网/非 https、未知 Provider/Region、Key 格式、凭据权限、文件锁、
+  磁盘满、只读、数据目录缺失、凭据库不可读、配置不可读、通用保存失败分别提示；保存/测试
+  按钮旁显示本地化消息、稳定错误码与必要路径，不显示 Key/Authorization/Cookie/Token。
+- **凭据事务与回滚**：先写新凭据，再保存配置，成功后清理旧引用；保存失败回滚新凭据并恢复
+  旧 Key。`EncryptedJsonStore.loadDetailed()` 区分文件缺失/损坏/密钥不可读；Provider 库
+  使用 `strictKey`，任何不可读状态都拒绝覆盖。损坏的 `ai-providers.json` 保留
+  `.unreadable-*` / `.partial-*` 备份并在 GET 中报告。
+- **自定义 OpenCode**：仅对 `opencode.ai` / `*.opencode.ai` 的自定义 Base URL 补发
+  `x-opencode-session` 与 `User-Agent: LiveMemory/<version>`；其他自定义主机绝不发送。
+- **表单兼容**：完整表单 PATCH 不再把 `contextLength: null` 变成 `0`；旧配置无
+  `credentialReference` 时保存 Key 会生成真实引用。
+- **Windows 诊断**：启动日志新增 `data-dir.identity`（当前账户、USERPROFILE、
+  LOCALAPPDATA、数据目录、source、crossProfile）；文档说明 requireAdministrator 在
+  over-the-shoulder 启动时可能使用另一个管理员账户的 `%LOCALAPPDATA%`。
+
+### 验证
+
+- 新增 `tests/unit/provider-config-save.test.mjs` 14 项、
+  `tests/integration/provider-config-save.test.mjs` 13 项，覆盖全新安装、有效/无效/旧配置、
+  OpenCode→DeepSeek、DeepSeek→自定义、Key 更新、凭据不可写、配置锁定、断网保存、
+  失败重试、重启持久化、损坏库/配置、自定义 OpenCode 会话头。
+- 全量 **871 unit + 398 integration = 1,269 passed / 0 failed / 0 skipped**（单进程模式）。
+- Windows EXE：Build `70db54b950e7` / commit `a2d06e6` / 99,551,744 B /
+  SHA-256 `e8f9751f…26f9f4` / `requireAdministrator`；
+  `verify-provider-save-exe` **14/14**（真实 EXE 保存、重启、旧配置、失败回滚、损坏库/配置）、
+  `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
+
+### 兼容性
+
+- 数据库 Schema 仍 **16**，无迁移；直播记录、观众、画像、AI 任务与报告不变。
+- 正常配置与凭据不被删除或覆盖；只有损坏/未知格式文件被另存备份。
+- 需要升级到包含本提交的新构建；`v0.18.0` 正式发布资产仍包含上述缺陷。
+
 ## 0.18.0 — 2026-11-18（OpenCode AI Provider）
 
 **正式发布**。新增 **OpenCode Console** 作为正式可选择的 AI 服务商：**仅 Provider 注册、

@@ -354,13 +354,14 @@ AI 结果是**外部输入**，按不可信数据处理：
 ## 26. 用户自带 AI API（v0.13.0）
 
 - **凭据存储**：API Key 写入 `<数据目录>/secrets/ai-keys.json`，AES-256-GCM + 每安装随机密钥；普通配置 `<数据目录>/config/ai-providers.json` 只保存 `credentialReference`。这不是 DPAPI：同一 Windows 用户的其他进程仍可能读取密钥与密钥文件；文档与界面都如实说明。
-- **区域隔离**：同一 Provider 的不同区域是独立配置；切换区域/Base URL 会生成新的 credential reference，旧 Key 不再被复用。
-- **编辑配置**：编辑表单从不回显 Key；留空/空字符串不会覆盖已保存 Key，只有显式输入新 Key 才替换。只改模型时保留原 credential reference；改 Provider/区域/Base URL 时必须重新输入 Key。
+- **写入顺序与回滚**：先写新凭据，再写配置，最后清理旧引用；配置保存失败会回滚新凭据并恢复旧 Key。凭据文件或每安装密钥不可读时，保存会明确失败并**拒绝覆盖**原文件（不再把损坏当成空库）。
+- **区域隔离**：同一 Provider 的不同区域是独立配置；切换区域/Base URL 会生成新的 credential reference，旧 Key 不再被复用。仅尾斜杠/主机大小写/默认端口不同视为同一端点，不轮换 Key。
+- **编辑配置**：编辑表单从不回显 Key；留空/空字符串不会覆盖已保存 Key，只有显式输入新 Key 才替换。只改模型或等价 Base URL 时保留原 credential reference；真正改 Provider/区域/Base URL 时必须重新输入 Key。
 - **发送目的地**：已知 Provider 只允许其官方区域 Base URL；自定义 Base URL 必须显式配置。服务端阻止云元数据、私网地址与 localhost，除非用户显式勾选 `allowLocalNetwork`（本地模型场景）；请求前做 DNS 解析检查。API Key 只发送到该配置确认的 Base URL。
 - **不进入日志/导出**：日志、状态文件、分析 ZIP、数据库导出、错误详情与前端 HTML 均不包含 Key。状态文件只保存 provider/model/job/stage/usage。
 - **数据范围**：单场任务发送本场聊天、统计、时间线与表情；画像任务额外发送本场相关观众摘录与已有长期记忆。不会发送数据库文件、Cookie、无关历史直播或系统账户信息。
 - **付费与价格**：价格字段完全可选，仅用于本地费用展示；未填写或只填写一项时不计算总费用。价格、免费/付费分类不限制单场或长期画像。估算不是最终账单。
-- **删除**：删除配置会删除对应加密密钥；清空数据会清理 config/secrets。远程服务商是否保留请求数据由该服务商政策决定，LiveMemory 无法撤回。
+- **删除**：删除配置会先持久化配置删除，再清理对应加密密钥；清空数据会清理 config/secrets。手动删除 `%LOCALAPPDATA%` 文件前必须先退出 LiveMemory，并使用创建该数据目录的同一个 Windows 账户；运行中的数据库/WAL 或管理员账户 ACL 可能使删除返回 `EBUSY`/`EPERM`。远程服务商是否保留请求数据由该服务商政策决定，LiveMemory 无法撤回。
 
 ## 27. 单一 AI 入口与调度（v0.13.1）
 
