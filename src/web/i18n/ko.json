@@ -1620,7 +1620,9 @@
         "timeoutShort": "제한 시간 {seconds}초",
         "batchInput": "배치당 입력(토큰, 비워 두면 자동)",
         "batchInputHint": "비워 두면 24,000입니다(입력 + 출력이 모델 컨텍스트에 들어가야 함). 고정 프롬프트 오버헤드는 별도로 계산되며 채팅 내용은 예산의 절반 이상을 차지합니다. 이것은 출력 예산이 아닙니다.",
-        "batchInputAuto": "자동(24,000)"
+        "batchInputAuto": "자동(24,000)",
+        "saveErrorCode": "오류 코드: {code}",
+        "configLoadError": "저장된 API 구성 중 일부를 읽을 수 없습니다. 원본 파일은 {path}에 백업되었습니다."
       },
       "capability": {
         "memory": "기능: 세션 + 장기 프로필",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Kuaishou 연결 시간이 초과되었습니다.",
     "kuaishouNotConfigured": "이 빌드에서는 Kuaishou 수집이 구성되지 않았습니다.",
     "kuaishouStopped": "Kuaishou 수집이 중지되었습니다.",
-    "kuaishouError": "Kuaishou 수집에 실패했습니다."
+    "kuaishouError": "Kuaishou 수집에 실패했습니다.",
+    "aiProviderUnknown": "이 AI 제공자를 인식할 수 없습니다. LiveMemory를 새로 고치세요. 저장된 구성이 더 새로운 버전에서 온 것일 수 있습니다.",
+    "aiProviderRegionUnknown": "이 제공자의 리전을 인식할 수 없습니다. 리전을 다시 선택하세요.",
+    "aiProviderBaseUrlRequired": "이 제공자의 Base URL을 입력하세요.",
+    "aiProviderBaseUrlInvalid": "Base URL이 올바른 http(s) 주소가 아닙니다.",
+    "aiProviderPrivateUrl": "Base URL이 사설 또는 로컬 네트워크 주소를 가리킵니다. 해당 주소를 신뢰하는 경우에만 로컬 네트워크 옵션을 사용하세요.",
+    "aiProviderLocalUrl": "로컬 주소를 사용하려면 로컬 네트워크 옵션을 켜야 합니다.",
+    "aiProviderInsecureUrl": "원격 Base URL은 https를 사용해야 합니다.",
+    "aiProviderBaseUrlNotAllowed": "기본 제공 제공자는 공식 Base URL을 사용해야 합니다. 다른 주소에는 사용자 지정 OpenAI-compatible을 선택하세요.",
+    "aiProviderKeyRequired": "이 제공자의 API Key를 입력하세요.",
+    "aiProviderKeyRequiredForChange": "제공자, 리전 또는 Base URL을 변경하면 키가 다른 주소로 전송되므로 API Key를 다시 입력해야 합니다.",
+    "aiProviderKeyInvalid": "API Key에 줄바꿈 또는 잘못된 문자가 있습니다. 한 줄 텍스트로 다시 복사하세요.",
+    "aiProviderPricingInvalid": "가격 정보가 올바르지 않습니다.",
+    "aiProviderCredentialPermission": "파일 권한 문제로 API Key를 로컬 암호화 자격 증명 저장소에 쓸 수 없습니다. 데이터 폴더: {path}. 다른 LiveMemory 창을 닫고 폴더 권한을 확인한 뒤 다시 시도하세요.",
+    "aiProviderFileLocked": "로컬 구성 또는 자격 증명 파일이 사용 중입니다. 다른 LiveMemory 창을 닫고 다시 시도하세요.",
+    "aiProviderDiskFull": "API 구성을 저장할 디스크 공간이 부족합니다.",
+    "aiProviderReadOnly": "LiveMemory 데이터 폴더가 읽기 전용입니다.",
+    "aiProviderDataDirMissing": "LiveMemory 데이터 폴더가 더 이상 없습니다: {path}. 같은 폴더에서 다시 시작하세요.",
+    "aiProviderCredentialStoreUnreadable": "로컬 암호화 자격 증명 저장소를 읽을 수 없습니다. LiveMemory는 덮어쓰지 않았습니다. 데이터 폴더를 백업한 뒤 다시 시도하거나 지원팀에 문의하세요.",
+    "aiProviderConfigUnreadable": "로컬 API 구성 파일을 읽을 수 없습니다. 원본 파일을 백업으로 보관했습니다. 제공자를 다시 추가하세요.",
+    "aiProviderSaveFailed": "로컬 파일 오류({code})로 API 구성을 저장하지 못했습니다."
   },
   "toast": {
     "saved": "저장됨",

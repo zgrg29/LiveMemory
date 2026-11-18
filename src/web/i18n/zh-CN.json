@@ -1620,7 +1620,9 @@
         "timeoutShort": "超时 {seconds}s",
         "batchInput": "单批输入上限（tokens，留空自动）",
         "batchInputHint": "留空时为 24,000（输入 + 输出需放进模型上下文）。固定提示词开销会单独计算，聊天内容至少占一半预算；这不是输出预算。",
-        "batchInputAuto": "自动（24,000）"
+        "batchInputAuto": "自动（24,000）",
+        "saveErrorCode": "错误代码：{code}",
+        "configLoadError": "部分已保存的 API 配置无法读取，原文件已备份到：{path}。"
       },
       "capability": {
         "memory": "能力：单场 + 长期画像",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "连接快手超时。",
     "kuaishouNotConfigured": "本构建未配置快手采集。",
     "kuaishouStopped": "快手采集已停止。",
-    "kuaishouError": "快手采集失败。"
+    "kuaishouError": "快手采集失败。",
+    "aiProviderUnknown": "无法识别该 AI 服务商。请刷新 LiveMemory；该配置可能来自更新版本。",
+    "aiProviderRegionUnknown": "无法识别该服务商的区域。请重新选择区域。",
+    "aiProviderBaseUrlRequired": "请填写该服务商的 Base URL。",
+    "aiProviderBaseUrlInvalid": "Base URL 不是有效的 http(s) 地址。",
+    "aiProviderPrivateUrl": "Base URL 指向私有或本地网络地址。只有在你信任该地址时才启用本地网络选项。",
+    "aiProviderLocalUrl": "使用本机地址需要勾选本地网络选项。",
+    "aiProviderInsecureUrl": "远程 Base URL 必须使用 https。",
+    "aiProviderBaseUrlNotAllowed": "内置服务商必须使用官方 Base URL。其他地址请选择「自定义 OpenAI-compatible」。",
+    "aiProviderKeyRequired": "请填写该服务商的 API Key。",
+    "aiProviderKeyRequiredForChange": "更换服务商、区域或 Base URL 后必须重新填写 API Key，因为密钥会发送到不同的地址。",
+    "aiProviderKeyInvalid": "API Key 含有换行或无效字符。请重新复制为单行文本。",
+    "aiProviderPricingInvalid": "价格信息无效。",
+    "aiProviderCredentialPermission": "LiveMemory 无法把 API Key 写入本地加密凭据库，原因是文件权限不足。数据目录：{path}。请关闭其他 LiveMemory 窗口，检查该目录权限后重试。",
+    "aiProviderFileLocked": "本地配置或凭据文件正被占用。请关闭其他 LiveMemory 窗口后重试。",
+    "aiProviderDiskFull": "磁盘空间不足，无法保存 API 配置。",
+    "aiProviderReadOnly": "LiveMemory 数据目录是只读的。",
+    "aiProviderDataDirMissing": "LiveMemory 数据目录已不存在：{path}。请从同一数据目录重新启动。",
+    "aiProviderCredentialStoreUnreadable": "无法读取本地加密凭据库。LiveMemory 没有覆盖它。请先备份数据目录，再重试或联系支持。",
+    "aiProviderConfigUnreadable": "无法读取本地 API 配置文件。LiveMemory 已保留原文件备份，请重新添加服务商。",
+    "aiProviderSaveFailed": "由于本地文件错误（{code}），API 配置未能保存。"
   },
   "toast": {
     "saved": "已保存",

@@ -1620,7 +1620,9 @@
         "timeoutShort": "tiempo de espera {seconds} s",
         "batchInput": "Entrada por lote (tokens, en blanco = automático)",
         "batchInputHint": "En blanco significa 24.000 (la entrada y la salida deben caber en el contexto del modelo). El coste fijo de las instrucciones se presupuesta aparte y el contenido del chat conserva al menos la mitad del presupuesto; no es el presupuesto de salida.",
-        "batchInputAuto": "Automático (24.000)"
+        "batchInputAuto": "Automático (24.000)",
+        "saveErrorCode": "Código de error: {code}",
+        "configLoadError": "Algunas configuraciones de API guardadas no se pudieron leer. El archivo original se guardó en: {path}."
       },
       "capability": {
         "memory": "Capacidad: sesión + perfiles a largo plazo",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Se agotó el tiempo de conexión con Kuaishou.",
     "kuaishouNotConfigured": "La captura de Kuaishou no está configurada en esta compilación.",
     "kuaishouStopped": "La captura de Kuaishou se detuvo.",
-    "kuaishouError": "La captura de Kuaishou falló."
+    "kuaishouError": "La captura de Kuaishou falló.",
+    "aiProviderUnknown": "No se reconoce este proveedor de IA. Actualiza LiveMemory; es posible que la configuración guardada sea de una versión más reciente.",
+    "aiProviderRegionUnknown": "No se reconoce la región de este proveedor. Vuelve a elegir una región.",
+    "aiProviderBaseUrlRequired": "Introduce la Base URL de este proveedor.",
+    "aiProviderBaseUrlInvalid": "La Base URL no es una dirección http(s) válida.",
+    "aiProviderPrivateUrl": "La Base URL apunta a una dirección de red privada o local. Activa la opción de red local solo si confías en ese destino.",
+    "aiProviderLocalUrl": "Los destinos locales requieren la opción de red local.",
+    "aiProviderInsecureUrl": "Una Base URL remota debe usar https.",
+    "aiProviderBaseUrlNotAllowed": "Un proveedor integrado debe usar su Base URL oficial. Para otra dirección, elige «OpenAI-compatible personalizado».",
+    "aiProviderKeyRequired": "Introduce la API Key de este proveedor.",
+    "aiProviderKeyRequiredForChange": "Cambiar el proveedor, la región o la Base URL requiere una nueva API Key, porque la clave se enviará a otro destino.",
+    "aiProviderKeyInvalid": "La API Key contiene un salto de línea o un carácter no válido. Vuelve a copiarla como una sola línea.",
+    "aiProviderPricingInvalid": "La información de precio no es válida.",
+    "aiProviderCredentialPermission": "LiveMemory no pudo escribir la API Key en el almacén local de credenciales cifradas por un problema de permisos. Carpeta de datos: {path}. Cierra las demás ventanas de LiveMemory, comprueba los permisos de la carpeta y vuelve a intentarlo.",
+    "aiProviderFileLocked": "Un archivo local de configuración o credenciales está en uso. Cierra las demás ventanas de LiveMemory y vuelve a intentarlo.",
+    "aiProviderDiskFull": "No hay espacio libre suficiente para guardar la configuración de API.",
+    "aiProviderReadOnly": "La carpeta de datos de LiveMemory es de solo lectura.",
+    "aiProviderDataDirMissing": "La carpeta de datos de LiveMemory ya no existe: {path}. Reinicia desde la misma carpeta.",
+    "aiProviderCredentialStoreUnreadable": "No se puede leer el almacén local de credenciales cifradas. LiveMemory no lo ha sobrescrito. Haz una copia de la carpeta de datos antes de reintentar o contacta con soporte.",
+    "aiProviderConfigUnreadable": "No se puede leer el archivo local de configuración de API. LiveMemory guardó una copia de seguridad; vuelve a añadir el proveedor.",
+    "aiProviderSaveFailed": "No se pudo guardar la configuración de API por un error de archivo local ({code})."
   },
   "toast": {
     "saved": "Guardado",

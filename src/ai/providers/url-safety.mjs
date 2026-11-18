@@ -140,3 +140,34 @@ export function joinUrl(baseUrl, path) {
   const suffix = String(path ?? '').startsWith('/') ? path : `/${path}`;
   return `${base}${suffix}`;
 }
+
+/**
+ * Compare two Base URLs as the same endpoint.
+ *
+ * A stored legacy value such as `https://api.deepseek.com/` is the same endpoint
+ * as the catalogue's `https://api.deepseek.com`; so is a URL whose host differs
+ * only in case or which spells out the default port. Comparing raw strings used
+ * to treat those as an endpoint change, which demanded a new API key (or, for a
+ * custom provider, silently rotated the credential reference and lost the key).
+ *
+ * URL parsing is only used for comparison, never for the stored value. If either
+ * side cannot be parsed, fall back to trimming trailing slashes so validation
+ * still reports the malformed side instead of throwing here.
+ */
+export function canonicalBaseUrlKey(value) {
+  const raw = String(value ?? '').trim();
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return raw.replace(/\/+$/, '');
+    }
+    const pathname = url.pathname.replace(/\/+$/, '');
+    return `${url.protocol}//${url.host.toLowerCase()}${pathname}${url.search}`;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+export function sameBaseUrl(left, right) {
+  return canonicalBaseUrlKey(left) === canonicalBaseUrlKey(right);
+}

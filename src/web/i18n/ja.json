@@ -1620,7 +1620,9 @@
         "timeoutShort": "タイムアウト {seconds}s",
         "batchInput": "バッチ入力上限（tokens、空欄で自動）",
         "batchInputHint": "空欄の場合は 24,000（入力 + 出力がモデルのコンテキストに収まる必要があります）。固定プロンプト費用は別枠で計算し、チャット内容に予算の半分以上を確保します。出力予算ではありません。",
-        "batchInputAuto": "自動（24,000）"
+        "batchInputAuto": "自動（24,000）",
+        "saveErrorCode": "エラーコード: {code}",
+        "configLoadError": "保存済みの API 設定の一部を読み取れません。元のファイルは {path} にバックアップされています。"
       },
       "capability": {
         "memory": "能力：単一配信 + 長期プロファイル",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Kuaishou への接続がタイムアウトしました。",
     "kuaishouNotConfigured": "このビルドでは Kuaishou の収集が設定されていません。",
     "kuaishouStopped": "Kuaishou の収集を停止しました。",
-    "kuaishouError": "Kuaishou の収集に失敗しました。"
+    "kuaishouError": "Kuaishou の収集に失敗しました。",
+    "aiProviderUnknown": "この AI プロバイダーを認識できません。LiveMemory を再読み込みしてください。設定が新しいバージョンの可能性があります。",
+    "aiProviderRegionUnknown": "このプロバイダーのリージョンを認識できません。リージョンを選び直してください。",
+    "aiProviderBaseUrlRequired": "このプロバイダーの Base URL を入力してください。",
+    "aiProviderBaseUrlInvalid": "Base URL が有効な http(s) アドレスではありません。",
+    "aiProviderPrivateUrl": "Base URL がプライベートまたはローカルネットワークのアドレスを指しています。信頼できる場合のみローカルネットワークを有効にしてください。",
+    "aiProviderLocalUrl": "ローカルアドレスを使うにはローカルネットワークの項目を有効にしてください。",
+    "aiProviderInsecureUrl": "リモートの Base URL は https を使用してください。",
+    "aiProviderBaseUrlNotAllowed": "組み込みプロバイダーは公式 Base URL を使用する必要があります。別のアドレスには「カスタム OpenAI-compatible」を選んでください。",
+    "aiProviderKeyRequired": "このプロバイダーの API Key を入力してください。",
+    "aiProviderKeyRequiredForChange": "プロバイダー、リージョン、Base URL を変更した場合は、キーの送信先が変わるため API Key の再入力が必要です。",
+    "aiProviderKeyInvalid": "API Key に改行または無効な文字が含まれています。1 行のテキストとしてコピーし直してください。",
+    "aiProviderPricingInvalid": "料金情報が無効です。",
+    "aiProviderCredentialPermission": "ファイル権限がないため、API Key をローカルの暗号化認証情報ストアに書き込めませんでした。データフォルダー: {path}。他の LiveMemory ウィンドウを閉じ、フォルダーの権限を確認してから再試行してください。",
+    "aiProviderFileLocked": "ローカルの設定ファイルまたは認証情報ファイルが使用中です。他の LiveMemory ウィンドウを閉じて再試行してください。",
+    "aiProviderDiskFull": "API 設定を保存するための空き容量が不足しています。",
+    "aiProviderReadOnly": "LiveMemory のデータフォルダーは読み取り専用です。",
+    "aiProviderDataDirMissing": "LiveMemory のデータフォルダーが見つかりません: {path}。同じフォルダーから再起動してください。",
+    "aiProviderCredentialStoreUnreadable": "ローカルの暗号化認証情報ストアを読み取れません。LiveMemory は上書きしていません。データフォルダーをバックアップしてから再試行するか、サポートに連絡してください。",
+    "aiProviderConfigUnreadable": "ローカルの API 設定ファイルを読み取れません。元のファイルをバックアップとして保存しました。プロバイダーを追加し直してください。",
+    "aiProviderSaveFailed": "ローカルファイルエラー（{code}）のため、API 設定を保存できませんでした。"
   },
   "toast": {
     "saved": "保存しました",

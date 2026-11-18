@@ -32,7 +32,7 @@ test('a saved provider card exposes edit mode that reuses the existing form', ()
 
 test('the edit form never sends a blank key over an existing credential', () => {
   assert.ok(source.includes('const keyProvided = keyInput.value.trim() !== \'\''), 'missing blank-key detection');
-  assert.ok(source.includes('if (keyProvided) payload.apiKey = keyInput.value;'), 'key must be conditional');
+  assert.ok(source.includes('if (keyProvided) payload.apiKey = keyInput.value.trim();'), 'key must be conditional and trimmed');
   assert.ok(source.includes("t('ai.v13.providers.keyKeepHint')"), 'missing keep-key hint');
   assert.ok(source.includes("t('ai.v13.providers.keyStoredEdit')"), 'missing saved-key status');
   assert.ok(source.includes("t('ai.v13.providers.keyRequiredForChange')"), 'missing region-change key guard');
@@ -55,6 +55,18 @@ test('the PATCH route omits unspecified pricing and blocks a config in use', () 
   assert.ok(routes.includes('isConfigInUse?.(params.id)'), 'running config must be protected');
   assert.ok(routes.includes("code === 'AI_PROVIDER_CONFIG_IN_USE'"), 'in-use error mapping missing');
   assert.ok(routes.includes("CONFIG_CHANGED: ['AI_PROVIDER_CONFIG_CHANGED'"), 'resume mismatch mapping missing');
+});
+
+test('save failures are shown next to the save button with a copyable code', () => {
+  assert.ok(source.includes('const saveErrorHost'), 'missing inline error host');
+  assert.ok(source.includes('function showSaveError'), 'missing inline error renderer');
+  assert.ok(source.includes("attrs: {role: 'alert', 'aria-live': 'polite'}"), 'inline error must be announced');
+  assert.ok(source.includes("t('ai.v13.providers.saveErrorCode'"), 'error code must be visible');
+  assert.ok(source.includes('function endpointKey'), 'missing endpoint normalization');
+  assert.ok(source.includes('endpointKey(baseUrl) !== endpointKey(editingConfig.baseUrl)'),
+    'trailing slash must not look like an endpoint change');
+  assert.ok(source.includes("t('ai.v13.providers.configLoadError'"), 'missing config-load warning');
+  assert.ok(source.includes('testMessage'), 'test failures need an inline message');
 });
 
 test('edit labels exist in all three dictionaries', () => {

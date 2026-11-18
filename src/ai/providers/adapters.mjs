@@ -295,19 +295,36 @@ function cancelError(providerId, extra = {}) {
  * credential can not leak through it. A required-but-missing session id raises
  * a configuration error *before* any network request is sent.
  */
+function isOpenCodeEndpoint(baseUrl) {
+  try {
+    const host = new URL(String(baseUrl ?? '')).hostname.toLowerCase();
+    return host === 'opencode.ai' || host.endsWith('.opencode.ai');
+  } catch {
+    return false;
+  }
+}
+
 function providerRequestHeaders(config, {sessionId = null} = {}) {
   const provider = getProvider(config.providerId);
+  // A user may still configure OpenCode through "Custom OpenAI-compatible".
+  // The Console requires its session header there as well; without it Go returns
+  // HTTP 400 `MissingSessionID` before authentication. Only the official
+  // OpenCode host receives this header, never an arbitrary custom endpoint.
+  const customOpenCode = !provider?.sessionHeader && isOpenCodeEndpoint(config.baseUrl);
   const headers = {};
-  if (!provider) return headers;
-  if (provider.userAgent) headers['user-agent'] = `${provider.userAgent}/${APP_VERSION}`;
-  if (provider.sessionHeader) {
-    const region = getRegion(provider.id, config.regionId);
-    const required = provider.requiresSession === true || region?.requiresSession === true;
+  const userAgent = provider?.userAgent ?? (customOpenCode ? 'LiveMemory' : null);
+  if (userAgent) headers['user-agent'] = `${userAgent}/${APP_VERSION}`;
+  const sessionHeader = provider?.sessionHeader ?? (customOpenCode ? 'x-opencode-session' : null);
+  if (sessionHeader) {
+    const region = provider ? getRegion(provider.id, config.regionId) : null;
+    const required = customOpenCode
+      || provider?.requiresSession === true
+      || region?.requiresSession === true;
     if (sessionId) {
-      headers[provider.sessionHeader] = String(sessionId).slice(0, 200);
+      headers[sessionHeader] = String(sessionId).slice(0, 200);
     } else if (required) {
       throw new ProviderHttpError(PROVIDER_ERROR.CONFIG, {
-        detail: `${provider.sessionHeader}-required`,
+        detail: `${sessionHeader}-required`,
         providerId: config.providerId,
         kind: ERROR_KIND.CONFIG
       });

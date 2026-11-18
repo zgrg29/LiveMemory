@@ -18,6 +18,16 @@ import {spawnSync} from 'node:child_process';
 
 const FILE_VERSION = 1;
 
+export class CredentialStoreError extends Error {
+  constructor(code, {path = null, cause = null} = {}) {
+    super(code);
+    this.name = 'CredentialStoreError';
+    this.code = code;
+    if (path) this.path = path;
+    if (cause) this.cause = cause;
+  }
+}
+
 export class EncryptedJsonStore {
   constructor({
     dir,
@@ -25,7 +35,12 @@ export class EncryptedJsonStore {
     keyFileName,
     fs = {existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync},
     platform = process.platform,
-    user = process.env.USERNAME
+    user = process.env.USERNAME,
+    // Strict mode never regenerates an existing key that cannot be decoded.
+    // Regeneration would silently make every saved secret undecryptable. The
+    // provider credential store opts in; platform cookie stores keep their
+    // historical recovery behaviour.
+    strictKey = false
   }) {
     if (!dir) throw new Error('EncryptedJsonStore: dir is required');
     if (!fileName) throw new Error('EncryptedJsonStore: fileName is required');
@@ -35,15 +50,44 @@ export class EncryptedJsonStore {
     this.fs = fs;
     this.platform = platform;
     this.user = user;
+    this.strictKey = strictKey;
+  }
+
+  #keyFileExists() {
+    try {
+      return Boolean(this.fs.existsSync?.(this.keyFile));
+    } catch {
+      return false;
+    }
+  }
+
+  /** Read the existing key; never creates one and never silently replaces it. */
+  #readKey() {
+    let existing = null;
+    try {
+      existing = String(this.fs.readFileSync(this.keyFile, 'utf8')).trim();
+    } catch (error) {
+      throw new CredentialStoreError('CREDENTIAL_KEY_UNREADABLE', {
+        path: this.keyFile,
+        cause: error
+      });
+    }
+    const decoded = Buffer.from(existing, 'base64');
+    if (existing.length === 0 || decoded.length !== 32) {
+      throw new CredentialStoreError('CREDENTIAL_KEY_INVALID', {path: this.keyFile});
+    }
+    return decoded;
   }
 
   #key() {
-    try {
-      const existing = String(this.fs.readFileSync(this.keyFile, 'utf8')).trim();
-      const decoded = Buffer.from(existing, 'base64');
-      if (decoded.length >= 32) return decoded;
-    } catch {
-      /* create below */
+    if (this.#keyFileExists()) {
+      try {
+        return this.#readKey();
+      } catch (error) {
+        if (this.strictKey) throw error;
+        // Historical behaviour for platform cookie stores: a malformed key is
+        // treated as a fresh install. Existing ciphertext is unreadable anyway.
+      }
     }
     const key = randomBytes(32);
     this.fs.mkdirSync(dirname(this.keyFile), {recursive: true});
@@ -67,12 +111,54 @@ export class EncryptedJsonStore {
     }
   }
 
-  /** @returns {{data: object, savedAt: string|null}|null} */
-  load() {
+  /**
+   * Read the store and classify why it could not be read.
+   *
+   * `load()` used to return `null` for a missing file, a corrupt ciphertext and
+   * a missing key alike. The provider store then treated all three as an empty
+   * store and its next save replaced every existing credential. The explicit
+   * error lets callers distinguish "first run" from "do not overwrite".
+   *
+   * @returns {{data: object|null, savedAt: string|null, error: string|null}}
+   */
+  loadDetailed() {
+    let text;
     try {
-      const raw = JSON.parse(this.fs.readFileSync(this.file, 'utf8'));
-      if (raw?.version !== FILE_VERSION || typeof raw?.payload !== 'string') return null;
-      const key = this.#key();
+      text = this.fs.readFileSync(this.file, 'utf8');
+    } catch (error) {
+      return {
+        data: null,
+        savedAt: null,
+        error: error?.code === 'ENOENT' ? 'CREDENTIAL_STORE_MISSING' : 'CREDENTIAL_STORE_UNREADABLE'
+      };
+    }
+    let raw;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return {data: null, savedAt: null, error: 'CREDENTIAL_STORE_INVALID'};
+    }
+    if (raw?.version !== FILE_VERSION || typeof raw?.payload !== 'string' || !raw.iv || !raw.tag) {
+      return {data: null, savedAt: null, error: 'CREDENTIAL_STORE_INVALID'};
+    }
+
+    if (!this.#keyFileExists()) {
+      return {data: null, savedAt: null, error: 'CREDENTIAL_KEY_MISSING'};
+    }
+    let key;
+    try {
+      key = this.#readKey();
+    } catch (error) {
+      return {
+        data: null,
+        savedAt: null,
+        error: error?.code === 'CREDENTIAL_KEY_INVALID'
+          ? 'CREDENTIAL_KEY_INVALID'
+          : 'CREDENTIAL_KEY_UNREADABLE'
+      };
+    }
+
+    try {
       const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(raw.iv, 'base64'));
       decipher.setAuthTag(Buffer.from(raw.tag, 'base64'));
       const plain = Buffer.concat([
@@ -80,11 +166,18 @@ export class EncryptedJsonStore {
         decipher.final()
       ]).toString('utf8');
       const data = JSON.parse(plain);
-      if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-      return {data, savedAt: raw.savedAt ?? null};
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        return {data: null, savedAt: null, error: 'CREDENTIAL_STORE_INVALID'};
+      }
+      return {data, savedAt: raw.savedAt ?? null, error: null};
     } catch {
-      return null;
+      return {data: null, savedAt: null, error: 'CREDENTIAL_STORE_UNREADABLE'};
     }
+  }
+
+  /** @returns {{data: object, savedAt: string|null}|null} */
+  load() {
+    return this.loadDetailed().data;
   }
 
   save(data, {now = Date.now()} = {}) {

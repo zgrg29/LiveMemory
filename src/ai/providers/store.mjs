@@ -5,7 +5,7 @@ import {createId} from '../../shared/ids.mjs';
 import {EncryptedJsonStore} from '../../platforms/shared/secret-store.mjs';
 import {getProvider, getRegion, PRICING_STATUS} from './catalog.mjs';
 import {normalizePricing, normalizePricingStatus} from './pricing.mjs';
-import {validateBaseUrl} from './url-safety.mjs';
+import {sameBaseUrl, validateBaseUrl} from './url-safety.mjs';
 
 /**
  * API configurations and encrypted credentials.
@@ -25,6 +25,20 @@ const DEFAULT_TIMEOUT_MS = 180000;
 const MAX_TIMEOUT_MS = 600000;
 const MIN_BATCH_INPUT_TOKENS = 2000;
 const MAX_BATCH_INPUT_TOKENS = 32000;
+
+/**
+ * Stable local-storage error with a machine-readable code. File system errors
+ * keep their original `code` (EACCES/EBUSY/...) and path; the HTTP layer maps
+ * them to a specific message instead of collapsing them into "invalid config".
+ */
+function storeError(code, {message = null, path = null, cause = null, details = null} = {}) {
+  const error = new Error(message ?? code);
+  error.code = code;
+  if (path) error.path = path;
+  if (cause) error.cause = cause;
+  if (details) error.details = details;
+  return error;
+}
 
 function normalizeConcurrency(value, {fallback = DEFAULT_CONCURRENCY} = {}) {
   const number = Number(value);
@@ -172,32 +186,75 @@ export class ProviderConfigStore {
     this.now = now;
     this.fs = fs;
     this.configs = [];
+    this.loadState = {error: null, skipped: 0, backupFile: null};
     this.secrets = secretStore ?? new EncryptedJsonStore({
       dir: secretsDir,
       fileName: 'ai-keys.json',
       keyFileName: 'ai-keys.key',
-      fs
+      fs,
+      // Never regenerate an unreadable per-install key: that would make every
+      // saved API key undecryptable and overwrite the only copy of the key.
+      strictKey: true
     });
   }
 
   load() {
     this.configs = [];
+    this.loadState = {error: null, skipped: 0, backupFile: null};
     if (!this.fs.existsSync(this.file)) return this.list();
+
+    let text;
     try {
-      const raw = JSON.parse(this.fs.readFileSync(this.file, 'utf8'));
-      if (raw?.version !== FILE_VERSION || !Array.isArray(raw.configs)) return this.list();
-      this.configs = raw.configs
-        .map((entry) => normalizeConfig(entry, {now: this.now()}))
-        .filter(Boolean);
-      if (!this.configs.some((entry) => entry.isDefault) && this.configs.length > 0) {
-        this.configs[0].isDefault = true;
-      }
+      text = this.fs.readFileSync(this.file, 'utf8');
+    } catch (error) {
+      // The file is there but unreadable. Do not overwrite it: the caller can
+      // show a permission error and the user can repair the folder.
+      this.loadState.error = 'AI_PROVIDER_CONFIG_UNREADABLE';
+      this.loadState.cause = error?.code ?? 'READ_FAILED';
+      return this.list();
+    }
+
+    let raw;
+    try {
+      raw = JSON.parse(text);
     } catch {
-      // A corrupt config must not prevent startup. Keep the file untouched for
-      // support and start with no configurations; the user can add one again.
-      this.configs = [];
+      this.#preserveUnreadable(text, 'unreadable');
+      this.loadState.error = 'AI_PROVIDER_CONFIG_UNREADABLE';
+      return this.list();
+    }
+    if (raw?.version !== FILE_VERSION || !Array.isArray(raw.configs)) {
+      // A newer/unknown format is never silently replaced by an empty list:
+      // keep the original bytes next to the file before offering a fresh start.
+      this.#preserveUnreadable(text, 'unsupported');
+      this.loadState.error = 'AI_PROVIDER_CONFIG_VERSION_UNSUPPORTED';
+      return this.list();
+    }
+
+    const normalized = raw.configs.map((entry) => normalizeConfig(entry, {now: this.now()}));
+    this.configs = normalized.filter(Boolean);
+    const skipped = raw.configs.length - this.configs.length;
+    if (skipped > 0) {
+      // A future provider or region id, or an old record with no recognisable
+      // provider, must not disappear without a trace.
+      this.#preserveUnreadable(text, 'partial');
+      this.loadState.error = 'AI_PROVIDER_CONFIG_PARTIAL';
+      this.loadState.skipped = skipped;
+    }
+    if (!this.configs.some((entry) => entry.isDefault) && this.configs.length > 0) {
+      this.configs[0].isDefault = true;
     }
     return this.list();
+  }
+
+  #preserveUnreadable(text, reason) {
+    const stamp = new Date(this.now()).toISOString().replace(/[:.]/g, '-');
+    const backup = `${this.file}.${reason}-${stamp}.json`;
+    try {
+      this.fs.writeFileSync(backup, text, {mode: 0o600});
+      this.loadState.backupFile = backup;
+    } catch {
+      // Preserving support data is best effort and must not block startup.
+    }
   }
 
   save() {
@@ -212,10 +269,26 @@ export class ProviderConfigStore {
     return this.file;
   }
 
+  /** Safe browser-facing state, including a corrupted credential store. */
+  status() {
+    let credentialError = null;
+    try {
+      const loaded = typeof this.secrets.loadDetailed === 'function'
+        ? this.secrets.loadDetailed()
+        : null;
+      if (loaded?.error && loaded.error !== 'CREDENTIAL_STORE_MISSING') {
+        credentialError = loaded.error;
+      }
+    } catch (error) {
+      credentialError = error?.code ?? 'CREDENTIAL_STORE_UNREADABLE';
+    }
+    return {...this.loadState, credentialError};
+  }
+
   list() {
     return this.configs.map((config) => ({
       ...publicConfig(config),
-      hasCredential: this.hasSecret(config.id)
+      hasCredential: this.#hasSecretSafe(config.id)
     }));
   }
 
@@ -225,7 +298,7 @@ export class ProviderConfigStore {
 
   getPublic(id) {
     const config = this.get(id);
-    return config ? {...publicConfig(config), hasCredential: this.hasSecret(id)} : null;
+    return config ? {...publicConfig(config), hasCredential: this.#hasSecretSafe(id)} : null;
   }
 
   getDefault() {
@@ -233,10 +306,33 @@ export class ProviderConfigStore {
   }
 
   #secretData() {
-    const loaded = this.secrets.load();
+    const loaded = typeof this.secrets.loadDetailed === 'function'
+      ? this.secrets.loadDetailed()
+      : (() => {
+        const data = this.secrets.load();
+        return data
+          ? {data, savedAt: data.savedAt ?? null, error: null}
+          : {data: null, savedAt: null, error: 'CREDENTIAL_STORE_UNREADABLE'};
+      })();
+    if (loaded?.error === 'CREDENTIAL_STORE_MISSING') return {};
+    if (loaded?.error) {
+      throw storeError(loaded.error, {
+        message: 'local credential store could not be read',
+        path: this.secrets.file ?? null,
+        details: loaded.error
+      });
+    }
     return loaded?.data?.secrets && typeof loaded.data.secrets === 'object'
       ? loaded.data.secrets
       : {};
+  }
+
+  #hasSecretSafe(id) {
+    try {
+      return this.hasSecret(id);
+    } catch {
+      return false;
+    }
   }
 
   #storeSecret(reference, apiKey) {
@@ -246,10 +342,34 @@ export class ProviderConfigStore {
   }
 
   #removeSecret(reference) {
+    if (!reference) return;
     const data = this.#secretData();
     if (!data[reference]) return;
     delete data[reference];
     this.secrets.save({secrets: data}, {now: this.now()});
+  }
+
+  #removeSecretQuietly(reference) {
+    try {
+      this.#removeSecret(reference);
+    } catch {
+      // The config no longer references the secret; an orphaned ciphertext is
+      // preferable to failing a successful save or losing the config.
+    }
+  }
+
+  #restoreSecretQuietly(reference, apiKey) {
+    try {
+      const data = this.#secretData();
+      if (apiKey === null || apiKey === undefined) {
+        delete data[reference];
+      } else {
+        data[reference] = {apiKey, updatedAt: new Date(this.now()).toISOString()};
+      }
+      this.secrets.save({secrets: data}, {now: this.now()});
+    } catch {
+      // Rollback is best effort; the caller still reports the original failure.
+    }
   }
 
   /** Read a secret. Never exposed by an HTTP response. */
@@ -273,13 +393,13 @@ export class ProviderConfigStore {
     const region = getRegion(providerId, regionId);
     if (!region) throw Object.assign(new Error('REGION_UNKNOWN'), {code: 'REGION_UNKNOWN'});
     const isCustom = Boolean(provider.custom);
-    const baseUrl = String(input.baseUrl ?? (isCustom ? existing?.baseUrl ?? '' : region.baseUrl)).trim();
-    if (!baseUrl) throw Object.assign(new Error('BASE_URL_REQUIRED'), {code: 'BASE_URL_REQUIRED'});
+    const requestedBaseUrl = String(input.baseUrl ?? (isCustom ? existing?.baseUrl ?? '' : region.baseUrl)).trim();
+    if (!requestedBaseUrl) throw Object.assign(new Error('BASE_URL_REQUIRED'), {code: 'BASE_URL_REQUIRED'});
     const allowLocalNetwork = input.allowLocalNetwork === undefined
       ? Boolean(existing?.allowLocalNetwork)
       : input.allowLocalNetwork === true;
     try {
-      validateBaseUrl(baseUrl, {allowLocalNetwork});
+      validateBaseUrl(requestedBaseUrl, {allowLocalNetwork});
     } catch (error) {
       throw Object.assign(new Error(error.code ?? 'BASE_URL_INVALID'), {
         code: error.code ?? 'BASE_URL_INVALID',
@@ -287,10 +407,14 @@ export class ProviderConfigStore {
       });
     }
     // Known providers must use their official regional base URL. This prevents a
-    // key from being sent to an arbitrary host by editing the JSON.
-    if (!isCustom && baseUrl.replace(/\/+$/, '') !== region.baseUrl.replace(/\/+$/, '')) {
+    // key from being sent to an arbitrary host by editing the JSON. Trailing
+    // slashes, host case and an explicit default port are the same endpoint.
+    if (!isCustom && !sameBaseUrl(requestedBaseUrl, region.baseUrl)) {
       throw Object.assign(new Error('BASE_URL_NOT_ALLOWED'), {code: 'BASE_URL_NOT_ALLOWED'});
     }
+    // Store the catalogue's canonical URL for built-in providers so a legacy
+    // trailing slash cannot make a later form save look like an endpoint change.
+    const baseUrl = isCustom ? requestedBaseUrl : region.baseUrl;
     const modelId = String(input.modelId ?? existing?.modelId ?? '').trim();
     const modelChanged = Boolean(existing && modelId !== existing.modelId);
     const pricing = Object.prototype.hasOwnProperty.call(input, 'pricing')
@@ -313,7 +437,12 @@ export class ProviderConfigStore {
       pricing,
       name: String(input.name ?? existing?.name ?? provider.label).trim().slice(0, 80) || provider.label,
       modelLabel: String(input.modelLabel ?? (modelChanged ? modelId : existing?.modelLabel) ?? modelId).slice(0, 200),
-      contextLength: input.contextLength === undefined
+      // A full form PATCH carries no `contextLength`, but `merged` already
+      // contains the stored `null`. Treat null/empty as "not supplied" instead
+      // of letting `Number(null) === 0` overwrite it with a fake zero context.
+      contextLength: (input.contextLength === undefined
+        || input.contextLength === null
+        || input.contextLength === '')
         ? (modelChanged ? null : (existing?.contextLength ?? null))
         : (Number.isFinite(Number(input.contextLength)) ? Number(input.contextLength) : null),
       concurrency: normalizeConcurrency(
@@ -337,6 +466,13 @@ export class ProviderConfigStore {
     const now = this.now();
     const checked = this.#validate(input);
     if (!checked.modelId) throw Object.assign(new Error('MODEL_REQUIRED'), {code: 'MODEL_REQUIRED'});
+    const hasKey = Boolean(input.apiKey !== undefined
+      && input.apiKey !== null
+      && String(input.apiKey).trim() !== '');
+    if (!hasKey && !checked.provider.custom) {
+      throw Object.assign(new Error('API_KEY_REQUIRED'), {code: 'API_KEY_REQUIRED'});
+    }
+    const apiKey = hasKey ? this.#validateKey(input.apiKey) : null;
     const id = createId('aicfg');
     const credentialReference = `aicred_${randomBytes(16).toString('hex')}`;
     const config = normalizeConfig({
@@ -361,14 +497,24 @@ export class ProviderConfigStore {
       createdAt: now,
       updatedAt: now
     }, {now});
-    this.configs.push(config);
-    if (input.apiKey !== undefined && input.apiKey !== null && String(input.apiKey) !== '') {
-      this.#storeSecret(credentialReference, this.#validateKey(input.apiKey));
-    } else if (!checked.provider.custom) {
-      this.configs.pop();
-      throw Object.assign(new Error('API_KEY_REQUIRED'), {code: 'API_KEY_REQUIRED'});
+
+    let configPushed = false;
+    let secretStored = false;
+    try {
+      // Credential first: if it cannot be written, no config is persisted and
+      // the user can retry without an orphaned record.
+      if (apiKey) {
+        this.#storeSecret(credentialReference, apiKey);
+        secretStored = true;
+      }
+      this.configs.push(config);
+      configPushed = true;
+      this.save();
+    } catch (error) {
+      if (configPushed) this.configs.pop();
+      if (secretStored) this.#removeSecretQuietly(credentialReference);
+      throw error;
     }
-    this.save();
     return this.getPublic(id);
   }
 
@@ -399,21 +545,31 @@ export class ProviderConfigStore {
     }
     const checked = this.#validate(merged, {existing});
     if (!checked.modelId) throw Object.assign(new Error('MODEL_REQUIRED'), {code: 'MODEL_REQUIRED'});
-    const regionChanged = checked.provider.id !== existing.providerId
-      || checked.region.id !== existing.regionId
-      || checked.baseUrl !== existing.baseUrl;
-    const nextReference = regionChanged
-      ? `aicred_${randomBytes(16).toString('hex')}`
-      : existing.credentialReference;
+
     let keyToStore = null;
-    if (patch.apiKey !== undefined && patch.apiKey !== null && String(patch.apiKey) !== '') {
+    if (patch.apiKey !== undefined && patch.apiKey !== null && String(patch.apiKey).trim() !== '') {
       keyToStore = this.#validateKey(patch.apiKey);
     }
-    if (regionChanged && !keyToStore && !checked.provider.custom) {
+    const previousSecret = this.secret(id);
+    const regionChanged = checked.provider.id !== existing.providerId
+      || checked.region.id !== existing.regionId
+      || !sameBaseUrl(checked.baseUrl, existing.baseUrl);
+    if (!checked.provider.custom && !keyToStore && !previousSecret) {
+      throw Object.assign(new Error('API_KEY_REQUIRED'), {code: 'API_KEY_REQUIRED'});
+    }
+    if (regionChanged && !keyToStore && (!checked.provider.custom || previousSecret)) {
       throw Object.assign(new Error('API_KEY_REQUIRED_FOR_REGION'), {code: 'API_KEY_REQUIRED_FOR_REGION'});
     }
-    if (regionChanged) this.#removeSecret(existing.credentialReference);
-    if (keyToStore) this.#storeSecret(nextReference, keyToStore);
+
+    // Keep the old reference when the endpoint did not really change (a legacy
+    // trailing slash is not a change). A legacy record without a reference gets
+    // one when a key is saved, instead of writing the secret under an empty key.
+    const nextReference = regionChanged || !existing.credentialReference
+      ? `aicred_${randomBytes(16).toString('hex')}`
+      : existing.credentialReference;
+    const endpointChanged = checked.provider.id !== existing.providerId
+      || checked.region.id !== existing.regionId
+      || !sameBaseUrl(checked.baseUrl, existing.baseUrl);
     const updated = normalizeConfig({
       ...existing,
       ...checked,
@@ -424,44 +580,79 @@ export class ProviderConfigStore {
       credentialReference: nextReference,
       updatedAt: this.now(),
       // Capability results are only valid for the exact provider/region/model.
-      capabilities: (checked.provider.id !== existing.providerId
-        || checked.region.id !== existing.regionId
-        || checked.baseUrl !== existing.baseUrl
-        || checked.modelId !== existing.modelId)
+      capabilities: (endpointChanged || checked.modelId !== existing.modelId)
         ? normalizeCapabilities(null)
         : normalizeCapabilities(existing.capabilities),
-      lastTestStatus: (checked.provider.id !== existing.providerId
-        || checked.region.id !== existing.regionId
-        || checked.baseUrl !== existing.baseUrl
-        || checked.modelId !== existing.modelId)
+      lastTestStatus: (endpointChanged || checked.modelId !== existing.modelId)
         ? {status: 'untested', at: null, error: null, stages: null}
         : existing.lastTestStatus
     }, {now: this.now()});
-    this.configs[index] = updated;
-    this.save();
+
+    let newSecretWritten = false;
+    let sameReferenceOverwritten = false;
+    try {
+      if (keyToStore) {
+        this.#storeSecret(nextReference, keyToStore);
+        if (nextReference === existing.credentialReference) {
+          sameReferenceOverwritten = true;
+        } else {
+          newSecretWritten = true;
+        }
+      }
+      this.configs[index] = updated;
+      this.save();
+    } catch (error) {
+      this.configs[index] = existing;
+      if (newSecretWritten) this.#removeSecretQuietly(nextReference);
+      if (sameReferenceOverwritten) {
+        this.#restoreSecretQuietly(nextReference, previousSecret);
+      }
+      throw error;
+    }
+
+    // Only after the config is safely on disk may the old key be removed. A
+    // failure here leaves an orphaned ciphertext, never a broken config.
+    if (existing.credentialReference && existing.credentialReference !== nextReference) {
+      this.#removeSecretQuietly(existing.credentialReference);
+    }
     return this.getPublic(id);
   }
 
   remove(id) {
     const index = this.configs.findIndex((entry) => entry.id === id);
     if (index < 0) return false;
+    const previous = structuredClone(this.configs);
     const [removed] = this.configs.splice(index, 1);
-    this.#removeSecret(removed.credentialReference);
     if (removed.isDefault && this.configs.length > 0) this.configs[0].isDefault = true;
-    this.save();
+    try {
+      // Persist the removal first. If this fails the config is still on disk and
+      // in memory; the key must not be deleted before that.
+      this.save();
+    } catch (error) {
+      this.configs = previous;
+      throw error;
+    }
+    this.#removeSecretQuietly(removed.credentialReference);
     return true;
   }
 
   setDefault(id) {
     if (!this.get(id)) return false;
+    const previous = structuredClone(this.configs);
     for (const config of this.configs) config.isDefault = config.id === id;
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.configs = previous;
+      throw error;
+    }
     return true;
   }
 
   recordTest(id, result) {
     const config = this.get(id);
     if (!config) return null;
+    const previous = structuredClone(this.configs);
     config.capabilities = normalizeCapabilities(result.capabilities);
     config.lastTestStatus = normalizeTestStatus({
       status: result.status,
@@ -472,7 +663,12 @@ export class ProviderConfigStore {
       testedAt: result.at ?? new Date(this.now()).toISOString()
     });
     config.updatedAt = this.now();
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.configs = previous;
+      throw error;
+    }
     return this.getPublic(id);
   }
 
@@ -490,14 +686,23 @@ export class ProviderConfigStore {
     const config = this.get(id);
     if (!config) return null;
     if (config.capabilities?.structuredOutputs !== true) return this.getPublic(id);
+    const previous = structuredClone(this.configs);
     config.capabilities = {...config.capabilities, structuredOutputs: false};
     config.updatedAt = this.now();
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.configs = previous;
+      throw error;
+    }
     return this.getPublic(id);
   }
 
   #validateKey(apiKey) {
-    const value = String(apiKey);
+    // Copy/paste from a provider dashboard often includes a trailing newline or
+    // spaces. Trim the outer whitespace before checking: an internal CR/LF/NUL is
+    // still rejected because it would produce an invalid Authorization header.
+    const value = String(apiKey ?? '').trim();
     if (value.length === 0) throw Object.assign(new Error('API_KEY_REQUIRED'), {code: 'API_KEY_REQUIRED'});
     if (Buffer.byteLength(value, 'utf8') > MAX_API_KEY_BYTES) {
       throw Object.assign(new Error('API_KEY_TOO_LARGE'), {code: 'API_KEY_TOO_LARGE'});
@@ -505,7 +710,7 @@ export class ProviderConfigStore {
     if (/[\r\n\u0000]/.test(value)) {
       throw Object.assign(new Error('API_KEY_INVALID'), {code: 'API_KEY_INVALID'});
     }
-    return value.trim();
+    return value;
   }
 }
 

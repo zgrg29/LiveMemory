@@ -1620,7 +1620,9 @@
         "timeoutShort": "timeout {seconds}s",
         "batchInput": "Input per batch (tokens, blank = automatic)",
         "batchInputHint": "Blank means 24,000 (input + output must fit the model context). Fixed prompt overhead is budgeted separately and chat content keeps at least half of the budget; this is not the output budget.",
-        "batchInputAuto": "Automatic (24,000)"
+        "batchInputAuto": "Automatic (24,000)",
+        "saveErrorCode": "Error code: {code}",
+        "configLoadError": "Some saved API configurations could not be read. The original file was preserved at: {path}."
       },
       "capability": {
         "memory": "Capability: session + long-term profiles",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Connecting to Kuaishou timed out.",
     "kuaishouNotConfigured": "Kuaishou capture is not configured in this build.",
     "kuaishouStopped": "Kuaishou capture was stopped.",
-    "kuaishouError": "Kuaishou capture failed."
+    "kuaishouError": "Kuaishou capture failed.",
+    "aiProviderUnknown": "This AI provider is not recognized. Refresh LiveMemory; the saved configuration may come from a newer version.",
+    "aiProviderRegionUnknown": "This provider region is not recognized. Choose a region again.",
+    "aiProviderBaseUrlRequired": "Enter the Base URL for this provider.",
+    "aiProviderBaseUrlInvalid": "The Base URL is not a valid http(s) address.",
+    "aiProviderPrivateUrl": "The Base URL points to a private or local network address. Enable the local-network option only if you trust that endpoint.",
+    "aiProviderLocalUrl": "Localhost endpoints require the local-network option.",
+    "aiProviderInsecureUrl": "A remote Base URL must use https.",
+    "aiProviderBaseUrlNotAllowed": "A built-in provider must use its official Base URL. Use the custom provider for another endpoint.",
+    "aiProviderKeyRequired": "Enter the API Key for this provider.",
+    "aiProviderKeyRequiredForChange": "Changing the provider, region, or Base URL requires a new API Key, because the key will be sent to a different endpoint.",
+    "aiProviderKeyInvalid": "The API Key contains a line break or invalid character. Copy it again as a single line.",
+    "aiProviderPricingInvalid": "The price information is invalid.",
+    "aiProviderCredentialPermission": "LiveMemory could not write the API Key to the local encrypted credential store because of a file permission problem. Data folder: {path}. Close other LiveMemory windows and check the folder permissions, then try again.",
+    "aiProviderFileLocked": "A local configuration or credential file is in use. Close other LiveMemory windows and try again.",
+    "aiProviderDiskFull": "There is not enough free disk space to save the API configuration.",
+    "aiProviderReadOnly": "The LiveMemory data folder is read-only.",
+    "aiProviderDataDirMissing": "The LiveMemory data folder no longer exists: {path}. Restart LiveMemory from the same data folder.",
+    "aiProviderCredentialStoreUnreadable": "The local encrypted credential store cannot be read. LiveMemory did not overwrite it. Back up the data folder before retrying, or contact support.",
+    "aiProviderConfigUnreadable": "The local API configuration file cannot be read. LiveMemory kept a backup copy; add the provider again.",
+    "aiProviderSaveFailed": "The API configuration could not be saved because of a local file error ({code})."
   },
   "toast": {
     "saved": "Saved",

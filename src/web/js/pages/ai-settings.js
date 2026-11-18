@@ -32,13 +32,32 @@ function field(label, control, hint = null) {
     hint ? el('div', {className: 'small tertiary', text: hint}) : null);
 }
 
+/**
+ * Compare endpoints the same way the server does. A legacy trailing slash (or a
+ * host differing only in case) is not a different endpoint and must not force a
+ * new API key or silently drop the saved credential.
+ */
+function endpointKey(value) {
+  const raw = String(value ?? '').trim();
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) return raw.replace(/\/+$/, '');
+    return `${url.protocol}//${url.host.toLowerCase()}${url.pathname.replace(/\/+$/, '')}${url.search}`;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
 export async function renderProviderSettingsCard(ctx) {
   const t = ctx.t;
   let payload = {providers: [], configs: []};
+  let loadRequestError = null;
   try {
     payload = await api.get('/api/ai/providers');
-  } catch {
-    // The settings page remains usable even if the provider service is down.
+  } catch (error) {
+    // The settings page remains usable even if the provider service is down,
+    // but the user must see that this is a local API problem, not "no configs".
+    loadRequestError = error;
   }
   const providers = payload.providers ?? [];
   const configs = payload.configs ?? [];
@@ -54,17 +73,46 @@ export async function renderProviderSettingsCard(ctx) {
 
   body.append(el('div', {className: 'setting-desc', text: t('ai.v13.providers.desc')}));
 
+  if (loadRequestError) {
+    body.append(el('div', {className: 'callout callout--danger'},
+      el('div', {className: 'callout-title', text: ctx.describeError(loadRequestError)}),
+      loadRequestError.code
+        ? el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {code: loadRequestError.code})})
+        : null));
+  }
+  const loadState = payload.loadState ?? null;
+  if (loadState?.error) {
+    body.append(el('div', {className: 'callout callout--warn'},
+      el('div', {className: 'callout-title', text: t('ai.v13.providers.configLoadError', {
+        path: loadState.backupFile || '—'
+      })}),
+      el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {code: loadState.error})})));
+  }
+  if (loadState?.credentialError) {
+    body.append(el('div', {className: 'callout callout--danger'},
+      el('div', {className: 'callout-title', text: t('errors.aiProviderCredentialStoreUnreadable')}),
+      el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {code: loadState.credentialError})})));
+  }
+
   const list = el('div', {className: 'def-list', style: {marginTop: '12px'}});
   if (configs.length === 0) {
     list.append(el('div', {className: 'small tertiary', text: t('ai.v13.providers.empty')}));
   }
   for (const config of configs) {
     const testStatus = config.lastTestStatus?.status ?? 'untested';
-    const failedStage = config.lastTestStatus?.stages
-      ? Object.values(config.lastTestStatus.stages).find((stage) => (
-        stage?.status === 'failed' && stage.detail
-      ))
+    const failedStageEntry = config.lastTestStatus?.stages
+      ? Object.entries(config.lastTestStatus.stages).find(([, stage]) => stage?.status === 'failed')
       : null;
+    const failedStage = failedStageEntry?.[1] ?? null;
+    const failedDetail = failedStage
+      ? [
+        failedStageEntry[0],
+        failedStage.code ? String(failedStage.code) : null,
+        failedStage.httpStatus ? `HTTP ${failedStage.httpStatus}` : null,
+        failedStage.detail ? String(failedStage.detail).slice(0, 300) : null
+      ].filter(Boolean).join(' · ')
+      : null;
+    const testMessage = el('div', {className: 'small', style: {color: 'var(--danger)'}, hidden: true});
     const row = el('div', {className: 'provider-config'},
       el('div', {className: 'provider-config-head'},
         el('div', {className: 'provider-config-title'},
@@ -73,11 +121,9 @@ export async function renderProviderSettingsCard(ctx) {
         chip(priceLabel(ctx, config), config.pricing ? 'accent' : 'neutral')),
       el('div', {className: 'small tertiary mono', text: `${config.providerId} / ${config.regionId} / ${config.modelId}`}),
       el('div', {className: 'small tertiary', text: `${capabilityLabel(ctx, config)} · ${t('ai.v13.providers.testStatus.' + testStatus)} · ${t('ai.v13.providers.concurrency')}: ${config.concurrency ?? 3} · ${t('ai.v13.providers.timeoutShort', {seconds: String(Math.round(Number(config.timeoutMs ?? 180000) / 1000))})}`}),
-      failedStage
+      failedDetail
         ? el('div', {className: 'small tertiary', style: {color: 'var(--danger)'}},
-          t('ai.v13.providers.testFailureDetail', {
-            detail: String(failedStage.detail).slice(0, 300)
-          }))
+          t('ai.v13.providers.testFailureDetail', {detail: failedDetail}))
         : null,
       // A capability test performs real billable requests. Show what the last
       // test used instead of leaving those calls invisible.
@@ -117,6 +163,8 @@ export async function renderProviderSettingsCard(ctx) {
           onClick: async (event) => {
             event.target.disabled = true;
             event.target.textContent = t('ai.v13.providers.testing');
+            testMessage.hidden = true;
+            testMessage.textContent = '';
             try {
               const result = await api.post(`/api/ai/providers/configs/${encodeURIComponent(config.id)}/test`, {});
               ctx.toast(t('ai.v13.providers.testDone', {status: result.result?.status ?? 'failed'}), {
@@ -124,6 +172,9 @@ export async function renderProviderSettingsCard(ctx) {
               });
               ctx.navigate('/settings');
             } catch (error) {
+              const code = error?.code ? ` [${error.code}]` : '';
+              testMessage.textContent = `${ctx.describeError(error)}${code}`;
+              testMessage.hidden = false;
               ctx.toast(ctx.describeError(error), {tone: 'error'});
               event.target.disabled = false;
               event.target.textContent = t('ai.v13.providers.test');
@@ -151,7 +202,8 @@ export async function renderProviderSettingsCard(ctx) {
               ctx.toast(ctx.describeError(error), {tone: 'error'});
             }
           }
-        })));
+        })),
+      testMessage);
     list.append(row);
   }
   body.append(list);
@@ -202,6 +254,33 @@ export async function renderProviderSettingsCard(ctx) {
     onClick: () => resetForm()
   });
   let formBlock = null;
+  const saveErrorHost = el('div', {
+    className: 'callout callout--danger',
+    hidden: true,
+    attrs: {role: 'alert', 'aria-live': 'polite'}
+  });
+
+  function clearSaveError() {
+    saveErrorHost.hidden = true;
+    saveErrorHost.replaceChildren();
+  }
+
+  function showSaveError(errorOrKey) {
+    const localKey = typeof errorOrKey === 'string';
+    const message = localKey ? t(errorOrKey) : ctx.describeError(errorOrKey);
+    const code = localKey ? null : errorOrKey?.code;
+    const path = localKey ? null : errorOrKey?.details?.path;
+    saveErrorHost.replaceChildren(...[
+      el('div', {className: 'callout-title', text: message}),
+      code ? el('div', {
+        className: 'small mono',
+        text: t('ai.v13.providers.saveErrorCode', {code: String(code)})
+      }) : null,
+      path ? el('div', {className: 'small mono', text: String(path)}) : null
+    ].filter(Boolean));
+    saveErrorHost.hidden = false;
+    saveErrorHost.scrollIntoView({block: 'nearest'});
+  }
 
   function selectedProvider() {
     return providers.find((entry) => entry.id === providerSelect.value) ?? providers[0];
@@ -258,7 +337,7 @@ export async function renderProviderSettingsCard(ctx) {
     const baseUrl = provider?.custom ? baseUrlInput.value.trim() : region?.baseUrl;
     const changed = provider?.id !== editingConfig.providerId
       || region?.id !== editingConfig.regionId
-      || baseUrl !== editingConfig.baseUrl;
+      || endpointKey(baseUrl) !== endpointKey(editingConfig.baseUrl);
     keyStatus.textContent = changed
       ? t('ai.v13.providers.keyRequiredForChange')
       : (editingConfig.hasCredential
@@ -269,10 +348,12 @@ export async function renderProviderSettingsCard(ctx) {
       : t('ai.v13.providers.keyNewHint');
   }
   providerSelect.addEventListener('change', () => {
+    clearSaveError();
     syncRegions();
     syncKeyState();
   });
   regionSelect.addEventListener('change', () => {
+    clearSaveError();
     syncPresets({apply: !editingConfig});
     syncKeyState();
   });
@@ -349,6 +430,7 @@ export async function renderProviderSettingsCard(ctx) {
   }
 
   function beginEdit(config) {
+    clearSaveError();
     editingId = config.id;
     editingConfig = config;
     formTitle.textContent = t('ai.v13.providers.editTitle');
@@ -383,6 +465,7 @@ export async function renderProviderSettingsCard(ctx) {
   }
 
   function resetForm() {
+    clearSaveError();
     editingId = null;
     editingConfig = null;
     formTitle.textContent = t('ai.v13.providers.addTitle');
@@ -418,6 +501,7 @@ export async function renderProviderSettingsCard(ctx) {
     text: t('ai.v13.providers.save'),
     onClick: async () => {
       saveButton.disabled = true;
+      clearSaveError();
       try {
         const provider = selectedProvider();
         const region = provider.regions.find((entry) => entry.id === regionSelect.value);
@@ -428,10 +512,10 @@ export async function renderProviderSettingsCard(ctx) {
         const regionChanged = editing && (
           provider.id !== editingConfig.providerId
           || region.id !== editingConfig.regionId
-          || baseUrl !== editingConfig.baseUrl
+          || endpointKey(baseUrl) !== endpointKey(editingConfig.baseUrl)
         );
         const fail = (key) => {
-          ctx.toast(t(key), {tone: 'error'});
+          showSaveError(key);
           saveButton.disabled = false;
         };
         if (!modelId) {
@@ -479,7 +563,10 @@ export async function renderProviderSettingsCard(ctx) {
             : (Number(batchBudgetInput.value) || null),
           allowLocalNetwork: localCheck.checked
         };
-        if (keyProvided) payload.apiKey = keyInput.value;
+        // Copying a key from a provider dashboard often adds a trailing newline.
+        // Trim only the outer whitespace here; the server rejects an internal
+        // line break (it would corrupt the Authorization header).
+        if (keyProvided) payload.apiKey = keyInput.value.trim();
         else if (!editing) payload.apiKey = '';
         if (editing) {
           await api.patch(`/api/ai/providers/configs/${encodeURIComponent(editingId)}`, payload);
@@ -492,7 +579,7 @@ export async function renderProviderSettingsCard(ctx) {
         resetForm();
         ctx.navigate('/settings');
       } catch (error) {
-        ctx.toast(ctx.describeError(error), {tone: 'error'});
+        showSaveError(error);
         saveButton.disabled = false;
       }
     }
@@ -529,6 +616,7 @@ export async function renderProviderSettingsCard(ctx) {
         el('div', {className: 'choice-title', text: t('ai.v13.providers.localTitle')}),
         el('div', {className: 'choice-desc', text: t('ai.v13.providers.localDesc')}))),
     el('div', {className: 'callout callout--neutral', style: {marginTop: '12px'}}, t('ai.v13.providers.security')),
+    saveErrorHost,
     el('div', {className: 'inline', style: {marginTop: '12px'}}, saveButton, cancelButton));
   body.append(formBlock);
 

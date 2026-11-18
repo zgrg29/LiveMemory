@@ -244,8 +244,22 @@ function notFound(code = ERROR_CODES.NOT_FOUND, messageKey = 'errors.notFound') 
   return new AppError(code, {messageKey, httpStatus: 404});
 }
 
+/**
+ * Map one provider-store failure to a specific, user-actionable error.
+ *
+ * The previous implementation returned `errors.aiProviderConfigInvalid` for
+ * every code, including file-permission and locked-file failures. The UI could
+ * therefore only say "API configuration is invalid" even when the configuration
+ * was valid and the local credential file could not be written. Domain
+ * validation keeps its stable code but gets its own message key; local storage
+ * failures are never reported as a bad API configuration.
+ */
 function providerConfigError(error) {
-  const code = String(error?.code ?? 'AI_PROVIDER_CONFIG_INVALID');
+  // AppError instances already carry the right status/message (for example the
+  // 404 for a missing config id or the 409 for a config in use). Re-wrapping
+  // them would turn a correct 404 into a save failure.
+  if (error instanceof AppError) return error;
+  const code = String(error?.code ?? '');
   if (code === 'AI_PROVIDER_CONFIG_IN_USE' || code === 'CONFIG_IN_USE') {
     return new AppError('AI_PROVIDER_CONFIG_IN_USE', {
       messageKey: 'errors.aiProviderConfigInUse',
@@ -253,31 +267,57 @@ function providerConfigError(error) {
     });
   }
   const known = {
-    PROVIDER_UNKNOWN: 'AI_PROVIDER_UNKNOWN',
-    REGION_UNKNOWN: 'AI_PROVIDER_REGION_UNKNOWN',
-    BASE_URL_REQUIRED: 'AI_PROVIDER_BASE_URL_REQUIRED',
-    BASE_URL_INVALID: 'AI_PROVIDER_BASE_URL_INVALID',
-    URL_INVALID: 'AI_PROVIDER_BASE_URL_INVALID',
-    URL_SCHEME: 'AI_PROVIDER_BASE_URL_INVALID',
-    URL_PRIVATE: 'AI_PROVIDER_PRIVATE_URL',
-    URL_PRIVATE_DNS: 'AI_PROVIDER_PRIVATE_URL',
-    URL_LOCAL: 'AI_PROVIDER_LOCAL_URL',
-    URL_METADATA: 'AI_PROVIDER_PRIVATE_URL',
-    URL_INSECURE: 'AI_PROVIDER_INSECURE_URL',
-    BASE_URL_NOT_ALLOWED: 'AI_PROVIDER_BASE_URL_NOT_ALLOWED',
-    MODEL_REQUIRED: 'AI_PROVIDER_MODEL_REQUIRED',
-    API_KEY_REQUIRED: 'AI_PROVIDER_KEY_REQUIRED',
-    API_KEY_REQUIRED_FOR_REGION: 'AI_PROVIDER_REGION_KEY_REQUIRED',
-    API_KEY_TOO_LARGE: 'AI_PROVIDER_KEY_INVALID',
-    API_KEY_INVALID: 'AI_PROVIDER_KEY_INVALID',
-    PRICING_REQUIRED: 'AI_PROVIDER_PRICING_REQUIRED',
-    PRICING_INVALID: 'AI_PROVIDER_PRICING_INVALID',
-    FREE_PRICING_UNVERIFIED: 'AI_PROVIDER_FREE_PRICING_UNVERIFIED'
+    PROVIDER_UNKNOWN: ['AI_PROVIDER_UNKNOWN', 'errors.aiProviderUnknown', 400],
+    REGION_UNKNOWN: ['AI_PROVIDER_REGION_UNKNOWN', 'errors.aiProviderRegionUnknown', 400],
+    BASE_URL_REQUIRED: ['AI_PROVIDER_BASE_URL_REQUIRED', 'errors.aiProviderBaseUrlRequired', 400],
+    BASE_URL_INVALID: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_INVALID: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_SCHEME: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_HOST: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_CREDENTIALS: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_FRAGMENT: ['AI_PROVIDER_BASE_URL_INVALID', 'errors.aiProviderBaseUrlInvalid', 400],
+    URL_PRIVATE: ['AI_PROVIDER_PRIVATE_URL', 'errors.aiProviderPrivateUrl', 400],
+    URL_PRIVATE_DNS: ['AI_PROVIDER_PRIVATE_URL', 'errors.aiProviderPrivateUrl', 400],
+    URL_METADATA: ['AI_PROVIDER_PRIVATE_URL', 'errors.aiProviderPrivateUrl', 400],
+    URL_LOCAL: ['AI_PROVIDER_LOCAL_URL', 'errors.aiProviderLocalUrl', 400],
+    URL_INSECURE: ['AI_PROVIDER_INSECURE_URL', 'errors.aiProviderInsecureUrl', 400],
+    BASE_URL_NOT_ALLOWED: ['AI_PROVIDER_BASE_URL_NOT_ALLOWED', 'errors.aiProviderBaseUrlNotAllowed', 400],
+    MODEL_REQUIRED: ['AI_PROVIDER_MODEL_REQUIRED', 'errors.aiProviderModelRequired', 400],
+    API_KEY_REQUIRED: ['AI_PROVIDER_KEY_REQUIRED', 'errors.aiProviderKeyRequired', 400],
+    API_KEY_REQUIRED_FOR_REGION: ['AI_PROVIDER_REGION_KEY_REQUIRED', 'errors.aiProviderKeyRequiredForChange', 400],
+    API_KEY_TOO_LARGE: ['AI_PROVIDER_KEY_INVALID', 'errors.aiProviderKeyInvalid', 400],
+    API_KEY_INVALID: ['AI_PROVIDER_KEY_INVALID', 'errors.aiProviderKeyInvalid', 400],
+    PRICING_REQUIRED: ['AI_PROVIDER_PRICING_INVALID', 'errors.aiProviderPricingInvalid', 400],
+    PRICING_INVALID: ['AI_PROVIDER_PRICING_INVALID', 'errors.aiProviderPricingInvalid', 400],
+    FREE_PRICING_UNVERIFIED: ['AI_PROVIDER_PRICING_INVALID', 'errors.aiProviderPricingInvalid', 400],
+    CREDENTIAL_STORE_INVALID: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    CREDENTIAL_STORE_UNREADABLE: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    CREDENTIAL_KEY_INVALID: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    CREDENTIAL_KEY_MISSING: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    CREDENTIAL_KEY_UNREADABLE: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    EACCES: ['AI_PROVIDER_CREDENTIAL_PERMISSION', 'errors.aiProviderCredentialPermission', 500],
+    EPERM: ['AI_PROVIDER_CREDENTIAL_PERMISSION', 'errors.aiProviderCredentialPermission', 500],
+    EBUSY: ['AI_PROVIDER_FILE_LOCKED', 'errors.aiProviderFileLocked', 409],
+    ETXTBSY: ['AI_PROVIDER_FILE_LOCKED', 'errors.aiProviderFileLocked', 409],
+    EROFS: ['AI_PROVIDER_READ_ONLY', 'errors.aiProviderReadOnly', 500],
+    ENOSPC: ['AI_PROVIDER_DISK_FULL', 'errors.aiProviderDiskFull', 507],
+    EDQUOT: ['AI_PROVIDER_DISK_FULL', 'errors.aiProviderDiskFull', 507],
+    ENOENT: ['AI_PROVIDER_DATA_DIR_MISSING', 'errors.aiProviderDataDirMissing', 500],
+    AI_PROVIDER_CONFIG_UNREADABLE: ['AI_PROVIDER_CONFIG_UNREADABLE', 'errors.aiProviderConfigUnreadable', 500],
+    AI_PROVIDER_CONFIG_VERSION_UNSUPPORTED: ['AI_PROVIDER_CONFIG_UNREADABLE', 'errors.aiProviderConfigUnreadable', 500]
   };
-  return new AppError(known[code] ?? 'AI_PROVIDER_CONFIG_INVALID', {
-    messageKey: 'errors.aiProviderConfigInvalid',
-    details: {reason: known[code] ?? code},
-    httpStatus: 400
+  const [outCode, messageKey, httpStatus] = known[code]
+    ?? ['AI_PROVIDER_SAVE_FAILED', 'errors.aiProviderSaveFailed', 500];
+  const details = {reason: code || 'UNKNOWN'};
+  if (error?.path) details.path = String(error.path);
+  if (error?.details && typeof error.details === 'object' && !Array.isArray(error.details)) {
+    details.diagnostic = error.details;
+  }
+  return new AppError(outCode, {
+    messageKey,
+    details,
+    httpStatus,
+    cause: error
   });
 }
 
@@ -1489,7 +1529,10 @@ export function buildRoutes() {
       handler: ({res, deps}) => {
         sendJson(res, 200, {
           providers: publicCatalog(),
-          configs: deps.providerConfigStore ? deps.providerConfigStore.list() : []
+          configs: deps.providerConfigStore ? deps.providerConfigStore.list() : [],
+          // A corrupt config file is preserved next to the original; the UI must
+          // be able to say so instead of silently showing an empty list.
+          loadState: deps.providerConfigStore?.status?.() ?? null
         });
       }
     },
@@ -1511,11 +1554,11 @@ export function buildRoutes() {
         } else if (providerId) {
           const provider = getProvider(providerId);
           if (!provider) {
-            throw new AppError('AI_PROVIDER_UNKNOWN', {messageKey: 'errors.aiProviderConfigInvalid', httpStatus: 400});
+            throw new AppError('AI_PROVIDER_UNKNOWN', {messageKey: 'errors.aiProviderUnknown', httpStatus: 400});
           }
           const region = getRegion(providerId, url.searchParams.get('regionId') ?? provider.regions[0]?.id);
           if (!region) {
-            throw new AppError('AI_PROVIDER_REGION_UNKNOWN', {messageKey: 'errors.aiProviderConfigInvalid', httpStatus: 400});
+            throw new AppError('AI_PROVIDER_REGION_UNKNOWN', {messageKey: 'errors.aiProviderRegionUnknown', httpStatus: 400});
           }
           config = {
             providerId,

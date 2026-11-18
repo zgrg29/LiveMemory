@@ -481,6 +481,20 @@ export async function runLauncher({
       fallback: dataDirInfo.fallback,
       attempts: dataDirInfo.attempts
     });
+    // requireAdministrator can run under a different administrator account when
+    // Windows asks for credentials "over the shoulder". In that case
+    // %LOCALAPPDATA% (and therefore the default data folder) belongs to that
+    // account. Record the facts so a support report can tell a real save error
+    // apart from "the config was written into another profile".
+    startupLog.record('data-dir.identity', {
+      ok: true,
+      currentUser: env.USERNAME ?? null,
+      userProfile: env.USERPROFILE ?? null,
+      localAppData: env.LOCALAPPDATA ?? null,
+      dataDir: dataDirInfo.dir,
+      source: dataDirInfo.source ?? 'default',
+      crossProfile: dataDirInfo.source === 'profile'
+    });
 
     paths = createPaths(dataDirInfo.dir);
     try {

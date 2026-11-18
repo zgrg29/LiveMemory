@@ -1620,7 +1620,9 @@
         "timeoutShort": "Zeitlimit {seconds}s",
         "batchInput": "Eingabe pro Stapel (Tokens, leer = automatisch)",
         "batchInputHint": "Leer bedeutet 24.000 (Eingabe + Ausgabe müssen in den Modellkontext passen). Der feste Anweisungsaufwand wird separat veranschlagt, und Chat-Inhalte erhalten mindestens die Hälfte des Budgets; dies ist nicht das Ausgabebudget.",
-        "batchInputAuto": "Automatisch (24.000)"
+        "batchInputAuto": "Automatisch (24.000)",
+        "saveErrorCode": "Fehlercode: {code}",
+        "configLoadError": "Einige gespeicherte API-Konfigurationen konnten nicht gelesen werden. Die Originaldatei wurde hier gesichert: {path}."
       },
       "capability": {
         "memory": "Fähigkeit: Sitzung + Langzeitprofile",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Zeitüberschreitung bei der Verbindung zu Kuaishou.",
     "kuaishouNotConfigured": "Die Kuaishou-Erfassung ist in diesem Build nicht konfiguriert.",
     "kuaishouStopped": "Die Kuaishou-Erfassung wurde gestoppt.",
-    "kuaishouError": "Die Kuaishou-Erfassung ist fehlgeschlagen."
+    "kuaishouError": "Die Kuaishou-Erfassung ist fehlgeschlagen.",
+    "aiProviderUnknown": "Dieser KI-Anbieter wird nicht erkannt. Lade LiveMemory neu; die gespeicherte Konfiguration stammt möglicherweise aus einer neueren Version.",
+    "aiProviderRegionUnknown": "Die Region dieses Anbieters wird nicht erkannt. Wähle die Region erneut.",
+    "aiProviderBaseUrlRequired": "Gib die Basis-URL dieses Anbieters ein.",
+    "aiProviderBaseUrlInvalid": "Die Basis-URL ist keine gültige http(s)-Adresse.",
+    "aiProviderPrivateUrl": "Die Basis-URL verweist auf eine private oder lokale Netzwerkadresse. Aktiviere die Option für lokale Netzwerke nur, wenn du diesem Ziel vertraust.",
+    "aiProviderLocalUrl": "Lokale Adressen erfordern die Option für lokale Netzwerke.",
+    "aiProviderInsecureUrl": "Eine entfernte Basis-URL muss https verwenden.",
+    "aiProviderBaseUrlNotAllowed": "Ein integrierter Anbieter muss seine offizielle Basis-URL verwenden. Wähle für eine andere Adresse „Benutzerdefiniert (OpenAI-kompatibel)“.",
+    "aiProviderKeyRequired": "Gib den API-Schlüssel dieses Anbieters ein.",
+    "aiProviderKeyRequiredForChange": "Beim Ändern von Anbieter, Region oder Basis-URL ist ein neuer API-Schlüssel erforderlich, da der Schlüssel an ein anderes Ziel gesendet wird.",
+    "aiProviderKeyInvalid": "Der API-Schlüssel enthält einen Zeilenumbruch oder ein ungültiges Zeichen. Kopiere ihn erneut als einzelne Zeile.",
+    "aiProviderPricingInvalid": "Die Preisinformationen sind ungültig.",
+    "aiProviderCredentialPermission": "LiveMemory konnte den API-Schlüssel wegen eines Dateiberechtigungsproblems nicht in den lokalen verschlüsselten Anmeldedatenspeicher schreiben. Datenordner: {path}. Schließe andere LiveMemory-Fenster, prüfe die Ordnerberechtigungen und versuche es erneut.",
+    "aiProviderFileLocked": "Eine lokale Konfigurations- oder Anmeldedatei wird verwendet. Schließe andere LiveMemory-Fenster und versuche es erneut.",
+    "aiProviderDiskFull": "Es ist nicht genügend freier Speicherplatz zum Speichern der API-Konfiguration vorhanden.",
+    "aiProviderReadOnly": "Der LiveMemory-Datenordner ist schreibgeschützt.",
+    "aiProviderDataDirMissing": "Der LiveMemory-Datenordner existiert nicht mehr: {path}. Starte aus demselben Ordner neu.",
+    "aiProviderCredentialStoreUnreadable": "Der lokale verschlüsselte Anmeldedatenspeicher kann nicht gelesen werden. LiveMemory hat ihn nicht überschrieben. Sichere den Datenordner, bevor du es erneut versuchst, oder wende dich an den Support.",
+    "aiProviderConfigUnreadable": "Die lokale API-Konfigurationsdatei kann nicht gelesen werden. LiveMemory hat eine Sicherungskopie behalten; füge den Anbieter erneut hinzu.",
+    "aiProviderSaveFailed": "Die API-Konfiguration konnte wegen eines lokalen Dateifehlers ({code}) nicht gespeichert werden."
   },
   "toast": {
     "saved": "Gespeichert",

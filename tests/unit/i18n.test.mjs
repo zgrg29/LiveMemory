@@ -24,7 +24,8 @@ const webRoot = fileURLToPath(new URL('../../src/web/i18n/', import.meta.url));
 // Kick keys (17 live/source + 13 errors + common.platform.kick) → 2,302; G5.1
 // added two monitoring placeholders → 2,304. The Kuaishou preview added 47 keys
 // (31 live/source + 13 errors + 2 monitoring + common.platform.kuaishou) → 2,351.
-const LEAF_KEYS = 2351;
+// v0.18.1 provider-save diagnostics added 20 specific errors + 2 UI keys → 2,373.
+const LEAF_KEYS = 2373;
 
 /** Legacy native-name keys kept from the three-language era. */
 const LEGACY_NAME_KEYS = {'zh-CN': 'zh', ja: 'ja', en: 'en'};
@@ -80,7 +81,7 @@ test('web dictionaries share exactly the same keys', async () => {
   }
 });
 
-test('the shipped dictionaries keep all 2,351 leaf translation keys', async () => {
+test('the shipped dictionaries keep all 2,373 leaf translation keys', async () => {
   for (const locale of AVAILABLE_LOCALES) {
     assert.equal(flatten(await loadWeb(locale)).size, LEAF_KEYS, `${locale} leaf key count changed`);
   }

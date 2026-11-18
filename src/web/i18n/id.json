@@ -1620,7 +1620,9 @@
         "timeoutShort": "batas waktu {seconds} dtk",
         "batchInput": "Masukan per batch (token, kosong = otomatis)",
         "batchInputHint": "Kosong berarti 24.000 (masukan + keluaran harus masuk ke konteks model). Beban perintah tetap dihitung terpisah dan konten chat mempertahankan setidaknya separuh anggaran; ini bukan anggaran keluaran.",
-        "batchInputAuto": "Otomatis (24.000)"
+        "batchInputAuto": "Otomatis (24.000)",
+        "saveErrorCode": "Kode kesalahan: {code}",
+        "configLoadError": "Beberapa konfigurasi API tersimpan tidak dapat dibaca. File asli dicadangkan ke: {path}."
       },
       "capability": {
         "memory": "Kemampuan: sesi + profil jangka panjang",
@@ -2117,7 +2119,27 @@
     "kuaishouConnectTimeout": "Koneksi ke Kuaishou habis waktu.",
     "kuaishouNotConfigured": "Perekaman Kuaishou tidak dikonfigurasi dalam build ini.",
     "kuaishouStopped": "Perekaman Kuaishou dihentikan.",
-    "kuaishouError": "Perekaman Kuaishou gagal."
+    "kuaishouError": "Perekaman Kuaishou gagal.",
+    "aiProviderUnknown": "Penyedia AI ini tidak dikenali. Muat ulang LiveMemory; konfigurasi tersimpan mungkin berasal dari versi yang lebih baru.",
+    "aiProviderRegionUnknown": "Region penyedia ini tidak dikenali. Pilih region lagi.",
+    "aiProviderBaseUrlRequired": "Masukkan Base URL penyedia ini.",
+    "aiProviderBaseUrlInvalid": "Base URL bukan alamat http(s) yang valid.",
+    "aiProviderPrivateUrl": "Base URL menunjuk ke alamat jaringan privat atau lokal. Aktifkan opsi jaringan lokal hanya jika Anda memercayai tujuan tersebut.",
+    "aiProviderLocalUrl": "Alamat lokal memerlukan opsi jaringan lokal.",
+    "aiProviderInsecureUrl": "Base URL jarak jauh harus menggunakan https.",
+    "aiProviderBaseUrlNotAllowed": "Penyedia bawaan harus menggunakan Base URL resminya. Untuk alamat lain, pilih «OpenAI-compatible kustom».",
+    "aiProviderKeyRequired": "Masukkan API Key penyedia ini.",
+    "aiProviderKeyRequiredForChange": "Mengubah penyedia, region, atau Base URL memerlukan API Key baru karena kunci akan dikirim ke tujuan yang berbeda.",
+    "aiProviderKeyInvalid": "API Key berisi jeda baris atau karakter yang tidak valid. Salin ulang sebagai satu baris.",
+    "aiProviderPricingInvalid": "Informasi harga tidak valid.",
+    "aiProviderCredentialPermission": "LiveMemory tidak dapat menulis API Key ke penyimpanan kredensial terenkripsi lokal karena masalah izin file. Folder data: {path}. Tutup jendela LiveMemory lain, periksa izin folder, lalu coba lagi.",
+    "aiProviderFileLocked": "File konfigurasi atau kredensial lokal sedang digunakan. Tutup jendela LiveMemory lain lalu coba lagi.",
+    "aiProviderDiskFull": "Ruang disk tidak cukup untuk menyimpan konfigurasi API.",
+    "aiProviderReadOnly": "Folder data LiveMemory bersifat hanya-baca.",
+    "aiProviderDataDirMissing": "Folder data LiveMemory sudah tidak ada: {path}. Mulai ulang dari folder yang sama.",
+    "aiProviderCredentialStoreUnreadable": "Penyimpanan kredensial terenkripsi lokal tidak dapat dibaca. LiveMemory tidak menimpanya. Cadangkan folder data sebelum mencoba lagi atau hubungi dukungan.",
+    "aiProviderConfigUnreadable": "File konfigurasi API lokal tidak dapat dibaca. LiveMemory menyimpan salinan cadangan; tambahkan penyedia lagi.",
+    "aiProviderSaveFailed": "Konfigurasi API gagal disimpan karena kesalahan file lokal ({code})."
   },
   "toast": {
     "saved": "Tersimpan",
