@@ -565,7 +565,8 @@ modules；99,609,088 B；SHA-256 `8a303c5f…e3fb652`；Manifest `requireAdminis
 
 ### 0.64.6 交付状态
 
-- 本地 Commit：见本轮最终回复与 `git log -1`；**未 Push / Tag / Release**。
+- 本地 Commit：`a9c95d7a9b36d978727c31efc436f3c825c33202`
+  （`fix: store AI provider keys in Windows Credential Manager`）；**未 Push / Tag / Release**。
 - 版本仍 `0.19.0`；建议作为补丁版本（如 `0.19.1`）发布，但需用户明确授权后才能改版本号、
   构建发布资产与打 Tag。
 - 本轮已构建最终候选 EXE 并复跑 `verify-provider-save-exe`、`verify-exe`、

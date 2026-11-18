@@ -42,7 +42,8 @@
 
 ### Git
 
-- 本地 Commit：见本轮最终回复与 `git log -1`；**未 Push / Tag / Release**。
+- 本地 Commit：`a9c95d7a9b36d978727c31efc436f3c825c33202`
+  （`fix: store AI provider keys in Windows Credential Manager`）；**未 Push / Tag / Release**。
 - 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
 
 ---

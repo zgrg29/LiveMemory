@@ -140,7 +140,13 @@
 - 同一 Windows 用户、同一数据目录下迁移无感；跨 Windows 账户需要重新输入 Key
   （Credential Manager 账户隔离，非数据丢失）。
 
-## 7. 结论
+## 7. 提交
+
+- 本地 Commit：`a9c95d7a9b36d978727c31efc436f3c825c33202`
+  （`fix: store AI provider keys in Windows Credential Manager`）。
+- 未 Push / Tag / Release。
+
+## 8. 结论
 
 - 选择的存储方案：Windows Credential Manager（DPAPI，按用户 SID；PowerShell + C# P/Invoke）。
 - 比旧方案可靠：不再依赖数据目录内凭据文件 ACL；每个 Key 独立；迁移/回滚/错误分类明确。
