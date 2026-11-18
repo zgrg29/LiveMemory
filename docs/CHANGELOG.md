@@ -10,6 +10,9 @@
 HTTP 路由复现出多个独立缺陷，而不是单一原因。直播平台状态、数据库 Schema（16）、金额、
 身份、去重与保留策略未改。
 
+发布：Tag `v0.19.0` → `50920d1`；GitHub Release `450031601` ·
+https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.0
+
 ### 修复
 
 - **Base URL 等价性**：尾斜杠、主机大小写、默认端口不再被当成换端点。旧 DeepSeek/OpenCode
@@ -40,10 +43,10 @@ HTTP 路由复现出多个独立缺陷，而不是单一原因。直播平台状
   失败重试、重启持久化、损坏库/配置、自定义 OpenCode 会话头。
 - 全量 **871 unit + 398 integration = 1,269 passed / 0 failed / 0 skipped**（单次全量
   `--test-isolation=none`，365,726 ms）。
-- Windows EXE：最终发布构建的 Build ID、大小与 SHA-256 见 `docs/STATUS.md` §0.63；
-  `requireAdministrator`；`verify-provider-save-exe` **14/14**（真实 EXE 保存、重启、旧配置、
-  失败回滚、损坏库/配置）、`verify-exe` **11/11**、`verify-help-exe` **14/14**、
-  `verify-ai-token-exe` **16/16**。
+- Windows EXE：Build `252939f4d41b` / commit `50920d1` / 99,551,744 B /
+  SHA-256 `901f92fd…64fc9` / `requireAdministrator`；
+  `verify-provider-save-exe` **14/14**（真实 EXE 保存、重启、旧配置、失败回滚、损坏库/配置）、
+  `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
 
 ### 兼容性
 

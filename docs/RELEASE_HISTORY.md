@@ -15,7 +15,7 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 
 | 版本 | 类型 | Tag / Commit | GitHub Release | 发布资产 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `v0.19.0` | 正式发布（AI Provider Reliability Update） | 发布后填写 | 发布后填写 | `LiveMemory.exe` + `SHA256SUMS.txt` | 待发布 |
+| `v0.19.0` | 正式发布（AI Provider Reliability Update） | `v0.19.0` → `50920d1` | `450031601` · 2026-11-18T13:32:13Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.18.0` | 正式发布（OpenCode AI Provider） | `v0.18.0` → `3149ffc` | `449956670` · 2026-11-18T12:30:18Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.17.0` | 正式发布（快手预览组件；在线采集未开放） | `v0.17.0` → `5807e3e` | `448828056` · 2026-11-17T15:31:37Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.16.0` | 正式稳定版（Kick） | `v0.16.0` → `c6c1ee4`（构建提交 `4a2bcd6`） | `448187380` · 2026-11-17T05:32:48Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
@@ -33,21 +33,21 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 | 项目 | 值 |
 | --- | --- |
 | Release | `LiveMemory v0.19.0 — AI Provider Reliability Update` |
-| Release ID / URL | 发布后填写 |
-| 状态 | 发布后填写 |
-| Tag | 发布后填写 |
-| 发布提交 | 发布后填写 |
+| Release ID / URL | `450031601` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.0 |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T13:32:13Z` |
+| Tag | annotated `v0.19.0`（object `5e366a228a8fea5def069754285c0678e69efbfd` → commit `50920d1ebf8e2daf270b610d1f960737e781979c`） |
+| 发布提交 | `50920d1ebf8e2daf270b610d1f960737e781979c`（`chore: release AI provider reliability update (v0.19.0)`） |
 | 功能提交 | `a2d06e6`（`fix: make AI provider configuration saves reliable`）；文档 `5fbda2b` |
-| EXE | 发布后填写 |
-| `SHA256SUMS.txt` | 发布后填写 |
+| EXE | 99,551,744 B；Build ID `252939f4d41b`；SHA-256 `901f92fd35274833456d9755fc77a7beabe7d33e3fb0c165fd6fd5a82bb64fc9` |
+| `SHA256SUMS.txt` | 82 B；SHA-256 `9ee83678287d7ad4eafb7e867a3d91a17085a1a0fbdd55d43031d0a889ece952`；内容 `901f92fd…64fc9  LiveMemory.exe` |
 | Manifest | `requireAdministrator` |
 | 全量测试 | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration） |
 | Provider 保存专项 | 14 unit + 13 integration；真实 EXE 14/14 |
 | 十语言字典 | 10 × 2,373；键集/占位符/空值差异 0 |
 | EXE 验收 | `verify-provider-save-exe` 14/14；`verify-exe` 11/11；`verify-help-exe` 14/14；`verify-ai-token-exe` 16/16 |
 | 真实 OpenCode API | **未执行（无 Key）** |
-| Release body | 与 `docs/release-notes/v0.19.0.md` 一致 |
-| 下载复核 | 发布后填写 |
+| Release body | 与 `docs/release-notes/v0.19.0.md` 逐字节一致（SHA-256 `de9fe7ba9c4f18f4e725b0030802f44507641d3c6e3c5f8041e5123ece56d30f`） |
+| 下载复核 | EXE 99,551,744 B / SHA-256 `901f92fd…64fc9` 与本地一致；`SHA256SUMS.txt` 82 B / SHA-256 `9ee83678…ece952` 内容一致；Release 页与 `/releases/latest` 200 |
 | 旧版本 | `v0.18.0`（Release `449956670`）及更早资产不得修改 |
 
 **未验证 / 已知限制**：真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、

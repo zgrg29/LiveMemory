@@ -13,8 +13,8 @@
 | 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；快手仍为预览、采集禁用 |
 | 版本提交 | 见本轮最终回复与 `git log -1` |
 | 全量测试 | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration） |
-| EXE | 最终 Build ID / 大小 / SHA-256 见 `docs/STATUS.md` §0.63；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
-| Release | 见 `docs/STATUS.md` §0.63 / `docs/RELEASE_HISTORY.md`（发布后填写） |
+| EXE | Build `252939f4d41b` / commit `50920d1` / 99,551,744 B / SHA-256 `901f92fd…64fc9` / `requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| Release | **`v0.19.0`** · Release ID `450031601` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.0 · Published `2026-11-18T13:32:13Z` |
 | 未验证 | 真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实删除权限提示；真实 OpenCode 付费推理 |
 
 ### 关键文件

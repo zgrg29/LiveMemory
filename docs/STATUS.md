@@ -18,11 +18,11 @@
 | --- | --- |
 | 产品版本 / 当前开发版本 | **`0.19.0`**（`package.json` = `APP_VERSION` = `0.19.0`） |
 | 下一版本 | **未定**；需用户授权后才进入新里程碑 |
-| 最新正式发布 | **`v0.19.0`** · AI Provider Reliability Update（发布记录见 §0.63） |
+| 最新正式发布 | **`v0.19.0`** · Release ID `450031601` · Published `2026-11-18T13:32:13Z` |
 | 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；平台状态未变（快手仍为预览、采集禁用） |
-| 最新 Release 资产 | `LiveMemory.exe` 与 `SHA256SUMS.txt`（大小与 SHA-256 见 §0.63 / `docs/RELEASE_HISTORY.md`） |
-| 当前分支 | `main`（发布提交已 Push） |
-| 当前 Tag | `v0.19.0`（annotated；对象与目标提交见 §0.63） |
+| 最新 Release 资产 | `LiveMemory.exe` 99,551,744 B · SHA-256 `901f92fd…64fc9`；`SHA256SUMS.txt` 82 B · SHA-256 `9ee83678…ece952` |
+| 当前分支 | `main`（发布提交 `142ec4a..50920d1` 与 Tag 已 Push） |
+| 当前 Tag | `v0.19.0`（annotated，object `5e366a2` → commit `50920d1`） |
 | 数据库 Schema | **16**（v0.19.0 无迁移） |
 | 当前开发里程碑 | **P53 AI Provider Reliability（v0.19.0 正式发布）**；OpenCode 真实付费验收待办 |
 | 最近开发 | 2026-11-18：修复 Provider 配置保存（Base URL 规范化、Key 换行、凭据回滚、错误分类、自定义 OpenCode 会话头）；未改其他 Provider 协议 |
@@ -70,7 +70,7 @@
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
-| 本轮 EXE（v0.19.0） | Build ID、大小、SHA-256 与 verify 结果见 §0.63（发布后填写） |
+| 本轮 EXE（v0.19.0） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × **2,373** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
@@ -444,21 +444,24 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
 | 版本 / Manifest | `0.19.0` / `requireAdministrator` |
-| Build ID / commit | 见发布后记录 |
-| 大小 / SHA-256 | 见发布后记录 |
+| Build ID / commit | **`252939f4d41b`** / **`50920d1`**；builtAt `2026-11-18T13:28:10.722Z`；256 files / 70 required modules |
+| 大小 / SHA-256 | **99,551,744 B** / `901f92fd35274833456d9755fc77a7beabe7d33e3fb0c165fd6fd5a82bb64fc9` |
+| `SHA256SUMS.txt` | 82 B；SHA-256 `9ee83678287d7ad4eafb7e867a3d91a17085a1a0fbdd55d43031d0a889ece952`；内容 `901f92fd…64fc9  LiveMemory.exe` |
 | EXE 验收 | `verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
-| 下载复核 | 见发布后记录 |
+| 下载复核 | GitHub 重新下载：EXE 99,551,744 B / SHA-256 `901f92fd…64fc9` 与本地一致；`SHA256SUMS.txt` 82 B / SHA-256 `9ee83678…ece952`、内容一致；Release 页与 `/releases/latest` 均 200 |
 
 ### 0.63.4 发布记录
 
 | 项目 | 值 |
 | --- | --- |
 | Release | **LiveMemory v0.19.0 — AI Provider Reliability Update** |
-| Release URL | 发布后记录 |
-| Release ID | 发布后记录 |
-| Tag | 发布后记录 |
-| Push | 发布后记录 |
-| Release body | 与 `docs/release-notes/v0.19.0.md` 一致 |
+| Release URL | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.0` |
+| Release ID | **`450031601`** |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T13:32:13Z` |
+| Tag | annotated `v0.19.0`（object `5e366a228a8fea5def069754285c0678e69efbfd` → commit `50920d1ebf8e2daf270b610d1f960737e781979c`） |
+| Push | `main`：`142ec4a..50920d1`；Tag `v0.19.0` 新推送 |
+| Release body | 与 `docs/release-notes/v0.19.0.md` 逐字节一致（SHA-256 `de9fe7ba9c4f18f4e725b0030802f44507641d3c6e3c5f8041e5123ece56d30f`） |
+| 旧版本 | `v0.18.0`（Release `449956670`）与资产未修改 |
 | 未验证 | 真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实 OpenCode 付费推理 |
 
 ### 0.63.5 兼容性
