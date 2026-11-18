@@ -15,11 +15,48 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 
 | 版本 | 类型 | Tag / Commit | GitHub Release | 发布资产 | 状态 |
 | --- | --- | --- | --- | --- | --- |
+| `v0.18.0` | 正式发布（OpenCode AI Provider） | `v0.18.0` → `3149ffc` | `449956670` · 2026-11-18T12:30:18Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.17.0` | 正式发布（快手预览组件；在线采集未开放） | `v0.17.0` → `5807e3e` | `448828056` · 2026-11-17T15:31:37Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.16.0` | 正式稳定版（Kick） | `v0.16.0` → `c6c1ee4`（构建提交 `4a2bcd6`） | `448187380` · 2026-11-17T05:32:48Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.15.0` | 正式稳定版（十语言） | `v0.15.0` → `e07233c` | `447343485` · 2026-11-16T17:09:41Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.14.0` | 正式稳定版（五平台） | `v0.14.0` → `d268cf9` | `446701465` · 2026-11-16T07:01:11Z | `LiveMemory-v0.14.0-windows-x64.zip` + `SHA256SUMS.txt` | Published |
 | `v0.13.2-rc.0` | RC0 预发布 | `v0.13.2-rc.0`（lightweight）→ `f14a932`（构建提交 `cb28624`） | `445425123` · 2026-11-14T16:22:25Z | `LiveMemory-v0.13.2-rc.0-windows-x64.zip` + `SHA256SUMS.txt` | Published |
+
+---
+
+## v0.18.0 — OpenCode AI Provider（2026-11-18）
+
+**范围**：新增 OpenCode AI Provider（Pay-as-you-go / Go），复用现有 OpenAI-compatible
+（Chat Completions）适配器；未改直播平台协议、数据库 Schema（16）、金额/身份/去重。
+**没有真实 OpenCode API Key**，真实付费推理未验收；Go 未真实验收。
+
+| 项目 | 值 |
+| --- | --- |
+| Release | `LiveMemory v0.18.0 — OpenCode AI Provider` |
+| Release ID / URL | `449956670` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.18.0 |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T12:30:18Z` |
+| Tag | annotated `v0.18.0`（object `79a76e9dab2e895689d829d5a233bac013073d46` → commit `3149ffceb2252d457d7eb7a72659bdb6999cd0de`） |
+| 发布提交 | `3149ffceb2252d457d7eb7a72659bdb6999cd0de`（`chore: release OpenCode provider (v0.18.0)`） |
+| 功能提交 | `032508cdcbda7bad3d8c81893ce1e96ae06f2baa`（`feat: add OpenCode as a selectable AI provider`）；文档提交 `6dffc61`、构建记录 `adef993` |
+| EXE | 99,503,104 B；Build ID `902109197d8b`；SHA-256 `285cfd822b9a6535d0998c98bc5c5d5eee8a502a71c96a3bc02c68d09e62957f` |
+| `SHA256SUMS.txt` | 82 B；SHA-256 `0400aa9bffa2ca6f6b10d97cc454551c2b3f2dcfdd7527f8dc1f2f901e1b626a`；内容 `285cfd…2957f  LiveMemory.exe` |
+| Manifest | `requireAdministrator` |
+| 全量测试 | 856 unit + 385 integration = **1,241 passed / 0 failed / 0 skipped**（`--test-isolation=none`，344,314 ms） |
+| OpenCode 专项 | **15 passed**（12 unit + 3 integration） |
+| 十语言字典 | 10 × 2,351；键集/占位符/空值差异 0 |
+| EXE 验收 | `verify-exe` **11/11**；`verify-help-exe` **14/14**；`verify-ai-token-exe` **16/16** |
+| 真实 OpenCode API | **未执行（无 Key）** |
+| Release body | 与 `docs/release-notes/v0.18.0.md` 逐字节一致（SHA-256 `50040e27dc64ae450d3fb31644d216e8e746bc7763160b1fe77212ea84fe6e96`） |
+| 下载复核 | EXE 99,503,104 B / SHA-256 `285cfd82…2957f` 与本地一致；`SHA256SUMS.txt` 内容一致；Release 页与 `/releases/latest` 200 |
+| 旧版本 | `v0.17.0`（Release `448828056`）与资产未修改 |
+
+**未验证 / 已知限制**：无真实 OpenCode Key，真实推理、429/5xx、模型输出、账单与
+`usage.cost` 未验收；Go 未真实验收；免费层模型对第三方客户端 403；`json_schema` 未声明；
+部分模型 `temperature` 兼容性未验证；真实双击 UAC 与干净 Windows 账户未人工验证；EXE 未签名；
+快手仍为预览、在线采集未开放。
+
+**相关记录**：`docs/release-notes/v0.18.0.md`、`docs/RELEASE_CHECKLIST_v0.18.0.md`、
+`docs/STATUS.md` §0.61、`log/2026-11-18-v0.18.0-release.md`。
 
 ---
 

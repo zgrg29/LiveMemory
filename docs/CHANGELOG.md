@@ -14,8 +14,9 @@
 | 项目 | 值 |
 | --- | --- |
 | 版本 / Schema | `0.18.0` / 16（无迁移） |
-| 发布状态 | **Tag `v0.18.0` · GitHub Release**（Release ID/URL 发布后记录） |
-| 发布资产 | `LiveMemory.exe` + `SHA256SUMS.txt`（大小与 SHA-256 见发布记录） |
+| 发布状态 | **Tag `v0.18.0` · GitHub Release `449956670` Published（2026-11-18T12:30:18Z）** |
+| Release | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.18.0` |
+| 发布资产 | `LiveMemory.exe`（99,503,104 B，SHA-256 `285cfd82…2957f`）+ `SHA256SUMS.txt`（82 B）；下载复核一致 |
 | 真实 OpenCode 推理 | **未执行（无 Key）** |
 | 其他 Provider | 未改；全量回归通过 |
 

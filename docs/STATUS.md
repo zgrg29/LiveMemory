@@ -18,11 +18,11 @@
 | --- | --- |
 | 产品版本 / 当前开发版本 | **`0.18.0`**（`package.json` = `APP_VERSION` = `0.18.0`） |
 | 下一版本 | **未定**；需用户授权后才进入新里程碑 |
-| 最新正式发布 | **`v0.18.0`**（Release ID/URL 发布后记录；见 `docs/RELEASE_HISTORY.md`） |
+| 最新正式发布 | **`v0.18.0`** · Release ID `449956670` · Published `2026-11-18T12:30:18Z` |
 | 发布性质 | 正式发布：新增 OpenCode AI Provider；直播平台状态未变（快手仍为预览、采集禁用） |
-| 最新 Release 资产 | `LiveMemory.exe` + `SHA256SUMS.txt`（大小与 SHA-256 见 §0.61.5 与发布记录） |
-| 当前分支 | `main`（本地发布提交；Push 后更新本节） |
-| 当前 Tag | `v0.18.0`（发布后记录 tag object 与目标提交） |
+| 最新 Release 资产 | `LiveMemory.exe` 99,503,104 B · SHA-256 `285cfd82…2957f`；`SHA256SUMS.txt` 82 B |
+| 当前分支 | `main`（发布提交与发布记录已 Push；Tag `v0.18.0` 已 Push） |
+| 当前 Tag | `v0.18.0`（annotated，object `79a76e9` → commit `3149ffc`） |
 | 数据库 Schema | **16**（v0.18.0 无迁移） |
 | 当前开发里程碑 | **P52 OpenCode Provider（已随 v0.18.0 发布）**；真实付费验收待办 |
 | 最近开发 | 2026-11-18：OpenCode Provider 接入并发布；未改其他 Provider；无真实 Key |
@@ -291,6 +291,25 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 - Go 官方定位为编码代理；LiveMemory 按要求发送自身 UA 与 session id，不伪装编码代理；
   若平台限制非编码代理流量则如实失败，不绕过。
 - 真实双击 UAC、干净 Windows 账户仍未人工验证。
+
+### 0.61.7 v0.18.0 发布记录（2026-11-18）
+
+| 项目 | 值 |
+| --- | --- |
+| Release | **LiveMemory v0.18.0 — OpenCode AI Provider** |
+| Release URL | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.18.0` |
+| Release ID | `449956670` |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T12:30:18Z` |
+| Push | `main`：`6dffc61..adef993`；Tag `v0.18.0` 新推送 |
+| Tag | annotated `v0.18.0`（object `79a76e9dab2e895689d829d5a233bac013073d46` → commit `3149ffceb2252d457d7eb7a72659bdb6999cd0de`） |
+| 资产 1 | `LiveMemory.exe`：99,503,104 B，SHA-256 `285cfd822b9a6535d0998c98bc5c5d5eee8a502a71c96a3bc02c68d09e62957f` |
+| 资产 2 | `SHA256SUMS.txt`：82 B，SHA-256 `0400aa9bffa2ca6f6b10d97cc454551c2b3f2dcfdd7527f8dc1f2f901e1b626a` |
+| Release body | 与 `docs/release-notes/v0.18.0.md` 逐字节一致（SHA-256 `50040e27dc64ae450d3fb31644d216e8e746bc7763160b1fe77212ea84fe6e96`） |
+| 下载复核 | EXE 大小与 SHA-256 与本地一致；`SHA256SUMS.txt` 内容一致；Release 页与 `/releases/latest` 200 |
+| 旧版本 | `v0.17.0`（Release ID `448828056`）与资产未修改 |
+
+> OpenCode 真实付费推理仍未验收（无 Key）；Go 未真实验收；免费层模型对第三方客户端 403。
+> 快手在线采集仍未开放。
 
 ---
 

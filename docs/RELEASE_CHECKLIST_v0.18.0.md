@@ -39,11 +39,11 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| Push `main` / Tag `v0.18.0` | 见 `docs/RELEASE_HISTORY.md` |
-| GitHub Release | 见 `docs/RELEASE_HISTORY.md`（ID / URL / 状态） |
-| 资产上传与下载复核 | 见 `docs/RELEASE_HISTORY.md`（大小 / SHA-256） |
-| 旧 Release 未覆盖 | ✅ `v0.17.0` 及更早资产未修改 |
-| Release body 与文件一致 | 见 `docs/RELEASE_HISTORY.md` |
+| Push `main` / Tag `v0.18.0` | ✅ `main` `6dffc61..adef993`；annotated Tag object `79a76e9` → commit `3149ffc` |
+| GitHub Release | ✅ ID `449956670` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.18.0 · Published `2026-11-18T12:30:18Z` |
+| 资产上传与下载复核 | ✅ `LiveMemory.exe` 99,503,104 B / SHA-256 `285cfd82…2957f`；`SHA256SUMS.txt` 82 B / SHA-256 `0400aa9b…626a`；下载后哈希一致 |
+| 旧 Release 未覆盖 | ✅ `v0.17.0`（Release `448828056`）及更早资产未修改 |
+| Release body 与文件一致 | ✅ SHA-256 `50040e27dc64ae450d3fb31644d216e8e746bc7763160b1fe77212ea84fe6e96` |
 
 ## 4. 未验证 / 已知限制
 
