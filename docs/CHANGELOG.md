@@ -4,10 +4,11 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
-## Unreleased — AI Provider 配置保存可靠性（2026-11-18，基于 0.18.0）
+## 0.19.0 — 2026-11-18（AI Provider Reliability Update）
 
-**未发布、未 Push/Tag/Release。** 专项修复用户反馈的“点击保存提示 API 配置无效”：
-用隔离数据目录与真实本地 HTTP 路由复现出多个独立缺陷，而不是单一原因。
+**正式发布。** 专项修复用户反馈的“点击保存提示 API 配置无效”：用隔离数据目录与真实本地
+HTTP 路由复现出多个独立缺陷，而不是单一原因。直播平台状态、数据库 Schema（16）、金额、
+身份、去重与保留策略未改。
 
 ### 修复
 
@@ -37,17 +38,18 @@
   `tests/integration/provider-config-save.test.mjs` 13 项，覆盖全新安装、有效/无效/旧配置、
   OpenCode→DeepSeek、DeepSeek→自定义、Key 更新、凭据不可写、配置锁定、断网保存、
   失败重试、重启持久化、损坏库/配置、自定义 OpenCode 会话头。
-- 全量 **871 unit + 398 integration = 1,269 passed / 0 failed / 0 skipped**（单进程模式）。
-- Windows EXE：Build `70db54b950e7` / commit `a2d06e6` / 99,551,744 B /
-  SHA-256 `e8f9751f…26f9f4` / `requireAdministrator`；
-  `verify-provider-save-exe` **14/14**（真实 EXE 保存、重启、旧配置、失败回滚、损坏库/配置）、
-  `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
+- 全量 **871 unit + 398 integration = 1,269 passed / 0 failed / 0 skipped**（单次全量
+  `--test-isolation=none`，365,726 ms）。
+- Windows EXE：最终发布构建的 Build ID、大小与 SHA-256 见 `docs/STATUS.md` §0.63；
+  `requireAdministrator`；`verify-provider-save-exe` **14/14**（真实 EXE 保存、重启、旧配置、
+  失败回滚、损坏库/配置）、`verify-exe` **11/11**、`verify-help-exe` **14/14**、
+  `verify-ai-token-exe` **16/16**。
 
 ### 兼容性
 
 - 数据库 Schema 仍 **16**，无迁移；直播记录、观众、画像、AI 任务与报告不变。
 - 正常配置与凭据不被删除或覆盖；只有损坏/未知格式文件被另存备份。
-- 需要升级到包含本提交的新构建；`v0.18.0` 正式发布资产仍包含上述缺陷。
+- 已随 **v0.19.0** 正式发布；`v0.18.0` 资产不包含上述修复，用户需要升级。
 
 ## 0.18.0 — 2026-11-18（OpenCode AI Provider）
 

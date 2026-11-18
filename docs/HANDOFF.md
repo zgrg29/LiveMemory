@@ -1,6 +1,47 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-18 v0.18.0 发布后修复：AI Provider 配置保存可靠性（最新交接）
+## 2026-11-18 v0.19.0 正式发布：AI Provider Reliability Update（最新交接）
+
+本轮按用户授权把 v0.18.0 发布后的 Provider 保存可靠性修复作为 **v0.19.0** 正式发布。
+未扩大功能范围，未改直播平台协议、数据库 Schema（仍 16）、金额/身份/去重、提示词或任务语言快照。
+
+### 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 / Schema | **`0.19.0`** / 16（无迁移） |
+| 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；快手仍为预览、采集禁用 |
+| 版本提交 | 见本轮最终回复与 `git log -1` |
+| 全量测试 | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration） |
+| EXE | 最终 Build ID / 大小 / SHA-256 见 `docs/STATUS.md` §0.63；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| Release | 见 `docs/STATUS.md` §0.63 / `docs/RELEASE_HISTORY.md`（发布后填写） |
+| 未验证 | 真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实删除权限提示；真实 OpenCode 付费推理 |
+
+### 关键文件
+
+- `docs/release-notes/v0.19.0.md`、`docs/RELEASE_CHECKLIST_v0.19.0.md`
+- `docs/STATUS.md` §0.63、`docs/RELEASE_HISTORY.md`
+- `src/ai/providers/{store,url-safety,adapters}.mjs`、`src/platforms/shared/secret-store.mjs`
+- `src/server/routes.mjs`、`src/web/js/pages/ai-settings.js`、`src/web/i18n/*.json`
+- `tests/unit/provider-config-save.test.mjs`、`tests/integration/provider-config-save.test.mjs`
+- `scripts/verify-provider-save-exe.mjs`、`log/2026-11-18-v0.19.0-release.md`
+
+### 下一轮
+
+1. 有真实 OpenCode Key 时做付费验收（真实 200/429/5xx、账单与 `usage.cost`；Go 单独确认）。
+2. 人工验证真实双击 UAC（同意/拒绝）、干净账户、跨管理员账户启动与删除权限提示。
+3. 其他 Provider 的真实付费验收仍需逐个进行。
+4. 不打开快手生产采集；新平台仍按 G0–G6。
+
+### Git
+
+- 发布提交、Tag 与 Release 记录见本轮最终回复、`docs/STATUS.md` §0.63 与
+  `docs/RELEASE_HISTORY.md`。
+- 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
+
+---
+
+## 2026-11-18 v0.18.0 发布后修复：AI Provider 配置保存可靠性（上一轮）
 
 本轮针对“点击保存提示 API 配置无效、开发者无法复现”做专项调查。用隔离数据目录与真实本地
 HTTP 路由复现出多个独立缺陷，并做最小修复。**未改 Provider 协议、数据库 Schema（仍 16）、

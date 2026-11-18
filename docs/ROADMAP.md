@@ -9,10 +9,10 @@
 
 ## 当前阶段（2026-11-18）
 
-- ✅ **v0.18.0 发布后修复（未发布）**：AI Provider 配置保存可靠性专项。定位并修复 Base URL
-  尾斜杠误判、Key 尾部换行被拒、错误统一为「API 配置无效」、凭据写入非事务/损坏库被覆盖、
-  自定义 OpenCode 缺会话头、`contextLength` null 变 0。新增十语具体错误与按钮旁诊断；
-  数据库 Schema（16）、Provider 协议、平台采集与 UAC/ACL 规则未变。**未 Push/Tag/Release。**
+- ✅ **v0.19.0 已发布：AI Provider Reliability Update**。定位并修复 Base URL 尾斜杠误判、
+  Key 尾部换行被拒、错误统一为「API 配置无效」、凭据写入非事务/损坏库被覆盖、自定义
+  OpenCode 缺会话头、`contextLength` null 变 0。新增十语具体错误与按钮旁诊断；
+  数据库 Schema（16）、Provider 协议、平台采集与 UAC/ACL 规则未变。
 - ✅ **v0.18.0 已发布**：新增 OpenCode AI Provider（Pay-as-you-go / Go）。六个已发布平台与
   快手预览状态未变（快手实时 H5 采集仍默认禁用）。
 - ✅ **P52 / OpenCode Provider 接入**：在既有 OpenAI-compatible 适配器上新增
@@ -26,9 +26,9 @@
   2. **快手书面许可 / 官方接口**：取得前保持采集禁用；取得后重新做 G3–G5 验收。
   3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
   4. **其他 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
-  5. **用户反馈专项（2026-11-18 已处理，未发布）**：Provider 切换重输 Key 仍是安全设计；
+  5. **用户反馈专项（已随 v0.19.0 发布）**：Provider 切换重输 Key 仍是安全设计；
      自定义 OpenCode 会话头已修复；AppData 删除权限已定位为运行中占用/跨管理员账户 ACL，
-     见 `docs/WINDOWS_RUNTIME.md` §4.2。保存流程修复见 `docs/STATUS.md` §0.62。
+     见 `docs/WINDOWS_RUNTIME.md` §4.2。保存流程修复见 `docs/STATUS.md` §0.62/§0.63。
   6. **未观测事件与长测**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
      下播→再开播；继续标 `NOT-OBSERVED`，不得用 Mock 代替。
   7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 执行；不得为增加数量降低标准。

@@ -1,10 +1,10 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-18（**v0.18.0 发布后修复：AI Provider 配置保存可靠性**；
-未发布、未 Push/Tag/Release。详见 §0.62 与 `log/2026-11-18-provider-save-reliability.md`）
+最后更新：2026-11-18（**v0.19.0 正式发布：AI Provider Reliability Update**；
+详见 §0.63、`docs/release-notes/v0.19.0.md` 与 `log/2026-11-18-v0.19.0-release.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
-> **先读 §0 当前状态快照**；§0.61 是当前版本（v0.18.0）的详细记录；§0.60 及更早是历史记录，
+> **先读 §0 当前状态快照**；§0.63 是当前版本（v0.19.0）的发布记录；§0.62 及更早是历史记录，
 > 只用于追溯，不代表当前状态。发布证据另见 `docs/RELEASE_HISTORY.md`。
 
 ## 0. 当前状态快照（2026-11-18）
@@ -16,17 +16,17 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.18.0`**（`package.json` = `APP_VERSION` = `0.18.0`） |
-| 下一版本 | **未定**；本轮为 `0.18.0` 的未发布保存流程修复，未 Push/Tag/Release |
-| 最新正式发布 | **`v0.18.0`** · Release ID `449956670` · Published `2026-11-18T12:30:18Z`（不含本轮修复） |
-| 发布性质 | 正式发布：新增 OpenCode AI Provider；直播平台状态未变（快手仍为预览、采集禁用） |
-| 最新 Release 资产 | `LiveMemory.exe` 99,503,104 B · SHA-256 `285cfd82…2957f`；`SHA256SUMS.txt` 82 B |
-| 当前分支 | `main`（发布提交与发布记录已 Push；Tag `v0.18.0` 已 Push） |
-| 当前 Tag | `v0.18.0`（annotated，object `79a76e9` → commit `3149ffc`） |
-| 数据库 Schema | **16**（v0.18.0 无迁移） |
-| 当前开发里程碑 | **P52 OpenCode Provider（已随 v0.18.0 发布）**；**v0.18.0 保存流程修复（未发布）**；OpenCode 真实付费验收待办 |
+| 产品版本 / 当前开发版本 | **`0.19.0`**（`package.json` = `APP_VERSION` = `0.19.0`） |
+| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
+| 最新正式发布 | **`v0.19.0`** · AI Provider Reliability Update（发布记录见 §0.63） |
+| 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；平台状态未变（快手仍为预览、采集禁用） |
+| 最新 Release 资产 | `LiveMemory.exe` 与 `SHA256SUMS.txt`（大小与 SHA-256 见 §0.63 / `docs/RELEASE_HISTORY.md`） |
+| 当前分支 | `main`（发布提交已 Push） |
+| 当前 Tag | `v0.19.0`（annotated；对象与目标提交见 §0.63） |
+| 数据库 Schema | **16**（v0.19.0 无迁移） |
+| 当前开发里程碑 | **P53 AI Provider Reliability（v0.19.0 正式发布）**；OpenCode 真实付费验收待办 |
 | 最近开发 | 2026-11-18：修复 Provider 配置保存（Base URL 规范化、Key 换行、凭据回滚、错误分类、自定义 OpenCode 会话头）；未改其他 Provider 协议 |
-| 最近文档整理 | 2026-11-17：README 三语重构；`docs/RELEASE.md` 拆为流程 + `docs/RELEASE_HISTORY.md`；新增 `scripts/check-docs.mjs` 一致性检查 |
+| 最近文档整理 | 2026-11-18：v0.19.0 Release Notes / 检查单 / 发布记录；README 当前版本更新 |
 
 ### 0.2 平台状态
 
@@ -69,8 +69,8 @@
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 全量自动化（2026-11-18 保存修复） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单进程模式；unit 20,859 ms / integration 374,382 ms） |
-| 本轮 EXE（2026-11-18 保存修复） | Build `70db54b950e7`；99,551,744 B；SHA-256 `e8f9751f…26f9f4`；`requireAdministrator`；`verify-provider-save-exe` **14/14**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
+| 本轮 EXE（v0.19.0） | Build ID、大小、SHA-256 与 verify 结果见 §0.63（发布后填写） |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × **2,373** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
@@ -83,7 +83,7 @@
 
 ### 0.6 开放问题与下一步
 
-v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
+v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
 
 1. **OpenCode 真实付费验收**：需要用户提供真实 Key 与费用授权，验证 Pay-as-you-go 的
    真实 200/429/5xx、真实模型输出、真实账单与 `usage.cost`；Go 还需额外确认套餐真实可用性。
@@ -92,7 +92,7 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
 3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
 4. **其他真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
-5. **用户反馈专项（2026-11-18 已处理，未发布）**：Provider 切换需重新输入 Key 仍是安全设计
+5. **用户反馈专项（已随 v0.19.0 发布）**：Provider 切换需重新输入 Key 仍是安全设计
    （密钥不能发往未经确认的新地址），但错误提示已具体化；自定义端点 OpenCode 的会话头错误
    已修复；AppData 手动删除权限问题已定位为运行中文件占用/跨管理员账户 ACL，并在
    `docs/WINDOWS_RUNTIME.md` §4.2 记录。保存流程根因与修复见 §0.62。
@@ -103,7 +103,8 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 
 ### 0.7 历史记录
 
-- §0.62：v0.18.0 发布后 AI Provider 配置保存可靠性修复（未发布，当前详细记录）。
+- §0.63：v0.19.0 AI Provider Reliability Update 发布记录（当前版本）。
+- §0.62：v0.18.0 发布后 AI Provider 配置保存可靠性修复（已随 v0.19.0 发布）。
 - §0.61：v0.18.0 OpenCode Provider 接入、发布与证据。
 - §0.60：v0.17.0 快手 H5 预览接入与发布记录。
 - §0.59 及更早：历史里程碑、调查与验收记录，**只用于追溯**。
@@ -318,7 +319,9 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 
 ---
 
-## 0.62 AI Provider 配置保存可靠性修复（2026-11-18）🟡 已修复并本地提交 · 未发布
+## 0.62 AI Provider 配置保存可靠性修复（2026-11-18）✅ 已随 v0.19.0 正式发布
+
+> 本节保留修复阶段的本地构建与验收记录；**正式发布构建、资产与 Release 以 §0.63 为准**。
 
 ### 0.62.1 结论与真实根因
 
@@ -406,17 +409,63 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 - **数据库 / 业务数据**：Schema 仍 16，无迁移；直播记录、观众、画像、AI 任务与报告不变。
 - **已有配置 / 凭据**：读取路径兼容；不改写正常配置；仅当配置损坏/未知格式时保留
   `ai-providers.json.<reason>-<timestamp>.json` 备份。正常保存不删除其他 Provider 的 Key。
-- **是否必须升级**：**是**。`v0.18.0` 正式发布资产仍包含上述保存缺陷；本修复只存在于本地
-  未发布提交，用户升级到包含本提交的新构建后才能获得。
+- **是否必须升级**：**是**。`v0.18.0` 正式发布资产仍包含上述保存缺陷；本修复已包含在
+  **v0.19.0** 中，用户升级到 v0.19.0 后获得。
 - **仍需人工验证**：真实双击 UAC（同意/拒绝）、干净 Windows 账户、不同管理员账户的
   over-the-shoulder 启动、真实 Windows 原生删除/权限提示。本轮不声称这些已通过。
-- **未 Push / Tag / Release**：按用户要求，等待确认。
+- **发布状态**：已随 v0.19.0 发布，见 §0.63。
 
 ### 0.62.6 Git
 
 - 代码/测试提交：`a2d06e6`（`fix: make AI provider configuration saves reliable`）。
-- 文档/验收记录提交：见本轮最终回复与 `git log -1`；未 Push、未 Tag、未 Release。
-- 版本 / Schema：`0.18.0`（未发布修复）/ 16。
+- 文档/验收记录提交：`5fbda2b`（`docs: record AI provider save reliability investigation and acceptance`）。
+- 版本 / Schema：修复阶段为 `0.18.0`，正式发布为 `0.19.0` / 16。
+
+## 0.63 v0.19.0 正式发布：AI Provider Reliability Update（2026-11-18）
+
+### 0.63.1 结论
+
+- **正式发布**：版本 `0.19.0`，数据库 Schema **16**（无迁移）。
+- 内容：v0.18.0 发布后的 AI Provider 配置保存可靠性修复，详见 §0.62。
+- 未改直播平台协议、金额/身份/去重、提示词、任务语言快照、UAC/Manifest、凭据加密算法。
+- 快手仍为**预览、实时采集禁用**；六个已发布平台状态未变。
+
+### 0.63.2 自动化
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量测试 | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
+| Provider 保存专项 | 14 unit + 13 integration |
+| 十语言字典 | 10 × 2,373；键集/占位符/空值/英文残留 0 |
+
+### 0.63.3 正式 EXE 与发布资产
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 版本 / Manifest | `0.19.0` / `requireAdministrator` |
+| Build ID / commit | 见发布后记录 |
+| 大小 / SHA-256 | 见发布后记录 |
+| EXE 验收 | `verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| 下载复核 | 见发布后记录 |
+
+### 0.63.4 发布记录
+
+| 项目 | 值 |
+| --- | --- |
+| Release | **LiveMemory v0.19.0 — AI Provider Reliability Update** |
+| Release URL | 发布后记录 |
+| Release ID | 发布后记录 |
+| Tag | 发布后记录 |
+| Push | 发布后记录 |
+| Release body | 与 `docs/release-notes/v0.19.0.md` 一致 |
+| 未验证 | 真实双击 UAC、干净 Windows 账户、跨管理员账户 over-the-shoulder、真实 OpenCode 付费推理 |
+
+### 0.63.5 兼容性
+
+- 数据库 Schema 仍 16；已有直播记录、观众、画像、AI 任务与报告不需要迁移。
+- 正常 Provider 配置与加密 Key 保留；损坏文件先备份，不要求用户删除配置或重装。
+- 升级方式：替换 `LiveMemory.exe`；建议先创建完整备份。
 
 ---
 
