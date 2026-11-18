@@ -10,6 +10,9 @@
 Windows Credential Manager，解决部分 Windows 用户保存时遇到
 `AI_PROVIDER_CREDENTIAL_PERMISSION` 的凭据文件权限故障。数据库 Schema 仍 16，平台状态未变。
 
+发布：Tag `v0.19.1` → `04b30b7`；GitHub Release `450272261` ·
+https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1
+
 ### 存储与迁移
 
 - 每个 `credentialReference` 保存为一条 Windows Generic Credential
@@ -36,9 +39,9 @@ Windows Credential Manager，解决部分 Windows 用户保存时遇到
 
 - unit **889** + integration **407**（405 passed / 2 skipped）= **1,294 passed / 0 failed /
   2 skipped**；真实 CredMan opt-in **2/2**；真实 EXE `verify-provider-save-exe` **24/24**。
-- 同一最终 EXE（`requireAdministrator`）回归：`verify-exe` 11/11、
-  `verify-help-exe` 14/14、`verify-ai-token-exe` 16/16；最终 Build ID、大小与 SHA-256
-  见 `docs/STATUS.md` 与 `SHA256SUMS.txt`。
+- 最终 EXE：Build `b66818d032b5` / 99,609,088 B / SHA-256
+  `4d230f5f…369542` / `requireAdministrator`；`verify-exe` 11/11、
+  `verify-help-exe` 14/14、`verify-ai-token-exe` 16/16。
 - 十语言 **2,379** 键，键集/占位符门禁通过。
 - 未验证：整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、组策略禁用
   PowerShell/CredMan、干净 Windows 环境。

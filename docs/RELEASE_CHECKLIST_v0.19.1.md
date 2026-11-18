@@ -22,25 +22,25 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `scripts/build-windows.mjs` | 待最终构建填写 |
-| EXE 版本 / 启动 | 待最终构建填写（`--version` = `0.19.1`） |
-| Manifest | 待最终构建确认 `requireAdministrator` |
+| `scripts/build-windows.mjs` | ✅ Build `b66818d032b5` / commit `04b30b7`；257 files / 71 required modules |
+| EXE 版本 / 启动 | ✅ `--version` = `0.19.1`；Build `0.19.1 (commit 04b30b7, assets b66818d032b5782b3da0)` |
+| Manifest | ✅ `requireAdministrator`（构建断言 + 复读） |
 | Provider 保存 | `verify-provider-save-exe` 24/24（发布构建） |
 | 启动 / 数据目录 | `verify-exe` 11/11（低完整性测试会话使用可写 LOCALAPPDATA/TEMP） |
 | 帮助 / AI 恢复 | `verify-help-exe` 14/14；`verify-ai-token-exe` 16/16 |
 | 无 Node/Python 依赖 | 单 EXE（Node SEA），用户无需安装运行时 |
 | 无开发密钥/数据 | 只打包 `src/`、字典、提示词/Schema；不含 tests、数据库、`secrets/` |
-| SHA-256 | 待最终构建填写 |
+| SHA-256 | ✅ 99,609,088 B / `4d230f5f1f66302a68f3403e38bde5427827e6d7371b31f1e3121655cd369542`；`SHA256SUMS.txt` 81 B |
 
 ## 3. 发布
 
 | 检查 | 结果 |
 | --- | --- |
-| Push `main` / Tag `v0.19.1` | 待发布填写 |
-| GitHub Release | 待发布填写 |
-| 资产上传与下载复核 | 待发布填写 |
-| 旧 Release 未覆盖 | `v0.19.0` 及更早不得修改 |
-| Release body 与文件一致 | 待发布填写 |
+| Push `main` / Tag `v0.19.1` | ✅ `main` `fea8cbe..04b30b7`；annotated Tag object `3344363` → commit `04b30b7` |
+| GitHub Release | ✅ ID `450272261` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1 · Published `2026-11-18T16:43:01Z` |
+| 资产上传与下载复核 | ✅ EXE 99,609,088 B / SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B / SHA-256 `7ca49114…092284`；下载后均一致 |
+| 旧 Release 未覆盖 | ✅ `v0.19.0`（Release `450031601`）及更早页面未修改 |
+| Release body 与文件一致 | ✅ SHA-256 `9598aa50962dbb6997ed63d76d1dc791904f632a7cd4622269826e001308b391` |
 
 ## 4. 未验证 / 已知限制
 

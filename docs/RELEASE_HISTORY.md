@@ -15,7 +15,7 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 
 | 版本 | 类型 | Tag / Commit | GitHub Release | 发布资产 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `v0.19.1` | 正式补丁（Windows Credential Storage Fix） | 发布后填写 | 发布后填写 | `LiveMemory.exe` + `SHA256SUMS.txt` | 待发布 |
+| `v0.19.1` | 正式补丁（Windows Credential Storage Fix） | `v0.19.1` → `04b30b7` | `450272261` · 2026-11-18T16:43:01Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.19.0` | 正式发布（AI Provider Reliability Update） | `v0.19.0` → `50920d1` | `450031601` · 2026-11-18T13:32:13Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.18.0` | 正式发布（OpenCode AI Provider） | `v0.18.0` → `3149ffc` | `449956670` · 2026-11-18T12:30:18Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.17.0` | 正式发布（快手预览组件；在线采集未开放） | `v0.17.0` → `5807e3e` | `448828056` · 2026-11-17T15:31:37Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
@@ -35,21 +35,21 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 | 项目 | 值 |
 | --- | --- |
 | Release | `LiveMemory v0.19.1 — Windows Credential Storage Fix` |
-| Release ID / URL | 发布后填写 |
-| 状态 | 发布后填写 |
-| Tag | 发布后填写 |
-| 发布提交 | 发布后填写 |
+| Release ID / URL | `450272261` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1 |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T16:43:01Z` |
+| Tag | annotated `v0.19.1`（object `3344363da960d2b61fd20b16d06c665204f2e219` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
+| 发布提交 | `04b30b7513601916c2284a1d48214ab2d63d3ccc`（`chore: release Windows credential storage fix (v0.19.1)`） |
 | 功能提交 | `a9c95d7`（`fix: store AI provider keys in Windows Credential Manager`）；验收文档 `f849ad0` |
-| EXE | 发布后填写 |
-| `SHA256SUMS.txt` | 发布后填写 |
+| EXE | 99,609,088 B；Build ID `b66818d032b5`；SHA-256 `4d230f5f1f66302a68f3403e38bde5427827e6d7371b31f1e3121655cd369542` |
+| `SHA256SUMS.txt` | 81 B；SHA-256 `7ca49114b520abb2c26551f3dc7dcb882b46890c5a3ce01af631f7fc2e092284`；内容 `4d230f5f…369542  LiveMemory.exe` |
 | Manifest | `requireAdministrator` |
 | 全量测试 | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；2 skip 为 opt-in CredMan） |
 | 真实 CredMan | **2/2**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移 |
 | 十语言字典 | 10 × 2,379；键集/占位符/空值差异 0 |
 | EXE 验收 | `verify-provider-save-exe` 24/24；`verify-exe` 11/11；`verify-help-exe` 14/14；`verify-ai-token-exe` 16/16 |
-| Release body | 与 `docs/release-notes/v0.19.1.md` 一致（SHA-256 发布后填写） |
-| 下载复核 | 发布后填写 |
-| 旧版本 | `v0.19.0`（Release `450031601`）及更早资产不得修改 |
+| Release body | 与 `docs/release-notes/v0.19.1.md` 逐字节一致（SHA-256 `9598aa50962dbb6997ed63d76d1dc791904f632a7cd4622269826e001308b391`） |
+| 下载复核 | GitHub 重新下载：EXE 99,609,088 B / SHA-256 `4d230f5f…369542` 与本地一致；`SHA256SUMS.txt` 81 B / SHA-256 `7ca49114…092284`、内容一致；Release 页与 `/releases/latest` 200 |
+| 旧版本 | `v0.19.0`（Release `450031601`）及更早资产未修改 |
 
 **未验证 / 已知限制**：整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、
 组策略禁用 PowerShell/CredMan、干净 Windows 环境；快手仍为预览、采集禁用；部分平台事件

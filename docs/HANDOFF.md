@@ -16,7 +16,8 @@
 | 传递路径 | Key 只经 stdin 到固定 PowerShell + C# P/Invoke；不进 argv/env/临时明文/日志/备份 |
 | 错误 | 后端不可用 503、访问拒绝、写入失败、凭据损坏分别提示；`{path}` 已正确替换 |
 | 测试 | unit **889** + integration **407**（405 pass + 2 skip）= **1,294 passed / 0 failed / 2 skipped**；真实 CredMan opt-in **2/2**；EXE `verify-provider-save-exe` **24/24** |
-| EXE | 最终 Build ID / SHA-256 / 大小见 `docs/STATUS.md` §0.65；`requireAdministrator`；`verify-provider-save-exe` **24/24**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| EXE | Build `b66818d032b5` / 99,609,088 B / SHA-256 `4d230f5f…369542` / `requireAdministrator`；`verify-provider-save-exe` **24/24**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| Release | **`v0.19.1`** · Release ID `450272261` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1 · Published `2026-11-18T16:43:01Z` |
 | 未验证 | 整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、PowerShell 被组策略禁用、干净 Windows 环境 |
 
 ### 关键文件
@@ -42,9 +43,9 @@
 
 ### Git
 
-- 功能与验收提交：`a9c95d7`、`f849ad0`。
-- 发布提交、Tag、Release ID 与资产哈希：见 `docs/STATUS.md` §0.65 与
-  `docs/RELEASE_HISTORY.md`。
+- 功能与验收提交：`a9c95d7`、`f849ad0`；发布提交：`04b30b7`。
+- Tag：annotated `v0.19.1`（object `3344363` → commit `04b30b7`）。
+- Release：`450272261`；`main` 已 Push `fea8cbe..04b30b7`，Tag 已 Push。
 - 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
 
 ---

@@ -18,11 +18,11 @@
 | --- | --- |
 | 产品版本 / 当前开发版本 | **`0.19.1`**（`package.json` = `APP_VERSION` = `0.19.1`） |
 | 下一版本 | **未定**；需用户授权后才进入新里程碑 |
-| 最新正式发布 | **`v0.19.1`** · Windows Credential Storage Fix（Release 详情见 §0.65） |
+| 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
-| 最新 Release 资产 | `LiveMemory.exe` 与 `SHA256SUMS.txt`（大小/SHA-256 见 §0.65 与 `docs/RELEASE_HISTORY.md`） |
-| 当前分支 | `main`（发布提交与 Tag 见 §0.65） |
-| 当前 Tag | `v0.19.1`（annotated；object 与目标 Commit 见 §0.65） |
+| 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
+| 当前分支 | `main`（`fea8cbe..04b30b7` 已 Push；Tag 已 Push） |
+| 当前 Tag | `v0.19.1`（annotated，object `3344363` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
 | 当前开发里程碑 | **P54 AI Provider 凭据可靠性（v0.19.1 正式发布）**；OpenCode 真实付费验收待办 |
 | 最近开发 | 2026-11-19：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；正式发布 v0.19.1 |
@@ -595,10 +595,10 @@ v0.19.1（Windows Credential Storage Fix）已发布。当前没有进行中的�
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `dist/LiveMemory.exe` |
-| 版本 / Manifest | `0.19.1` / `requireAdministrator`（待最终构建确认） |
-| Build ID / commit | 待最终构建填写 |
-| 大小 / SHA-256 | 待最终构建填写 |
-| `SHA256SUMS.txt` | 待最终构建填写 |
+| 版本 / Manifest | `0.19.1` / `requireAdministrator` |
+| Build ID / commit | **`b66818d032b5`** / **`04b30b7`**；builtAt `2026-11-18T16:38:14.404Z`；257 files / 71 required modules |
+| 大小 / SHA-256 | **99,609,088 B** / **`4d230f5f1f66302a68f3403e38bde5427827e6d7371b31f1e3121655cd369542`** |
+| `SHA256SUMS.txt` | 81 B；SHA-256 `7ca49114b520abb2c26551f3dc7dcb882b46890c5a3ce01af631f7fc2e092284`；内容 `4d230f5f…369542  LiveMemory.exe` |
 | EXE 验收 | `verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 未验证 | 整机 Windows 重启、第二 Windows 账户、真实 UAC over-the-shoulder、组策略禁用 PowerShell/CredMan、干净 Windows 环境 |
 
@@ -612,13 +612,13 @@ Credential Manager 条目；发布验收后确认无残留。
 | 项目 | 值 |
 | --- | --- |
 | Release | **LiveMemory v0.19.1 — Windows Credential Storage Fix** |
-| Release URL / ID | 发布后填写 |
-| 状态 | 发布后填写 |
-| Tag | 发布后填写 |
-| Push | 发布后填写 |
-| Release body | 与 `docs/release-notes/v0.19.1.md` 一致（SHA-256 发布后填写） |
-| 下载复核 | 发布后填写 |
-| 旧版本 | `v0.19.0`（Release `450031601`）与更早资产不得修改 |
+| Release URL / ID | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1` · **`450272261`** |
+| 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T16:43:01Z` |
+| Tag | annotated `v0.19.1`（object `3344363da960d2b61fd20b16d06c665204f2e219` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
+| Push | `main`：`fea8cbe..04b30b7`；Tag `v0.19.1` 新推送 |
+| Release body | 与 `docs/release-notes/v0.19.1.md` 逐字节一致（SHA-256 `9598aa50962dbb6997ed63d76d1dc791904f632a7cd4622269826e001308b391`） |
+| 下载复核 | GitHub 重新下载：EXE 99,609,088 B / SHA-256 `4d230f5f…369542` 与本地一致；`SHA256SUMS.txt` 81 B / SHA-256 `7ca49114…092284`、内容一致；Release 页与 `/releases/latest` 均 200，latest 指向 `v0.19.1` |
+| 旧版本 | `v0.19.0`（Release `450031601`）与更早资产未修改 |
 
 ### 0.65.5 兼容性
 
