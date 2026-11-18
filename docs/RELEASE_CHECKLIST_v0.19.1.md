@@ -36,7 +36,7 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| Push `main` / Tag `v0.19.1` | ✅ `main` `fea8cbe..04b30b7`；annotated Tag object `3344363` → commit `04b30b7` |
+| Push `main` / Tag `v0.19.1` | ✅ `main` `fea8cbe..04b30b7`；annotated Tag object `721690b4` → commit `04b30b7` |
 | GitHub Release | ✅ ID `450272261` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1 · Published `2026-11-18T16:43:01Z` |
 | 资产上传与下载复核 | ✅ EXE 99,609,088 B / SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B / SHA-256 `7ca49114…092284`；下载后均一致 |
 | 旧 Release 未覆盖 | ✅ `v0.19.0`（Release `450031601`）及更早页面未修改 |

@@ -44,7 +44,7 @@
 ### Git
 
 - 功能与验收提交：`a9c95d7`、`f849ad0`；发布提交：`04b30b7`。
-- Tag：annotated `v0.19.1`（object `3344363` → commit `04b30b7`）。
+- Tag：annotated `v0.19.1`（object `721690b4` → commit `04b30b7`）。
 - Release：`450272261`；`main` 已 Push `fea8cbe..04b30b7`，Tag 已 Push。
 - 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
 

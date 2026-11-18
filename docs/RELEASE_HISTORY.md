@@ -37,7 +37,7 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 | Release | `LiveMemory v0.19.1 — Windows Credential Storage Fix` |
 | Release ID / URL | `450272261` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1 |
 | 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T16:43:01Z` |
-| Tag | annotated `v0.19.1`（object `3344363da960d2b61fd20b16d06c665204f2e219` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
+| Tag | annotated `v0.19.1`（object `721690b4b9bc5dd297390336e08193c8bfcf0803` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
 | 发布提交 | `04b30b7513601916c2284a1d48214ab2d63d3ccc`（`chore: release Windows credential storage fix (v0.19.1)`） |
 | 功能提交 | `a9c95d7`（`fix: store AI provider keys in Windows Credential Manager`）；验收文档 `f849ad0` |
 | EXE | 99,609,088 B；Build ID `b66818d032b5`；SHA-256 `4d230f5f1f66302a68f3403e38bde5427827e6d7371b31f1e3121655cd369542` |

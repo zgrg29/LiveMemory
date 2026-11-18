@@ -22,7 +22,7 @@
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
 | 当前分支 | `main`（`fea8cbe..04b30b7` 已 Push；Tag 已 Push） |
-| 当前 Tag | `v0.19.1`（annotated，object `3344363` → commit `04b30b7`） |
+| 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
 | 当前开发里程碑 | **P54 AI Provider 凭据可靠性（v0.19.1 正式发布）**；OpenCode 真实付费验收待办 |
 | 最近开发 | 2026-11-19：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；正式发布 v0.19.1 |
@@ -614,7 +614,7 @@ Credential Manager 条目；发布验收后确认无残留。
 | Release | **LiveMemory v0.19.1 — Windows Credential Storage Fix** |
 | Release URL / ID | `https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.1` · **`450272261`** |
 | 状态 | `draft=false` / `prerelease=false` / `published_at 2026-11-18T16:43:01Z` |
-| Tag | annotated `v0.19.1`（object `3344363da960d2b61fd20b16d06c665204f2e219` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
+| Tag | annotated `v0.19.1`（object `721690b4b9bc5dd297390336e08193c8bfcf0803` → commit `04b30b7513601916c2284a1d48214ab2d63d3ccc`） |
 | Push | `main`：`fea8cbe..04b30b7`；Tag `v0.19.1` 新推送 |
 | Release body | 与 `docs/release-notes/v0.19.1.md` 逐字节一致（SHA-256 `9598aa50962dbb6997ed63d76d1dc791904f632a7cd4622269826e001308b391`） |
 | 下载复核 | GitHub 重新下载：EXE 99,609,088 B / SHA-256 `4d230f5f…369542` 与本地一致；`SHA256SUMS.txt` 81 B / SHA-256 `7ca49114…092284`、内容一致；Release 页与 `/releases/latest` 均 200，latest 指向 `v0.19.1` |
