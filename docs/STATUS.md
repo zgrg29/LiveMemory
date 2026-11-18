@@ -70,7 +70,7 @@
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；v0.18.0 发布回归 344,314 ms） |
-| 本轮 EXE（2026-11-18） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；产物 `build/LiveMemory-0.18.0.exe`（`dist` 被其它进程占用） |
+| 本轮 EXE（2026-11-18） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；`dist/LiveMemory.exe` 已同步为 0.18.0 |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
 | 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
@@ -271,7 +271,7 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 | 项目 | 值 |
 | --- | --- |
 | 构建 | `buildId` **`902109197d8b`**；commit **`3149ffceb2252d457d7eb7a72659bdb6999cd0de`**；builtAt `2026-11-18T12:26:22.159Z`；256 files / 70 required modules |
-| 文件 / 大小 | `build/LiveMemory-0.18.0.exe`（**99,503,104 bytes**） |
+| 文件 / 大小 | `dist/LiveMemory.exe`（**99,503,104 bytes**）；`dist/release-v0.18.0/LiveMemory.exe` 与 `build/LiveMemory-0.18.0.exe` 为同一产物 |
 | SHA-256 | `285cfd822b9a6535d0998c98bc5c5d5eee8a502a71c96a3bc02c68d09e62957f` |
 | `SHA256SUMS.txt` | `285cfd…2957f  LiveMemory.exe`；82 B；SHA-256 `0400aa9bffa2ca6f6b10d97cc454551c2b3f2dcfdd7527f8dc1f2f901e1b626a` |
 | Manifest | **`requireAdministrator`**（构建断言 + 注入后复读） |
@@ -279,7 +279,7 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 | `verify-exe` | **11/11 passed**：fresh data、SQLite、live console、restart、crash recovery、denied folder、another folder、extracted-app reuse、十语 i18n、CLI |
 | `verify-help-exe` | **14/14 passed** |
 | `verify-ai-token-exe` | **16/16 passed**：真实 EXE 内 mock Provider 的画像、usage、断点恢复、认证、备份 |
-| 构建路径说明 | `dist/LiveMemory.exe` 被另一个进程以独占方式占用（`EBUSY`，已确认不是权限问题），无法覆盖；本次用**同一源码、同一构建脚本**在隔离副本中构建并验收，产物保存到 `build/LiveMemory-0.18.0.exe` 并作为 Release 资产上传。`dist/` 仍是上一版文件，**不是** v0.18.0 产物。 |
+| 构建路径说明 | 构建时 `dist/LiveMemory.exe` 被另一个进程以独占方式占用（`EBUSY`），因此先用**同一源码、同一构建脚本**在隔离副本中构建并验收（`build/LiveMemory-0.18.0.exe`）。发布后占用解除，已把同一产物同步到 `dist/LiveMemory.exe`、`dist/SHA256SUMS.txt`、`dist/README.md` 与 `dist/release-v0.18.0/`；三处 EXE 的 SHA-256 均为 `285cfd82…2957f`。 |
 | 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户；EXE 未签名 |
 
 ### 0.61.6 未完成 / 限制

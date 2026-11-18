@@ -32,8 +32,9 @@
 | 帮助与 AI 恢复 | ✅ `verify-help-exe` 14/14；`verify-ai-token-exe` 16/16 |
 | SHA-256 | 见 `docs/RELEASE_HISTORY.md`（发布后记录） |
 
-**构建路径说明**：`dist/LiveMemory.exe` 被其它进程独占（`EBUSY`），本轮在隔离副本中用同一
-源码/构建脚本构建并验收，正式资产以实际构建产物为准；详见 STATUS §0.61.5。
+**构建路径说明**：构建时 `dist/LiveMemory.exe` 被其它进程独占（`EBUSY`），本轮在隔离副本中用
+同一源码/构建脚本构建并验收；发布后占用解除，已同步到 `dist/LiveMemory.exe` 与
+`dist/release-v0.18.0/`（三处 SHA-256 一致）。详见 STATUS §0.61.5。
 
 ## 3. 发布
 

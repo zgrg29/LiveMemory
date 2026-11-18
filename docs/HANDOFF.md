@@ -15,7 +15,7 @@
 | OpenCode 验收 | 自动化/模拟 15 项；全量 1,241；模型列表与 Go 缺头 400 已真实核实；**无真实 Key，真实推理未验收** |
 | 其他 Provider | 未改；Provider 切换/密钥轮换测试通过 |
 | 用户反馈 | 自定义端点配 OpenCode 的会话头错误：改用内置 OpenCode Provider；切换 Provider 需重输 Key：既有安全设计；手动删 AppData 权限问题：未复现为发布阻断 |
-| EXE | Build ID `902109197d8b`、commit `3149ffc`、99,503,104 B、SHA-256 `285cfd82…2957f`、`requireAdministrator`；`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16；正式资产 `build/LiveMemory-0.18.0.exe`（`dist/LiveMemory.exe` 被其它进程占用，未能覆盖） |
+| EXE | Build ID `902109197d8b`、commit `3149ffc`、99,503,104 B、SHA-256 `285cfd82…2957f`、`requireAdministrator`；`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16；`dist/LiveMemory.exe` 已同步为 0.18.0，`build/LiveMemory-0.18.0.exe` 保留同哈希副本 |
 | Release | **`v0.18.0`** · Release ID `449956670` · https://github.com/zgrg29/LiveMemory/releases/tag/v0.18.0 · Published `2026-11-18T12:30:18Z` |
 
 ### 关键文件

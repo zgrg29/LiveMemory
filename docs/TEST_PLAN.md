@@ -2368,4 +2368,4 @@ node scripts/verify-tiktok-local-ws.mjs --room-id 7706695538414062349 --minutes 
 - Windows EXE（v0.18.0）：Build ID `902109197d8b`、commit `3149ffc`、99,503,104 B、
   SHA-256 `285cfd82…2957f`、`requireAdministrator`；`verify-exe` **11/11**、
   `verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
-  `dist/LiveMemory.exe` 被其它进程占用，正式产物为 `build/LiveMemory-0.18.0.exe`。
+  `dist/LiveMemory.exe` 已同步为同一 0.18.0 产物（`build/LiveMemory-0.18.0.exe` 保留同哈希副本）。
