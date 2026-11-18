@@ -1,32 +1,31 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-18（**OpenCode Provider 已接入，未发布**；无真实 Key，真实付费验收待办。
-v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认禁用。详见 §0.61 与
-`log/2026-11-18-opencode-provider.md`）
+最后更新：2026-11-18（**v0.18.0 正式发布：OpenCode AI Provider**；无真实 Key，
+真实付费推理未验收。详见 §0.61 与 `docs/release-notes/v0.18.0.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 > **先读 §0 当前状态快照**；§0.60 是最近一次发布的详细记录；§0.59 及更早是历史记录，
 > 只用于追溯，不代表当前状态。发布证据另见 `docs/RELEASE_HISTORY.md`。
 
-## 0. 当前状态快照（2026-11-17）
+## 0. 当前状态快照（2026-11-18）
 
-> 本节只做摘要；详细证据在 §0.60 与 `docs/RELEASE_HISTORY.md`。若本节与后文冲突，
+> 本节只做摘要；详细证据在 §0.61 与 `docs/RELEASE_HISTORY.md`。若本节与后文冲突，
 > 以代码、Git/Release 事实与 `docs/RELEASE_HISTORY.md` 为准，并立即修正本节。
 
 ### 0.1 版本与发布
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.17.0`**（`package.json` = `APP_VERSION` = `0.17.0`；没有未发布的开发分支版本） |
+| 产品版本 / 当前开发版本 | **`0.18.0`**（`package.json` = `APP_VERSION` = `0.18.0`） |
 | 下一版本 | **未定**；需用户授权后才进入新里程碑 |
-| 最新正式发布 | **`v0.17.0`** · Release ID `448828056` · Published `2026-11-17T15:31:37Z` |
-| 发布性质 | 正式发布，但**快手只是预览组件**；实时 H5 采集默认禁用，不是“已支持快手采集” |
-| 最新 Release 资产 | `LiveMemory.exe` 99,492,352 B · SHA-256 `58b21dc9…830471ac`；`SHA256SUMS.txt` 82 B |
-| 当前分支 | `main`（本地文档提交；**未 Push**；`origin/main` 仍为 `fa00273`） |
-| 当前 Tag | `v0.17.0`（annotated，`4cf356a` → `5807e3e`） |
-| 数据库 Schema | **16**（v0.17.0 无迁移） |
-| 当前开发里程碑 | **P52 OpenCode Provider（本轮完成，未发布）**；无真实 Key，真实付费验收待办 |
-| 最近开发 | 2026-11-18：OpenCode Provider 接入（payg / Go、动态模型、会话头）；未改其他 Provider；无真实 Key |
+| 最新正式发布 | **`v0.18.0`**（Release ID/URL 发布后记录；见 `docs/RELEASE_HISTORY.md`） |
+| 发布性质 | 正式发布：新增 OpenCode AI Provider；直播平台状态未变（快手仍为预览、采集禁用） |
+| 最新 Release 资产 | `LiveMemory.exe` + `SHA256SUMS.txt`（大小与 SHA-256 见 §0.61.5 与发布记录） |
+| 当前分支 | `main`（本地发布提交；Push 后更新本节） |
+| 当前 Tag | `v0.18.0`（发布后记录 tag object 与目标提交） |
+| 数据库 Schema | **16**（v0.18.0 无迁移） |
+| 当前开发里程碑 | **P52 OpenCode Provider（已随 v0.18.0 发布）**；真实付费验收待办 |
+| 最近开发 | 2026-11-18：OpenCode Provider 接入并发布；未改其他 Provider；无真实 Key |
 | 最近文档整理 | 2026-11-17：README 三语重构；`docs/RELEASE.md` 拆为流程 + `docs/RELEASE_HISTORY.md`；新增 `scripts/check-docs.mjs` 一致性检查 |
 
 ### 0.2 平台状态
@@ -70,7 +69,7 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；第三次全量通过） |
+| 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；v0.18.0 发布回归 344,314 ms） |
 | 本轮 EXE（2026-11-18） | Build `f05fe173fda3`；99,503,104 B；SHA-256 `8e3a9cf8…be81`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；产物在 `build/`（`dist` 被其它进程占用） |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
@@ -83,18 +82,20 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 
 ### 0.6 开放问题与下一步
 
-当前没有已授权的开发里程碑。下一步由用户决定，候选顺序建议：
+v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
 
-1. **快手书面许可/官方接口**：取得前保持采集禁用；取得后按
+1. **OpenCode 真实付费验收**：需要用户提供真实 Key 与费用授权，验证 Pay-as-you-go 的
+   真实 200/429/5xx、真实模型输出、真实账单与 `usage.cost`；Go 还需额外确认套餐真实可用性。
+   未通过前保持 L2/L4，不得写成真实通过。
+2. **快手书面许可/官方接口**：取得前保持采集禁用；取得后按
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
-2. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
-3. **真实 Provider 补验**：OpenCode / OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter /
-   自定义；需要用户提供 Key 与费用授权，不能以 Mock 代替。
-   - OpenCode：本轮已接入并有 Mock/集成测试；真实 200/429/5xx、真实模型输出、真实账单与
-     `usage.cost` **全部待办**。免费层模型对第三方客户端 403。
-4. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
+3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
+4. **其他真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
+5. **用户反馈专项**：Provider 切换需重新输入 Key 的 UX、通过自定义端点配置 OpenCode
+   时的会话头错误、手动删除 AppData 配置文件的权限问题；本轮未复现为发布阻断，留待专项调查。
+6. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
    下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
-5. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
+7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
    增加平台数量降低标准。
 
 ### 0.7 历史记录
@@ -197,7 +198,7 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 
 ---
 
-## 0.61 OpenCode Provider 接入：Provider 注册、官方 Endpoint、模型列表与会话头（2026-11-18）⚠️ 无真实 Key · 未发布
+## 0.61 OpenCode Provider 接入：Provider 注册、官方 Endpoint、模型列表与会话头（2026-11-18）✅ 已随 v0.18.0 发布 · 无真实 Key
 
 ### 0.61.1 结论
 
@@ -217,7 +218,7 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 - **价格可选**：不填价格照常分析；不虚构价格；Provider 自报的 `usage.cost` 作为
   `providerReportedCost` 单独保存。
 - **十语**：Provider 列表与使用说明加入 OpenCode；**键数仍 2,351，无新键**。
-- **版本 / Schema**：仍 `0.17.0` / **16**（无迁移）；**未发布**。
+- **版本 / Schema**：`0.18.0` / **16**（无迁移）；**已随 v0.18.0 正式发布**。
 
 ### 0.61.2 官方 API 事实（2026-11-18 实测）
 
@@ -260,6 +261,7 @@ v0.17.0 仍是最新正式发布：快手 H5 预览接入，实时采集默认�
 | 新增集成 `tests/integration/opencode-provider.test.mjs` | **3 passed / 0 failed** |
 | 全量单元 | **856 passed / 0 failed / 0 skipped**（23,973 ms） |
 | 全量单元 + 集成 | **1,241 passed / 0 failed / 0 skipped**（328,824 ms，`--test-isolation=none`） |
+| 发布回归（v0.18.0） | **1,241 passed / 0 failed / 0 skipped**（344,314 ms；856 unit + 385 integration，`--test-isolation=none`） |
 | 全量首轮/次轮 | 各 1 个**既有时间敏感测试**失败：`memory-privacy` 的 30 天保留断言依赖真实接收时间（已修正测试夹具，非产品缺陷）；`ai-memory-output-recovery` 的批次计数为既有时序抖动（单跑 8/8 通过）。第三次全量 1,241/1,241 通过。 |
 | 真实 OpenCode API | **未执行**（无 Key） |
 

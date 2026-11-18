@@ -1,6 +1,44 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-18 OpenCode Provider 接入（最新交接）
+## 2026-11-18 v0.18.0 正式发布：OpenCode AI Provider（最新交接）
+
+本轮按用户授权执行正式发布：版本 `0.17.0` → **`0.18.0`**，新增 OpenCode AI Provider。
+未改其他 Provider、数据库 Schema（仍 16）、金额/身份/去重、提示词与平台采集。
+
+### 结果
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 / Schema | **`0.18.0`** / 16（无迁移） |
+| 发布性质 | 正式发布（OpenCode AI Provider）；直播平台状态未变 |
+| 发布前检查 | 工作区干净；`origin/main` 已含开发提交 `6dffc61`；`v0.18.0` Tag/Release 不存在；最新正式 Tag 为 `v0.17.0` |
+| OpenCode 验收 | 自动化/模拟 15 项；全量 1,241；模型列表与 Go 缺头 400 已真实核实；**无真实 Key，真实推理未验收** |
+| 其他 Provider | 未改；Provider 切换/密钥轮换测试通过 |
+| 用户反馈 | 自定义端点配 OpenCode 的会话头错误：改用内置 OpenCode Provider；切换 Provider 需重输 Key：既有安全设计；手动删 AppData 权限问题：未复现为发布阻断 |
+| EXE | 构建与验收结果见 `docs/STATUS.md` §0.61.5 与 `docs/RELEASE_HISTORY.md` |
+| Release | 见 `docs/RELEASE_HISTORY.md`（Tag / Release ID / URL / 资产哈希） |
+
+### 关键文件
+
+- `docs/release-notes/v0.18.0.md`、`docs/RELEASE_CHECKLIST_v0.18.0.md`
+- `docs/STATUS.md` §0 / §0.61、`docs/RELEASE_HISTORY.md`
+- `docs/AI_PROVIDER_COMPATIBILITY.md` §2.1、`docs/CHANGELOG.md`
+- `src/ai/providers/{catalog,adapters,pricing,session,verify}.mjs`
+
+### 下一轮
+
+1. 有真实 OpenCode Key 时做付费验收（Pay-as-you-go 推理、429/5xx、账单与 `usage.cost`）；
+   Go 套餐单独确认真实可用性。未通过前保持真实 Provider 未验收。
+2. 专项调查用户反馈：Provider 切换 UX、自定义端点 OpenCode 会话头、AppData 手动删除权限。
+3. 不打开快手生产采集；新平台仍按 G0–G6。
+
+### Git
+
+- 发布提交、Tag 与 Release 证据见本轮最终回复与 `docs/RELEASE_HISTORY.md`。
+
+---
+
+## 2026-11-18 OpenCode Provider 接入（上一轮开发）
 
 本轮在既有 AI Provider 架构中新增 **OpenCode**，按“最小改动、最大程度复用”执行：
 只做 Provider 注册、默认 Endpoint、动态模型列表、Provider 专属请求头与少量兼容处理。

@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#download-and-install)
 [![UI languages](https://img.shields.io/badge/UI%20languages-10-6f42c1)](#faq)
 
-> **Current release: v0.17.0.** Six live platforms are released and usable. **Kuaishou is a preview only**: link parsing and the local UI are present, but live capture is disabled in public builds and Kuaishou is **not** a supported capture platform. See [Platform support](#platform-support).
+> **Current release: v0.18.0.** Six live platforms are released and usable. **Kuaishou is a preview only**: link parsing and the local UI are present, but live capture is disabled in public builds and Kuaishou is **not** a supported capture platform. This release adds **OpenCode** as an AI provider. See [Platform support](#platform-support) and [AI analysis](#ai-analysis).
 
 ---
 

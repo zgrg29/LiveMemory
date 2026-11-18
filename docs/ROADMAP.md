@@ -9,24 +9,27 @@
 
 ## 当前阶段（2026-11-18）
 
-- ✅ **v0.17.0 已发布**：六个已发布平台（Bilibili / YouTube / Twitch / 抖音 / TikTok / Kick）
-  正常；快手为预览组件，实时 H5 采集默认禁用。
-- ✅ **P52 / OpenCode Provider 接入（本轮）**：在既有 OpenAI-compatible 适配器上新增
-  OpenCode Console（pay-as-you-go / Go），自动 Endpoint、动态模型列表、稳定
-  `x-opencode-session`（批次/重试/恢复复用、任务隔离）、价格可选；未改其他 Provider、
-  未改数据库 Schema、未新增运行时依赖。**真实 Key 付费验收未完成**（无 Key）。
+- ✅ **v0.18.0 已发布**：新增 OpenCode AI Provider（Pay-as-you-go / Go）。六个已发布平台与
+  快手预览状态未变（快手实时 H5 采集仍默认禁用）。
+- ✅ **P52 / OpenCode Provider 接入**：在既有 OpenAI-compatible 适配器上新增
+  OpenCode Console，自动 Endpoint、动态模型列表、稳定 `x-opencode-session`
+  （批次/重试/恢复复用、任务隔离）、价格可选；未改其他 Provider、数据库 Schema（16）、
+  金额/身份/去重与平台采集。**真实 Key 付费验收未完成**（无 Key）。
 - ⬜ **等待用户决定下一轮方向**。以下候选不是已授权计划：
 
-  1. **快手书面许可 / 官方接口**：取得前保持采集禁用；取得后重新做 G3–G5 验收。
-  2. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
-  3. **真实 Provider 补验**：OpenCode / OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter /
-     自定义；需要用户提供 Key 并授权费用。
-  4. **未观测事件与长测**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
+  1. **OpenCode 真实付费验收**：Pay-as-you-go 的真实推理、429/5xx、账单与 `usage.cost`；
+     Go 套餐的真实可用性。需要用户提供 Key 与费用授权。
+  2. **快手书面许可 / 官方接口**：取得前保持采集禁用；取得后重新做 G3–G5 验收。
+  3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
+  4. **其他 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
+  5. **用户反馈专项**：Provider 切换需重新输入 Key 的 UX、自定义端点配置 OpenCode 的
+     会话头错误、手动删除 AppData 配置文件的权限问题；本轮未复现为发布阻断。
+  6. **未观测事件与长测**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
      下播→再开播；继续标 `NOT-OBSERVED`，不得用 Mock 代替。
-  5. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 执行；不得为增加数量降低标准。
+  7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 执行；不得为增加数量降低标准。
 
-- 🚫 **未授权事项**：不 Push、不创建 Tag/Release、不打开快手生产采集、不改许可证、
-  不改已确认的产品原则。新平台没有通过 G0 不得写代码。
+- 🚫 **未授权事项**：不打开快手生产采集、不改许可证、不改已确认的产品原则；
+  后续发布仍需用户明确授权。新平台没有通过 G0 不得写代码。
 
 ## 已完成里程碑（历史，P51 及更早，倒序）
 

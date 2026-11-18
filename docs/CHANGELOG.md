@@ -4,11 +4,20 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
-## 未发布（0.17.0 之后）— OpenCode Provider
+## 0.18.0 — 2026-11-18（OpenCode AI Provider）
 
-新增 **OpenCode Console** 作为正式可选择的 AI 服务商。**仅 Provider 注册、默认 Endpoint、
-动态模型列表、Provider 专属请求头与少量兼容处理**；没有重构 AI 系统、没有新增运行时依赖、
-没有改数据库 Schema、没有改版本号、没有发布。
+**正式发布**。新增 **OpenCode Console** 作为正式可选择的 AI 服务商：**仅 Provider 注册、
+默认 Endpoint、动态模型列表、Provider 专属请求头与少量兼容处理**；没有重构 AI 系统、
+没有新增运行时依赖、没有改数据库 Schema（仍 16）、没有改其他 Provider 或平台采集。
+**没有真实 OpenCode API Key，真实付费推理与计费未验收**；免费层模型对第三方客户端 403。
+
+| 项目 | 值 |
+| --- | --- |
+| 版本 / Schema | `0.18.0` / 16（无迁移） |
+| 发布状态 | **Tag `v0.18.0` · GitHub Release**（Release ID/URL 发布后记录） |
+| 发布资产 | `LiveMemory.exe` + `SHA256SUMS.txt`（大小与 SHA-256 见发布记录） |
+| 真实 OpenCode 推理 | **未执行（无 Key）** |
+| 其他 Provider | 未改；全量回归通过 |
 
 ### 新增
 
