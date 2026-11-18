@@ -43,11 +43,11 @@
   `tests/integration/opencode-provider.test.mjs` 3 项：Endpoint、鉴权、两个 Region、
   普通/流式请求头、Go 缺头前置失败、模型列表解析、价格、重试与重启 Resume 的 session 复用、
   两个并行任务的 session 隔离。
-- 全量回归 **1,241 passed / 0 failed / 0 skipped**；Windows EXE Build ID
-  `f05fe173fda3`（commit `032508c`，99,503,104 B，SHA-256 `8e3a9cf8…be81`，
-  `requireAdministrator`）；`verify-exe` **11/11**、`verify-help-exe` **14/14**、
-  `verify-ai-token-exe` **16/16**。`dist/LiveMemory.exe` 被其它进程占用，产物保存在
-  `build/LiveMemory-0.17.0-opencode.exe`。
+- 全量回归 **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；
+  v0.18.0 发布回归 344,314 ms）；Windows EXE Build ID `902109197d8b`
+  （commit `3149ffc`，99,503,104 B，SHA-256 `285cfd82…2957f`，`requireAdministrator`）；
+  `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16**。
+  `dist/LiveMemory.exe` 被其它进程占用，正式资产为 `build/LiveMemory-0.18.0.exe`。
 
 ### 未完成
 

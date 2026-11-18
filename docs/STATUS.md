@@ -70,7 +70,7 @@
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18） | **1,241 passed / 0 failed / 0 skipped**（856 unit + 385 integration；v0.18.0 发布回归 344,314 ms） |
-| 本轮 EXE（2026-11-18） | Build `f05fe173fda3`；99,503,104 B；SHA-256 `8e3a9cf8…be81`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；产物在 `build/`（`dist` 被其它进程占用） |
+| 本轮 EXE（2026-11-18） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16；产物 `build/LiveMemory-0.18.0.exe`（`dist` 被其它进程占用） |
 | 六平台回归 | 全量套件通过；协议未改 |
 | 十语言字典 / UI 矩阵 | 10 × 2,351 键；真实浏览器 80/80 |
 | 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
@@ -265,18 +265,20 @@ v0.18.0（OpenCode Provider）已发布。当前没有进行中的功能里程�
 | 全量首轮/次轮 | 各 1 个**既有时间敏感测试**失败：`memory-privacy` 的 30 天保留断言依赖真实接收时间（已修正测试夹具，非产品缺陷）；`ai-memory-output-recovery` 的批次计数为既有时序抖动（单跑 8/8 通过）。第三次全量 1,241/1,241 通过。 |
 | 真实 OpenCode API | **未执行**（无 Key） |
 
-### 0.61.5 Windows EXE
+### 0.61.5 Windows EXE（v0.18.0 正式构建）
 
 | 项目 | 值 |
 | --- | --- |
-| 构建 | `buildId` **`f05fe173fda3`**；commit **`032508cdcbda7bad3d8c81893ce1e96ae06f2baa`**；builtAt `2026-11-18T11:58:16.876Z`；256 files / 70 required modules |
-| 文件 / 大小 | `build/LiveMemory-0.17.0-opencode.exe`（**99,503,104 bytes**） |
-| SHA-256 | `8e3a9cf88c65f725175e2a4bfde359a2e14e829fb8a98638530199e0a252be81` |
+| 构建 | `buildId` **`902109197d8b`**；commit **`3149ffceb2252d457d7eb7a72659bdb6999cd0de`**；builtAt `2026-11-18T12:26:22.159Z`；256 files / 70 required modules |
+| 文件 / 大小 | `build/LiveMemory-0.18.0.exe`（**99,503,104 bytes**） |
+| SHA-256 | `285cfd822b9a6535d0998c98bc5c5d5eee8a502a71c96a3bc02c68d09e62957f` |
+| `SHA256SUMS.txt` | `285cfd…2957f  LiveMemory.exe`；82 B；SHA-256 `0400aa9bffa2ca6f6b10d97cc454551c2b3f2dcfdd7527f8dc1f2f901e1b626a` |
 | Manifest | **`requireAdministrator`**（构建断言 + 注入后复读） |
+| 启动 / 版本 | `--version` = `0.18.0`；Build `0.18.0 (commit 3149ffc, assets 902109197d8b938c3def)` |
 | `verify-exe` | **11/11 passed**：fresh data、SQLite、live console、restart、crash recovery、denied folder、another folder、extracted-app reuse、十语 i18n、CLI |
 | `verify-help-exe` | **14/14 passed** |
 | `verify-ai-token-exe` | **16/16 passed**：真实 EXE 内 mock Provider 的画像、usage、断点恢复、认证、备份 |
-| 构建路径说明 | `dist/LiveMemory.exe` 被另一个进程以独占方式占用（`EBUSY`，已确认不是权限问题），无法覆盖；本次用**同一源码、同一构建脚本**在隔离副本中构建并验收，产物保存到 `build/LiveMemory-0.17.0-opencode.exe`。`dist/` 仍是上一版文件，**不是**本轮产物。 |
+| 构建路径说明 | `dist/LiveMemory.exe` 被另一个进程以独占方式占用（`EBUSY`，已确认不是权限问题），无法覆盖；本次用**同一源码、同一构建脚本**在隔离副本中构建并验收，产物保存到 `build/LiveMemory-0.18.0.exe` 并作为 Release 资产上传。`dist/` 仍是上一版文件，**不是** v0.18.0 产物。 |
 | 未验证 | 真实双击 UAC（同意/拒绝）、干净 Windows 账户；EXE 未签名 |
 
 ### 0.61.6 未完成 / 限制
