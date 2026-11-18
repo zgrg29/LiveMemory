@@ -587,3 +587,28 @@
 
 **后果**：文档入口更短、更稳定；历史证据仍可追溯；代价是发版或新增语言时需要同步
 STATUS / CHANGELOG / RELEASE_HISTORY，而未验证项仍必须由人工或真实环境补齐。
+
+## ADR-039 AI Provider Key 迁移至 Windows Credential Manager（2026-11-18）
+
+**状态**：已采纳（补丁候选，未发布）
+
+**背景**：部分 Windows 用户保存 API 配置时收到 `AI_PROVIDER_CREDENTIAL_PERMISSION`。
+旧实现把 AES 密文与每安装密钥放在数据目录，并用 `icacls` 维护 ACL；该路径依赖
+`%LOCALAPPDATA%`、当前账户名解析、文件 DELETE 权限与跨管理员账户行为，无法在开发者机器复现，
+也不应要求用户排查 Windows 权限。
+
+**决定**：
+
+- AI Provider API Key 的主存储改为 **Windows Credential Manager** Generic Credential：
+  每个 `credentialReference` 一条，DPAPI + 当前用户 SID，`CRED_PERSIST_LOCAL_MACHINE`。
+- 不引入原生 addon 或运行时 npm 依赖；使用固定 PowerShell + 内嵌 C# P/Invoke
+  （`CredWriteW`/`CredReadW`/`CredDeleteW`），Key 只经 stdin；Add-Type 临时目录使用应用 cache。
+- 旧 `secrets/ai-keys.json` 只读迁移并读回校验；旧文件不删除/不改名；迁移失败可重试；
+  旧 Key 可只读回退；新 Key 永不写回旧文件。
+- 后端不可用时明确失败（503），不伪造成功、不回退明文；不读取/修改其他 Windows 账户的 vault 或 ACL。
+- 旧平台 Cookie 文件仍使用 AES 文件库；其 `icacls` 授权改为先授当前 SID 完全控制、再移除继承。
+
+**后果**：Key 不再依赖数据目录凭据文件 ACL；同一 Windows 用户、同一数据目录升级无感；
+跨 Windows 账户/over-the-shoulder 需要重新输入 Key（账户隔离，非数据丢失）；Windows Server
+Core、移除 PowerShell 或被组策略禁止的环境无法保存，会返回明确错误。整机重启、第二账户与
+真实 UAC 场景仍需人工验收。

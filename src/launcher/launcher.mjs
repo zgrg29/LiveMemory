@@ -672,6 +672,10 @@ export async function runLauncher({
         systemLocale,
         env,
         buildInfo,
+        // The AI provider key lives in the Windows vault, not in an ACL-managed
+        // file under the data folder. Other embedded callers default to the
+        // isolated file backend, which keeps tests away from the real vault.
+        useWindowsCredentialManager: process.platform === 'win32',
         // Relocation changes the data folder while the process keeps running.
         // Move the single-instance lock with it so a second launch cannot write
         // the new folder at the same time.

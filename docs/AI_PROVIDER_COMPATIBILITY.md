@@ -131,6 +131,21 @@ MiniMax / 百炼已经用同一套 Region 选择器表达“不同平台/区域�
 记录为测试失败，不能阻止一个格式合法的配置保存。新增集成测试在保存/编辑期间把 `fetch`
 替换为“一调用就失败”的实现，证明保存路径不触网。
 
+**凭据后端（2026-11-18 可靠性改进）**：API Key 不再写入数据目录下的
+`secrets/ai-keys.json`，而是写入 **Windows Credential Manager**：
+
+- 每个 `credentialReference` 一个 Generic Credential，target 为
+  `LiveMemory/ai-provider/v1/<reference>`；不包含 Provider 名或 Key。
+- 由 Windows DPAPI 保护，按当前用户 SID 隔离；`CRED_PERSIST_LOCAL_MACHINE` 在重启后保留。
+- 通过固定 PowerShell + 内嵌 C# P/Invoke 调用 `CredWriteW` / `CredReadW` / `CredDeleteW`；
+  Key 只经 stdin，不进入 argv、环境变量或临时明文文件。Add-Type 临时目录使用 `<数据目录>\cache`。
+- 超过 Win32 2560 字节上限的 Key 自动分块（2400 字节/块），更新/删除时清理旧块。
+- 旧 `secrets/ai-keys.json` 只在启动时读取并迁移；先写入新后端、读回校验，全部成功才写
+  `ai-keys.migration.json`。旧文件不删除、不改名；不可读时只告警，不阻止新 Key 保存。
+- 错误码：`AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE`（503）、
+  `AI_PROVIDER_CREDENTIAL_ACCESS_DENIED`、`AI_PROVIDER_CREDENTIAL_WRITE_FAILED`、
+  `AI_PROVIDER_CREDENTIAL_CORRUPT`。均不会显示虚假成功，也不会回退明文。
+
 本次定位并修复的真实缺陷：
 
 | 缺陷 | 根因 | 修复 |
@@ -144,12 +159,17 @@ MiniMax / 百炼已经用同一套 Region 选择器表达“不同平台/区域�
 | 通过“自定义 OpenAI-compatible”配置 OpenCode 仍报会话头错误 | 自定义 Provider 没有 `sessionHeader`，Go 端点在鉴权前返回 400 `MissingSessionID` | 仅当 Base URL 主机是 `opencode.ai` 或 `*.opencode.ai` 时，为自定义端点补发 `x-opencode-session` 与 `User-Agent: LiveMemory/<version>`；任意其他自定义主机绝不发送该头 |
 
 **错误展示**：保存/测试错误显示在按钮旁的 `role="alert"` 区域，包含本地化消息、稳定错误码
-（如 `AI_PROVIDER_CREDENTIAL_PERMISSION`）与必要的路径；不显示 Key、Authorization 头、
-Cookie 或 Token。配置加载失败与凭据库不可读会在 Provider 卡片顶部单独告警。
+（如 `AI_PROVIDER_CREDENTIAL_PERMISSION`、`AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE`）
+与必要的路径；不显示 Key、Authorization 头、Cookie 或 Token。`describeError()` 现在把服务端
+`details` 作为占位符参数传给 `t()`，修复了 `{path}` 原样显示的问题；`{code}` 也会回退为错误码。
+配置加载失败、旧凭据迁移失败与凭据后端不可用会在 Provider 卡片顶部单独告警。迁移失败时旧
+`ai-keys.json` 保持原样，用户可直接重新输入 Key，不需要删除配置。
 
 **Windows 管理员账户边界**：`requireAdministrator` 可能让进程运行在另一个管理员账户下，
-`%LOCALAPPDATA%` 随该账户变化；凭据文件只授予当前账户。详见 `docs/WINDOWS_RUNTIME.md` §4.2。
-本次未改变 UAC、数据目录校验、ACL 或删除范围规则。
+`%LOCALAPPDATA%` 与 Credential Manager vault 随该账户变化；LiveMemory 不读取其他账户的
+vault，也不修改其他账户文件的 ACL。详见 `docs/WINDOWS_RUNTIME.md` §4.2。
+本次未改变 UAC、数据目录校验或删除范围规则；仅修正旧凭据文件 ACL 的授权顺序与权限位
+（AI Key 新路径不使用该 ACL）。
 
 ---
 

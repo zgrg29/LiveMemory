@@ -84,6 +84,7 @@ const REQUIRED_MODULES = [
   'src/server/backup/journal.mjs',
   'src/server/backup/restore.mjs',
   'src/server/backup-jobs.mjs',
+  'src/platforms/shared/credential-store.mjs',
   'src/platforms/twitch/adapter.mjs',
   'src/platforms/twitch/client.mjs',
   'src/platforms/twitch/irc.mjs',

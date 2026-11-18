@@ -37,7 +37,7 @@ export const BACKUP_EXCLUDED = Object.freeze([
   {path: 'exports/', reason: 'regenerable AI packages'},
   {path: 'backups/', reason: 'nested emergency snapshots'},
   {path: 'app/', reason: 'unpacked executable assets'},
-  {path: 'config/ai-providers.json', reason: 'provider configuration bound to this device key'},
+  {path: 'config/ai-providers.json', reason: 'provider configuration bound to this device and Windows account'},
   {path: 'data-location pointer', reason: 'machine-specific absolute path'}
 ]);
 

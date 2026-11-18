@@ -75,7 +75,7 @@ LiveMemory 是面向普通主播的 **Windows 本地软件**：本地优先、�
 src/launcher/        启动器：参数、数据目录、单实例、浏览器、命令行多语言、退出
 src/server/          HTTP 服务、路由、设置存储、日志、SSE
 src/platforms/       平台适配器（六个已发布平台：bilibili、youtube/anonymous、twitch、douyin、tiktok、kick；kuaishou 为预览，采集默认禁用；mock 仅测试夹具）
-  shared/            adapter 契约、ingest 写入管线、session manager、加密凭据存储
+  shared/            adapter 契约、ingest 写入管线、session manager、凭据存储（Windows Credential Manager + 旧 AES 凭据迁移）
 src/storage/         database（连接/迁移）、repositories（SQL 访问）
 src/analytics/       sessions（时间线/汇总）、payments（币种合计）、viewers（画像读模型）
 src/ai/              export（分析包）、prompts（分语言说明与输出语言规则）、schemas（结果 JSON Schema）
@@ -129,7 +129,7 @@ node scripts/build-windows.mjs
 7. **读模型与分析分离**：`analytics/` 只读数据库生成展示数据，不写库。
 8. **AI 不记账**：AI 输出永远不能修改本地金额与计数。
 9. **文本优先**：聊天原文 `content` 永不替换；Unicode Emoji 原样保存。平台表情只在有可靠元数据时写入 `emotes`，保留平台提供的名称/代码；没有名称就保留 id 并标记未知。不要为还原表情图片引入下载/缓存，也不要猜测未知表情的情绪。
-10. **AI 平台无关、自备密钥**：界面与提示词使用「AI 分析中心 / AI 分析 / 观众长期画像」，不得绑定某个 AI 品牌。只支持用户自备 API Key 的 Provider（OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、自定义 OpenAI-compatible）；不得重新引入匿名免费 AI、手动复制提示词或粘贴/上传 JSON 的用户入口。API Key 只存本地加密凭据库，不进入配置 JSON、日志、ZIP、数据库导出或 HTML。
+10. **AI 平台无关、自备密钥**：界面与提示词使用「AI 分析中心 / AI 分析 / 观众长期画像」，不得绑定某个 AI 品牌。只支持用户自备 API Key 的 Provider（OpenAI、Anthropic、DeepSeek、MiniMax、阿里云百炼、OpenRouter、自定义 OpenAI-compatible）；不得重新引入匿名免费 AI、手动复制提示词或粘贴/上传 JSON 的用户入口。API Key 只存 **Windows Credential Manager**（DPAPI，按当前 Windows 用户 SID 隔离），不进入配置 JSON、日志、ZIP、数据库导出或 HTML；旧 `secrets/ai-keys.json` 只作为迁移来源/加密只读回退，不得再写入新 Key。不得改用命令行参数、环境变量、临时明文文件或明文回退传递 Key。
 11. **只接直播**：平台 URL/ID 只用于定位正在进行的直播。不得抓取普通视频、视频评论、字幕或历史回放；非直播输入必须明确拒绝。
 12. **平台接入边界（v0.5.0 产品决定）**：Bilibili 继续使用其公开直播接口。YouTube **只保留** `src/platforms/youtube/anonymous/` 的公开网页聊天路径，不再提供官方 Data API/OAuth/API Key 实现。该路径必须同时满足：不发送 Cookie/OAuth/用户 API Key；不绕过登录、验证码、年龄墙、地区限制；失败不静默切换、不伪造成功；界面不反复展示技术模式选择，但在设置/隐私说明中如实告知它不是 YouTube 官方稳定 API、可能失效；不得描述为“官方授权”或“合规”。`liveChatMessages.streamList` 是 gRPC，REST 路径不存在，不得臆造。
 
@@ -184,6 +184,8 @@ node scripts/build-windows.mjs
 - 提权只用于按用户决定让 Windows 在双击启动时显示标准 UAC；不得因此放宽数据目录路径校验、迁移 staging/校验/回滚、删除范围限制与“不删除无关文件”的规则，也不得放宽本地 API 会话认证、Origin/Host 校验、SSE 认证与凭据保护。未来若出现新的权限需求，仍必须单独设计最小权限/受控提权，不得在现有整包提权之上再扩大权限。
 - 本地 HTTP API 必须有会话认证：除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）都要求启动器建立的随机会话 Cookie；不得添加返回 token 的端点，不得把 token 放进查询串或日志。
 - 权限失败必须解释路径、错误码与替代方案；不得把所有启动失败统一归类为权限不足。
+- **AI Provider API Key 不依赖数据目录 ACL**：生产环境写入 Windows Credential Manager（`src/platforms/shared/credential-store.mjs`），通过固定 PowerShell + 内嵌 C# P/Invoke 调用 CredWrite/CredRead/CredDelete；Key 只经 stdin 传递，PowerShell 编译器临时目录必须使用应用可写的 cache。Credential Manager 不可用时必须明确失败，不得回退为明文或伪造成功。
+- **Windows 账户隔离不可绕过**：Credential Manager 按当前用户 SID 隔离；不得读取/修改其他账户的 vault，也不得为跨账户复用而修改其他账户文件 ACL。UAC over-the-shoulder 进入另一管理员账户时，凭据属于该账户；文档必须如实说明。
 - 日志不得包含 Cookie、Token、API Key、聊天正文；使用 `src/server/logger.mjs` 的脱敏。
 - 仅一份实例可写同一数据目录（`runtime/instance.lock`）。
 - 优雅退出：停止适配器 → 关闭 SSE → 关闭 HTTP → WAL checkpoint → 关闭数据库 → 删除 runtime 文件。

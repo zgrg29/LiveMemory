@@ -4,6 +4,45 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
+## 0.19.1 — 未发布（Windows Credential Manager 凭据可靠性补丁候选）
+
+**未发布，版本号仍为 `0.19.0`。** 本轮把 AI Provider API Key 从自维护的 AES JSON 凭据库
+迁移到 Windows Credential Manager，解决部分 Windows 用户保存时遇到
+`AI_PROVIDER_CREDENTIAL_PERMISSION` 的凭据文件权限故障。数据库 Schema 仍 16，平台状态未变。
+
+### 存储与迁移
+
+- 每个 `credentialReference` 保存为一条 Windows Generic Credential
+  （`LiveMemory/ai-provider/v1/<ref>`）；由 Windows DPAPI 保护，按当前 Windows 用户 SID 隔离，
+  `CRED_PERSIST_LOCAL_MACHINE` 重启保留。
+- 不再把 AI Key 写入 `secrets/ai-keys.json`。旧文件只读迁移：逐个写入新后端、读回校验，
+  全部成功才写 `secrets/ai-keys.migration.json`；旧文件**不删除/不改名**。迁移失败或旧库
+  损坏只告警，新 Key 仍可保存；旧 Key 在需要时从旧 AES 文件只读回退。
+- 超过 Win32 2560 字节 blob 上限的 Key 自动按 2400 字节分块；更新/删除时清理旧块。
+- 通过固定 PowerShell + 内嵌 C# P/Invoke 调用 CredWrite/CredRead/CredDelete；Key 只经
+  stdin，不进入命令行参数、环境变量或临时明文文件；Add-Type 临时目录使用应用 cache。
+
+### 错误与 Windows 兼容
+
+- 新增具体错误：`AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE`（503）、
+  `AI_PROVIDER_CREDENTIAL_ACCESS_DENIED`、`AI_PROVIDER_CREDENTIAL_WRITE_FAILED`、
+  `AI_PROVIDER_CREDENTIAL_CORRUPT`；不显示虚假成功，不回退明文。
+- `describeError()` 把服务端 `details` 传给翻译函数，修复 `{path}` 与 `{code}` 原样显示。
+- 旧平台 Cookie 文件 ACL 改为“先授权当前 SID 完全控制，再移除继承”，避免 `(R,W)` 缺 DELETE
+  导致后续原子改名失败。
+- 恢复出厂设置会清理当前配置引用的 Credential Manager 条目。
+
+### 验证
+
+- unit **889** + integration **407**（405 passed / 2 skipped）= **1,294 passed / 0 failed /
+  2 skipped**；真实 CredMan opt-in **2/2**；真实 EXE `verify-provider-save-exe` **24/24**。
+- 同一最终 EXE（Build `ae8479e258c5`，SHA-256 `8a303c5f…e3fb652`，99,609,088 B，
+  `requireAdministrator`）回归：`verify-exe` 11/11、`verify-help-exe` 14/14、
+  `verify-ai-token-exe` 16/16。
+- 十语言 **2,379** 键，键集/占位符门禁通过。
+- 未验证：整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、组策略禁用
+  PowerShell/CredMan、干净 Windows 环境。
+
 ## 0.19.0 — 2026-11-18（AI Provider Reliability Update）
 
 **正式发布。** 专项修复用户反馈的“点击保存提示 API 配置无效”：用隔离数据目录与真实本地

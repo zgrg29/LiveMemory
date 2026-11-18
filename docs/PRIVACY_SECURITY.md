@@ -21,11 +21,11 @@
 
 ## 3. 凭据
 
-- Bilibili Cookie、YouTube OAuth Token、API Key 等**不写入日志**、默认**不进入备份**、不进入 AI 分析包。
+- 平台 Cookie 与 AI Provider API Key 等**不写入日志**、默认**不进入备份**、不进入 AI 分析包。
 - **本地 API 会话凭据**：bootstrap token 与 session token 只存在于进程内存和浏览器 Cookie；不写入配置、数据库、runtime.json、日志或分析包。bootstrap token 只出现在启动器交给浏览器的 URL fragment 中，一次使用且 5 分钟过期；页面交换成功后立即从地址栏移除。
 - 日志脱敏：键名匹配 `cookie|sessdata|bili_jct|token|secret|password|authorization|api[-_]?key|credential`，值模式匹配 `SESSDATA=`、`Bearer ...` 等。
 - 聊天正文不写日志。
-- 未来持久化凭据时使用 DPAPI 或 AES-256-GCM + 用户密码派生，不放在普通 JSON。
+- **AI Provider API Key** 自 v0.19 起写入 Windows Credential Manager（Windows DPAPI，按当前用户 SID 隔离）；不放在普通 JSON，不使用明文回退。旧 `secrets/ai-keys.json` 只作为迁移来源/加密只读回退，不再写入新 Key。平台 Cookie 仍使用 AES-256-GCM + 每安装密钥的本地文件库。
 
 ## 4. 日志
 
@@ -353,15 +353,16 @@ AI 结果是**外部输入**，按不可信数据处理：
 
 ## 26. 用户自带 AI API（v0.13.0）
 
-- **凭据存储**：API Key 写入 `<数据目录>/secrets/ai-keys.json`，AES-256-GCM + 每安装随机密钥；普通配置 `<数据目录>/config/ai-providers.json` 只保存 `credentialReference`。这不是 DPAPI：同一 Windows 用户的其他进程仍可能读取密钥与密钥文件；文档与界面都如实说明。
-- **写入顺序与回滚**：先写新凭据，再写配置，最后清理旧引用；配置保存失败会回滚新凭据并恢复旧 Key。凭据文件或每安装密钥不可读时，保存会明确失败并**拒绝覆盖**原文件（不再把损坏当成空库）。
+- **AI Key 存储**：API Key 写入 **Windows Credential Manager** 的 Generic Credential（Windows DPAPI，按当前 Windows 用户 SID 隔离）。普通配置 `<数据目录>/config/ai-providers.json` 只保存随机 `credentialReference`。每个 Provider/引用独立保存；超过 Win32 单条 blob 上限时按 2400 字节分块。Key 不经过命令行参数、环境变量或临时明文文件；PowerShell 编译器临时目录使用应用 cache，且只包含固定 C# 代码。
+- **旧数据迁移**：启动时读取旧的 `secrets/ai-keys.json`（AES-256-GCM + 每安装密钥）。可读的 Key 逐个写入新后端并读回校验；成功后才写 `secrets/ai-keys.migration.json` 标记。旧文件**不删除、不改名、不覆盖**。旧文件损坏/不可读时只是给出警告，新 Key 仍可保存；旧 Key 在新后端不可用时可从旧加密文件只读回退。旧 AES 文件**不是** DPAPI，同一 Windows 用户的其他进程仍可能读取它；新 Key 不会写回该文件。
+- **写入顺序与回滚**：先写新凭据，再写配置，最后清理旧引用；配置保存失败会回滚新凭据并恢复旧 Key。Credential Manager 不可用、访问被拒绝或写入校验失败时，保存明确失败且**不写入明文**；用户可直接重试或重新输入 Key，不需要删除旧配置。
 - **区域隔离**：同一 Provider 的不同区域是独立配置；切换区域/Base URL 会生成新的 credential reference，旧 Key 不再被复用。仅尾斜杠/主机大小写/默认端口不同视为同一端点，不轮换 Key。
 - **编辑配置**：编辑表单从不回显 Key；留空/空字符串不会覆盖已保存 Key，只有显式输入新 Key 才替换。只改模型或等价 Base URL 时保留原 credential reference；真正改 Provider/区域/Base URL 时必须重新输入 Key。
 - **发送目的地**：已知 Provider 只允许其官方区域 Base URL；自定义 Base URL 必须显式配置。服务端阻止云元数据、私网地址与 localhost，除非用户显式勾选 `allowLocalNetwork`（本地模型场景）；请求前做 DNS 解析检查。API Key 只发送到该配置确认的 Base URL。
-- **不进入日志/导出**：日志、状态文件、分析 ZIP、数据库导出、错误详情与前端 HTML 均不包含 Key。状态文件只保存 provider/model/job/stage/usage。
+- **不进入日志/导出**：日志、状态文件、分析 ZIP、数据库导出、错误详情与前端 HTML 均不包含 Key。状态文件只保存 provider/model/job/stage/usage。Credential Manager 错误只暴露稳定错误码、后端类型与 Win32 码。
 - **数据范围**：单场任务发送本场聊天、统计、时间线与表情；画像任务额外发送本场相关观众摘录与已有长期记忆。不会发送数据库文件、Cookie、无关历史直播或系统账户信息。
 - **付费与价格**：价格字段完全可选，仅用于本地费用展示；未填写或只填写一项时不计算总费用。价格、免费/付费分类不限制单场或长期画像。估算不是最终账单。
-- **删除**：删除配置会先持久化配置删除，再清理对应加密密钥；清空数据会清理 config/secrets。手动删除 `%LOCALAPPDATA%` 文件前必须先退出 LiveMemory，并使用创建该数据目录的同一个 Windows 账户；运行中的数据库/WAL 或管理员账户 ACL 可能使删除返回 `EBUSY`/`EPERM`。远程服务商是否保留请求数据由该服务商政策决定，LiveMemory 无法撤回。
+- **删除**：删除配置会先持久化配置删除，再清理对应 Credential Manager 条目；恢复出厂设置也会清理当前配置引用的 vault 条目。手动删除 `%LOCALAPPDATA%` 文件前必须先退出 LiveMemory，并使用创建该数据目录的同一个 Windows 账户；运行中的数据库/WAL 或管理员账户 ACL 可能使删除返回 `EBUSY`/`EPERM`。远程服务商是否保留请求数据由该服务商政策决定，LiveMemory 无法撤回。
 
 ## 27. 单一 AI 入口与调度（v0.13.1）
 
@@ -466,8 +467,10 @@ CORS 与 SameSite 只约束**浏览器**如何发送/读取跨站请求；本机
 ### 32.2 保护范围（如实说明）
 
 - 保护目标：另一个 Windows 账户读取文件；误提交/误打包；日志泄漏。
-- **不是 DPAPI**：同一 Windows 用户的进程可以读取密钥与密文；专用浏览器资料目录也由 Chrome/Edge
-  自身的 DPAPI 保护，但同一账户的进程仍可能读取。用户显式选择共享/同步目录时，该目录的其他访问者也可能读取。
+- **平台 Cookie 与旧 AI 凭据文件不是 DPAPI**：同一 Windows 用户的进程可以读取密钥与密文；
+  专用浏览器资料目录由 Chrome/Edge 自身的 DPAPI 保护，但同一账户的进程仍可能读取。用户显式选择
+  共享/同步目录时，该目录的其他访问者也可能读取。**AI API Key 自 v0.19 起使用 Windows
+  Credential Manager（DPAPI）**，不再是这条限制；旧 `ai-keys.json` 只保留为迁移来源/只读回退。
 - 退出登录会删除 Cookie 文件并尝试删除专用浏览器资料目录；若浏览器仍占用目录而删除失败，界面/接口返回
   `locked`，加密 Cookie 仍会被清除，用户可关闭残留浏览器窗口后手动删除该目录。
 - 登录验证调用 `https://www.douyin.com/aweme/v1/web/user/profile/self/`；只有平台返回

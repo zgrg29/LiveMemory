@@ -226,6 +226,18 @@ export async function clearData({
     }
   }
 
+  // Provider keys no longer live under the data folder. A factory reset must
+  // explicitly remove them from Windows Credential Manager; a failure is
+  // reported instead of claiming that every credential was removed.
+  let credentialClear = null;
+  if (mode === 'factory' && deps.providerConfigStore?.clearCredentials) {
+    try {
+      credentialClear = deps.providerConfigStore.clearCredentials();
+    } catch (error) {
+      credentialClear = {removed: 0, failures: [{code: error?.code ?? 'CREDENTIAL_CLEAR_FAILED'}]};
+    }
+  }
+
   const before = tableCounts(deps.db);
   clearDatabase(deps.db, {factory: mode === 'factory'});
   const after = tableCounts(deps.db);
@@ -285,7 +297,8 @@ export async function clearData({
     removedFiles: removed.filter((entry) => typeof entry === 'string').length,
     fileErrors: removed.filter((entry) => typeof entry !== 'string'),
     settingsReset: mode === 'factory',
-    credentialsRemoved: mode === 'factory',
+    credentialsRemoved: mode === 'factory' && (credentialClear?.failures?.length ?? 0) === 0,
+    credentialFailures: credentialClear?.failures ?? [],
     backupsPreserved: deps.paths.backups
   };
 }

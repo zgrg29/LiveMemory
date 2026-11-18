@@ -96,16 +96,56 @@ export class EncryptedJsonStore {
     return key;
   }
 
-  /** Best effort: only the current account may read the key/ciphertext. */
+  #currentPrincipal() {
+    if (this.principal) return this.principal;
+    if (this.platform === 'win32') {
+      try {
+        const root = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
+        const result = spawnSync(`${root}\\System32\\whoami.exe`, ['/user', '/fo', 'csv', '/nh'], {
+          encoding: 'utf8',
+          windowsHide: true
+        });
+        const match = String(result.stdout ?? '').match(/"(S-1-[0-9-]+)"/);
+        if (match) {
+          this.principal = match[1];
+          return this.principal;
+        }
+      } catch {
+        /* fall back to the account name below */
+      }
+    }
+    this.principal = this.user ?? null;
+    return this.principal;
+  }
+
+  /**
+   * Best effort: only the current account may read the key/ciphertext.
+   *
+   * Two steps are deliberate. The old implementation ran
+   * `/inheritance:r /grant:r <name>:(R,W)` in one command. If the principal
+   * could not be resolved (for example a Microsoft-account name under another
+   * profile), inheritance could be removed without granting the current user
+   * access. The grant also lacked DELETE, which a later atomic rename over the
+   * file needs. Granting SID:(F) first, and removing inheritance only after the
+   * grant succeeds, cannot lock the current user out and keeps updates working.
+   */
   restrictPermissions(target) {
     if (this.platform !== 'win32') return {ok: false, reason: 'not-windows'};
     try {
-      if (!this.user) return {ok: false, reason: 'no-user'};
-      const result = spawnSync('icacls', [target, '/inheritance:r', '/grant:r', `${this.user}:(R,W)`], {
+      const principal = this.#currentPrincipal();
+      if (!principal) return {ok: false, reason: 'no-user'};
+      const root = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
+      const icacls = `${root}\\System32\\icacls.exe`;
+      const grant = spawnSync(icacls, [target, '/grant:r', `${principal}:(F)`], {
         stdio: 'ignore',
         windowsHide: true
       });
-      return {ok: result.status === 0};
+      if (grant.status !== 0) return {ok: false, reason: 'grant-failed'};
+      const restrict = spawnSync(icacls, [target, '/inheritance:r'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      return {ok: restrict.status === 0, reason: restrict.status === 0 ? null : 'inheritance-remove-failed'};
     } catch {
       return {ok: false, reason: 'icacls-failed'};
     }

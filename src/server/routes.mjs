@@ -295,6 +295,18 @@ function providerConfigError(error) {
     CREDENTIAL_KEY_INVALID: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
     CREDENTIAL_KEY_MISSING: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
     CREDENTIAL_KEY_UNREADABLE: ['AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE', 'errors.aiProviderCredentialStoreUnreadable', 500],
+    CREDENTIAL_BACKEND_UNAVAILABLE: ['AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE', 'errors.aiProviderCredentialBackendUnavailable', 503],
+    CREDENTIAL_BACKEND_TIMEOUT: ['AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE', 'errors.aiProviderCredentialBackendUnavailable', 503],
+    CREDENTIAL_BACKEND_UNSUPPORTED: ['AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE', 'errors.aiProviderCredentialBackendUnavailable', 503],
+    CREDENTIAL_BACKEND_ACCESS_DENIED: ['AI_PROVIDER_CREDENTIAL_ACCESS_DENIED', 'errors.aiProviderCredentialAccessDenied', 500],
+    CREDENTIAL_BACKEND_WRITE_FAILED: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_BACKEND_READ_FAILED: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_BACKEND_INVALID_RESPONSE: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_BACKEND_INVALID_REQUEST: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_BACKEND_INVALID_REFERENCE: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_BACKEND_CORRUPT: ['AI_PROVIDER_CREDENTIAL_CORRUPT', 'errors.aiProviderCredentialCorrupt', 500],
+    CREDENTIAL_BACKEND_VERIFY_FAILED: ['AI_PROVIDER_CREDENTIAL_WRITE_FAILED', 'errors.aiProviderCredentialWriteFailed', 500],
+    CREDENTIAL_VALUE_TOO_LARGE: ['AI_PROVIDER_KEY_INVALID', 'errors.aiProviderKeyTooLarge', 400],
     EACCES: ['AI_PROVIDER_CREDENTIAL_PERMISSION', 'errors.aiProviderCredentialPermission', 500],
     EPERM: ['AI_PROVIDER_CREDENTIAL_PERMISSION', 'errors.aiProviderCredentialPermission', 500],
     EBUSY: ['AI_PROVIDER_FILE_LOCKED', 'errors.aiProviderFileLocked', 409],
@@ -310,7 +322,12 @@ function providerConfigError(error) {
     ?? ['AI_PROVIDER_SAVE_FAILED', 'errors.aiProviderSaveFailed', 500];
   const details = {reason: code || 'UNKNOWN'};
   if (error?.path) details.path = String(error.path);
+  if (error?.backend) details.backend = String(error.backend);
+  if (error?.spawnCode) details.spawnCode = String(error.spawnCode);
+  if (error?.scriptError) details.scriptError = String(error.scriptError);
+  if (Number.isFinite(Number(error?.win32))) details.win32 = Number(error.win32);
   if (error?.details && typeof error.details === 'object' && !Array.isArray(error.details)) {
+    if (error.details.backend) details.backend = String(error.details.backend);
     details.diagnostic = error.details;
   }
   return new AppError(outCode, {

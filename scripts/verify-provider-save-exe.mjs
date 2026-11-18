@@ -4,12 +4,13 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  rmSync,
   writeFileSync
 } from 'node:fs';
 import {join, resolve} from 'node:path';
 import {manifestLevel} from './pe-manifest.mjs';
 import {prepareTestExe} from './test-exe-copy.mjs';
+import {ProviderConfigStore} from '../src/ai/providers/store.mjs';
+import {WindowsCredentialStore} from '../src/platforms/shared/credential-store.mjs';
 
 /**
  * Real Windows EXE acceptance for the Provider save flow.
@@ -36,6 +37,14 @@ for (const dir of [dataDir, localAppData, locationDir, backupDir]) mkdirSync(dir
 const results = [];
 let childCounter = 0;
 let authCookie = null;
+// Every random reference created by this test is removed from the real vault in
+// `finally`, so a failed assertion cannot leave test keys in the user's account.
+const vaultReferences = new Set();
+
+function trackCredentialReference(response) {
+  const reference = response?.json?.config?.credentialReference;
+  if (typeof reference === 'string' && reference.startsWith('aicred_')) vaultReferences.add(reference);
+}
 
 function record(name, passed, details = []) {
   results.push({name, passed, details});
@@ -75,10 +84,22 @@ async function waitFor(predicate, {timeoutMs = 30000, intervalMs = 200} = {}) {
   throw new Error(`timed out after ${timeoutMs} ms${last ? ` (${last.message})` : ''}`);
 }
 
-function runtimeInfo() {
-  const file = join(dataDir, 'runtime', 'runtime.json');
+function runtimeInfo(dir = dataDir) {
+  const file = join(dir, 'runtime', 'runtime.json');
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+/**
+ * Read the real vault through the production backend. The EXE under test writes
+ * with its own process; a fresh store instance avoids a stale cache.
+ */
+function vaultRead(reference) {
+  try {
+    return new WindowsCredentialStore({tempDir: join(root, 'vault-temp')}).read(reference);
+  } catch (error) {
+    return `ERROR:${error?.code ?? 'UNKNOWN'}`;
+  }
 }
 
 async function authenticate(baseUrl, bootstrapFile) {
@@ -101,7 +122,7 @@ async function authenticate(baseUrl, bootstrapFile) {
   return cookie;
 }
 
-function launch({port, tag}) {
+function launch({port, tag, dir = dataDir}) {
   childCounter += 1;
   const bootstrapFile = join(root, `bootstrap-${tag}-${childCounter}.url`);
   const stdoutFile = join(root, `stdout-${tag}-${childCounter}.log`);
@@ -109,7 +130,7 @@ function launch({port, tag}) {
   const outFd = openSync(stdoutFile, 'w');
   const errFd = openSync(stderrFile, 'w');
   const child = spawn(exe, [
-    '--no-open', '--data-dir', dataDir, '--port', String(port), '--lang', 'en'
+    '--no-open', '--data-dir', dir, '--port', String(port), '--lang', 'en'
   ], {
     cwd: process.cwd(),
     env: {
@@ -124,12 +145,12 @@ function launch({port, tag}) {
   });
   let exitInfo = null;
   child.on('exit', (code, signal) => { exitInfo = {code, signal}; });
-  return {child, bootstrapFile, stdoutFile, stderrFile, exitInfo: () => exitInfo};
+  return {child, bootstrapFile, stdoutFile, stderrFile, dataDir: dir, exitInfo: () => exitInfo};
 }
 
 async function waitForApp(app) {
   const info = await waitFor(async () => {
-    const runtime = runtimeInfo();
+    const runtime = runtimeInfo(app.dataDir);
     if (!runtime?.url) return null;
     const health = await httpJson(new URL('/api/health', runtime.url).href, {cookie: null});
     if (health.status !== 200 || health.json?.name !== 'LiveMemory') return null;
@@ -165,12 +186,12 @@ function baseUrl(url) {
   return new URL('/api/ai/providers', url).href;
 }
 
-function configFile() {
-  return join(dataDir, 'config', 'ai-providers.json');
+function configFile(dir = dataDir) {
+  return join(dir, 'config', 'ai-providers.json');
 }
 
-function secretFile() {
-  return join(dataDir, 'secrets', 'ai-keys.json');
+function secretFile(dir = dataDir) {
+  return join(dir, 'secrets', 'ai-keys.json');
 }
 
 function payload(overrides = {}) {
@@ -190,18 +211,26 @@ function payload(overrides = {}) {
 }
 
 async function getProviders(url) {
-  return httpJson(new URL('/api/ai/providers', url).href);
+  const response = await httpJson(new URL('/api/ai/providers', url).href);
+  for (const config of response.json?.configs ?? []) {
+    if (typeof config.credentialReference === 'string') vaultReferences.add(config.credentialReference);
+  }
+  return response;
 }
 
 async function createConfig(url, body) {
-  return httpJson(new URL('/api/ai/providers/configs', url).href, {method: 'POST', body});
+  const response = await httpJson(new URL('/api/ai/providers/configs', url).href, {method: 'POST', body});
+  trackCredentialReference(response);
+  return response;
 }
 
 async function patchConfig(url, id, body) {
-  return httpJson(new URL(`/api/ai/providers/configs/${encodeURIComponent(id)}`, url).href, {
+  const response = await httpJson(new URL(`/api/ai/providers/configs/${encodeURIComponent(id)}`, url).href, {
     method: 'PATCH',
     body
   });
+  trackCredentialReference(response);
+  return response;
 }
 
 const shippedManifest = manifestLevel(readFileSync(distExe));
@@ -226,13 +255,22 @@ try {
 
   // 2. Save a valid config; no network is involved.
   let deepseekId = null;
+  let deepseekReference = null;
   {
     const created = await createConfig(activeUrl, payload({apiKey: 'sk-exe-valid'}));
     deepseekId = created.json?.config?.id ?? null;
+    deepseekReference = created.json?.config?.credentialReference ?? null;
     record('valid DeepSeek configuration saves', created.status === 201 && Boolean(deepseekId),
       [`HTTP ${created.status}`, JSON.stringify(created.json?.error ?? null)]);
-    const raw = readFileSync(configFile(), 'utf8');
-    record('config JSON never contains the API key', !raw.includes('sk-exe-valid') && raw.includes('credentialReference'));
+    if (created.status === 201) {
+      const raw = readFileSync(configFile(), 'utf8');
+      record('config JSON never contains the API key', !raw.includes('sk-exe-valid') && raw.includes('credentialReference'));
+      record('fresh save does not create secrets/ai-keys.json', existsSync(secretFile()) === false,
+        [secretFile()]);
+      const stored = vaultRead(deepseekReference);
+      record('API key is readable from Windows Credential Manager', stored === 'sk-exe-valid',
+        [String(stored === 'sk-exe-valid')]);
+    }
   }
 
   // 3. Key pasted with a trailing newline.
@@ -243,6 +281,8 @@ try {
     }));
     record('key with trailing newline saves', created.status === 201 && created.json?.config?.hasCredential === true,
       [`HTTP ${created.status}`, JSON.stringify(created.json?.error ?? null)]);
+    record('the trimmed newline key is stored in the vault',
+      vaultRead(created.json?.config?.credentialReference) === 'sk-exe-newline');
   }
 
   // 4. Restart and edit without re-entering the key.
@@ -312,67 +352,63 @@ try {
     record('DeepSeek switches to a custom endpoint with a new key', custom.status === 200
       && custom.json?.config?.providerId === 'custom' && custom.json?.config?.hasCredential === true,
     [`HTTP ${custom.status}`]);
+    if (custom.json?.config?.credentialReference) {
+      deepseekReference = custom.json.config.credentialReference;
+    }
   }
 
-  // 8. A local credential write failure is not reported as an invalid config.
-  {
-    const tempDir = join(dataDir, 'secrets', 'ai-keys.json.tmp');
-    mkdirSync(tempDir, {recursive: true});
-    const failed = await patchConfig(activeUrl, deepseekId, {
-      name: 'Custom',
-      providerId: 'custom',
-      regionId: 'custom',
-      baseUrl: 'https://example.com/v1',
-      modelId: 'custom-chat',
-      apiKey: 'must-not-save',
-      pricing: null,
-      concurrency: 3,
-      timeoutMs: 180000,
-      batchInputTokens: null,
-      allowLocalNetwork: false
-    });
-    record('credential write failure is not reported as invalid config', failed.status === 500
-      && failed.json?.error?.code === 'AI_PROVIDER_SAVE_FAILED'
-      && failed.json?.error?.messageKey === 'errors.aiProviderSaveFailed',
-    [`HTTP ${failed.status}`, JSON.stringify(failed.json?.error ?? null)]);
-    rmSync(tempDir, {recursive: true, force: true});
-    const retried = await patchConfig(activeUrl, deepseekId, {
-      name: 'Custom',
-      providerId: 'custom',
-      regionId: 'custom',
-      baseUrl: 'https://example.com/v1',
-      modelId: 'custom-chat-retry',
-      pricing: null,
-      concurrency: 3,
-      timeoutMs: 180000,
-      batchInputTokens: null,
-      allowLocalNetwork: false
-    });
-    record('a failed save can be retried after the blocker is removed', retried.status === 200
-      && retried.json?.config?.hasCredential === true, [`HTTP ${retried.status}`]);
-  }
-
-  // 9. A corrupted credential store is preserved, not overwritten.
+  // 8. A corrupt legacy encrypted store must not block the new backend. Editing
+  //    an existing config without a new key still reads the key from the vault;
+  //    saving a new provider still works; the old bytes stay untouched.
   {
     const broken = '{"version":1,"payload":"broken","iv":"AA==","tag":"AA=="}\n';
+    await stop(app);
     writeFileSync(secretFile(), broken);
-    const failed = await patchConfig(activeUrl, deepseekId, {
+    app = launch({port: 49205, tag: 'corrupt-credentials'});
+    activeUrl = await waitForApp(app);
+    const list = await getProviders(activeUrl);
+    record('a corrupt legacy store is reported without becoming the active backend',
+      list.json?.loadState?.legacyCredential?.readable === false,
+      [JSON.stringify(list.json?.loadState?.legacyCredential ?? null)]);
+    const edited = await patchConfig(activeUrl, deepseekId, {
       name: 'Custom',
       providerId: 'custom',
       regionId: 'custom',
       baseUrl: 'https://example.com/v1',
       modelId: 'custom-chat-retry',
-      apiKey: 'overwrite-attempt',
       pricing: null,
       concurrency: 3,
       timeoutMs: 180000,
       batchInputTokens: null,
       allowLocalNetwork: false
     });
-    record('corrupt credential store is reported and not overwritten', failed.status === 500
-      && failed.json?.error?.code === 'AI_PROVIDER_CREDENTIAL_STORE_UNREADABLE'
-      && readFileSync(secretFile(), 'utf8') === broken,
-    [`HTTP ${failed.status}`, JSON.stringify(failed.json?.error ?? null)]);
+    record('corrupt legacy store does not block an edit that keeps the vault key', edited.status === 200
+      && edited.json?.config?.hasCredential === true && vaultRead(deepseekReference) === 'custom-exe-key',
+    [`HTTP ${edited.status}`, JSON.stringify(edited.json?.error ?? null)]);
+    record('corrupt legacy credential file is preserved', readFileSync(secretFile(), 'utf8') === broken);
+
+    const created = await createConfig(activeUrl, payload({
+      name: 'After corrupt legacy',
+      providerId: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      modelId: 'gpt-4o-mini',
+      apiKey: 'sk-after-corrupt-exe'
+    }));
+    record('a new key still saves after legacy corruption', created.status === 201
+      && created.json?.config?.hasCredential === true
+      && vaultRead(created.json?.config?.credentialReference) === 'sk-after-corrupt-exe',
+    [`HTTP ${created.status}`, JSON.stringify(created.json?.error ?? null)]);
+    record('the corrupt legacy file is still byte-identical', readFileSync(secretFile(), 'utf8') === broken);
+  }
+
+  // 9. Removing a provider removes its credential from the vault.
+  {
+    const removed = await httpJson(new URL(`/api/ai/providers/configs/${encodeURIComponent(deepseekId)}`, activeUrl).href, {
+      method: 'DELETE'
+    });
+    record('deleting a provider removes its vault credential', removed.status === 200
+      && vaultRead(deepseekReference) === null,
+    [`HTTP ${removed.status}`]);
   }
 
   await stop(app);
@@ -392,10 +428,52 @@ try {
       && typeof backup === 'string' && existsSync(backup) && readFileSync(backup, 'utf8') === broken,
     [`HTTP ${list.status}`, JSON.stringify(state ?? null)]);
   }
+
+  await stop(app);
+  app = null;
+
+  // 11. Legacy AES credentials in a fresh data dir are migrated on first launch.
+  {
+    const migrationDir = join(root, 'migration-data');
+    mkdirSync(migrationDir, {recursive: true});
+    const seed = new ProviderConfigStore({
+      configFile: configFile(migrationDir),
+      secretsDir: join(migrationDir, 'secrets')
+    });
+    seed.load();
+    const legacyConfig = seed.create({
+      providerId: 'deepseek',
+      regionId: 'global',
+      modelId: 'deepseek-chat',
+      apiKey: 'sk-legacy-migration'
+    });
+    vaultReferences.add(legacyConfig.credentialReference);
+    const before = readFileSync(secretFile(migrationDir), 'utf8');
+
+    app = launch({port: 49204, tag: 'migration', dir: migrationDir});
+    activeUrl = await waitForApp(app);
+    const list = await getProviders(activeUrl);
+    const listed = list.json?.configs?.find((config) => config.id === legacyConfig.id);
+    record('legacy key migrates on first launch and is readable from the vault', listed?.hasCredential === true
+      && vaultRead(legacyConfig.credentialReference) === 'sk-legacy-migration',
+    [`HTTP ${list.status}`, JSON.stringify(list.json?.loadState?.legacyCredential ?? null)]);
+    record('legacy ciphertext is unchanged after migration', readFileSync(secretFile(migrationDir), 'utf8') === before);
+    record('migration marker is written', existsSync(join(migrationDir, 'secrets', 'ai-keys.migration.json')));
+  }
 } catch (error) {
   record('EXE acceptance completed without an unhandled error', false, [error?.stack ?? String(error)]);
 } finally {
   await stop(app);
+  if (vaultReferences.size > 0) {
+    const cleanup = new WindowsCredentialStore({tempDir: join(root, 'vault-cleanup')});
+    let cleanupFailures = 0;
+    for (const reference of vaultReferences) {
+      try { cleanup.remove(reference); } catch { cleanupFailures += 1; }
+    }
+    record('test-only vault credentials are removed', cleanupFailures === 0, [
+      `references: ${vaultReferences.size}, failures: ${cleanupFailures}`
+    ]);
+  }
 }
 
 const failed = results.filter((result) => !result.passed);

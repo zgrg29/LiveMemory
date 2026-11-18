@@ -88,10 +88,28 @@ export async function renderProviderSettingsCard(ctx) {
       })}),
       el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {code: loadState.error})})));
   }
+  const windowsVault = loadState?.credentialBackend?.backend === 'windows-credential-manager';
   if (loadState?.credentialError) {
+    const key = windowsVault
+      ? (loadState.credentialError === 'CREDENTIAL_BACKEND_ACCESS_DENIED'
+        ? 'errors.aiProviderCredentialAccessDenied'
+        : 'errors.aiProviderCredentialBackendUnavailable')
+      : 'errors.aiProviderCredentialStoreUnreadable';
     body.append(el('div', {className: 'callout callout--danger'},
-      el('div', {className: 'callout-title', text: t('errors.aiProviderCredentialStoreUnreadable')}),
+      el('div', {className: 'callout-title', text: t(key)}),
       el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {code: loadState.credentialError})})));
+  }
+  const legacy = loadState?.legacyCredential;
+  if (legacy && (legacy.readable === false || legacy.failed > 0)) {
+    // Old keys are still in the encrypted file; only the affected providers
+    // need the key entered again. The new save path is unaffected.
+    body.append(el('div', {className: 'callout callout--warn'},
+      el('div', {className: 'callout-title', text: t('errors.aiProviderCredentialMigrationWarning', {
+        reason: legacy.error ?? 'LEGACY_READ_FAILED'
+      })}),
+      el('div', {className: 'small mono', text: t('ai.v13.providers.saveErrorCode', {
+        code: legacy.error ?? 'LEGACY_CREDENTIAL_UNREADABLE'
+      })})));
   }
 
   const list = el('div', {className: 'def-list', style: {marginTop: '12px'}});

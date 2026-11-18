@@ -113,7 +113,7 @@ Direct links for the latest release:
 ### Data and privacy
 
 - **Local by default.** The console is served on `127.0.0.1` only. Local API calls require a per-launch session cookie. There is no account system, cloud sync or telemetry.
-- **Credentials are protected locally.** API keys and platform login cookies are stored in an encrypted local credential store (AES-256-GCM), not in the settings JSON, logs, HTML or backups.
+- **Credentials are protected locally.** AI API keys are stored in **Windows Credential Manager** (DPAPI-protected and scoped to your Windows user); older encrypted files are migrated automatically. Platform login cookies remain in the local encrypted cookie store. Keys are never written to the settings JSON, logs, HTML or backups.
 - **Backups are not encrypted.** A `.livememory` backup contains sessions, chat, viewer profiles, AI reports and settings. It excludes API keys and platform cookies, but it still contains personal viewer data. Store and transfer it carefully.
 - **External AI transfer.** When you run an analysis or a translation, the relevant chat excerpts and context are sent to the provider you configured. That provider's terms and privacy policy apply to that data.
 - **Platform retention.** For YouTube, Twitch, Douyin, TikTok, Kick and the Kuaishou preview, raw chat text, emotes/badges and expired nicknames are removed after the 30-day retention window. Counts, stable IDs and totals remain. This is not complete anonymization. Bilibili recordings remain in your local database until you delete them.
@@ -138,6 +138,9 @@ No. It records chat, viewer and interaction data. AI analysis works on chat and 
 
 **Can I use it without an AI provider?**
 Yes. Recording, history, viewer profiles, search and backups work without any AI configuration. AI analysis requires your own provider and key.
+
+**Where are API keys stored?**
+In **Windows Credential Manager**, protected by Windows DPAPI and scoped to your Windows user. Older encrypted credential files are migrated automatically on first launch; you do not need to create folders, change permissions or re-enter a working key. If Windows blocks Credential Manager, LiveMemory reports a specific error and never writes the key as plaintext.
 
 **Why is Kuaishou not collecting chat?**
 It is a preview. Public builds keep Kuaishou capture disabled because written platform permission has not been obtained. Link parsing is local only.
@@ -306,7 +309,7 @@ LiveMemory 是一款**本地优先的 Windows 直播记录与观众记忆工具*
 ### 数据与隐私
 
 - **默认本地运行。** 控制台只监听 `127.0.0.1`，本地 API 需要每次启动生成的会话 Cookie。没有账号体系、云同步或遥测。
-- **凭据在本机加密。** API Key 与平台登录 Cookie 保存在 AES-256-GCM 加密的本地凭据库中，不进入设置 JSON、日志、HTML 或备份。
+- **凭据在本机受保护。** AI API Key 保存在 **Windows 凭据管理器**（由 Windows DPAPI 保护，并按当前 Windows 用户隔离）；旧版加密凭据会自动迁移。平台登录 Cookie 仍保存在本地加密 Cookie 库。Key 不会进入设置 JSON、日志、HTML 或备份。
 - **备份文件不加密。** `.livememory` 备份包含场次、聊天、观众画像、AI 报告与设置。它不包含 API Key 与平台 Cookie，但仍包含观众个人数据，请妥善保存和传输。
 - **使用外部 AI 时的数据传输。** 运行分析或翻译时，相关的聊天摘录与上下文会发送给你配置的 Provider，并受该 Provider 的条款与隐私政策约束。
 - **平台数据保留。** YouTube、Twitch、抖音、TikTok、Kick 与快手预览使用 30 天原文保留窗口：超过窗口后清理聊天原文、表情/徽章元数据与过期昵称，保留计数、稳定 ID 与金额合计。这不等同于完全匿名化。Bilibili 的记录会保留在你的本地数据库中，直到你主动删除。
@@ -331,6 +334,9 @@ LiveMemory 是一款**本地优先的 Windows 直播记录与观众记忆工具*
 
 **不配置 AI 可以用吗？**
 可以。记录、历史、观众档案、搜索与备份都不依赖 AI。AI 分析需要你自己配置 Provider 与 Key。
+
+**API Key 保存在哪里？**
+保存在 **Windows 凭据管理器**，由 Windows DPAPI 保护，并按当前 Windows 用户隔离。旧版加密凭据会在首次启动时自动迁移；不需要手动创建文件夹、修改权限或重新输入仍然有效的 Key。如果 Windows 阻止凭据管理器，LiveMemory 会给出具体错误，绝不会把 Key 写成明文。
 
 **为什么快手不能采集聊天？**
 快手目前是预览组件。由于尚未取得平台书面许可，公开版本保持采集关闭；链接解析完全在本地完成。

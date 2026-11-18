@@ -1122,3 +1122,17 @@ M3 的外部风险仍在：Bilibili 经济事件样本、YouTube 公开网页路
 - ✅ 自动化测试（Mock）覆盖权限、Provider、单场、画像、52 观众批次、预算
 - ⬜ 真实 Provider 生成（OpenAI/Anthropic/DeepSeek/MiniMax/DashScope）——缺 Key，阻塞
 - ⬜ 真实浏览器 UI / Windows EXE 验收
+
+## P54 AI Provider 凭据可靠性：Windows Credential Manager（2026-11-18，补丁候选）
+
+- ✅ 调查旧 AES `secrets/ai-keys.json` + `icacls` 路径的权限失败面（ACL、账户切换、文件锁、
+  `(R,W)` 缺 DELETE、损坏库）
+- ✅ 主存储改为 Windows Credential Manager Generic Credential；每 Provider/引用独立；
+  DPAPI + 当前 SID；`CRED_PERSIST_LOCAL_MACHINE`
+- ✅ 固定 PowerShell + 内嵌 C# P/Invoke；Key 仅 stdin；Add-Type 临时目录使用应用 cache
+- ✅ 旧凭据自动迁移、读回校验、标记、重试；旧文件不删除；只读回退
+- ✅ 错误分类（不可用/拒绝/写入失败/损坏）；`{path}` 显示修复；不伪造成功、无明文回退
+- ✅ 恢复出厂设置清理 vault 条目；数据库 Schema 仍 16
+- ✅ unit 889 + integration 407（405 pass + 2 skip）；真实 CredMan 2/2；EXE 24/24
+- ⬜ 整机重启、第二 Windows 账户、真实 UAC over-the-shoulder、组策略禁用 PowerShell 环境
+- ⬜ 用户授权后作为 `0.19.1` 发布（未 Push/Tag/Release）

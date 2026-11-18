@@ -40,6 +40,7 @@ import {
 import {join, resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {startServer} from '../src/server/index.mjs';
+import {WindowsCredentialStore} from '../src/platforms/shared/credential-store.mjs';
 import {addBroadcaster, seedSession, T0, parsePromptMemoryRefs} from '../tests/helpers/ai-fixtures.mjs';
 import {manifestLevel} from './pe-manifest.mjs';
 import {prepareTestExe} from './test-exe-copy.mjs';
@@ -63,6 +64,31 @@ function record(name, passed, details = []) {
 
 function sha256File(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
+}
+
+/**
+ * The packaged EXE migrates the seeded test key into the real Windows vault.
+ * Remove every reference created by this harness so a failed run cannot leave
+ * test-only credentials in the developer's account.
+ */
+function cleanupVault() {
+  const references = new Set();
+  for (const dir of [join(root, 'data-a'), join(root, 'data-b')]) {
+    try {
+      const raw = JSON.parse(readFileSync(join(dir, 'config', 'ai-providers.json'), 'utf8'));
+      for (const config of raw.configs ?? []) {
+        if (typeof config.credentialReference === 'string') references.add(config.credentialReference);
+      }
+    } catch {
+      /* no config or unreadable fixture */
+    }
+  }
+  if (references.size === 0) return;
+  const store = new WindowsCredentialStore({tempDir: join(root, 'vault-cleanup')});
+  for (const reference of references) {
+    try { store.remove(reference); } catch { /* best effort */ }
+  }
+  log(`removed ${references.size} test-only vault reference(s)`);
 }
 
 async function waitFor(check, {timeout = 60000, interval = 250, label = 'condition'} = {}) {
@@ -536,6 +562,7 @@ try {
   await stop();
 } finally {
   await stop();
+  cleanupVault();
   if (provider?.server) await new Promise((done) => provider.server.close(done));
   const passed = results.filter((entry) => entry.passed).length;
   process.stdout.write(`\n[ai-token-exe] ${passed}/${results.length} checks passed\n`);

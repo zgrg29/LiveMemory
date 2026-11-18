@@ -1,8 +1,9 @@
 import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
-import {dirname} from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {dirname, join} from 'node:path';
+import {createHash, randomBytes} from 'node:crypto';
 import {createId} from '../../shared/ids.mjs';
 import {EncryptedJsonStore} from '../../platforms/shared/secret-store.mjs';
+import {FileCredentialBackend} from '../../platforms/shared/credential-store.mjs';
 import {getProvider, getRegion, PRICING_STATUS} from './catalog.mjs';
 import {normalizePricing, normalizePricingStatus} from './pricing.mjs';
 import {sameBaseUrl, validateBaseUrl} from './url-safety.mjs';
@@ -10,11 +11,14 @@ import {sameBaseUrl, validateBaseUrl} from './url-safety.mjs';
 /**
  * API configurations and encrypted credentials.
  *
- * `config/ai-providers.json` contains no secret. The API key lives in
- * `secrets/ai-keys.json` encrypted with the per-install AES key used by the
- * existing platform credential store. A config stores only an opaque
- * `credentialReference`; changing provider/region/base URL rotates that
- * reference so an old region's key can never be silently reused.
+ * `config/ai-providers.json` contains no secret. In production the API key is a
+ * generic Windows Credential Manager credential (DPAPI-protected, scoped to the
+ * current user SID), keyed by an opaque random `credentialReference`. The
+ * historical `secrets/ai-keys.json` AES file is only read for migration and as
+ * an encrypted read-only fallback; new keys are never written there.
+ *
+ * A config stores only the reference. Changing provider/region/base URL rotates
+ * that reference so an old region's key can never be silently reused.
  */
 
 const FILE_VERSION = 1;
@@ -179,7 +183,8 @@ export class ProviderConfigStore {
     secretsDir,
     now = Date.now,
     fs = {existsSync, mkdirSync, readFileSync, writeFileSync, renameSync},
-    secretStore = null
+    secretStore = null,
+    credentialStore = null
   }) {
     if (!configFile) throw new Error('ProviderConfigStore: configFile is required');
     this.file = configFile;
@@ -187,21 +192,46 @@ export class ProviderConfigStore {
     this.fs = fs;
     this.configs = [];
     this.loadState = {error: null, skipped: 0, backupFile: null};
-    this.secrets = secretStore ?? new EncryptedJsonStore({
+    const injected = credentialStore ?? secretStore;
+    // Without an injected backend the store keeps the historical encrypted-file
+    // behaviour. The launcher opts into Windows Credential Manager explicitly;
+    // this keeps every existing in-process test and embedded use isolated from
+    // the real user vault.
+    this.credentialStore = injected ?? new FileCredentialBackend({
       dir: secretsDir,
-      fileName: 'ai-keys.json',
-      keyFileName: 'ai-keys.key',
       fs,
       // Never regenerate an unreadable per-install key: that would make every
       // saved API key undecryptable and overwrite the only copy of the key.
       strictKey: true
     });
+    // Keep the historical property name for callers/tests that inspect the
+    // backing store. For the file backend this is the same object.
+    this.secrets = this.credentialStore;
+    // Legacy credentials are read only when a different backend was injected.
+    // They are never written, renamed or deleted by this class.
+    this.legacySecrets = injected
+      ? new EncryptedJsonStore({
+        dir: secretsDir,
+        fileName: 'ai-keys.json',
+        keyFileName: 'ai-keys.key',
+        fs,
+        strictKey: true
+      })
+      : null;
+    this.legacyStatus = null;
+    this.credentialState = {error: null, win32: null};
   }
 
   load() {
+    this.#loadConfigs();
+    this.#prepareCredentials();
+    return this.list();
+  }
+
+  #loadConfigs() {
     this.configs = [];
     this.loadState = {error: null, skipped: 0, backupFile: null};
-    if (!this.fs.existsSync(this.file)) return this.list();
+    if (!this.fs.existsSync(this.file)) return;
 
     let text;
     try {
@@ -211,7 +241,7 @@ export class ProviderConfigStore {
       // show a permission error and the user can repair the folder.
       this.loadState.error = 'AI_PROVIDER_CONFIG_UNREADABLE';
       this.loadState.cause = error?.code ?? 'READ_FAILED';
-      return this.list();
+      return;
     }
 
     let raw;
@@ -220,14 +250,14 @@ export class ProviderConfigStore {
     } catch {
       this.#preserveUnreadable(text, 'unreadable');
       this.loadState.error = 'AI_PROVIDER_CONFIG_UNREADABLE';
-      return this.list();
+      return;
     }
     if (raw?.version !== FILE_VERSION || !Array.isArray(raw.configs)) {
       // A newer/unknown format is never silently replaced by an empty list:
       // keep the original bytes next to the file before offering a fresh start.
       this.#preserveUnreadable(text, 'unsupported');
       this.loadState.error = 'AI_PROVIDER_CONFIG_VERSION_UNSUPPORTED';
-      return this.list();
+      return;
     }
 
     const normalized = raw.configs.map((entry) => normalizeConfig(entry, {now: this.now()}));
@@ -243,7 +273,6 @@ export class ProviderConfigStore {
     if (!this.configs.some((entry) => entry.isDefault) && this.configs.length > 0) {
       this.configs[0].isDefault = true;
     }
-    return this.list();
   }
 
   #preserveUnreadable(text, reason) {
@@ -269,20 +298,227 @@ export class ProviderConfigStore {
     return this.file;
   }
 
+  /**
+   * Migrate legacy encrypted-file keys, then warm the new backend once.
+   *
+   * Migration is per reference and only ever writes a value that is not already
+   * present in the new backend. A crash at any point is safe: the next load
+   * sees the already-migrated reference and skips it. The old ciphertext is
+   * never renamed, truncated or deleted, so a migration failure can always be
+   * retried and a downgrade still finds the original file.
+   */
+  #prepareCredentials() {
+    this.legacyStatus = null;
+    this.credentialState = {error: null, win32: null};
+    this.legacyDataLoaded = false;
+    this.legacyData = null;
+    if (this.legacySecrets) this.#migrateLegacy();
+
+    const references = this.configs
+      .map((config) => config.credentialReference)
+      .filter(Boolean);
+    if (references.length === 0) return;
+    try {
+      if (typeof this.credentialStore.readMany === 'function') {
+        this.credentialStore.readMany(references);
+      } else {
+        for (const reference of references) this.credentialStore.read(reference);
+      }
+      this.credentialState = {error: null, win32: null};
+    } catch (error) {
+      this.#recordCredentialError(error);
+    }
+  }
+
+  #recordCredentialError(error) {
+    this.credentialState = {
+      error: error?.code ?? 'CREDENTIAL_BACKEND_UNAVAILABLE',
+      win32: error?.win32 ?? null
+    };
+  }
+
+  #legacyBackendName() {
+    return this.credentialStore?.status?.().backend ?? 'custom';
+  }
+
+  #legacyMarkerFile() {
+    return join(dirname(this.legacySecrets.file), 'ai-keys.migration.json');
+  }
+
+  #legacySourceHash() {
+    try {
+      const text = this.fs.readFileSync(this.legacySecrets.file, 'utf8');
+      return createHash('sha256').update(text, 'utf8').digest('hex');
+    } catch {
+      return null;
+    }
+  }
+
+  #migrationMarkerMatches() {
+    try {
+      const raw = JSON.parse(this.fs.readFileSync(this.#legacyMarkerFile(), 'utf8'));
+      return raw?.version === 1
+        && raw?.backend === this.#legacyBackendName()
+        && typeof raw?.sourceSha256 === 'string'
+        && raw.sourceSha256 === this.#legacySourceHash();
+    } catch {
+      return false;
+    }
+  }
+
+  #writeMigrationMarker({migrated, alreadyPresent}) {
+    const sourceSha256 = this.#legacySourceHash();
+    if (!sourceSha256) return false;
+    const marker = this.#legacyMarkerFile();
+    const temp = `${marker}.${process.pid}.tmp`;
+    try {
+      this.fs.mkdirSync(dirname(marker), {recursive: true});
+      this.fs.writeFileSync(temp, `${JSON.stringify({
+        version: 1,
+        backend: this.#legacyBackendName(),
+        sourceSha256,
+        migrated,
+        alreadyPresent,
+        completedAt: new Date(this.now()).toISOString()
+      }, null, 2)}\n`, {mode: 0o600});
+      this.fs.renameSync(temp, marker);
+      return true;
+    } catch {
+      // The marker is an optimization. Migration remains idempotent without it.
+      return false;
+    }
+  }
+
+  #migrateLegacy() {
+    const loaded = this.legacySecrets.loadDetailed();
+    if (loaded.error === 'CREDENTIAL_STORE_MISSING') {
+      this.legacyStatus = {present: false, readable: true};
+      return;
+    }
+    if (loaded.error) {
+      // An unreadable legacy store is never modified. New keys still go to the
+      // new backend, so a corrupt old file cannot block a new configuration.
+      this.legacyStatus = {
+        present: true,
+        readable: false,
+        error: loaded.error,
+        path: this.legacySecrets.file
+      };
+      return;
+    }
+
+    if (this.#migrationMarkerMatches()) {
+      this.legacyStatus = {present: true, readable: true, completed: true, fromMarker: true};
+      return;
+    }
+
+    const legacySecrets = loaded.data?.secrets && typeof loaded.data.secrets === 'object'
+      ? loaded.data.secrets
+      : {};
+    const references = [...new Set(this.configs
+      .map((config) => config.credentialReference)
+      .filter(Boolean))];
+    const status = {
+      present: true,
+      readable: true,
+      referenced: references.length,
+      migrated: 0,
+      alreadyPresent: 0,
+      failed: 0,
+      completed: false,
+      error: null
+    };
+    if (references.length === 0) {
+      status.completed = true;
+      if (this.#writeMigrationMarker({migrated: 0, alreadyPresent: 0})) {
+        status.fromMarker = false;
+      }
+      this.legacyStatus = status;
+      return;
+    }
+
+    let current;
+    try {
+      current = typeof this.credentialStore.readMany === 'function'
+        ? this.credentialStore.readMany(references)
+        : new Map(references.map((reference) => [reference, this.credentialStore.read(reference)]));
+    } catch (error) {
+      this.#recordCredentialError(error);
+      status.error = error?.code ?? 'CREDENTIAL_BACKEND_UNAVAILABLE';
+      status.failed = references.length;
+      this.legacyStatus = status;
+      return;
+    }
+
+    for (const reference of references) {
+      const legacyValue = legacySecrets[reference]?.apiKey;
+      if (typeof legacyValue !== 'string' || legacyValue.length === 0) continue;
+      if (typeof current.get(reference) === 'string' && current.get(reference).length > 0) {
+        status.alreadyPresent += 1;
+        continue;
+      }
+      try {
+        this.credentialStore.write(reference, legacyValue);
+        const verified = this.credentialStore.read(reference);
+        if (verified !== legacyValue) {
+          throw storeError('CREDENTIAL_BACKEND_VERIFY_FAILED', {
+            message: 'migrated credential could not be read back',
+            details: {backend: this.#legacyBackendName()}
+          });
+        }
+        status.migrated += 1;
+      } catch (error) {
+        status.failed += 1;
+        status.error = error?.code ?? 'CREDENTIAL_BACKEND_MIGRATION_FAILED';
+        this.#recordCredentialError(error);
+        // A backend-wide failure will fail every remaining write; stop instead
+        // of starting one PowerShell process per provider.
+        if (status.error !== 'CREDENTIAL_BACKEND_VERIFY_FAILED') break;
+      }
+    }
+
+    if (status.failed === 0) {
+      status.completed = true;
+      this.#writeMigrationMarker({
+        migrated: status.migrated,
+        alreadyPresent: status.alreadyPresent
+      });
+    }
+    this.legacyStatus = status;
+  }
+
+  /**
+   * Read a legacy value only when the new backend has none. This keeps an old
+   * key working if migration was blocked, while a key saved to the new backend
+   * always wins. The old file is never written by this path.
+   */
+  #legacySecret(reference) {
+    if (!this.legacySecrets) return null;
+    if (!this.legacyDataLoaded) {
+      this.legacyDataLoaded = true;
+      const loaded = this.legacySecrets.loadDetailed();
+      this.legacyData = loaded.error ? null : (loaded.data?.secrets ?? null);
+    }
+    const value = this.legacyData?.[reference]?.apiKey;
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
   /** Safe browser-facing state, including a corrupted credential store. */
   status() {
-    let credentialError = null;
-    try {
-      const loaded = typeof this.secrets.loadDetailed === 'function'
-        ? this.secrets.loadDetailed()
-        : null;
-      if (loaded?.error && loaded.error !== 'CREDENTIAL_STORE_MISSING') {
-        credentialError = loaded.error;
-      }
-    } catch (error) {
-      credentialError = error?.code ?? 'CREDENTIAL_STORE_UNREADABLE';
+    const backendStatus = this.credentialStore?.status?.() ?? null;
+    let credentialError = this.credentialState.error ?? null;
+    let credentialWin32 = this.credentialState.win32 ?? null;
+    if (!credentialError && backendStatus?.error) {
+      credentialError = backendStatus.error;
+      credentialWin32 = backendStatus.win32 ?? null;
     }
-    return {...this.loadState, credentialError};
+    return {
+      ...this.loadState,
+      credentialError,
+      credentialWin32,
+      credentialBackend: backendStatus,
+      legacyCredential: this.legacyStatus
+    };
   }
 
   list() {
@@ -305,28 +541,6 @@ export class ProviderConfigStore {
     return this.configs.find((entry) => entry.isDefault) ?? this.configs[0] ?? null;
   }
 
-  #secretData() {
-    const loaded = typeof this.secrets.loadDetailed === 'function'
-      ? this.secrets.loadDetailed()
-      : (() => {
-        const data = this.secrets.load();
-        return data
-          ? {data, savedAt: data.savedAt ?? null, error: null}
-          : {data: null, savedAt: null, error: 'CREDENTIAL_STORE_UNREADABLE'};
-      })();
-    if (loaded?.error === 'CREDENTIAL_STORE_MISSING') return {};
-    if (loaded?.error) {
-      throw storeError(loaded.error, {
-        message: 'local credential store could not be read',
-        path: this.secrets.file ?? null,
-        details: loaded.error
-      });
-    }
-    return loaded?.data?.secrets && typeof loaded.data.secrets === 'object'
-      ? loaded.data.secrets
-      : {};
-  }
-
   #hasSecretSafe(id) {
     try {
       return this.hasSecret(id);
@@ -336,22 +550,36 @@ export class ProviderConfigStore {
   }
 
   #storeSecret(reference, apiKey) {
-    const data = this.#secretData();
-    data[reference] = {apiKey, updatedAt: new Date(this.now()).toISOString()};
-    this.secrets.save({secrets: data}, {now: this.now()});
+    try {
+      this.credentialStore.write(reference, apiKey);
+      this.credentialState = {error: null, win32: null};
+    } catch (error) {
+      this.#recordCredentialError(error);
+      throw error;
+    }
   }
 
-  #removeSecret(reference) {
-    if (!reference) return;
-    const data = this.#secretData();
-    if (!data[reference]) return;
-    delete data[reference];
-    this.secrets.save({secrets: data}, {now: this.now()});
+  #readSecret(reference) {
+    if (!reference) return null;
+    let backendError = null;
+    try {
+      const value = this.credentialStore.read(reference);
+      this.credentialState = {error: null, win32: null};
+      if (typeof value === 'string' && value.length > 0) return value;
+    } catch (error) {
+      backendError = error;
+      this.#recordCredentialError(error);
+    }
+    const legacy = this.#legacySecret(reference);
+    if (legacy) return legacy;
+    if (backendError) throw backendError;
+    return null;
   }
 
   #removeSecretQuietly(reference) {
+    if (!reference) return;
     try {
-      this.#removeSecret(reference);
+      this.credentialStore.remove(reference);
     } catch {
       // The config no longer references the secret; an orphaned ciphertext is
       // preferable to failing a successful save or losing the config.
@@ -360,13 +588,11 @@ export class ProviderConfigStore {
 
   #restoreSecretQuietly(reference, apiKey) {
     try {
-      const data = this.#secretData();
       if (apiKey === null || apiKey === undefined) {
-        delete data[reference];
+        this.credentialStore.remove(reference);
       } else {
-        data[reference] = {apiKey, updatedAt: new Date(this.now()).toISOString()};
+        this.credentialStore.write(reference, apiKey);
       }
-      this.secrets.save({secrets: data}, {now: this.now()});
     } catch {
       // Rollback is best effort; the caller still reports the original failure.
     }
@@ -376,9 +602,7 @@ export class ProviderConfigStore {
   secret(id) {
     const config = this.get(id);
     if (!config?.credentialReference) return null;
-    const data = this.#secretData();
-    const value = data[config.credentialReference]?.apiKey;
-    return typeof value === 'string' && value.length > 0 ? value : null;
+    return this.#readSecret(config.credentialReference);
   }
 
   hasSecret(id) {
@@ -634,6 +858,35 @@ export class ProviderConfigStore {
     }
     this.#removeSecretQuietly(removed.credentialReference);
     return true;
+  }
+
+  /**
+   * Remove every credential referenced by the current configs. Used by the
+   * factory reset path; the legacy file is left alone (the reset already
+   * removes the whole secrets directory) and is never rewritten here.
+   */
+  clearCredentials() {
+    const references = [...new Set(this.configs
+      .map((config) => config.credentialReference)
+      .filter(Boolean))];
+    if (typeof this.credentialStore.clear === 'function') {
+      const result = this.credentialStore.clear(references);
+      return {
+        removed: result?.removed ?? 0,
+        failures: result?.failures ?? []
+      };
+    }
+    let removed = 0;
+    const failures = [];
+    for (const reference of references) {
+      try {
+        this.credentialStore.remove(reference);
+        removed += 1;
+      } catch (error) {
+        failures.push({code: error?.code ?? 'CREDENTIAL_BACKEND_FAILED'});
+      }
+    }
+    return {removed, failures};
   }
 
   setDefault(id) {

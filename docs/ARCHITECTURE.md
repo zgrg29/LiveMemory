@@ -727,8 +727,9 @@ src/shared/locales.mjs（唯一语言清单；同构，无 Node API）
     -> 暂停/继续/取消；已导入批次跳过；needs_action 保留已保存结果
 
 Provider 配置
-  config/ai-providers.json（无密钥）
-  secrets/ai-keys.json（AES-256-GCM）
+  config/ai-providers.json（无密钥，只有 credentialReference）
+  Windows Credential Manager（每个引用一条 Generic Credential；DPAPI）
+  secrets/ai-keys.json（旧版 AES，只读迁移/回退；不再写入）
   ProviderConfigStore -> Provider adapter（OpenAI-compatible / Anthropic）
   capabilities / pricing / usage 快照写入 ai_jobs
 ```
@@ -837,7 +838,8 @@ PATCH /api/ai/providers/configs/:id
        - 显式非空 apiKey 才替换；空/缺省保留旧 Key
        - provider/region/baseUrl 真正变化：轮换 reference；已有凭据时必须先提供新 Key
        - 写入顺序：新凭据 -> 配置 JSON -> 成功后清理旧引用；配置保存失败回滚新凭据/恢复旧 Key
-       - 凭据库不可读（损坏/密钥不可读）时拒绝写入，不覆盖原文件
+       - 新 Key 写入 Windows Credential Manager；旧 AES 文件只读迁移/回退，不覆盖原文件
+       - Credential Manager 不可用/拒绝访问时明确失败，不写明文、不伪造成功
        - modelId 变化：capabilities=空、lastTestStatus=untested、
          pricing=null/unknown、contextLength=null、modelLabel=新 modelId
        - name/concurrency/pricing 等非模型字段变化不否定能力

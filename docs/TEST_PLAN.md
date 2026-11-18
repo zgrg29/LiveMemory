@@ -62,6 +62,49 @@ node --test --test-isolation=none "tests/unit/provider-config-save.test.mjs" "te
 398 integration = 1,269 passed / 0 failed / 0 skipped**；Windows EXE
 `verify-provider-save-exe` **14/14**。
 
+## 2.0-CREDMAN Windows Credential Manager 凭据（2026-11-18，补丁候选）
+
+隔离数据目录 + 注入式后端覆盖保存/迁移/错误；真实 CredMan 测试默认 skip，显式 opt-in 后使用
+随机 target 并自动清理；EXE 测试使用真实 Credential Manager，测试结束清理全部测试引用。
+
+| 场景 | 测试 |
+| --- | --- |
+| 全新安装保存；不创建 `ai-keys.json` | unit + integration + EXE |
+| 旧 AES 凭据自动迁移、读回校验、旧文件字节不变 | unit + integration + EXE |
+| 多 Provider 独立保存、切换、重启后保留 | unit + integration + EXE |
+| 修改/删除 Key 与删除 Provider 清理 vault | unit + integration + EXE |
+| 保存失败回滚（新引用/同引用/配置保存失败） | unit + integration |
+| 旧凭据库损坏/密钥不可读，不覆盖且新 Key 可保存 | unit + integration + EXE |
+| Credential Manager 不可用/拒绝访问的错误分类 | unit + integration（注入后端） |
+| 大 Key 分块、旧块清理、损坏分块 | unit |
+| Key 不在 argv/env；固定脚本无明文回退 | unit |
+| `{path}`/`{code}` 占位符替换 | integration + UI 单测 |
+| 真实 CredMan 保存/读取/更新/分块/删除/迁移 | opt-in integration **2/2** |
+| 真实 EXE 重启后持久化、迁移、损坏旧库、删除清理 | `verify-provider-save-exe` **24/24** |
+| 不同 Windows 账户 / 整机重启 / 组策略禁用 | **未执行**（需人工环境；文档说明） |
+
+运行：
+
+```bat
+node --test --test-isolation=none "tests/unit/*.test.mjs" "tests/integration/*.test.mjs"
+
+:: 真实 CredMan（会写随机测试 target，finally 清理）
+set LIVE_MEMORY_TEST_REAL_CREDMAN=1
+node --test --test-isolation=none tests/integration/windows-credential-manager.test.mjs
+
+:: 真实 EXE
+node scripts/build-windows.mjs
+node scripts/verify-provider-save-exe.mjs
+```
+
+结果（2026-11-18）：unit **889 passed / 0 failed / 0 skipped**（最终复跑 24,925 ms）；
+integration **405 passed / 0 failed / 2 skipped**（最终复跑 359,924 ms；skip 为 opt-in CredMan）；
+真实 CredMan **2/2**；`verify-provider-save-exe` **24/24**；十语 **2,379** 键门禁通过。
+同一最终 EXE 的回归：`verify-exe` **11/11**、`verify-help-exe` **14/14**、
+`verify-ai-token-exe` **16/16**。本机测试会话为低完整性，`verify-exe` 首次直接用真实
+`%LOCALAPPDATA%` 时 Bootstrap 被 ACL 拒绝（环境限制）；把 `LOCALAPPDATA`/`TEMP` 指向
+`tests/.tmp` 可写目录后通过。该调整只影响测试宿主，不修改产品代码。
+
 ## 2.0-V015 v0.15.0 发布回归（2026-11-17）
 
 发布状态为 `main` 上 `0.15.0` 的提交，使用受限环境的单进程模式运行。

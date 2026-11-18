@@ -1,7 +1,8 @@
 # 工程状态（STATUS）
 
 最后更新：2026-11-18（**v0.19.0 正式发布：AI Provider Reliability Update**；
-详见 §0.63、`docs/release-notes/v0.19.0.md` 与 `log/2026-11-18-v0.19.0-release.md`）
+此后完成 **Windows Credential Manager 凭据补丁候选（未发布）**，详见 §0.64 与
+`log/2026-11-18-ai-credential-manager.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
 > **先读 §0 当前状态快照**；§0.63 是当前版本（v0.19.0）的发布记录；§0.62 及更早是历史记录，
@@ -17,16 +18,16 @@
 | 项目 | 当前值 |
 | --- | --- |
 | 产品版本 / 当前开发版本 | **`0.19.0`**（`package.json` = `APP_VERSION` = `0.19.0`） |
-| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
+| 下一版本 | **未定**；当前代码为 **0.19.1 补丁候选（未发布）**，需用户授权后才能改版本/发布 |
 | 最新正式发布 | **`v0.19.0`** · Release ID `450031601` · Published `2026-11-18T13:32:13Z` |
-| 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；平台状态未变（快手仍为预览、采集禁用） |
+| 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；平台状态未变（快手仍为预览、采集禁用）。**未发布的后续工作**：AI Key 迁移至 Windows Credential Manager |
 | 最新 Release 资产 | `LiveMemory.exe` 99,551,744 B · SHA-256 `901f92fd…64fc9`；`SHA256SUMS.txt` 82 B · SHA-256 `9ee83678…ece952` |
 | 当前分支 | `main`（发布提交 `142ec4a..50920d1` 与 Tag 已 Push） |
 | 当前 Tag | `v0.19.0`（annotated，object `5e366a2` → commit `50920d1`） |
 | 数据库 Schema | **16**（v0.19.0 无迁移） |
-| 当前开发里程碑 | **P53 AI Provider Reliability（v0.19.0 正式发布）**；OpenCode 真实付费验收待办 |
-| 最近开发 | 2026-11-18：修复 Provider 配置保存（Base URL 规范化、Key 换行、凭据回滚、错误分类、自定义 OpenCode 会话头）；未改其他 Provider 协议 |
-| 最近文档整理 | 2026-11-18：v0.19.0 Release Notes / 检查单 / 发布记录；README 当前版本更新 |
+| 当前开发里程碑 | **P54 AI Provider 凭据可靠性（Windows Credential Manager，补丁候选）**；OpenCode 真实付费验收待办 |
+| 最近开发 | 2026-11-18：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；未改 Provider 协议与数据库 Schema |
+| 最近文档整理 | 2026-11-18：Credential Manager 调查/实现/测试记录；STATUS、HANDOFF、WINDOWS_RUNTIME、PRIVACY_SECURITY、TEST_PLAN、CHANGELOG |
 
 ### 0.2 平台状态
 
@@ -58,7 +59,9 @@
 ### 0.4 数据、备份与 Windows
 
 - 数据默认写入 `%LOCALAPPDATA%\LiveMemory\`；只监听 `127.0.0.1`；本地 API 需要会话 Cookie。
-- API Key 与平台 Cookie 存在本地 AES-256-GCM 凭据库；不进入配置 JSON、日志、备份或 HTML。
+- **AI API Key 存在 Windows Credential Manager**（DPAPI，按当前 Windows 用户 SID 隔离）；
+  旧 AES `secrets/ai-keys.json` 只读迁移/回退，不再写入新 Key。平台 Cookie 仍在本地
+  AES-256-GCM Cookie 库。两者都不进入配置 JSON、日志、备份或 HTML。
 - `.livememory` 完整备份/恢复/迁移已实现；备份**未加密**，不包含凭据，但包含观众数据。
 - 发布 EXE 的 Manifest 为 **`requireAdministrator`**：双击显示标准 UAC；拒绝即取消启动。
 - EXE **未签名**，SmartScreen 可能提示未知发布者；不带 Python/Node/npm/数据库依赖。
@@ -70,6 +73,8 @@
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
+| 全量自动化（2026-11-18 Credential Manager 补丁候选） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
+| 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
 | 本轮 EXE（v0.19.0） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
@@ -92,10 +97,11 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
 3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
 4. **其他真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
-5. **用户反馈专项（已随 v0.19.0 发布）**：Provider 切换需重新输入 Key 仍是安全设计
-   （密钥不能发往未经确认的新地址），但错误提示已具体化；自定义端点 OpenCode 的会话头错误
-   已修复；AppData 手动删除权限问题已定位为运行中文件占用/跨管理员账户 ACL，并在
-   `docs/WINDOWS_RUNTIME.md` §4.2 记录。保存流程根因与修复见 §0.62。
+5. **用户反馈专项（v0.19.0 已发布；Credential Manager 补丁候选未发布）**：Provider 切换
+   需重新输入 Key 仍是安全设计（密钥不能发往未经确认的新地址），但错误提示已具体化；
+   自定义端点 OpenCode 的会话头错误已修复；AI Key 已迁移至 Windows Credential Manager，
+   避免依赖数据目录内凭据文件 ACL，见 §0.64。仍需人工验证真实 UAC over-the-shoulder 与
+   不同 Windows 账户。保存流程历史根因见 §0.62。
 6. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
    下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
 7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
@@ -103,7 +109,8 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 
 ### 0.7 历史记录
 
-- §0.63：v0.19.0 AI Provider Reliability Update 发布记录（当前版本）。
+- §0.64：AI Provider 凭据迁移至 Windows Credential Manager（补丁候选，未发布）。
+- §0.63：v0.19.0 AI Provider Reliability Update 发布记录（当前正式版本）。
 - §0.62：v0.18.0 发布后 AI Provider 配置保存可靠性修复（已随 v0.19.0 发布）。
 - §0.61：v0.18.0 OpenCode Provider 接入、发布与证据。
 - §0.60：v0.17.0 快手 H5 预览接入与发布记录。
@@ -469,6 +476,101 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 - 数据库 Schema 仍 16；已有直播记录、观众、画像、AI 任务与报告不需要迁移。
 - 正常 Provider 配置与加密 Key 保留；损坏文件先备份，不要求用户删除配置或重装。
 - 升级方式：替换 `LiveMemory.exe`；建议先创建完整备份。
+
+---
+
+## 0.64 AI Provider 凭据迁移至 Windows Credential Manager（2026-11-18，未发布补丁）
+
+### 0.64.1 结论
+
+- **已选择 Windows Credential Manager 作为 AI Provider API Key 的主存储**。每个
+  `credentialReference` 对应一个 Generic Credential（`LiveMemory/ai-provider/v1/<ref>`），
+  由 Windows DPAPI 保护并按当前 Windows 用户 SID 隔离；`CRED_PERSIST_LOCAL_MACHINE`
+  在 Windows 重启后保留。
+- **不再把 AI Key 写入 `<数据目录>/secrets/ai-keys.json`**。该文件只作为旧数据迁移来源与
+  加密只读回退保留；新 Key 不会写回。旧文件不删除、不改名、不覆盖。
+- **旧用户可无损迁移**：启动时逐个写入并读回校验；全部引用的 Key 校验成功后才写
+  `secrets/ai-keys.migration.json` 标记。迁移失败/旧库损坏时只告警，新 Key 仍可保存并可重试。
+- **已知 `AI_PROVIDER_CREDENTIAL_PERMISSION` 这一类“凭据文件 ACL/可写性”故障被消除**：
+  新路径不再依赖数据目录内凭据文件的 ACL；但仍不能消除所有 Windows 数据目录/配置文件权限
+  故障（例如整个数据目录不可写、配置文件被锁定）。
+- **Windows 账户隔离不绕过**：`requireAdministrator` + over-the-shoulder 使用另一管理员账户时，
+  Credential Manager 属于该账户；LiveMemory 不读取其他账户 vault，也不修改其他账户 ACL。
+  该场景下原账户的 Key 不可见，需要重新输入；这是 Windows 隔离，不是数据丢失。
+- **未发布**：版本仍 `0.19.0`，未 Push / Tag / Release；本轮是补丁版本候选。
+
+### 0.64.2 实现
+
+| 文件 | 变更 |
+| --- | --- |
+| `src/platforms/shared/credential-store.mjs` | **新增**：Credential Manager 后端、固定 PowerShell + 内嵌 C# P/Invoke、分块、错误分类、文件后端适配器 |
+| `src/ai/providers/store.mjs` | 凭据读写改走后端接口；旧 AES 迁移/只读回退；迁移标记；Provider 切换/回滚/删除/清空逻辑保留 |
+| `src/server/index.mjs` / `src/launcher/launcher.mjs` | 生产启动显式启用 Windows 后端；测试/嵌入默认仍用隔离文件后端 |
+| `src/server/routes.mjs` | 新增后端不可用/拒绝访问/写入失败/损坏错误映射；错误详情只含稳定码/后端/Win32 |
+| `src/server/maintenance.mjs` | 恢复出厂设置清理当前配置引用的 vault 条目，并如实报告失败 |
+| `src/platforms/shared/secret-store.mjs` | 旧文件 ACL 改为“先授权当前 SID 完全控制，再移除继承”，避免 `(R,W)` 缺 DELETE 导致后续原子改名失败 |
+| `src/web/js/ui.js` | `describeError()` 把 `details` 传给 `t()`，修复 `{path}`/`{code}` 原样显示 |
+| `src/web/js/pages/ai-settings.js` | 旧凭据迁移失败/新后端不可用告警；保存错误仍显示在按钮旁 |
+| `src/web/i18n/*.json` | 十语新增 6 个错误/诊断键（2,373 → **2,379**） |
+| `scripts/build-windows.mjs` | 可靠性必需模块加入 `credential-store.mjs` |
+| 测试/脚本 | 新增 unit、integration、opt-in 真实 CredMan 测试；扩展 `verify-provider-save-exe.mjs` |
+
+### 0.64.3 安全性 / 传递路径
+
+- Key 只通过 **stdin** 传给固定 PowerShell 脚本；不进入 argv、环境变量、临时明文文件、
+  配置 JSON、日志、备份、ZIP、数据库导出或 HTML。
+- PowerShell 只执行固定脚本，不含用户可控代码；C# P/Invoke 只调用
+  `CredWriteW` / `CredReadW` / `CredDeleteW`。
+- Add-Type 编译器临时目录指向 `<数据目录>\cache\`，避免受限账户对默认 `%TEMP%` 的 ACL 差异。
+- 不引入第三方云服务、运行时 npm 依赖或原生 Node addon；PowerShell 是 Windows 内置组件。
+- 失败时不显示成功；没有明文回退。旧 AES 文件回退仅用于已存在、可读的旧密文。
+
+### 0.64.4 测试（真实结果）
+
+| 项目 | 结果 |
+| --- | --- |
+| 新增 unit | `credential-store.test.mjs` 10 项；`provider-credential-migration.test.mjs` 8 项 |
+| 新增 integration | `provider-credential-store.test.mjs` 7 项；`windows-credential-manager.test.mjs` 2 项（默认 skip，opt-in 真实 vault） |
+| 全量 unit | **889 passed / 0 failed / 0 skipped**（最终复跑 24,925 ms） |
+| 全量 integration | **405 passed / 0 failed / 2 skipped**（最终复跑 359,924 ms；skip 为 opt-in 真实 CredMan） |
+| 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
+| 真实 EXE | `verify-provider-save-exe` **24/24 passed**；最后一项验证 7 个测试 vault 引用已清理 |
+| EXE 回归 | `verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| 全量合计 | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration） |
+| 十语言 | 10 × **2,379**，键集/占位符/空值/英文残留门禁通过 |
+
+覆盖场景：全新安装、旧版本迁移、多 Provider 独立保存、修改/删除、保存失败回滚、旧库损坏、
+旧库权限不足、EXE 重启持久化、Credential Manager 不可用/拒绝访问、不同 Windows 账户隔离
+（自动化无法真实切换账户，仅以 SID 隔离设计与文档说明，未人工验收）。
+
+本轮 EXE（补丁候选）：Build `ae8479e258c5`；commit `fea8cbe`；builtAt
+`2026-11-18T16:16:56.504Z`；257 assets（新增 `credential-store.mjs`）、71 required
+modules；99,609,088 B；SHA-256 `8a303c5f…e3fb652`；Manifest `requireAdministrator`。
+`verify-exe` 在本机低完整性测试会话中首次使用真实 `%LOCALAPPDATA%` 时被 ACL 拒绝
+（Bootstrap `EPERM`，环境限制，不是产品回归）；把 `LOCALAPPDATA`/`TEMP` 指向工作区可写
+测试目录后 **11/11**。`verify-provider-save-exe` 使用隔离数据目录与 asInvoker 副本，
+未使用真实 `%LOCALAPPDATA%`。
+
+### 0.64.5 仍未验证 / 环境限制
+
+- **真实 Windows 重启后持久化**：未执行整机重启；使用 EXE 完全退出/重启与
+  `CRED_PERSIST_LOCAL_MACHINE` 设计作为证据，不得写成“已实测重启”。
+- **真实不同 Windows 账户隔离**：未在第二个 Windows 账户下人工验收；自动化不切换账户。
+- **真实 UAC over-the-shoulder**：未人工验证；文档说明其 vault 归属。
+- **Credential Manager 被组策略/PowerShell 禁用**：单元/集成使用注入后端验证错误分类；
+  未在真实被禁用的 Windows 环境中验收。
+- **干净 Windows 环境**：未验收；EXE 未签名，SmartScreen 仍可能提示。
+- Windows Server Core / 移除 Windows PowerShell 的环境不支持；会明确返回
+  `AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE`，不回退明文。
+
+### 0.64.6 交付状态
+
+- 本地 Commit：见本轮最终回复与 `git log -1`；**未 Push / Tag / Release**。
+- 版本仍 `0.19.0`；建议作为补丁版本（如 `0.19.1`）发布，但需用户明确授权后才能改版本号、
+  构建发布资产与打 Tag。
+- 本轮已构建最终候选 EXE 并复跑 `verify-provider-save-exe`、`verify-exe`、
+  `verify-help-exe`、`verify-ai-token-exe`。若用户授权发布，仍需按 `docs/RELEASE.md`
+  重新执行完整发布检查。
 
 ---
 

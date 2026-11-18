@@ -739,7 +739,7 @@ result.schema.json
 
 ### 13.7 安全
 
-- API Key 仅存加密凭据库；配置 JSON 保存 `credentialReference`。
+- API Key 仅存 Windows Credential Manager（DPAPI，按当前 Windows 用户）；配置 JSON 只保存 `credentialReference`。旧 `secrets/ai-keys.json` 只读迁移/回退，不写入新 Key。
 - 区域/Base URL 变化轮换 credentialReference。
 - 自定义 URL 拒绝云元数据/私网/localhost（除非显式 allowLocalNetwork），请求前做 DNS 检查。
 - 不记录 prompt/回答/聊天正文到日志或状态文件。

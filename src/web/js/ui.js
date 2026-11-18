@@ -218,7 +218,14 @@ export function createToaster(region) {
 export function describeError(error, t) {
   const messageKey = error?.messageKey;
   if (messageKey) {
-    const text = t(messageKey);
+    // The server sends message parameters (notably {path}) in error.details.
+    // Passing them is required: without it the UI rendered a literal "{path}".
+    const params = error?.details && typeof error.details === 'object' && !Array.isArray(error.details)
+      ? {...error.details}
+      : {};
+    if (!Object.hasOwn(params, 'path')) params.path = '—';
+    if (!Object.hasOwn(params, 'code')) params.code = error?.code ?? '—';
+    const text = t(messageKey, params);
     if (text && text !== messageKey) return text;
   }
   return t('errors.generic');

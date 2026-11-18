@@ -17,6 +17,7 @@ import {KuaishouService} from '../platforms/kuaishou/service.mjs';
 import {resolveKuaishouAccess} from '../platforms/kuaishou/policy.mjs';
 import {MonitoringManager} from '../monitoring/manager.mjs';
 import {ProviderConfigStore} from '../ai/providers/store.mjs';
+import {WindowsCredentialStore} from '../platforms/shared/credential-store.mjs';
 import {AnalysisRunner} from '../ai/api/runner.mjs';
 import {ReportTranslationService} from '../ai/translation/service.mjs';
 import {runRetention} from '../storage/retention.mjs';
@@ -113,7 +114,11 @@ export async function startServer({
   auto = null,
   buildInfo = null,
   auth: authOptions = null,
-  env = process.env
+  env = process.env,
+  // Production passes this from the launcher. It stays opt-in so in-process
+  // tests and embedded callers never touch the real Windows vault by accident.
+  useWindowsCredentialManager = false,
+  credentialStore = null
 } = {}) {
   if (!dataDir) throw new Error('startServer: dataDir is required');
   const hub = new EventStream();
@@ -307,10 +312,15 @@ export async function startServer({
       platforms: ['kuaishou'],
       logger
     });
+    const providerCredentialStore = credentialStore
+      ?? (useWindowsCredentialManager
+        ? new WindowsCredentialStore({tempDir: paths.cache})
+        : null);
     const providerConfigStore = new ProviderConfigStore({
       configFile: join(paths.config, 'ai-providers.json'),
       secretsDir: paths.secrets,
-      now
+      now,
+      credentialStore: providerCredentialStore
     });
     providerConfigStore.load();
     const analysisRunner = new AnalysisRunner({

@@ -93,7 +93,7 @@
   - **不会回退到默认目录并创建空数据库**。
 - `--data-dir` / `LIVE_MEMORY_DATA_DIR` 仍优先于位置记录，便于临时排查；它们不会自动改写位置记录。
 
-### 4.2 跨管理员账户、requireAdministrator 与凭据文件（2026-11-18 调查）
+### 4.2 跨管理员账户、requireAdministrator 与 AI 凭据（2026-11-18 调查 / 2026-11-18 修复）
 
 `requireAdministrator` 只表示 Windows 会显示 UAC；**不保证进程仍运行在双击它的那个账户下**。
 如果标准用户在 UAC 中输入了另一个管理员账户的凭据（over-the-shoulder elevation），进程的
@@ -106,16 +106,39 @@
   **恰好一个**现有数据库时使用它；**多个**时报 `DATA_DIR_AMBIGUOUS`，不猜测；没有则新建。
 - `data-location.json` 位于当前账户的 `%LOCALAPPDATA%` / `%APPDATA%`，**不会跨账户共享**；
   换一个管理员账户启动时可能看不到原位置记录，只能依赖上面的 profile 扫描。
-- `secrets/ai-keys.json` 与 `ai-keys.key` 用 `icacls /inheritance:r /grant:r <当前账户>:(R,W)`
-  限制为当前账户；另一个 Windows 账户不能读取。应用运行时会占用数据库/WAL；在资源管理器里
-  手动删除 `config/ai-providers.json` 或 `secrets/` 可能得到 `EBUSY`/`EPERM`，这不是 API 配置
-  格式错误。
+- **AI Provider API Key 不再写入数据目录**。生产环境使用 Windows Credential Manager：
+  - 每个 `credentialReference` 对应一个 Generic Credential，target 形如
+    `LiveMemory/ai-provider/v1/aicred_<random>`；target 不含 Provider 名或 Key。
+  - 底层是 Windows DPAPI，按当前 Windows 用户 SID 隔离；同账户的普通/提升进程共享同一 vault。
+  - 使用 `CRED_PERSIST_LOCAL_MACHINE`，Windows 重启后保留；不随 Microsoft 账户漫游。
+  - 单条 Key 超过 Win32 2560 字节上限时，按 2400 字节分块保存；旧块在更新/删除时清理。
+  - Node 没有内置 FFI，所以通过固定 Windows PowerShell 脚本 + 内嵌 C# P/Invoke 调用
+    `CredWriteW` / `CredReadW` / `CredDeleteW`。Key 只通过 stdin 传递；不进入命令行参数、
+    环境变量或临时明文文件。PowerShell 的 Add-Type 编译器临时目录使用
+    `<数据目录>\cache\`（应用已证明可写），避免受限账户对 `%TEMP%` 的 ACL 差异。
+- **旧数据自动迁移**：启动时读取 `secrets/ai-keys.json`。可读的 Key 会逐个写入 Credential
+  Manager，并**读回校验**；只有全部引用的 Key 校验成功才写 `secrets/ai-keys.migration.json`
+  标记。旧文件**不删除、不改名、不覆盖**。迁移失败或旧文件损坏不会阻止新 Key 保存；下次启动
+  会重试。旧 Key 在新后端暂时不可读时，仍可从旧的 AES 文件只读回退。
+- **账户隔离**：Credential Manager 属于当前 SID。跨管理员账户 over-the-shoulder 启动时，
+  另一个账户看不到原账户的 Key；LiveMemory **不会**读取其他用户的 vault，也不会修改其他账户
+  文件的 ACL。原账户的旧 AES 文件同样受 ACL 限制。需要在新账户中重新输入 Key 是 Windows
+  账户隔离的结果，不是配置损坏。
+- 应用运行时会占用数据库/WAL；在资源管理器里手动删除 `config/ai-providers.json` 或
+  `secrets/` 可能得到 `EBUSY`/`EPERM`，这不是 API 配置格式错误。不要为了修复保存错误先删除
+  `secrets/` 或整个数据目录。
+- **Credential Manager 不可用**（PowerShell 被安全策略禁用、ConstrainedLanguage 模式、
+  非交互/无登录会话、非 Windows 运行时）：保存返回
+  `AI_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE`（HTTP 503），不会写入明文、不会显示成功。
+  用户可以直接重试或重新输入 Key；旧配置不会被删除。访问被 Windows 拒绝时返回
+  `AI_PROVIDER_CREDENTIAL_ACCESS_DENIED`；其他写入失败返回
+  `AI_PROVIDER_CREDENTIAL_WRITE_FAILED`。错误详情只含稳定码、后端类型与 Win32 错误码，
+  不含 Key。
 - 启动日志新增 `data-dir.identity`，记录 `currentUser`、`userProfile`、`localAppData`、
   `dataDir`、`source` 与 `crossProfile`（是否复用了另一个本地用户配置的数据库）。这些字段
   只有路径和账户名，不含 API Key、Cookie 或聊天内容。
 - 手动清理的正确顺序：先完全退出 LiveMemory（包括其他窗口），再用**创建数据目录的同一个
-  Windows 账户**删除；或使用设置页的备份/迁移/重置流程。不要为了修复保存错误而先删除
-  `secrets/` 或整个数据目录。
+  Windows 账户**删除；或使用设置页的备份/迁移/重置流程。
 
 ## 5. 权限
 
@@ -347,7 +370,7 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 - 除 `/api/health`、`/api/auth/status`、`/api/auth/session` 外，所有 `/api/*`（含 SSE）仍要求启动器建立的随机会话 Cookie；
 - 一次性 Bootstrap token 仍只放在 URL fragment，换取 `HttpOnly; SameSite=Strict` Cookie 后从地址栏移除；
 - 全方法 Origin 同源校验、`Origin:null` 拒绝、跨站 `Sec-Fetch-Site` 拒绝、Host 严格校验继续生效；
-- API Key 仍只写入本地加密凭据库，不进入配置 JSON、日志、备份或 HTML；
+- API Key 仍只进入受保护的本机凭据存储（v0.19 起为 Windows Credential Manager；旧 AES 文件仅迁移/只读回退），不进入配置 JSON、日志、备份或 HTML；
 - 备份格式、恢复 journal、ZIP/路径/大小/CRC 校验、删除范围与数据目录迁移保护均未放宽；
 - 管理员权限**不是** API 授权边界：能访问监听的进程仍需有效会话 Cookie。
 
