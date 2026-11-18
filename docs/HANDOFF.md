@@ -1,22 +1,22 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-18 AI Provider 凭据迁移至 Windows Credential Manager（最新交接，未发布）
+## 2026-11-19 v0.19.1 正式发布：Windows Credential Storage Fix（最新交接）
 
 本轮针对 `AI_PROVIDER_CREDENTIAL_PERMISSION`（部分 Windows 用户无法把 API Key 写入本地
-加密凭据库）做存储后端替换。**未改 Provider 协议、数据库 Schema（仍 16）、平台采集、金额/
-身份/去重、任务语言快照、UAC/Manifest。未 Push / Tag / Release。**
+加密凭据库）做存储后端替换，并正式发布为 **v0.19.1**。**未改 Provider 协议、数据库 Schema
+（仍 16）、平台采集、金额/身份/去重、任务语言快照、UAC/Manifest。**
 
 ### 结果
 
 | 项目 | 值 |
 | --- | --- |
-| 版本 / Schema | `0.19.0`（**0.19.1 补丁候选**）/ 16（无迁移） |
+| 版本 / Schema | `0.19.1` / 16（无迁移） |
 | 主存储 | **Windows Credential Manager**（DPAPI，按当前用户 SID，`CRED_PERSIST_LOCAL_MACHINE`） |
 | 旧数据 | `secrets/ai-keys.json` 自动迁移并读回校验；旧文件不删除/不改名；失败可重试；只读回退 |
 | 传递路径 | Key 只经 stdin 到固定 PowerShell + C# P/Invoke；不进 argv/env/临时明文/日志/备份 |
 | 错误 | 后端不可用 503、访问拒绝、写入失败、凭据损坏分别提示；`{path}` 已正确替换 |
 | 测试 | unit **889** + integration **407**（405 pass + 2 skip）= **1,294 passed / 0 failed / 2 skipped**；真实 CredMan opt-in **2/2**；EXE `verify-provider-save-exe` **24/24** |
-| EXE | Build `ae8479e258c5` / SHA-256 `8a303c5f…e3fb652` / 99,609,088 B / `requireAdministrator`；`verify-provider-save-exe` **24/24**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
+| EXE | 最终 Build ID / SHA-256 / 大小见 `docs/STATUS.md` §0.65；`requireAdministrator`；`verify-provider-save-exe` **24/24**、`verify-exe` **11/11**、`verify-help-exe` **14/14**、`verify-ai-token-exe` **16/16** |
 | 未验证 | 整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、PowerShell 被组策略禁用、干净 Windows 环境 |
 
 ### 关键文件
@@ -35,15 +35,16 @@
 
 ### 下一轮
 
-1. 用户授权后，把本补丁作为 `0.19.1` 发布：改版本号、构建、复跑全部 EXE 验收、打 Tag/Release。
-2. 人工验证真实 UAC over-the-shoulder、不同 Windows 账户、Windows 重启后 CredMan 持久化。
-3. 在真实被组策略禁用 PowerShell/CredMan 的环境确认 503 错误与不写明文。
-4. 其他 Provider 真实付费验收仍需逐个进行；不打开快手生产采集。
+1. 人工验证真实 UAC over-the-shoulder、不同 Windows 账户、Windows 重启后 CredMan 持久化。
+2. 在真实被组策略禁用 PowerShell/CredMan 的环境确认 503 错误与不写明文。
+3. 其他 Provider 真实付费验收仍需逐个进行；不打开快手生产采集。
+4. 若发现凭据后端兼容问题，按补丁版本修复；不得回退为明文或绕过系统策略。
 
 ### Git
 
-- 本地 Commit：`a9c95d7a9b36d978727c31efc436f3c825c33202`
-  （`fix: store AI provider keys in Windows Credential Manager`）；**未 Push / Tag / Release**。
+- 功能与验收提交：`a9c95d7`、`f849ad0`。
+- 发布提交、Tag、Release ID 与资产哈希：见 `docs/STATUS.md` §0.65 与
+  `docs/RELEASE_HISTORY.md`。
 - 工作区提交后应干净（`tests/.tmp/`、`build/`、`dist/` 未提交）。
 
 ---

@@ -4,10 +4,10 @@
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
 
-## 0.19.1 — 未发布（Windows Credential Manager 凭据可靠性补丁候选）
+## 0.19.1 — 2026-11-19（Windows Credential Storage Fix）
 
-**未发布，版本号仍为 `0.19.0`。** 本轮把 AI Provider API Key 从自维护的 AES JSON 凭据库
-迁移到 Windows Credential Manager，解决部分 Windows 用户保存时遇到
+**正式发布。** 本版把 AI Provider API Key 从自维护的 AES JSON 凭据库迁移到
+Windows Credential Manager，解决部分 Windows 用户保存时遇到
 `AI_PROVIDER_CREDENTIAL_PERMISSION` 的凭据文件权限故障。数据库 Schema 仍 16，平台状态未变。
 
 ### 存储与迁移
@@ -36,9 +36,9 @@
 
 - unit **889** + integration **407**（405 passed / 2 skipped）= **1,294 passed / 0 failed /
   2 skipped**；真实 CredMan opt-in **2/2**；真实 EXE `verify-provider-save-exe` **24/24**。
-- 同一最终 EXE（Build `ae8479e258c5`，SHA-256 `8a303c5f…e3fb652`，99,609,088 B，
-  `requireAdministrator`）回归：`verify-exe` 11/11、`verify-help-exe` 14/14、
-  `verify-ai-token-exe` 16/16。
+- 同一最终 EXE（`requireAdministrator`）回归：`verify-exe` 11/11、
+  `verify-help-exe` 14/14、`verify-ai-token-exe` 16/16；最终 Build ID、大小与 SHA-256
+  见 `docs/STATUS.md` 与 `SHA256SUMS.txt`。
 - 十语言 **2,379** 键，键集/占位符门禁通过。
 - 未验证：整机 Windows 重启、第二个 Windows 账户、真实 UAC over-the-shoulder、组策略禁用
   PowerShell/CredMan、干净 Windows 环境。

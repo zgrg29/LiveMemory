@@ -1,11 +1,10 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-18（**v0.19.0 正式发布：AI Provider Reliability Update**；
-此后完成 **Windows Credential Manager 凭据补丁候选（未发布）**，详见 §0.64 与
-`log/2026-11-18-ai-credential-manager.md`）
+最后更新：2026-11-19（**v0.19.1 正式发布：Windows Credential Storage Fix**；
+详见 §0.65、`docs/release-notes/v0.19.1.md` 与 `log/2026-11-19-v0.19.1-release.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
-> **先读 §0 当前状态快照**；§0.63 是当前版本（v0.19.0）的发布记录；§0.62 及更早是历史记录，
+> **先读 §0 当前状态快照**；§0.65 是当前版本（v0.19.1）的发布记录；§0.64 及更早是历史记录，
 > 只用于追溯，不代表当前状态。发布证据另见 `docs/RELEASE_HISTORY.md`。
 
 ## 0. 当前状态快照（2026-11-18）
@@ -17,17 +16,17 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.19.0`**（`package.json` = `APP_VERSION` = `0.19.0`） |
-| 下一版本 | **未定**；当前代码为 **0.19.1 补丁候选（未发布）**，需用户授权后才能改版本/发布 |
-| 最新正式发布 | **`v0.19.0`** · Release ID `450031601` · Published `2026-11-18T13:32:13Z` |
-| 发布性质 | 正式发布：AI Provider 配置保存、错误提示、凭据可靠性与 OpenCode 兼容性修复；平台状态未变（快手仍为预览、采集禁用）。**未发布的后续工作**：AI Key 迁移至 Windows Credential Manager |
-| 最新 Release 资产 | `LiveMemory.exe` 99,551,744 B · SHA-256 `901f92fd…64fc9`；`SHA256SUMS.txt` 82 B · SHA-256 `9ee83678…ece952` |
-| 当前分支 | `main`（发布提交 `142ec4a..50920d1` 与 Tag 已 Push） |
-| 当前 Tag | `v0.19.0`（annotated，object `5e366a2` → commit `50920d1`） |
-| 数据库 Schema | **16**（v0.19.0 无迁移） |
-| 当前开发里程碑 | **P54 AI Provider 凭据可靠性（Windows Credential Manager，补丁候选）**；OpenCode 真实付费验收待办 |
-| 最近开发 | 2026-11-18：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；未改 Provider 协议与数据库 Schema |
-| 最近文档整理 | 2026-11-18：Credential Manager 调查/实现/测试记录；STATUS、HANDOFF、WINDOWS_RUNTIME、PRIVACY_SECURITY、TEST_PLAN、CHANGELOG |
+| 产品版本 / 当前开发版本 | **`0.19.1`**（`package.json` = `APP_VERSION` = `0.19.1`） |
+| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
+| 最新正式发布 | **`v0.19.1`** · Windows Credential Storage Fix（Release 详情见 §0.65） |
+| 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
+| 最新 Release 资产 | `LiveMemory.exe` 与 `SHA256SUMS.txt`（大小/SHA-256 见 §0.65 与 `docs/RELEASE_HISTORY.md`） |
+| 当前分支 | `main`（发布提交与 Tag 见 §0.65） |
+| 当前 Tag | `v0.19.1`（annotated；object 与目标 Commit 见 §0.65） |
+| 数据库 Schema | **16**（v0.19.1 无迁移） |
+| 当前开发里程碑 | **P54 AI Provider 凭据可靠性（v0.19.1 正式发布）**；OpenCode 真实付费验收待办 |
+| 最近开发 | 2026-11-19：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；正式发布 v0.19.1 |
+| 最近文档整理 | 2026-11-19：v0.19.1 Release Notes / 检查单 / 发布记录；STATUS、HANDOFF、ROADMAP、CHANGELOG |
 
 ### 0.2 平台状态
 
@@ -73,13 +72,13 @@
 | 项目 | 当前结论 |
 | --- | --- |
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
-| 全量自动化（2026-11-18 Credential Manager 补丁候选） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
+| 全量自动化（2026-11-19 v0.19.1） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
 | 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
-| 本轮 EXE（v0.19.0） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| 本轮 EXE（v0.19.1） | **待最终构建填写**；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| 历史 EXE（v0.19.0 发布） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
-| 十语言字典 / UI 矩阵 | 10 × **2,373** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
-| 发布 EXE | Build ID `47b42dc8417b`；`requireAdministrator`；Kuaishou 10/10、`verify-exe` 11/11、`verify-help-exe` 14/14 |
+| 十语言字典 / UI 矩阵 | 10 × **2,379** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
 | 真实 H5 / 真实 EXE 采集 | **未执行**（无快手书面许可） |
 | 真实付费 Provider（DeepSeek 以外） | **未逐一验收**；需要真实 Key 与费用授权 |
 | 真实 Windows UAC / 干净账户 | **未人工验证**；自动化只断言 Manifest 与 asInvoker 功能副本 |
@@ -88,7 +87,7 @@
 
 ### 0.6 开放问题与下一步
 
-v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
+v0.19.1（Windows Credential Storage Fix）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
 
 1. **OpenCode 真实付费验收**：需要用户提供真实 Key 与费用授权，验证 Pay-as-you-go 的
    真实 200/429/5xx、真实模型输出、真实账单与 `usage.cost`；Go 还需额外确认套餐真实可用性。
@@ -97,11 +96,11 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
    `docs/KUAISHOU_H5_INTEGRATION.md` 的 G4/G5 重新验收，不得直接打开生产采集。
 3. **真实 Windows 人工验收**：双击 UAC（同意/拒绝）、干净账户、文件对话框、Ctrl+C。
 4. **其他真实 Provider 补验**：OpenAI / Anthropic / MiniMax / 百炼 / OpenRouter / 自定义。
-5. **用户反馈专项（v0.19.0 已发布；Credential Manager 补丁候选未发布）**：Provider 切换
-   需重新输入 Key 仍是安全设计（密钥不能发往未经确认的新地址），但错误提示已具体化；
-   自定义端点 OpenCode 的会话头错误已修复；AI Key 已迁移至 Windows Credential Manager，
-   避免依赖数据目录内凭据文件 ACL，见 §0.64。仍需人工验证真实 UAC over-the-shoulder 与
-   不同 Windows 账户。保存流程历史根因见 §0.62。
+5. **用户反馈专项（v0.19.1 已发布）**：Provider 切换需重新输入 Key 仍是安全设计
+   （密钥不能发往未经确认的新地址），但错误提示已具体化；自定义端点 OpenCode 的会话头错误
+   已修复；AI Key 已迁移至 Windows Credential Manager，避免依赖数据目录内凭据文件 ACL，
+   见 §0.65。仍需人工验证真实 UAC over-the-shoulder 与不同 Windows 账户。保存流程历史根因
+   见 §0.62。
 6. **真实平台长测与未观测事件**：Twitch Bits/赠订、抖音真实礼物、TikTok 礼物、Kick 自然
    下播→再开播；缺失事件继续标 `NOT-OBSERVED`。
 7. **新平台**：必须按 `docs/PLATFORM_ADMISSION.md` 的 G0–G6 重新调查与验收；不得为了
@@ -109,8 +108,8 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 
 ### 0.7 历史记录
 
-- §0.64：AI Provider 凭据迁移至 Windows Credential Manager（补丁候选，未发布）。
-- §0.63：v0.19.0 AI Provider Reliability Update 发布记录（当前正式版本）。
+- §0.65：v0.19.1 Windows Credential Storage Fix 发布记录（当前正式版本）。
+- §0.64：AI Provider 凭据迁移至 Windows Credential Manager（已随 v0.19.1 发布）。
 - §0.62：v0.18.0 发布后 AI Provider 配置保存可靠性修复（已随 v0.19.0 发布）。
 - §0.61：v0.18.0 OpenCode Provider 接入、发布与证据。
 - §0.60：v0.17.0 快手 H5 预览接入与发布记录。
@@ -479,7 +478,7 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 
 ---
 
-## 0.64 AI Provider 凭据迁移至 Windows Credential Manager（2026-11-18，未发布补丁）
+## 0.64 AI Provider 凭据迁移至 Windows Credential Manager（2026-11-18，已随 v0.19.1 发布）
 
 ### 0.64.1 结论
 
@@ -497,7 +496,7 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 - **Windows 账户隔离不绕过**：`requireAdministrator` + over-the-shoulder 使用另一管理员账户时，
   Credential Manager 属于该账户；LiveMemory 不读取其他账户 vault，也不修改其他账户 ACL。
   该场景下原账户的 Key 不可见，需要重新输入；这是 Windows 隔离，不是数据丢失。
-- **未发布**：版本仍 `0.19.0`，未 Push / Tag / Release；本轮是补丁版本候选。
+- **已随 v0.19.1 正式发布**；发布证据见 §0.65。
 
 ### 0.64.2 实现
 
@@ -543,9 +542,7 @@ v0.19.0（AI Provider Reliability Update）已发布。当前没有进行中的�
 旧库权限不足、EXE 重启持久化、Credential Manager 不可用/拒绝访问、不同 Windows 账户隔离
 （自动化无法真实切换账户，仅以 SID 隔离设计与文档说明，未人工验收）。
 
-本轮 EXE（补丁候选）：Build `ae8479e258c5`；commit `fea8cbe`；builtAt
-`2026-11-18T16:16:56.504Z`；257 assets（新增 `credential-store.mjs`）、71 required
-modules；99,609,088 B；SHA-256 `8a303c5f…e3fb652`；Manifest `requireAdministrator`。
+最终 v0.19.1 EXE 的 Build ID、大小与 SHA-256 见 §0.65。
 `verify-exe` 在本机低完整性测试会话中首次使用真实 `%LOCALAPPDATA%` 时被 ACL 拒绝
 （Bootstrap `EPERM`，环境限制，不是产品回归）；把 `LOCALAPPDATA`/`TEMP` 指向工作区可写
 测试目录后 **11/11**。`verify-provider-save-exe` 使用隔离数据目录与 asInvoker 副本，
@@ -565,13 +562,70 @@ modules；99,609,088 B；SHA-256 `8a303c5f…e3fb652`；Manifest `requireAdminis
 
 ### 0.64.6 交付状态
 
-- 本地 Commit：`a9c95d7a9b36d978727c31efc436f3c825c33202`
-  （`fix: store AI provider keys in Windows Credential Manager`）；**未 Push / Tag / Release**。
-- 版本仍 `0.19.0`；建议作为补丁版本（如 `0.19.1`）发布，但需用户明确授权后才能改版本号、
-  构建发布资产与打 Tag。
-- 本轮已构建最终候选 EXE 并复跑 `verify-provider-save-exe`、`verify-exe`、
-  `verify-help-exe`、`verify-ai-token-exe`。若用户授权发布，仍需按 `docs/RELEASE.md`
-  重新执行完整发布检查。
+- 功能提交：`a9c95d7a9b36d978727c31efc436f3c825c33202`
+  （`fix: store AI provider keys in Windows Credential Manager`）；验收文档
+  `f849ad0df4a6a2b88df7d56d57db97e6522927f6`。
+- 已作为 **v0.19.1** 正式发布；版本、构建、Tag 与 Release 见 §0.65。
+- 发布前已按 `docs/RELEASE.md` 复跑全量测试、真实 EXE 验收与文档检查。
+
+---
+
+## 0.65 v0.19.1 正式发布：Windows Credential Storage Fix（2026-11-19）
+
+### 0.65.1 结论
+
+- **正式发布**：版本 `0.19.1`，数据库 Schema **16**（无迁移）。
+- 内容：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户
+  保存时遇到的 `AI_PROVIDER_CREDENTIAL_PERMISSION` 凭据文件权限故障。
+- 未改直播平台协议、金额/身份/去重、任务语言快照、提示词、数据库 Schema、UAC/Manifest。
+- 快手仍为**预览、实时采集禁用**；六个已发布平台状态未变。
+- **未新增用户配置步骤**；旧配置与可读旧 Key 自动迁移，旧凭据文件不删除。
+
+### 0.65.2 自动化
+
+| 项目 | 结果 |
+| --- | --- |
+| 全量测试 | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；单次全量 354,405 ms；2 skip 为 opt-in 真实 CredMan） |
+| 真实 CredMan | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
+| 十语言字典 | 10 × **2,379**；键集/占位符/空值/英文残留 0 |
+| 文档检查 | `scripts/check-docs.mjs` 通过 |
+
+### 0.65.3 正式 EXE 与发布资产
+
+| 项目 | 值 |
+| --- | --- |
+| 文件 | `dist/LiveMemory.exe` |
+| 版本 / Manifest | `0.19.1` / `requireAdministrator`（待最终构建确认） |
+| Build ID / commit | 待最终构建填写 |
+| 大小 / SHA-256 | 待最终构建填写 |
+| `SHA256SUMS.txt` | 待最终构建填写 |
+| EXE 验收 | `verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| 未验证 | 整机 Windows 重启、第二 Windows 账户、真实 UAC over-the-shoulder、组策略禁用 PowerShell/CredMan、干净 Windows 环境 |
+
+`verify-exe` 在本机低完整性测试会话中首次使用真实 `%LOCALAPPDATA%` 时被 ACL 拒绝
+（Bootstrap `EPERM`，环境限制，不是产品回归）；把 `LOCALAPPDATA`/`TEMP` 指向工作区可写
+测试目录后 11/11。`verify-provider-save-exe` 与 `verify-ai-token-exe` 结束时会清理测试
+Credential Manager 条目；发布验收后确认无残留。
+
+### 0.65.4 发布记录
+
+| 项目 | 值 |
+| --- | --- |
+| Release | **LiveMemory v0.19.1 — Windows Credential Storage Fix** |
+| Release URL / ID | 发布后填写 |
+| 状态 | 发布后填写 |
+| Tag | 发布后填写 |
+| Push | 发布后填写 |
+| Release body | 与 `docs/release-notes/v0.19.1.md` 一致（SHA-256 发布后填写） |
+| 下载复核 | 发布后填写 |
+| 旧版本 | `v0.19.0`（Release `450031601`）与更早资产不得修改 |
+
+### 0.65.5 兼容性
+
+- 数据库 Schema 仍 16；已有直播记录、观众、画像、AI 任务与报告不需要迁移。
+- 已有 Provider 配置与可读旧 Key 自动迁移；旧 `secrets/ai-keys.json` 不删除/不改名。
+- 旧 Key 不可读时保留旧文件并允许重新输入，不阻塞新配置。
+- 部分企业组策略环境可能禁用 PowerShell/Credential Manager；保存会明确失败，不退明文、不伪造成功。
 
 ---
 
