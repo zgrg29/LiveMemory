@@ -156,14 +156,15 @@ export function createFact({
 }
 
 export function evidenceSourceKey({sessionId, batchIndex = null, seq = null, resultId = null}) {
-  if (resultId) return `r:${resultId}`;
+  if (resultId) return sessionId ? `session-result:${sessionId}` : `r:${resultId}`;
   return `s:${sessionId}:b${batchIndex ?? 0}:${seq ?? 0}`;
 }
 
 /** Add an evidence reference once; duplicates are ignored by source key. */
 export function addEvidence(fact, evidence) {
   const sourceKey = evidence.sourceKey ?? evidenceSourceKey(evidence);
-  if (fact.evidence.some((entry) => entry.sourceKey === sourceKey)) return false;
+  if (fact.evidence.some((entry) => entry.sourceKey === sourceKey
+    || (evidence.eventId != null && entry.eventId === evidence.eventId))) return false;
   fact.evidence.push({
     sourceKey,
     sessionId: evidence.sessionId,
@@ -196,17 +197,35 @@ export function loadMemoryFacts(db, memoryId) {
   for (const evidence of listEvidence(db, memoryId)) {
     const fact = byId.get(evidence.factId);
     if (!fact) continue;
-    fact.evidence.push({
+    addEvidence(fact, {
       sourceKey: evidence.sourceKey,
       sessionId: evidence.sessionId,
       batchIndex: evidence.batchIndex,
       seq: evidence.seq,
       eventId: evidence.eventId,
       observedAt: evidence.observedAt,
-      available: evidence.available !== false && evidence.contentExists !== false
+      available: evidence.available !== false && evidence.contentExists !== false && !evidence.contentPurged
     });
   }
+  // Older releases stored analysis time in these fields. Recover observation
+  // bounds from evidence, then the source session; never use the current clock.
+  for (const fact of facts) {
+    const bounds = observationBounds(fact.evidence);
+    const session = fact.sourceSessionId ? db.prepare(
+      'SELECT platform_started_at, started_at FROM sessions WHERE id = ?'
+    ).get(fact.sourceSessionId) : null;
+    const fallback = session?.platform_started_at ?? session?.started_at ?? 0;
+    fact.firstSeenAt = bounds.first ?? fallback;
+    fact.lastConfirmedAt = bounds.last ?? fallback;
+  }
   return facts;
+}
+
+export function observationBounds(evidence = []) {
+  const times = evidence.map((entry) => entry.observedAt)
+    .filter((at) => at !== null && at !== undefined && Number.isFinite(Number(at)))
+    .map(Number);
+  return {first: times.length ? Math.min(...times) : null, last: times.length ? Math.max(...times) : null};
 }
 
 /**
@@ -329,7 +348,9 @@ export function factSetChecksum(facts) {
     fact.status,
     fact.supersededBy ?? '',
     fact.conflictsWith ?? '',
-    fact.validUntil ?? ''
+    fact.validUntil ?? '',
+    fact.firstSeenAt, fact.lastConfirmedAt, fact.confidence,
+    [...(fact.evidence ?? [])].map((e) => e.eventId == null ? e.sourceKey : `event:${e.eventId}`).sort()
   ]);
   canonical.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
@@ -342,7 +363,7 @@ export function applyOutdatedRule(facts, {now = Date.now(), outdatedAfterMs}) {
     if (fact.status !== MEMORY_STATUS.ACTIVE) continue;
     if (TIMELESS_KINDS.includes(fact.kind)) continue;
     if (fact.certainty === MEMORY_CERTAINTY.UNCERTAIN) continue;
-    if (now - Number(fact.lastConfirmedAt) < outdatedAfterMs) continue;
+    if (!fact.lastConfirmedAt || now - Number(fact.lastConfirmedAt) < outdatedAfterMs) continue;
     fact.status = MEMORY_STATUS.OUTDATED;
     fact.statusReason = 'not_recently_confirmed';
     touched.push(fact);

@@ -83,10 +83,10 @@ export function mapEvidence(row) {
     batchIndex: row.batch_index === null || row.batch_index === undefined ? null : Number(row.batch_index),
     seq: row.seq === null || row.seq === undefined ? null : Number(row.seq),
     eventId: row.event_id === null || row.event_id === undefined ? null : Number(row.event_id),
-    observedAt: row.observed_at === null || row.observed_at === undefined ? null : Number(row.observed_at),
+    observedAt: row.observed_at == null ? (row.event_occurred_at ?? null) : Number(row.observed_at),
     available: row.available === 1,
     contentPurged: row.content_purged_at !== null && row.content_purged_at !== undefined,
-    contentExists: row.event_exists === null || row.event_exists === undefined ? true : Number(row.event_exists) === 1
+    contentExists: row.event_id == null ? true : row.event_exists != null
   };
 }
 
@@ -280,7 +280,7 @@ export function getFact(db, factId) {
 
 export function listEvidence(db, memoryId) {
   return db.prepare(`
-    SELECT e.*, ev.id AS event_exists, ev.content_purged_at
+    SELECT e.*, ev.id AS event_exists, ev.content_purged_at, ev.occurred_at AS event_occurred_at
       FROM memory_fact_evidence e
       JOIN memory_facts f ON f.id = e.fact_id
       LEFT JOIN events ev ON ev.id = e.event_id

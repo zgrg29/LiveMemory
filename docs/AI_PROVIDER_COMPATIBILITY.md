@@ -1,5 +1,9 @@
 # AI Provider 兼容性、真实用量与付费验收计划（P0-3）
 
+## 2026-11-24 翻译故障修复边界
+
+v0.19.1 EXE + 隔离本地模拟 Provider 返回 401 时，可复现 ERR_INVALID_ARG_TYPE：失败进度中的 usage: undefined 进入 SQLite 参数绑定，覆盖原始 PROVIDER_AUTH_FAILED。v0.19.2 修复省略值并保存真实错误；不修改 DeepSeek 模型、端点或 Credential Manager 协议。该复现证明存在 Provider 无关的本地缺陷，不证明用户此前真实请求一定返回 401；原始 Provider 错误已被旧版覆盖，不能追溯猜测。真实 DeepSeek 付费复测本轮未执行。
+
 - 日期：2026-11-14
 - 阶段：**P0-3 阶段 A（免费、只读与 Mock 预验收）**
 - 代码基线：本轮修复后的本地提交（见 `docs/STATUS.md` §0.27 与 `docs/HANDOFF.md` §0）

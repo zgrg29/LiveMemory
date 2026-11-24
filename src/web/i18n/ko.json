@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "분석을 완료하지 못했습니다.",
         "ANALYSIS_CANCELED": "분석이 취소되었습니다. 완료된 결과는 보존됩니다.",
         "ANALYSIS_INTERRUPTED": "분석이 중단되었습니다. 계속하면 완료된 배치를 건너뜁니다.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "이 방송자에 대해 더 최근 라이브 방송의 장기 프로필이 이미 있습니다. 오래된 프로필이 최신 프로필을 덮어쓰지 않도록 더 오래된 라이브 방송으로 업데이트하는 것을 거부했습니다.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "이전 버전에서 방송 순서 때문에 중지된 작업입니다. 과거 기억 병합을 계속할 수 있으며 저장된 보고서는 유지됩니다.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "이 라이브 방송에는 장기 프로필을 만들 수 있는 식별된 시청자가 없습니다.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "이 라이브 방송에는 확인된 방송자 신원이 없어 장기 프로필을 만들 수 없습니다.",
         "ANALYSIS_MEMORY_EMPTY": "이 라이브 방송에는 장기 프로필을 만들 수 있는 식별된 시청자가 없습니다.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "요청 시간이 초과되었습니다",
         "PROVIDER_NETWORK_FAILED": "네트워크 연결에 실패했습니다",
         "PROVIDER_CONFIG_INVALID": "API 구성이 유효하지 않습니다",
-        "PROVIDER_RESPONSE_INVALID": "AI 응답 형식이 유효하지 않습니다"
+        "PROVIDER_RESPONSE_INVALID": "AI 응답 형식이 유효하지 않습니다",
+        "TRANSLATION_STORAGE_FAILED": "번역 캐시를 저장하지 못했습니다. 원본 보고서는 그대로입니다. 다시 시도하거나 기술 세부 정보를 확인하세요.",
+        "TRANSLATION_INTERNAL_ERROR": "번역 처리 중 내부 오류가 발생했습니다. 원본 보고서는 그대로입니다. 기술 세부 정보를 확인하세요.",
+        "TRANSLATION_REQUEST_INVALID": "번역 요청 매개변수가 올바르지 않습니다."
       }
     },
     "v13": {

@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "分析を完了できませんでした。",
         "ANALYSIS_CANCELED": "分析をキャンセルしました。完了済みの結果は保持されます。",
         "ANALYSIS_INTERRUPTED": "分析が中断されました。再開すると完了済みバッチはスキップされます。",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "この配信者にはより新しい配信の長期プロフィールがあります。古い記憶が新しい記憶を上書きしないよう、古い配信からの更新を拒否しました。",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "旧バージョンでは配信順序のため停止したタスクです。履歴の記憶統合を再開できます。保存済みレポートは保持されます。",
         "ANALYSIS_MEMORY_NO_VIEWERS": "この配信には長期プロフィールを作成できる識別可能な視聴者がいません。",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "この配信には確認できる配信者IDがないため、長期プロフィールを作成できません。",
         "ANALYSIS_MEMORY_EMPTY": "この配信には長期プロフィールを作成できる識別可能な視聴者がいません。",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "リクエストがタイムアウトしました",
         "PROVIDER_NETWORK_FAILED": "ネットワーク接続に失敗しました",
         "PROVIDER_CONFIG_INVALID": "API 設定が無効です",
-        "PROVIDER_RESPONSE_INVALID": "AI の応答形式が無効です"
+        "PROVIDER_RESPONSE_INVALID": "AI の応答形式が無効です",
+        "TRANSLATION_STORAGE_FAILED": "翻訳キャッシュを保存できませんでした。元のレポートは変更されていません。再試行するか技術詳細を確認してください。",
+        "TRANSLATION_INTERNAL_ERROR": "翻訳処理で内部エラーが発生しました。元のレポートは変更されていません。技術詳細を確認してください。",
+        "TRANSLATION_REQUEST_INVALID": "翻訳リクエストのパラメーターが無効です。"
       }
     },
     "v13": {

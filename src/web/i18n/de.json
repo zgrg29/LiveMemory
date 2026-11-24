@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "Die Analyse konnte nicht abgeschlossen werden.",
         "ANALYSIS_CANCELED": "Die Analyse wurde abgebrochen; abgeschlossene Ergebnisse bleiben erhalten.",
         "ANALYSIS_INTERRUPTED": "Die Analyse wurde unterbrochen. Beim Fortsetzen werden abgeschlossene Stapel übersprungen.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Für diesen Streamer existieren bereits Langzeitprofile aus einem neueren Livestream. Eine Aktualisierung aus einem älteren Livestream wurde abgelehnt, damit ältere Profile neuere nicht überschreiben.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Diese ältere Aufgabe wurde wegen der Reihenfolge der Streams angehalten. Historische Erinnerungen können jetzt weiter zusammengeführt werden; gespeicherte Berichte bleiben erhalten.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "Dieser Livestream hat keine erkennbaren Zuschauer für Langzeitprofile.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "Für diesen Livestream ist keine bestätigte Streamer-Identität vorhanden, daher können keine Langzeitprofile erstellt werden.",
         "ANALYSIS_MEMORY_EMPTY": "Dieser Livestream hat keine erkennbaren Zuschauer für Langzeitprofile.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "Zeitüberschreitung der Anfrage",
         "PROVIDER_NETWORK_FAILED": "Netzwerkverbindung fehlgeschlagen",
         "PROVIDER_CONFIG_INVALID": "Die API-Konfiguration ist ungültig",
-        "PROVIDER_RESPONSE_INVALID": "Das Format der KI-Antwort ist ungültig"
+        "PROVIDER_RESPONSE_INVALID": "Das Format der KI-Antwort ist ungültig",
+        "TRANSLATION_STORAGE_FAILED": "Der Übersetzungscache konnte nicht gespeichert werden. Der Originalbericht bleibt unverändert. Erneut versuchen oder technische Details ansehen.",
+        "TRANSLATION_INTERNAL_ERROR": "Ein interner Übersetzungsfehler ist aufgetreten. Der Originalbericht bleibt unverändert. Technische Details ansehen.",
+        "TRANSLATION_REQUEST_INVALID": "Die Parameter der Übersetzungsanfrage sind ungültig."
       }
     },
     "v13": {

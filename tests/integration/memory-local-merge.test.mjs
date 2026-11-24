@@ -182,7 +182,7 @@ test('three sessions keep accumulating versions and re-merging is idempotent', w
   assert.equal(listVersions(db, memory.id).length, 3);
 }));
 
-test('interests that stop appearing are marked outdated, never deleted or turned into dislikes', withDbAndExports(async ({db, exportsDir}) => {
+test('stable interests remain available without an automatic age cutoff or invented dislikes', withDbAndExports(async ({db, exportsDir}) => {
   addBroadcaster(db);
   const first = seedSession(db, {messageCount: 6, viewerCount: 1});
   await importSessionAnalysis({
@@ -224,8 +224,8 @@ test('interests that stop appearing are marked outdated, never deleted or turned
   const facts = listFacts(db, memory.id);
   const oldGame = facts.find((fact) => fact.topic === 'old game');
   const newGame = facts.find((fact) => fact.topic === 'new game');
-  assert.equal(oldGame.status, 'outdated');
-  assert.equal(oldGame.statusReason, 'not_recently_confirmed');
+  assert.equal(oldGame.status, 'active', 'age alone is not evidence that a stable interest ended');
+  assert.equal(oldGame.statusReason, null);
   assert.equal(newGame.status, 'active');
   assert.equal(facts.some((fact) => fact.kind === 'dislike'), false, 'a fading interest must not become a dislike');
   assert.equal(facts.length, 2, 'the old fact is kept as context');

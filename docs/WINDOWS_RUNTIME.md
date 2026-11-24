@@ -409,3 +409,8 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 3. 点击“是”：应以管理员权限启动，控制台显示数据目录与 `Build ID: e438e74803cb`。
 4. 若点击“否”：Windows 会取消启动；这是预期行为，不需要额外处理。
 5. 启动后确认直播记录、历史、观众、AI 分析、备份与使用说明入口仍可正常使用。
+
+
+## 14. v0.19.2 本地补丁验收（2026-11-24）
+
+新增 `verify-memory-translation-exe.mjs`：正式 Manifest 断言 requireAdministrator，功能使用测试专用 asInvoker 副本；LOCALAPPDATA / TEMP / TMP / data-dir 全部隔离，测试 Provider 只绑定 127.0.0.1，真实 Windows Credential Manager 仅保存随机测试引用并自动删除。旧 v0.19.1 EXE 的 401 翻译失败复现 ERR_INVALID_ARG_TYPE，新构建保留正确 PROVIDER_AUTH_FAILED、支持独立重试/缓存与已保存报告下的 memory-only 恢复。不代表真实付费 Provider 或真实 UAC 点击验收；最终产物/哈希见 STATUS §0.66。

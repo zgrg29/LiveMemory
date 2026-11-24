@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "Analisis tidak dapat diselesaikan.",
         "ANALYSIS_CANCELED": "Analisis dibatalkan; hasil yang sudah selesai tetap disimpan.",
         "ANALYSIS_INTERRUPTED": "Analisis terhenti. Melanjutkan akan melewati batch yang sudah selesai.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Siaran yang lebih baru sudah memiliki profil jangka panjang untuk penyiar ini. Pembaruan dari siaran yang lebih lama ditolak agar memori lama tidak menimpa memori baru.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Tugas versi lama ini berhenti karena urutan siaran. Penggabungan memori historis kini dapat dilanjutkan; laporan tersimpan tetap dipertahankan.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "Siaran ini tidak memiliki penonton teridentifikasi yang dapat dipakai untuk profil jangka panjang.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "Siaran ini tidak memiliki identitas penyiar yang terkonfirmasi, sehingga profil jangka panjang tidak dapat dibuat.",
         "ANALYSIS_MEMORY_EMPTY": "Siaran ini tidak memiliki penonton teridentifikasi yang dapat dipakai untuk profil jangka panjang.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "Permintaan melewati batas waktu",
         "PROVIDER_NETWORK_FAILED": "Koneksi jaringan gagal",
         "PROVIDER_CONFIG_INVALID": "Konfigurasi API tidak valid",
-        "PROVIDER_RESPONSE_INVALID": "Format respons AI tidak valid"
+        "PROVIDER_RESPONSE_INVALID": "Format respons AI tidak valid",
+        "TRANSLATION_STORAGE_FAILED": "Cache terjemahan tidak dapat disimpan. Laporan asli tidak berubah. Coba lagi atau lihat detail teknis.",
+        "TRANSLATION_INTERNAL_ERROR": "Terjadi kesalahan internal penerjemahan. Laporan asli tidak berubah. Lihat detail teknis.",
+        "TRANSLATION_REQUEST_INVALID": "Parameter permintaan terjemahan tidak valid."
       }
     },
     "v13": {

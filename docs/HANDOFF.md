@@ -1,6 +1,17 @@
 # 交接文档（HANDOFF）
 
-## 2026-11-19 v0.19.1 正式发布：Windows Credential Storage Fix（最新交接）
+## 2026-11-24：v0.19.2 乱序记忆与翻译补丁（最新交接）
+
+本轮变更、兼容性、精确根因及最新验收以 `docs/STATUS.md` §0.66 和 `log/2026-11-24-temporal-memory-translation.md` 为准。旧版按直播时间顺序拒绝任务的规则已正式废止，不能根据下方历史记录恢复该限制。保留同主播并发 gate，使用真实观察时间/证据强度合并与事务重读；单场报告/阅读翻译不依赖记忆成功。Schema 16，无全库迁移、无 Key 重置、无历史报告覆盖，无远程发布。
+
+- v0.19.1 EXE 已准确复现：401 后失败进度写入 usage: undefined，SQLite 抛 ERR_INVALID_ARG_TYPE，覆盖 Provider 错误。新服务保留原因、已完成缓存与 usage。
+- 时间合并 20 项回归、初步 EXE 专项 7 项已通过；冻结源码完整回归与最终构建仍在验收，以 STATUS 更新为准。
+- 系统临时目录覆盖 `LIVEMEMORY_TEST_TMP_ROOT` 仅用于测试，避免受管工作区删除拒绝 ACL 干扰 Cookie 旧测试；不修改生产权限或跳过断言。
+- 真实 DeepSeek 付费、真实 UAC、干净 Windows 与真实十语 UI 矩阵仍未重测。
+
+---
+
+## 2026-11-19 v0.19.1 正式发布：Windows Credential Storage Fix（历史交接）
 
 本轮针对 `AI_PROVIDER_CREDENTIAL_PERMISSION`（部分 Windows 用户无法把 API Key 写入本地
 加密凭据库）做存储后端替换，并正式发布为 **v0.19.1**。**未改 Provider 协议、数据库 Schema
@@ -2885,7 +2896,7 @@ POST /api/ai/sessions/:id/translation                 {locale, configId, consent
 | 安全并发 | **已实现。** 每个 config 独立调度器；初始并发可配置 1–8，默认 3；画像批次有界并发。 |
 | 429 / Retry-After | **已实现。** 429 减半并发并按 `Retry-After` 暂停该 config；5xx/408/425 短暂暂停；指数退避 + 抖动。 |
 | 删除固定 30 批上限 | **已实现。** 改为 `ceil(MAX_ANALYSIS_VIEWERS / 10) + 1`（2,001）。 |
-| 跨场次记忆顺序 | **已实现。** 同一主播记忆 gate；较新场次已导入后拒绝较旧场次（`ANALYSIS_MEMORY_OUT_OF_ORDER`）。 |
+| 跨场次记忆顺序 | **历史实现，2026-11-24 已取代。** 同主播 gate 仍保留，但不限制时间顺序；乱序按真实观察时间/证据事务合并，旧任务可恢复。 |
 | 性能统计 | **已实现。** 请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA。 |
 | 本地性能修复 | **已实现。** 每批只更新本批观众；DNS 安全检查缓存 5 分钟；精确 `getJobPackage()` 查询。 |
 | 全量测试 | **548 passed / 0 failed**（约 73 秒）。 |

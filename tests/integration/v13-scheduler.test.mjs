@@ -275,7 +275,7 @@ test('a failed memory batch can be resumed without repeating imported batches', 
   assert.equal(requestedBatches.filter((id) => id.endsWith('b01')).length, 1);
 });
 
-test('an older broadcast cannot overwrite newer long-term memory', async (t) => {
+test('an older broadcast is accepted after newer memory without replaying the newer job', async (t) => {
   const temp = createTempDir();
   const server = await startServer({auth: false,
     dataDir: temp.dir,
@@ -349,12 +349,13 @@ test('an older broadcast cannot overwrite newer long-term memory', async (t) => 
 
   await server.analysisRunner.start({...options, sessionId: older.id});
   for (let index = 0; index < 200; index += 1) {
-    if (server.analysisRunner.getStatus(older.id).status === 'failed') break;
+    if (server.analysisRunner.getStatus(older.id).status === 'complete') break;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const blocked = server.analysisRunner.getStatus(older.id);
-  assert.equal(blocked.status, 'failed', JSON.stringify(blocked));
-  assert.equal(blocked.error.code, 'ANALYSIS_MEMORY_OUT_OF_ORDER');
+  const completed = server.analysisRunner.getStatus(older.id);
+  assert.equal(completed.status, 'complete', JSON.stringify(completed));
+  assert.equal(completed.error, null);
+  assert.equal(server.analysisRunner.getStatus(newer.id).status, 'complete');
 });
 
 

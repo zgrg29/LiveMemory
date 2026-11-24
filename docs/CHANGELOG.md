@@ -1,5 +1,13 @@
 # 版本变化（CHANGELOG）
 
+## 0.19.2（2026-11-24，本地补丁，未发布）
+
+- 支持乱序分析和历史记忆补录，保留时间关系、历史状态、弱证据冲突；相同消息跨任务去重，事务合并最新事实。
+- 旧版记忆顺序失败可继续缺失阶段，保留已保存单场报告与原任务语言；稳定事实不因固定年龄自动失效。
+- 修复翻译失败进度写入 undefined 引发 ERR_INVALID_ARG_TYPE 并掩盖真实原因；完整缓存不要求重新配置 Provider，原报告与画像不变。
+- 无数据库 Schema 升级，旧事实时间从真实证据/来源场次按需恢复，未知时间明确保留未知。新增十语言具体翻译错误。
+- 本轮只生成本地 EXE 与 Commit，不 Push、Tag 或发布 Release。验收结果见 STATUS 最新条目。
+
 > 本文件按版本记录功能变化。旧 README 中的 v0.11–v0.15 历史说明已归入对应版本小节；
 > 当前状态、平台支持与未完成项见 `docs/STATUS.md` §0；发布资产证据见
 > `docs/RELEASE_HISTORY.md`。历史小节中的“未发布/三语”等描述只代表当时版本。
@@ -938,7 +946,8 @@ URL 解析、H5 comment 适配器、SQLite、单场 AI 分析、长期画像（�
 - **调度**：批次级校验失败不再停止后续批次（concurrency=1/4）；Provider/取消/数据库错误仍停止新调度。
 - **Resume/统计**：只请求 pending/failed 观众；coverage 增加 failed；partial 文案与报告统计区分未完成/失败。
 - **真实任务副本回放**：普通 Resume 1 次请求完成 47/47；模拟真实 ref/seq 错误 3 次请求完成 47/47、41 semantic、0 failed。
-- **正式 EXE（用户授权覆盖）**：dist/LiveMemory.exe 重建为 buildId 9b8daa7b2d1d、commit 2df6052、SHA-256 9b3eea3e…、91.7 MB、169 assets、Manifest equireAdministrator；生产库/包只读副本 + Mock 的 EXE Resume 实测 47/47。旧 EXE 备份在 	ests/.tmp。
+- **正式 EXE（用户授权覆盖）**：dist/LiveMemory.exe 重建为 buildId 9b8daa7b2d1d、commit 2df6052、SHA-256 9b3eea3e…、91.7 MB、169 assets、Manifest
+equireAdministrator；生产库/包只读副本 + Mock 的 EXE Resume 实测 47/47。旧 EXE 备份在 	ests/.tmp。
 
 ### 验证
 

@@ -1,3 +1,4 @@
+import {loadMemoryFacts} from '../../memory/model.mjs';
 import {broadcasterSupportByViewerIds, broadcasterViewerContexts} from '../../storage/repositories/broadcasters.mjs';
 import {viewerCurrencyTotals} from '../../storage/repositories/viewers.mjs';
 import {getMemory, listFacts} from '../../storage/repositories/viewer-memory.mjs';
@@ -91,7 +92,7 @@ export function buildMessageLines({messages, session, locale}) {
  */
 export function buildMemoryPayload(db, {broadcasterId, viewerId}) {
   const memory = broadcasterId ? getMemory(db, {broadcasterId, viewerId}) : null;
-  const facts = memory && memory.status === 'active' ? listFacts(db, memory.id, {limit: 200}) : [];
+  const facts = memory && memory.status === 'active' ? loadMemoryFacts(db, memory.id).slice(0, 200) : [];
   return {
     status: memory?.status ?? 'none',
     version: memory?.version ?? 0,
@@ -108,9 +109,29 @@ export function buildMemoryPayload(db, {broadcasterId, viewerId}) {
       status: fact.status,
       confidence: fact.confidence,
       user_verified: Boolean(fact.userVerified),
+      source_session_id: fact.sourceSessionId,
+      analyzed_at: isoFromEpochMs(fact.createdAt),
+      evidence: fact.evidence.map((e) => ({event_id: e.eventId, session_id: e.sessionId,
+        observed_at: e.observedAt == null ? null : isoFromEpochMs(e.observedAt), available: e.available})),
+      valid_from: fact.validFrom ? isoFromEpochMs(fact.validFrom) : null,
+      valid_until: fact.validUntil ? isoFromEpochMs(fact.validUntil) : null,
       first_seen_at: fact.firstSeenAt ? isoFromEpochMs(fact.firstSeenAt) : null,
       last_confirmed_at: fact.lastConfirmedAt ? isoFromEpochMs(fact.lastConfirmedAt) : null
     }))
+  };
+}
+
+/** Explicit chronology for a memory request; all timestamps come from records. */
+export function buildMemoryChronology({startedAt = null, endedAt = null}, viewers) {
+  const facts = viewers.flatMap((viewer) => viewer.memory?.facts ?? []);
+  const known = facts.map((fact) => Date.parse(fact.last_confirmed_at)).filter(Number.isFinite);
+  const through = known.length ? Math.max(...known) : null;
+  const end = endedAt ?? startedAt;
+  return {
+    session_observed_from: startedAt == null ? null : isoFromEpochMs(startedAt),
+    session_observed_until: end == null ? null : isoFromEpochMs(end),
+    known_memory_through: through == null ? null : isoFromEpochMs(through),
+    historical_backfill: facts.length === 0 ? false : (through == null || end == null ? null : end < through)
   };
 }
 

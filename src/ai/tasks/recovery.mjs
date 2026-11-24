@@ -59,7 +59,6 @@ export function buildRecovery({
 } = {}) {
   if (!TERMINAL_RECOVERABLE.has(String(status ?? ''))) return null;
   if (!sessionJobId && !memoryJobId) return null;
-  if (errorCode === 'ANALYSIS_MEMORY_OUT_OF_ORDER') return null;
 
   const sessionBatchTotal = integer(sessionStatus?.batchTotal);
   const sessionBatchesSaved = integer(sessionStatus?.batchesImported);
@@ -90,7 +89,8 @@ export function buildRecovery({
     // stage until the saved session report exists, and re-running memory first
     // would not fix the session half.
     kind = 'session';
-  } else if (memoryJobId && (memoryPending > 0 || pendingViewers > 0 || !memoryComplete)) {
+  } else if ((memoryJobId && (memoryPending > 0 || pendingViewers > 0 || !memoryComplete))
+    || (errorCode === 'ANALYSIS_MEMORY_OUT_OF_ORDER' && sessionJobId)) {
     kind = 'memory';
   } else if (sessionJobId && aggregateRequired && !aggregateDone) {
     // All batch rows exist but the final result is missing (for example the

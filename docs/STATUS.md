@@ -1,6 +1,6 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-19（**v0.19.1 正式发布：Windows Credential Storage Fix**；
+最后更新：2026-11-24（**v0.19.1 正式发布：Windows Credential Storage Fix**；
 详见 §0.65、`docs/release-notes/v0.19.1.md` 与 `log/2026-11-19-v0.19.1-release.md`）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
@@ -16,15 +16,15 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.19.1`**（`package.json` = `APP_VERSION` = `0.19.1`） |
-| 下一版本 | **未定**；需用户授权后才进入新里程碑 |
+| 产品版本 / 当前开发版本 | **`0.19.2` 本地补丁开发**（最新正式发布仍 `v0.19.1`） |
+| 下一版本 | `0.19.2`（本轮已授权本地修复与 EXE；未授权远程发布） |
 | 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
 | 当前分支 | `main`（`fea8cbe..04b30b7` 已 Push；Tag 已 Push） |
 | 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
-| 当前开发里程碑 | **P54 AI Provider 凭据可靠性（v0.19.1 正式发布）**；OpenCode 真实付费验收待办 |
+| 当前开发里程碑 | **P55 乱序长期记忆与报告翻译故障修复（本地补丁）**；见 §0.66 |
 | 最近开发 | 2026-11-19：AI Key 从自维护 AES JSON 迁移至 Windows Credential Manager；旧数据自动迁移；错误提示 `{path}` 修复；正式发布 v0.19.1 |
 | 最近文档整理 | 2026-11-19：v0.19.1 Release Notes / 检查单 / 发布记录；STATUS、HANDOFF、ROADMAP、CHANGELOG |
 
@@ -87,7 +87,7 @@
 
 ### 0.6 开放问题与下一步
 
-v0.19.1（Windows Credential Storage Fix）已发布。当前没有进行中的功能里程碑；下一步由用户决定：
+v0.19.1 已正式发布；本轮 v0.19.2 本地修复见 §0.66。远程发布仍未授权；其余待办：
 
 1. **OpenCode 真实付费验收**：需要用户提供真实 Key 与费用授权，验证 Pay-as-you-go 的
    真实 200/429/5xx、真实模型输出、真实账单与 `usage.cost`；Go 还需额外确认套餐真实可用性。
@@ -116,6 +116,22 @@ v0.19.1（Windows Credential Storage Fix）已发布。当前没有进行中的�
 - §0.59 及更早：历史里程碑、调查与验收记录，**只用于追溯**。
 - 发布资产、Tag、Release ID 与 SHA-256 的归档：`docs/RELEASE_HISTORY.md`。
 - 逐版本变化：`docs/CHANGELOG.md`。
+
+---
+
+## 0.66 v0.19.2 本地补丁：乱序记忆与独立翻译（2026-11-24）
+
+本轮已授权开发与构建，**未 Push / Tag / Release**；最新正式发布仍 v0.19.1。代码开发版本 0.19.2，Schema 仍 16。平台与十语言能力集合不变。
+
+- 移除 AnalysisRunner 的 #assertMemoryOrder 及恢复拒绝条件；同主播 gate 覆盖任务创建/打包/请求，事务内从最新事实重合并。支持任意顺序、历史状态、弱证据保护、event_id 跨 job 去重；同证据重放不提升 confidence/certainty。旧时间只从真实证据/来源场次恢复，未知为 0/null；稳定事实不因年龄自动失效。
+- 单场报告完成但记忆失败保持 partial、独立可读/可翻译。旧顺序错误提供 resume-memory；已有报告/批次/观众复用，不自动重跑历史。旧 gate 多在 memory job 创建前失败，这种任务仍需执行缺失的记忆请求，不能假称已有提取结果。
+- **真实根因**：v0.19.1 EXE（b66818d032b5，Node 24.21.0）+ 本地模拟 Provider 401 实际返回 ERR_INVALID_ARG_TYPE；翻译失败进度带 usage: undefined，updateTranslationRun 序列化后仍为 undefined，被 .run(...values) 绑定到 SQLite，掩盖 PROVIDER_AUTH_FAILED。修复省略 undefined、保存准确原因/usage、独立缓存与重试；完整有效缓存不依赖可用 Provider。
+- 新增十语翻译 storage/internal/request 错误；每份 2,382 键。新任务记忆提示词 v13.4-memory / m7.3，单场 v13.3 不变，任务语言快照不变。
+- 专项与初步 EXE：时间合并 20/20；既有相关测试与翻译新增回归通过；新 EXE 初步专项 7/7（本地模拟 Provider + 随机 CredMan 测试凭据自动清理），旧任务只调用缺失 memory 1 次、报告不重跑。正式冻结源码全量与最终 EXE 证据待下方最终验收填入。
+- 首轮开发中全量：1,298 pass / 11 fail / 2 skip（含待修逻辑与旧快照期望，已修正后重跑）。其中 Bilibili Cookie 原断言的 2 个失败来自受管工作区 Everyone Deny DeleteSubdirectoriesAndFiles；通过 LIVEMEMORY_TEST_TMP_ROOT 指向独立 OS 临时目录，6/6 原断言通过；不改变生产权限、不跳过测试。
+- **未验证**：真实 DeepSeek 付费重测、用户原始失败请求（旧版已覆盖其具体原因，不能推测必为 401）、真实 UAC 点击/干净 Windows、真实十语浏览器布局矩阵。
+
+最终验收：待完成（以本节后续更新为准）。
 
 ---
 

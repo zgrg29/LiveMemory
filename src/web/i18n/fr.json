@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "L'analyse n'a pas pu se terminer.",
         "ANALYSIS_CANCELED": "L'analyse a été annulée ; les résultats terminés sont conservés.",
         "ANALYSIS_INTERRUPTED": "L'analyse a été interrompue. La reprise ignore les lots terminés.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Un direct plus récent possède déjà des profils à long terme pour ce créateur. La mise à jour à partir d'un direct plus ancien a été refusée afin que les anciens profils ne puissent pas écraser les plus récents.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Cette ancienne tâche a été arrêtée à cause de l’ordre des diffusions. Vous pouvez reprendre la fusion des souvenirs historiques ; les rapports enregistrés sont conservés.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "Ce direct n'a aucun spectateur identifiable disponible pour les profils à long terme.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "Ce direct n'a pas d'identité de créateur confirmée ; les profils à long terme ne peuvent donc pas être créés.",
         "ANALYSIS_MEMORY_EMPTY": "Ce direct n'a aucun spectateur identifiable disponible pour les profils à long terme.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "La requête a expiré",
         "PROVIDER_NETWORK_FAILED": "La connexion réseau a échoué",
         "PROVIDER_CONFIG_INVALID": "La configuration API n'est pas valide",
-        "PROVIDER_RESPONSE_INVALID": "Le format de la réponse de l'IA n'est pas valide"
+        "PROVIDER_RESPONSE_INVALID": "Le format de la réponse de l'IA n'est pas valide",
+        "TRANSLATION_STORAGE_FAILED": "Impossible d’enregistrer le cache de traduction. Le rapport original est inchangé. Réessayez ou consultez les détails techniques.",
+        "TRANSLATION_INTERNAL_ERROR": "Une erreur interne de traduction est survenue. Le rapport original est inchangé. Consultez les détails techniques.",
+        "TRANSLATION_REQUEST_INVALID": "Les paramètres de la demande de traduction sont invalides."
       }
     },
     "v13": {

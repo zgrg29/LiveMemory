@@ -19,7 +19,7 @@ export const ACCEPTED_MEMORY_SCHEMA_VERSIONS = Object.freeze(['1.0.0']);
  * language, never translate the quoted chat) and widened the set to ten
  * languages, so the revision moves with it. Jobs keep their stored value.
  */
-export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.2';
+export const MEMORY_PROMPT_VERSION = 'lm-prompt-m7.3';
 
 export function memoryPromptVersionFor(locale) {
   return `${MEMORY_PROMPT_VERSION}-${SUPPORTED_MEMORY_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE}`;

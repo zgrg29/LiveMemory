@@ -17,7 +17,8 @@ import {
   normalizeKind,
   normalizeText,
   normalizeTopic,
-  recalcEvidence
+  recalcEvidence,
+  observationBounds
 } from './model.mjs';
 
 /**
@@ -67,6 +68,81 @@ function scopeFor(context, fact) {
   };
 }
 
+/** Preserve both states; only reliable, time-ordered evidence can replace a state.
+ * Unknown dates and weak statements remain explicit competing observations.
+ */
+function mergeTemporalState({working, target, operation, context, source, now}) {
+  const statement = normalizeText(operation.statement ?? '', 400);
+  if (!statement || statement === target.statement) return null;
+  const kind = operation.kind || target.kind;
+  const topic = operation.topic ?? target.topic;
+  const key = dedupeKeyFor({kind, topic, statement});
+  const current = working.find((fact) => fact.dedupeKey === key && fact.status !== MEMORY_STATUS.SUPERSEDED) ?? target;
+  const same = working.find((fact) => dedupeKeyFor({kind, statement: fact.statement}) === dedupeKeyFor({kind, statement}) && fact.kind === kind
+    && normalizeTopic(fact.topic) === normalizeTopic(topic));
+  if (same) {
+    mergeEvidence(same, operation.evidence);
+    applyEvidenceState(same);
+    return {status: 'confirmed', factId: same.id};
+  }
+  const incoming = observationBounds(operation.evidence);
+  const incomingAt = incoming.last ?? source.observedAt ?? null;
+  const currentAt = observationBounds(current.evidence).last ?? (current.lastConfirmedAt || null);
+  const certainty = normalizeCertainty(operation.certainty ?? target.certainty);
+  const rank = (value) => ({uncertain: 0, inferred: 1, stated: 2}[value] ?? 0);
+  const strength = rank(certainty) - rank(current.certainty);
+  const confidence = operation.confidence == null ? null : Number(operation.confidence);
+  const materiallyWeaker = confidence != null && current.confidence != null && confidence < current.confidence - 0.15;
+  const canReplace = !current.userVerified && incomingAt != null && currentAt != null
+    && (incomingAt >= currentAt || strength > 0) && strength >= 0 && !materiallyWeaker
+    && operation.op !== MEMORY_OPERATION.CONFLICT
+    && (operation.evidence ?? []).some((entry) => entry.available !== false
+      && !(current.evidence ?? []).some((old) => old.sourceKey === entry.sourceKey
+        || (entry.eventId != null && old.eventId === entry.eventId)));
+  const historical = incomingAt != null && currentAt != null && incomingAt < currentAt
+    && rank(current.certainty) >= rank(certainty);
+  const created = scopeFor(context, createFact({
+    kind, topic, statement, certainty, confidence,
+    sourceKind: source.kind ?? 'ai_memory_update', sourceSessionId: source.sessionId,
+    sourceJobId: source.jobId, sourceResultId: source.resultId, sourceLabel: source.label,
+    validFrom: incoming.first ?? source.observedAt ?? null, now
+  }));
+  mergeEvidence(created, operation.evidence);
+  created.firstSeenAt = incoming.first ?? source.observedAt ?? 0;
+  created.lastConfirmedAt = incomingAt ?? 0;
+  if (canReplace) {
+    const chronological = incomingAt >= currentAt;
+    current.status = chronological ? MEMORY_STATUS.SUPERSEDED : MEMORY_STATUS.CONFLICTED;
+    current.statusReason = chronological ? 'superseded' : 'competing_observation';
+    current.validUntil = chronological ? created.validFrom : null;
+    current.supersededBy = chronological ? created.id : null;
+    if (!chronological) {
+      current.dedupeKey = dedupeKeyFor({kind: current.kind, statement: current.statement});
+      current.conflictsWith = created.id;
+    }
+  } else if (historical) {
+    created.status = MEMORY_STATUS.SUPERSEDED;
+    created.statusReason = 'historical_observation';
+    created.validUntil = current.validFrom ?? current.firstSeenAt ?? null;
+    created.supersededBy = current.id;
+  } else {
+    // An unresolved candidate has its own key so the current topic head stays
+    // intact. The statement key is deterministic, not an AI-provided identity.
+    created.dedupeKey = dedupeKeyFor({kind, statement});
+    created.status = MEMORY_STATUS.CONFLICTED;
+    created.statusReason = 'competing_observation';
+    created.conflictsWith = current.id;
+    if (operation.op === MEMORY_OPERATION.CONFLICT) {
+      current.status = MEMORY_STATUS.CONFLICTED;
+      current.conflictsWith = created.id;
+    }
+  }
+  applyEvidenceState(created);
+  working.push(created);
+  return {status: canReplace ? 'superseded' : (historical ? 'added' : 'conflicted'),
+    factId: created.id, replacedFactId: canReplace ? current.id : null};
+}
+
 /**
  * @param {object} options
  * @param {Array<object>} options.facts current facts (engine shape)
@@ -84,7 +160,7 @@ export function applyOperations({facts, operations, context}) {
 
   for (let index = 0; index < operations.length; index += 1) {
     const operation = operations[index];
-    const op = operation.op;
+    let op = operation.op;
     const evidence = operation.evidence ?? [];
     const baseResult = {index, op, viewerId: context.viewerId};
     let target = null;
@@ -98,6 +174,31 @@ export function applyOperations({facts, operations, context}) {
       }
     }
 
+    if (context.temporal && target && [MEMORY_OPERATION.UPDATE, MEMORY_OPERATION.SUPERSEDE].includes(op)
+      && normalizeText(operation.statement ?? target.statement, 400) === target.statement
+      && (!operation.kind || operation.kind === target.kind)
+      && (operation.topic == null || normalizeTopic(operation.topic) === normalizeTopic(target.topic))) {
+      op = MEMORY_OPERATION.CONFIRM;
+    }
+    if (context.temporal && target && [MEMORY_OPERATION.UPDATE, MEMORY_OPERATION.SUPERSEDE, MEMORY_OPERATION.CONFLICT].includes(op)) {
+      // Changing a topic to another live topic still follows the collision rule.
+      const desiredKey = dedupeKeyFor({kind: operation.kind || target.kind,
+        topic: operation.topic ?? target.topic, statement: operation.statement ?? target.statement});
+      const owner = liveKeyOwner(working, desiredKey, target.id);
+      if (!owner || desiredKey === target.dedupeKey) {
+        const temporal = mergeTemporalState({working, target, operation, context, source, now});
+        if (temporal) { results.push({...baseResult, ...temporal}); continue; }
+      }
+    }
+    if (context.temporal && target && op === MEMORY_OPERATION.OUTDATED) {
+      const at = observationBounds(evidence).last;
+      if (at == null || at < (target.lastConfirmedAt || 0) || target.userVerified
+        || normalizeCertainty(operation.certainty) !== MEMORY_CERTAINTY.STATED) {
+        results.push({...baseResult, status: 'skipped', reason: 'MEMORY_EVIDENCE_REQUIRED', factId: target.id});
+        continue;
+      }
+    }
+
     if (op === MEMORY_OPERATION.ADD || op === MEMORY_OPERATION.UNCERTAIN) {
       const kind = normalizeKind(operation.kind);
       const certainty = op === MEMORY_OPERATION.UNCERTAIN
@@ -107,6 +208,16 @@ export function applyOperations({facts, operations, context}) {
       const statement = normalizeText(operation.statement ?? operation.note ?? topic ?? '', 400);
       const match = findMatch(working, {kind, topic, statement});
       if (match) {
+        if (context.temporal && kind === 'identity' && statement !== match.statement) {
+          const temporal = mergeTemporalState({working, target: match, operation, context, source, now});
+          if (temporal) { results.push({...baseResult, ...temporal}); continue; }
+        }
+        const novelEvidence = evidence.some((entry) => !(match.evidence ?? []).some((old) =>
+          old.sourceKey === entry.sourceKey || (entry.eventId != null && old.eventId === entry.eventId)));
+        if (context.temporal && !novelEvidence) {
+          results.push({...baseResult, status: 'skipped', reason: 'MEMORY_EVIDENCE_REQUIRED', factId: match.id});
+          continue;
+        }
         // A matched add can re-confirm an existing fact only when it carries
         // new evidence. Without evidence it is not a confirmation, and it may
         // never promote an inference or an uncertain fact.
@@ -117,7 +228,7 @@ export function applyOperations({facts, operations, context}) {
         }
         match.lastConfirmedAt = now;
         mergeEvidence(match, evidence);
-        if (certainty === MEMORY_CERTAINTY.STATED && match.certainty === MEMORY_CERTAINTY.INFERRED) {
+        if (certainty === MEMORY_CERTAINTY.STATED && match.certainty !== MEMORY_CERTAINTY.STATED) {
           match.certainty = MEMORY_CERTAINTY.STATED;
         }
         if (match.status === MEMORY_STATUS.OUTDATED) {
@@ -129,7 +240,10 @@ export function applyOperations({facts, operations, context}) {
           match.statusReason = null;
         }
         if (operation.confidence !== undefined && operation.confidence !== null) {
-          match.confidence = Number(operation.confidence);
+          if (!context.temporal || (normalizeCertainty(operation.certainty) === match.certainty
+            && evidence.some((entry) => entry.available !== false))) {
+            match.confidence = context.temporal ? Math.max(match.confidence ?? 0, Number(operation.confidence)) : Number(operation.confidence);
+          }
         }
         applyEvidenceState(match);
         results.push({...baseResult, status: 'confirmed', factId: match.id, dedupeKey: match.dedupeKey});
@@ -181,11 +295,16 @@ export function applyOperations({facts, operations, context}) {
         continue;
       }
       const hasEvidence = evidence.length > 0;
+      if (context.temporal && !evidence.some((entry) => !(target.evidence ?? []).some((old) =>
+        old.sourceKey === entry.sourceKey || (entry.eventId != null && old.eventId === entry.eventId)))) {
+        results.push({...baseResult, status: 'skipped', reason: 'MEMORY_EVIDENCE_REQUIRED', factId: target.id});
+        continue;
+      }
       target.lastConfirmedAt = now;
       mergeEvidence(target, evidence);
       if (hasEvidence && operation.certainty
         && normalizeCertainty(operation.certainty) === MEMORY_CERTAINTY.STATED
-        && target.certainty === MEMORY_CERTAINTY.INFERRED) {
+        && target.certainty !== MEMORY_CERTAINTY.STATED) {
         target.certainty = MEMORY_CERTAINTY.STATED;
       }
       if (hasEvidence && target.status === MEMORY_STATUS.OUTDATED) {
@@ -199,7 +318,10 @@ export function applyOperations({facts, operations, context}) {
         target.statusReason = null;
       }
       if (operation.confidence !== undefined && operation.confidence !== null) {
-        target.confidence = Number(operation.confidence);
+        if (!context.temporal || (normalizeCertainty(operation.certainty) === target.certainty
+          && evidence.some((entry) => entry.available !== false))) {
+          target.confidence = context.temporal ? Math.max(target.confidence ?? 0, Number(operation.confidence)) : Number(operation.confidence);
+        }
       }
       applyEvidenceState(target);
       results.push({...baseResult, status: 'confirmed', factId: target.id});
@@ -229,7 +351,10 @@ export function applyOperations({facts, operations, context}) {
       target.dedupeKey = dedupeKey;
       if (operation.certainty) target.certainty = normalizeCertainty(operation.certainty);
       if (operation.confidence !== undefined && operation.confidence !== null) {
-        target.confidence = Number(operation.confidence);
+        if (!context.temporal || (normalizeCertainty(operation.certainty) === target.certainty
+          && evidence.some((entry) => entry.available !== false))) {
+          target.confidence = context.temporal ? Math.max(target.confidence ?? 0, Number(operation.confidence)) : Number(operation.confidence);
+        }
       }
       target.lastConfirmedAt = now;
       mergeEvidence(target, evidence);
@@ -356,7 +481,30 @@ export function applyOperations({facts, operations, context}) {
     results.push({...baseResult, status: 'skipped', reason: 'MEMORY_OP_UNKNOWN'});
   }
 
-  applyOutdatedRule(working, {now, outdatedAfterMs});
+  if (context.temporal) {
+    for (const fact of working) {
+      const bounds = observationBounds(fact.evidence);
+      const fallback = fact.sourceSessionId === source.sessionId ? source.observedAt : null;
+      fact.firstSeenAt = bounds.first ?? fallback ?? fact.firstSeenAt ?? 0;
+      fact.lastConfirmedAt = bounds.last ?? fallback ?? fact.lastConfirmedAt ?? 0;
+      if (!fact.validFrom && bounds.first != null) fact.validFrom = bounds.first;
+    }
+    // Rebuild historical links by observation time, independent of arrival.
+    const histories = new Map();
+    for (const fact of working) {
+      if (!fact.firstSeenAt || !['active', 'superseded'].includes(fact.status)) continue;
+      const group = histories.get(fact.dedupeKey) ?? [];
+      group.push(fact); histories.set(fact.dedupeKey, group);
+    }
+    for (const group of histories.values()) {
+      group.sort((a, b) => a.firstSeenAt - b.firstSeenAt);
+      for (let i = 0; i < group.length - 1; i++) {
+        if (group[i].status !== MEMORY_STATUS.SUPERSEDED) continue;
+        group[i].validUntil = group[i + 1].firstSeenAt;
+        group[i].supersededBy = group[i + 1].id;
+      }
+    }
+  } else applyOutdatedRule(working, {now, outdatedAfterMs});
   for (const fact of working) applyEvidenceState(fact);
 
   return {facts: working, results, warnings};

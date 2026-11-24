@@ -40,6 +40,7 @@ import {
   buildMessageLines,
   buildEmoteDictionary,
   buildMemoryPayload,
+  buildMemoryChronology,
   buildSessionContextBlock,
   buildViewerContextList
 } from './context.mjs';
@@ -824,10 +825,12 @@ export async function createViewerMemoryJob({
           excerpt_truncated_viewers: excerptTruncatedViewers
         },
         viewers: memoryViewers,
+        chronology: buildMemoryChronology(session, memoryViewers),
         notes: {
           untrusted_content: PACKAGE_NOTES.untrusted_content,
           scope: 'This package is memory-only. Do not output a session report or viewer profiles.',
           authority: 'Only cite seq numbers from viewer_excerpts.jsonl. Evidence must belong to the same viewer_id.',
+          chronology: 'Analysis order is arbitrary. Compare session_context.session timestamps and excerpt at against fact evidence observation times. Older evidence supplements history; it does not automatically replace current state. Unknown observation times remain unknown.',
           coverage: 'Every viewer in memory_context.viewers must have exactly one viewer_memory_updates entry, even with no new information.',
           money: PACKAGE_NOTES.money,
           emoticons: PACKAGE_NOTES.emoticons

@@ -352,7 +352,7 @@ export function buildMemoryInstructions(locale, options = {}) {
     `- output_language: ${code} (${outputLanguage(code).name})`,
     `- ${languageRuleText(code)}`
   ].join('\n');
-  return builder({context, rule});
+  return builder({context, rule}) + '\nAnalysis order is arbitrary: this may be a historical backfill. Compare actual session and message observation times with existing fact evidence, never analysis time. Preserve historical states and stable traits. Weak newer evidence cannot replace a reliable self-statement. Never invent dates or count repeated evidence as independent support.\n';
 }
 
 export const __internal = {EXAMPLE, OP_TABLE, header, BUILDERS};

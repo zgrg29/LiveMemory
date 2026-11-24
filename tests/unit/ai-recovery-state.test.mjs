@@ -110,18 +110,20 @@ test('a context that cannot fit a report still offers model change, not a fake C
   assert.equal(recovery.canResume, false);
 });
 
-test('a completed, canceled-like or out-of-order task has no recovery entry', () => {
+test('completed tasks have no recovery; old chronology failures can resume saved reports', () => {
   assert.equal(buildRecovery({
     status: 'complete',
     sessionJobId: 'job-session',
     sessionStatus: sessionStatus({aggregateImported: true, complete: true})
   }), null);
-  assert.equal(buildRecovery({
+  const historical = buildRecovery({
     status: 'failed',
     errorCode: 'ANALYSIS_MEMORY_OUT_OF_ORDER',
     sessionJobId: 'job-session',
-    sessionStatus: sessionStatus()
-  }), null);
+    sessionStatus: sessionStatus({aggregateImported: true, complete: true})
+  });
+  assert.equal(historical.action, 'resume-memory');
+  assert.equal(historical.canResume, true);
   assert.equal(buildRecovery({status: 'failed', errorCode: 'PROVIDER_TIMEOUT'}), null);
 });
 

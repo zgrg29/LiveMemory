@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "Não foi possível concluir a análise.",
         "ANALYSIS_CANCELED": "A análise foi cancelada; os resultados concluídos são mantidos.",
         "ANALYSIS_INTERRUPTED": "A análise foi interrompida. Ao retomar, os lotes concluídos são ignorados.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Uma transmissão mais recente já tem perfis de longo prazo para este criador. A atualização a partir de uma transmissão mais antiga foi recusada para que a memória antiga não sobrescreva a mais recente.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Esta tarefa antiga parou devido à ordem das transmissões. Agora é possível retomar a integração de memórias históricas; os relatórios salvos são mantidos.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "Esta transmissão não tem espectadores identificados disponíveis para perfis de longo prazo.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "Esta transmissão não tem uma identidade de criador confirmada, portanto não é possível criar perfis de longo prazo.",
         "ANALYSIS_MEMORY_EMPTY": "Esta transmissão não tem espectadores identificados disponíveis para perfis de longo prazo.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "A solicitação expirou",
         "PROVIDER_NETWORK_FAILED": "Falha na conexão de rede",
         "PROVIDER_CONFIG_INVALID": "A configuração de API é inválida",
-        "PROVIDER_RESPONSE_INVALID": "O formato da resposta da IA é inválido"
+        "PROVIDER_RESPONSE_INVALID": "O formato da resposta da IA é inválido",
+        "TRANSLATION_STORAGE_FAILED": "Não foi possível salvar o cache da tradução. O relatório original permanece intacto. Tente novamente ou veja os detalhes técnicos.",
+        "TRANSLATION_INTERNAL_ERROR": "Ocorreu um erro interno na tradução. O relatório original permanece intacto. Veja os detalhes técnicos.",
+        "TRANSLATION_REQUEST_INVALID": "Os parâmetros da solicitação de tradução são inválidos."
       }
     },
     "v13": {

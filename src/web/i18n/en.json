@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "The analysis could not finish.",
         "ANALYSIS_CANCELED": "The analysis was canceled; completed results are kept.",
         "ANALYSIS_INTERRUPTED": "The analysis was interrupted. Resume skips completed batches.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "A newer broadcast already has long-term profiles for this broadcaster. Updating from an older broadcast was refused so old memory cannot overwrite newer memory.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "This older task stopped because of broadcast order. You can now resume historical memory merging; saved reports are kept.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "This broadcast has no identifiable viewers available for long-term profiles.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "This broadcast has no confirmed broadcaster identity, so long-term profiles cannot be created.",
         "ANALYSIS_MEMORY_EMPTY": "This broadcast has no identifiable viewers available for long-term profiles.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "The request timed out",
         "PROVIDER_NETWORK_FAILED": "Network connection failed",
         "PROVIDER_CONFIG_INVALID": "The API configuration is invalid",
-        "PROVIDER_RESPONSE_INVALID": "The AI response format is invalid"
+        "PROVIDER_RESPONSE_INVALID": "The AI response format is invalid",
+        "TRANSLATION_STORAGE_FAILED": "The translation cache could not be saved. The original report is unchanged. Retry or view technical details.",
+        "TRANSLATION_INTERNAL_ERROR": "An internal translation error occurred. The original report is unchanged. View technical details.",
+        "TRANSLATION_REQUEST_INVALID": "The translation request parameters are invalid."
       }
     },
     "v13": {

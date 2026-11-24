@@ -612,3 +612,14 @@ STATUS / CHANGELOG / RELEASE_HISTORY，而未验证项仍必须由人工或真�
 跨 Windows 账户/over-the-shoulder 需要重新输入 Key（账户隔离，非数据丢失）；Windows Server
 Core、移除 PowerShell 或被组策略禁止的环境无法保存，会返回明确错误。整机重启、第二账户与
 真实 UAC 场景仍需人工验收。
+
+
+## ADR-040 长期记忆支持乱序补录，报告与翻译独立（2026-11-24）
+
+**状态**：已采纳（用户明确产品决定，v0.19.2 本地补丁）。
+
+**问题**：同主播顺序 gate 以已导入的新场次为理由拒绝旧场次，混淆分析时间与事实时间。翻译失败后的 usage: undefined 被绑定到 SQLite，在 v0.19.1 SEA 实际复现 ERR_INVALID_ARG_TYPE，掩盖真实 Provider 错误。
+
+**决定**：移除 chronology 拒绝，保留并扩大同主播串行 gate 至创建/打包；在事务内按实时事实、来源观察时间和证据强度合并，保留历史及冲突，真实 event_id 去重。复用 schema 16 的时间/来源/状态/证据字段，以只读兼容恢复旧时间，不做全库迁移。禁止仅因固定年龄失效稳定事实。翻译保持独立缓存和任务，省略 undefined，保留真实失败原因与费用归属；原报告及已完成批次可以复用，恢复不重新分析整场。
+
+**边界**：程序不理解所有自然语言矛盾，依赖验证后的 AI 操作与 certainty；保守保留历史/冲突供复核。AI 的 actual life-event date 不得被观察时间伪装替代。真实 DeepSeek 付费重测与真实 UAC/干净 Windows 验收需单独记录，不以模拟 Provider 测试代替。

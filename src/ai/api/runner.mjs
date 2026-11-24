@@ -872,7 +872,6 @@ export class AnalysisRunner {
       canPause: status === 'running' && Boolean(active),
       canResume: status !== 'complete'
         && Boolean(sessionJob || memoryJob)
-        && error?.code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER'
         && (recovery ? recovery.canResume : true),
       canCancel: status === 'running' && Boolean(active),
       mode: entry.mode ?? ANALYSIS_MODE.SESSION,
@@ -1560,8 +1559,7 @@ export class AnalysisRunner {
     });
     const recoverable = recovery
       ? recovery.canResume
-      : ((actionRequired || Boolean(entry?.sessionJobId || entry?.memoryJobId))
-        && code !== 'ANALYSIS_MEMORY_OUT_OF_ORDER');
+      : ((actionRequired || Boolean(entry?.sessionJobId || entry?.memoryJobId)));
     this.state.set(context.sessionId, {
       // A successful session report makes a later memory failure "partial"; a
       // memory-only task that fails stays "failed" even though its already
@@ -3018,48 +3016,27 @@ export class AnalysisRunner {
     ].includes(error?.code);
   }
 
-  #assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt) {
-    const newer = this.db.prepare(`
-      SELECT s.id, s.started_at
-        FROM sessions s
-        JOIN ai_jobs j ON j.session_id = s.id
-       WHERE s.broadcaster_id = ?
-         AND s.id <> ?
-         AND s.started_at > ?
-         AND j.analysis_mode IN ('memory', 'combined')
-         AND EXISTS (SELECT 1 FROM ai_results r WHERE r.job_id = j.id)
-       ORDER BY s.started_at DESC
-       LIMIT 1
-    `).get(String(broadcasterId), String(sessionId), Number(sessionStartedAt));
-    if (newer) {
-      throw Object.assign(new Error('MEMORY_OUT_OF_ORDER'), {
-        code: 'ANALYSIS_MEMORY_OUT_OF_ORDER',
-        detail: `newer session ${newer.id} already has imported memory`
-      });
-    }
-  }
-
-  /**
-   * Serialise memory work for the same broadcaster. Memory batches inside one
-   * job cover disjoint viewers and may run concurrently, but two sessions for
-   * the same broadcaster must not apply memory snapshots in an unpredictable
-   * order. An older session is refused after a newer session's memory has
-   * already been imported, instead of silently writing older facts last.
+  /** Serialize memory work per broadcaster, without imposing chronology.
+   * Packages are created inside this gate. Transactions re-read live facts.
    */
   async #withBroadcasterMemoryGate(broadcasterId, sessionId, sessionStartedAt, task) {
     const key = this.#broadcasterGateKey(broadcasterId);
-    const canOrder = broadcasterId && Number.isFinite(Number(sessionStartedAt));
-    if (canOrder) this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
     const previous = this.memoryGates.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => {}).then(async () => {
-      if (canOrder) this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
-      return task();
-    });
-    this.memoryGates.set(key, current.catch(() => {}));
-    return current;
+    const current = previous.catch(() => {}).then(task);
+    const settled = current.catch(() => {});
+    this.memoryGates.set(key, settled);
+    try { return await current; }
+    finally { if (this.memoryGates.get(key) === settled) this.memoryGates.delete(key); }
   }
 
   async runMemory(context) {
+    const session = getSession(this.db, context.sessionId);
+    if (!session) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
+    return this.#withBroadcasterMemoryGate(session.broadcaster_id, context.sessionId, session.started_at,
+      () => this.#runMemoryUngated(context));
+  }
+
+  async #runMemoryUngated(context) {
     const {sessionId, provider} = context;
     const entry = this.state.get(sessionId);
     const session = getSession(this.db, sessionId);
@@ -3078,9 +3055,6 @@ export class AnalysisRunner {
         code: 'ANALYSIS_MEMORY_NO_VIEWERS',
         detail: 'identifiable viewers = 0'
       });
-    }
-    if (broadcasterId && sessionStartedAt !== null) {
-      this.#assertMemoryOrder(broadcasterId, sessionId, sessionStartedAt);
     }
     let job = entry?.memoryJobId ? getJob(this.db, entry.memoryJobId) : null;
     if (!job) {
@@ -3145,13 +3119,6 @@ export class AnalysisRunner {
     if (job.locale && this.state.get(sessionId)?.locale !== job.locale) {
       this.state.set(sessionId, {locale: job.locale});
     }
-    const sessionForGate = getSession(this.db, sessionId);
-    if (!sessionForGate) throw Object.assign(new Error('SESSION_NOT_FOUND'), {code: 'ANALYSIS_SESSION_NOT_FOUND'});
-    await this.#withBroadcasterMemoryGate(
-      job.broadcasterId ?? sessionForGate.broadcaster_id ?? sessionForGate.broadcasterId,
-      sessionId,
-      sessionForGate.started_at ?? sessionForGate.startedAt,
-      async () => {
         const batches = listJobBatches(this.db, job.id);
         const assignedViewers = listJobMemoryViewers(this.db, job.id);
         // Pending/failed viewers are the only unit of work. The batch index is
@@ -3358,8 +3325,6 @@ export class AnalysisRunner {
           });
         }
         this.state.set(sessionId, {memoryDone: true, stage: 'memory_done'});
-      }
-    );
   }
 
   #memoryViewerIds(prompt) {

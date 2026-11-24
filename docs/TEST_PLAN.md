@@ -1,5 +1,14 @@
 # 测试计划与结果（TEST_PLAN）
 
+## 2026-11-24：P55 乱序记忆与报告翻译回归
+
+- 新增 `tests/integration/memory-temporal.test.mjs` 20 项：六排列、正倒序状态历史、弱证据、同 event 跨 job、过期 target 重合并、旧时间兼容、purged/unknown 时间、版本去重、三场历史链、重复证据状态保护及事务回滚。
+- 翻译新增独立记忆失败/缓存无需凭据/非法参数回归；失败原因与 unknown usage 精确断言。既有日语→简中、其他语言、旧 Schema、部分重试、缓存版本、十语言集成继续执行。
+- `scripts/verify-memory-translation-exe.mjs --baseline` 在旧 v0.19.1 EXE 实测 ERR_INVALID_ARG_TYPE；默认模式在新 EXE 验证 7 项（模拟本地 Provider，非真实付费）：记忆失败恢复、401 原因、日→中、缓存、原文、只补 memory、运行身份。随机真实 CredMan 测试凭据自动清理；LOCALAPPDATA/TEMP/data-dir 隔离。
+- 首轮开发中全量 1,298 pass / 11 fail / 2 skip，保留记录，不作为最终通过。修正逻辑与协议/文案快照后重跑；受管工作区继承 Deny DELETE_CHILD 导致 Cookie 清理断言失败，LIVEMEMORY_TEST_TMP_ROOT 使用独立 OS temp 后原断言 6/6 通过。
+- 最终冻结源码全量与 EXE 结果待 STATUS §0.66 最终验收填写。真实 Provider、UAC/干净环境、真实浏览器十语矩阵未执行。
+
+
 > **本文件是测试策略与历史结果记录，不是当前状态的唯一来源。** 当前版本的测试数量、
 > 发布验收与未完成项以 `docs/STATUS.md` §0 为准；发布证据以 `docs/RELEASE_HISTORY.md` 为准。
 > 下列章节按时间保留，其中的版本号、键数、EXE Build ID 只代表当时那次运行。
@@ -1148,7 +1157,7 @@ duration ≈ 155s
   - 付费 Provider 首次 429 + `Retry-After: 0` → 第二次成功；`rateLimited=1`、请求数=2。
   - 30 观众 / 3 批 / 并发 3：峰值并发≥2 且≤3，覆盖 30/30。
   - 失败批次恢复：只重发失败批次，已导入批次不重复；4 次请求完成。
-  - 跨场次顺序：较新场次已写入后，较旧场次失败 `ANALYSIS_MEMORY_OUT_OF_ORDER`。
+  - 跨场次顺序（2026-11-24 替代）：较新场次已写入后，旧场次仍可补录；可靠新状态不被覆盖，历史证据保留，旧错误任务可恢复。
 - 大 job 包查询：`getJobPackage()` 精确查询，避免 `listPackages` 50 条上限导致 `ANALYSIS_PACKAGE_MISSING`。
 
 ### 27.2 Mock 性能

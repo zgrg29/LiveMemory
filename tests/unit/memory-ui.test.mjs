@@ -95,7 +95,7 @@ test('memory protocol constants and the exported schema agree', () => {
   assert.equal(MEMORY_SCHEMA_VERSION, '1.0.0');
   // P41 replaced the "keep the source language" rule with an explicit output
   // language contract and widened the set to ten languages.
-  assert.equal(MEMORY_PROMPT_VERSION, 'lm-prompt-m7.2');
+  assert.equal(MEMORY_PROMPT_VERSION, 'lm-prompt-m7.3');
   const schema = JSON.parse(read('src/memory/schemas/memory-update-result-v1.schema.json'));
   assert.equal(schema.properties.protocol.const, MEMORY_PROTOCOL);
   assert.deepEqual(schema.properties.schema_version.enum, [MEMORY_SCHEMA_VERSION]);

@@ -26,7 +26,8 @@ const webRoot = fileURLToPath(new URL('../../src/web/i18n/', import.meta.url));
 // (31 live/source + 13 errors + 2 monitoring + common.platform.kuaishou) → 2,351.
 // v0.18.1 provider-save diagnostics added 20 specific errors + 2 UI keys → 2,373.
 // The Credential Manager migration adds 6 credential/key errors → 2,379.
-const LEAF_KEYS = 2379;
+// Translation storage/internal/request diagnostics add 3 keys.
+const LEAF_KEYS = 2382;
 
 /** Legacy native-name keys kept from the three-language era. */
 const LEGACY_NAME_KEYS = {'zh-CN': 'zh', ja: 'ja', en: 'en'};
@@ -82,7 +83,7 @@ test('web dictionaries share exactly the same keys', async () => {
   }
 });
 
-test('the shipped dictionaries keep all 2,379 leaf translation keys', async () => {
+test('the shipped dictionaries keep all 2,382 leaf translation keys', async () => {
   for (const locale of AVAILABLE_LOCALES) {
     assert.equal(flatten(await loadWeb(locale)).size, LEAF_KEYS, `${locale} leaf key count changed`);
   }

@@ -487,6 +487,9 @@ test('missing provider and provider failures never damage the saved analysis', a
   assert.equal(failedStart.status, 202);
   const failed = await waitForTranslation(server, session.id, 'zh-CN', (translation) => translation.status !== 'running');
   assert.equal(failed.status, 'failed');
+  const failedRun = server.db.prepare('SELECT error_json, usage_json FROM ai_translation_runs ORDER BY rowid DESC LIMIT 1').get();
+  assert.equal(JSON.parse(failedRun.error_json).code, 'PROVIDER_NETWORK_FAILED');
+  assert.ok(JSON.parse(failedRun.usage_json).unknownUsageAttempts >= 1);
   assert.equal(Number(server.db.prepare('SELECT COUNT(*) AS c FROM ai_results').get().c), resultsBefore);
   const afterFailure = await jsonRequest(`${base}api/ai/sessions/${encodeURIComponent(session.id)}/report?locale=zh-CN`);
   assert.match(afterFailure.payload.report.summary, /視聴者/);
@@ -604,4 +607,31 @@ test('an older schema 1.1.0 report is still translatable as a read-only display'
   assert.match(report.payload.viewerProfiles.items[0].summary, /【ZH】/);
   // The old result is still the same row; translation never re-imports it.
   assert.equal(Number(server.db.prepare('SELECT COUNT(*) AS c FROM ai_results').get().c), 1);
+});
+
+test('a saved report translates independently of a legacy memory-order failure and reuses cache without credentials', async (t) => {
+  const state = {calls: 0, mode: 'ok'};
+  const {server, session, config} = await setupServer(t, state);
+  const job = server.db.prepare('SELECT id FROM ai_jobs WHERE session_id = ? LIMIT 1').get(session.id);
+  server.analysisRunner.state.set(session.id, {status: 'partial', mode: 'combined', stage: 'session_done',
+    sessionJobId: job.id, sessionReportDone: true, error: {code: 'ANALYSIS_MEMORY_OUT_OF_ORDER', recoverable: false}});
+  const original = server.db.prepare('SELECT result_json FROM ai_results ORDER BY id').all();
+  await server.translationService.start({sessionId: session.id, targetLocale: 'zh-CN', configId: config.id, consent: true});
+  await waitForTranslation(server, session.id, 'zh-CN', (translation) => translation.status === 'complete');
+  const count = state.calls;
+  const cached = await server.translationService.start({sessionId: session.id, targetLocale: 'zh-CN', consent: true});
+  assert.equal(cached.translation.status, 'complete'); assert.equal(state.calls, count);
+  assert.deepEqual(server.db.prepare('SELECT result_json FROM ai_results ORDER BY id').all(), original);
+  const status = server.analysisRunner.getStatus(session.id);
+  assert.equal(status.sessionReportDone, true); assert.equal(status.memoryDone, false);
+  assert.equal(status.recovery.action, 'resume-memory');
+});
+
+test('invalid translation parameters fail before provider access', async (t) => {
+  const state = {calls: 0, mode: 'ok'}; const {server, session} = await setupServer(t, state);
+  for (const invalid of [{sessionId: null}, {sessionId: {}}, {sessionId: session.id, configId: {}}]) {
+    await assert.rejects(server.translationService.start({...invalid, targetLocale: 'zh-CN', consent: true}),
+      {code: 'TRANSLATION_REQUEST_INVALID'});
+  }
+  assert.equal(state.calls, 0);
 });

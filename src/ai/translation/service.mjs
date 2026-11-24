@@ -198,6 +198,10 @@ export class ReportTranslationService {
    * Successful items are never re-requested: they are already cached.
    */
   async start({sessionId, targetLocale, configId = null, consent = false} = {}) {
+    if (typeof sessionId !== 'string' || !sessionId.trim()
+      || (configId != null && typeof configId !== 'string')) {
+      throw new TranslationError('TRANSLATION_REQUEST_INVALID');
+    }
     if (!SUPPORTED_LOCALES.includes(targetLocale)) {
       throw new TranslationError(ERROR_CODES.LOCALE_INVALID, {locale: targetLocale});
     }
@@ -223,13 +227,6 @@ export class ReportTranslationService {
       }
     }
 
-    const config = configId ? this.configStore.get(configId) : null;
-    if (!config) throw new TranslationError(ERROR_CODES.PROVIDER_REQUIRED);
-    if (!config.modelId) throw new TranslationError(ERROR_CODES.PROVIDER_REQUIRED);
-    if (!this.configStore.hasSecret(config.id)) {
-      throw new TranslationError(ERROR_CODES.CREDENTIAL_MISSING, {configId: config.id});
-    }
-
     const cached = listTranslationItems(this.db, {
       sessionId,
       targetLocale,
@@ -252,6 +249,13 @@ export class ReportTranslationService {
     });
     if (pending.length === 0) {
       return {sessionId, translation: {...state, status: 'complete'}};
+    }
+
+    const config = configId ? this.configStore.get(configId) : null;
+    if (!config) throw new TranslationError(ERROR_CODES.PROVIDER_REQUIRED);
+    if (!config.modelId) throw new TranslationError(ERROR_CODES.PROVIDER_REQUIRED);
+    if (!this.configStore.hasSecret(config.id)) {
+      throw new TranslationError(ERROR_CODES.CREDENTIAL_MISSING, {configId: config.id});
     }
 
     const run = insertTranslationRun(this.db, {
@@ -300,12 +304,16 @@ export class ReportTranslationService {
   }
 
   #finishWithError(runId, sessionId, targetLocale, error, progress) {
-    const code = isCanceledError(error) ? 'TRANSLATION_INTERRUPTED' : (error?.code ?? 'TRANSLATION_FAILED');
+    const causeCode = error?.code ?? null;
+    const code = isCanceledError(error) ? 'TRANSLATION_INTERRUPTED'
+      : (causeCode?.startsWith('ERR_SQLITE') || (progress?.phase === 'saving' && !error?.kind)
+        ? 'TRANSLATION_STORAGE_FAILED' : (!error?.kind && !(error instanceof TranslationError)
+          ? 'TRANSLATION_INTERNAL_ERROR' : (causeCode ?? 'TRANSLATION_FAILED')));
     try {
       const row = getTranslationRun(this.db, runId);
       updateTranslationRun(this.db, runId, {
         status: code === 'TRANSLATION_INTERRUPTED' ? 'interrupted' : 'failed',
-        error: {code, kind: error?.kind ?? null, httpStatus: error?.status ?? null, at: this.now()},
+        error: {code, causeCode, phase: progress?.phase ?? 'preparing', kind: error?.kind ?? null, httpStatus: error?.status ?? null, at: this.now()},
         pendingItems: Math.max(0, Number(row?.totalItems ?? 0) - Number(row?.translatedItems ?? 0) - Number(row?.failedItems ?? 0)),
         updatedAt: this.now(),
         completedAt: this.now()
@@ -347,6 +355,7 @@ export class ReportTranslationService {
     let usage = null;
     let translated = 0;
     let failed = 0;
+    let failureCode = null;
     const chunks = chunkItems(pending, {maxChars: this.chunkChars});
     progress.phase = 'translating';
     progress.chunksTotal = chunks.length;
@@ -357,11 +366,13 @@ export class ReportTranslationService {
         error.kind = ERROR_KIND.CANCELED;
         throw error;
       }
+      progress.phase = 'translating';
       const chunk = chunks[index];
       const ids = chunk.map((_item, itemIndex) => `t${itemIndex + 1}`);
       let answer;
       let lastError = null;
       for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+        let usageRecorded = false;
         try {
           const messages = buildMessages(chunk, targetLocale);
           const startedAt = this.now();
@@ -380,6 +391,7 @@ export class ReportTranslationService {
             sessionId: providerSession
           });
           usage = this.#addUsage(usage, result.usage, provider.pricing);
+          usageRecorded = true;
           answer = this.#parseAnswer(result.text, ids);
           this.logger?.info?.({
             event: 'ai.translation.chunk',
@@ -403,7 +415,7 @@ export class ReportTranslationService {
           // A failed attempt can still be billable (for example an empty answer
           // that the provider charged for). Only a user cancel is excluded.
           // Requests without a usage block are counted as unknown, never zero.
-          usage = this.#addUsage(usage, error?.usage ?? null, provider.pricing);
+          if (!usageRecorded) usage = this.#addUsage(usage, error?.usage ?? null, provider.pricing);
           const retry = shouldRetryAttempt(error, {
             attempt,
             maxRetries: this.maxRetries,
@@ -419,13 +431,15 @@ export class ReportTranslationService {
 
       if (!answer) {
         const code = lastError?.code ?? 'TRANSLATION_PROVIDER_FAILED';
+        failureCode = code;
+        progress.phase = 'saving';
         const failedCounts = this.#saveChunk(sessionId, chunk, ids, null, {
           targetLocale, sourceLocale, config, errorCode: code
         });
         failed += failedCounts.failed;
         progress.chunksDone = index + 1;
         progress.itemsDone += chunk.length;
-        this.#updateRunProgress(run.id, {translated, failed}, progress);
+        this.#updateRunProgress(run.id, {translated, failed, usage}, progress);
         if (!this.#isRecoverableChunkError(lastError)) {
           // Authentication/configuration failures will fail every remaining
           // chunk; stop paying for copies of the same request. Missing items
@@ -444,6 +458,7 @@ export class ReportTranslationService {
 
       // Save every successfully translated item. Missing/invalid ids in an
       // otherwise valid answer are recorded as failed so only those are retried.
+      progress.phase = 'saving';
       const counts = this.#saveChunk(sessionId, chunk, ids, answer, {
         targetLocale, sourceLocale, config
       });
@@ -485,7 +500,7 @@ export class ReportTranslationService {
       usage,
       error: status === 'complete'
         ? null
-        : {code: 'TRANSLATION_INCOMPLETE', at: this.now(), failedItems: summary.failed},
+        : {code: failureCode ?? 'TRANSLATION_INCOMPLETE', at: this.now(), failedItems: summary.failed},
       updatedAt: this.now(),
       completedAt: this.now()
     });
@@ -593,6 +608,7 @@ export class ReportTranslationService {
 
   #isRecoverableChunkError(error) {
     if (!error) return false;
+    if (!error.kind) return false; // Do not retry local programming/storage errors.
     if (isCanceledError(error)) return false;
     if (error.kind === ERROR_KIND.CLIENT || error.kind === ERROR_KIND.CONFIG) return false;
     if (error.kind === ERROR_KIND.INVALID_RESPONSE && error.code === 'TRANSLATION_INVALID_JSON') {

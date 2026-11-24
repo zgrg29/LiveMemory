@@ -135,6 +135,8 @@ export function updateTranslationRun(db, runId, patch = {}) {
   const values = [];
   for (const [key, column] of Object.entries(RUN_FIELDS)) {
     if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+    // Omission preserves the stored value; undefined is not a SQLite value.
+    if (patch[key] === undefined) continue;
     let value = patch[key];
     if (key === 'usage' || key === 'error') value = value === null ? null : JSON.stringify(value);
     if (key === 'updatedAt' || key === 'completedAt') value = value === null ? null : Number(value);

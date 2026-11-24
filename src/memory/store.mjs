@@ -84,18 +84,36 @@ function factsFromSnapshot(snapshot, {broadcasterId, viewerId}) {
   }));
 }
 
+function temporalSource(db, source) {
+  const session = source.sessionId ? db.prepare(
+    'SELECT platform_started_at, started_at FROM sessions WHERE id = ?'
+  ).get(source.sessionId) : null;
+  return {...source, observedAt: session?.platform_started_at ?? session?.started_at ?? null};
+}
+
+function observedOperations(operations, source) {
+  return operations.map((op) => {
+    const times = (op.evidence ?? []).map((e) => e.observedAt).filter((t) => t != null && Number.isFinite(Number(t))).map(Number);
+    // AI supplied dates cannot manufacture chronology. Use actual observations.
+    return {...op, validFrom: times.length ? Math.min(...times) : source.observedAt,
+      validUntil: times.length ? Math.max(...times) : source.observedAt};
+  });
+}
+
 /**
  * Compute what an operation list would do, without writing anything.
  *
  * @returns {{ok:boolean, memoryId:string|null, version:number, facts:Array, diff:object, results:Array, warnings:Array}}
  */
 export function previewMemoryOperations({db, broadcasterId, viewerId, operations, source = {}, now = Date.now()}) {
+  source = temporalSource(db, source);
+  operations = observedOperations(operations, source);
   const memory = getMemory(db, {broadcasterId, viewerId});
   const facts = memory && memory.status === 'active' ? loadMemoryFacts(db, memory.id) : [];
   const outcome = applyOperations({
     facts,
     operations,
-    context: {broadcasterId, viewerId, now, source}
+    context: {broadcasterId, viewerId, now, source, temporal: true}
   });
   const diff = diffFacts(facts, outcome.facts);
   return {
@@ -150,15 +168,30 @@ export function applyMemoryOperations({
         facts: listFacts(db, memory.id)
       };
     }
+    source = temporalSource(db, source);
+    operations = observedOperations(operations, source);
+    // Objective bookkeeping may already point last_session_id at this session.
+    // The semantic versions/facts, rather than that head pointer, own chronology.
+    const previousObservedAt = db.prepare(`
+      SELECT MAX(COALESCE(s.platform_started_at, s.started_at)) AS at FROM sessions s
+      WHERE s.id IN (SELECT source_session_id FROM memory_versions WHERE memory_id = ?
+        UNION SELECT source_session_id FROM memory_facts WHERE memory_id = ?)
+    `).get(memory.id, memory.id)?.at ?? null;
+    const keepSummary = Boolean(memory.summary) && (source.observedAt == null
+      || previousObservedAt == null || source.observedAt <= previousObservedAt);
     const facts = memory.status === 'active' && memory.version > 0 ? loadMemoryFacts(db, memory.id) : [];
     const outcome = applyOperations({
       facts,
       operations,
-      context: {broadcasterId, viewerId, now, source, outdatedAfterMs}
+      context: {broadcasterId, viewerId, now, source, outdatedAfterMs, temporal: true}
     });
     const diff = diffFacts(facts, outcome.facts);
     const checksum = factSetChecksum(outcome.facts);
     const previousVersion = latestVersion(db, memory.id);
+    if (facts.length > 0 && checksum === factSetChecksum(facts) && (keepSummary || !summary)) {
+      return {duplicate: true, memoryId: memory.id, version: memory.version,
+        diff, facts, results: outcome.results, warnings: outcome.warnings};
+    }
     if (previousVersion && previousVersion.sourceKey === key) {
       return {duplicate: true, memoryId: memory.id, version: previousVersion.version, diff: previousVersion.diff, facts};
     }
@@ -180,10 +213,10 @@ export function applyMemoryOperations({
     });
     touchMemory(db, memory.id, {
       version,
-      summary: summary === undefined ? null : summary,
-      summaryCertainty: summaryCertainty === undefined ? null : summaryCertainty,
-      lastSessionId: source.sessionId ?? null,
-      lastJobId: source.jobId ?? null,
+      summary: keepSummary || summary === undefined ? undefined : summary,
+      summaryCertainty: keepSummary || summaryCertainty === undefined ? undefined : summaryCertainty,
+      lastSessionId: keepSummary ? undefined : source.sessionId ?? undefined,
+      lastJobId: keepSummary ? undefined : source.jobId ?? undefined,
       now
     });
     refreshMemoryEvidence(db, {memoryId: memory.id, now});

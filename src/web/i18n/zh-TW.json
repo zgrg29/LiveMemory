@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "分析未能完成。",
         "ANALYSIS_CANCELED": "分析已取消；已完成的結果會保留。",
         "ANALYSIS_INTERRUPTED": "分析已中斷。繼續時會略過已完成的批次。",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "此直播主已有較新場次的長期畫像。為避免舊記憶覆蓋較新的記憶，已拒絕以較舊場次更新。",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "此舊版任務曾因場次順序暫停。現在可以繼續合併歷史記憶；已儲存的報告會保留。",
         "ANALYSIS_MEMORY_NO_VIEWERS": "本場直播沒有可用於建立長期畫像的可識別觀眾。",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "本場直播沒有可確認的直播主身分，因此無法建立長期畫像。",
         "ANALYSIS_MEMORY_EMPTY": "本場直播沒有可用於建立長期畫像的可識別觀眾。",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "請求逾時",
         "PROVIDER_NETWORK_FAILED": "網路連線失敗",
         "PROVIDER_CONFIG_INVALID": "API 組態無效",
-        "PROVIDER_RESPONSE_INVALID": "AI 回覆格式無效"
+        "PROVIDER_RESPONSE_INVALID": "AI 回覆格式無效",
+        "TRANSLATION_STORAGE_FAILED": "翻譯快取寫入失敗；原報告未變更。請重試或查看技術詳情。",
+        "TRANSLATION_INTERNAL_ERROR": "翻譯程式發生內部錯誤；原報告未變更。請查看技術詳情。",
+        "TRANSLATION_REQUEST_INVALID": "翻譯請求參數無效。"
       }
     },
     "v13": {

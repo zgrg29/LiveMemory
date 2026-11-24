@@ -28,6 +28,7 @@ export const ACCEPTED_RESULT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', 
  */
 export const PROMPT_VERSION = 'lm-prompt-m6.4';
 export const PROMPT_VERSION_V13 = 'lm-prompt-v13.3';
+export const MEMORY_PROMPT_VERSION_V13 = 'lm-prompt-v13.4';
 
 export const ANALYSIS_MODE = Object.freeze({
   SESSION: 'session',
@@ -61,7 +62,7 @@ export function promptVersionFor(locale, mode = ANALYSIS_MODE.COMBINED) {
   const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE;
   const safeMode = Object.values(ANALYSIS_MODE).includes(mode) ? mode : ANALYSIS_MODE.COMBINED;
   if (safeMode === ANALYSIS_MODE.COMBINED) return `${PROMPT_VERSION}-${safeLocale}`;
-  return `${PROMPT_VERSION_V13}-${safeMode}-${safeLocale}`;
+  return `${safeMode === ANALYSIS_MODE.MEMORY ? MEMORY_PROMPT_VERSION_V13 : PROMPT_VERSION_V13}-${safeMode}-${safeLocale}`;
 }
 
 /** Default and bounds for one analyzable batch. Configurable per job. */

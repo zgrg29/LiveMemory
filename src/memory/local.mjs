@@ -90,7 +90,7 @@ export function collectSessionMemoryInputs(db, sessionId) {
   }
   const inputs = [];
   for (const [viewerId, entries] of profiles) {
-    const built = buildViewerInput(viewerId, entries);
+    const built = buildViewerInput(viewerId, entries, session);
     if (built.operations.length > 0 || built.summary) inputs.push(built);
   }
   return {
@@ -112,7 +112,7 @@ export function collectSessionMemoryInputs(db, sessionId) {
   };
 }
 
-function buildViewerInput(viewerId, entries) {
+function buildViewerInput(viewerId, entries, session) {
   const byKey = new Map();
   const summaries = [];
   let confidence = null;
@@ -152,7 +152,7 @@ function buildViewerInput(viewerId, entries) {
             resultId: result.id,
             sessionId: result.sessionId,
             batchIndex: result.batchIndex ?? null,
-            observedAt: Number(result.importedAt ?? 0)
+            observedAt: session.platform_started_at ?? session.started_at ?? null
           }]
         });
       }

@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "分析未能完成。",
         "ANALYSIS_CANCELED": "分析已取消，已完成的结果会保留。",
         "ANALYSIS_INTERRUPTED": "分析被中断；可以继续，已完成的批次会跳过。",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "该主播已有更新场次的长期画像；为避免旧记忆覆盖新记忆，已拒绝按较旧场次更新。",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "此旧版任务曾因场次顺序暂停。现在可以继续合并历史记忆；已保存的报告会保留。",
         "ANALYSIS_MEMORY_NO_VIEWERS": "本场直播没有可用于建立长期画像的可识别观众。",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "本场直播没有可确认的主播身份，无法建立长期画像。",
         "ANALYSIS_MEMORY_EMPTY": "本场直播没有可用于建立长期画像的可识别观众。",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "请求超时",
         "PROVIDER_NETWORK_FAILED": "网络连接失败",
         "PROVIDER_CONFIG_INVALID": "API 配置无效",
-        "PROVIDER_RESPONSE_INVALID": "AI 响应格式无效"
+        "PROVIDER_RESPONSE_INVALID": "AI 响应格式无效",
+        "TRANSLATION_STORAGE_FAILED": "翻译缓存写入失败；原报告未改变。请重试或查看技术详情。",
+        "TRANSLATION_INTERNAL_ERROR": "翻译程序发生内部错误；原报告未改变。请查看技术详情。",
+        "TRANSLATION_REQUEST_INVALID": "翻译请求参数无效。"
       }
     },
     "v13": {

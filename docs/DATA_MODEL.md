@@ -1,5 +1,13 @@
 # 数据模型（DATA_MODEL）
 
+## v0.19.2 兼容补丁（2026-11-24）
+
+Schema 仍为 **16**，无需 DDL 或全库迁移；旧数据库与历史整库备份继续使用同一结构。长期事实 first_seen_at / last_confirmed_at 改为实际观察区间，由 memory_fact_evidence.observed_at、仍在库的事件 occurred_at、真实来源场次时间依次恢复；未知值在现有 INTEGER 列中保存 0，协议输出 null。created_at / updated_at / memory_versions.applied_at 保留分析/写入时间含义。读取兼容不写库，下一次事务合并才保存恢复后的时间。
+
+memory_fact_evidence 的真实 event_id 是跨任务去重依据，source_key 仍作来源审计；无 event 的旧单场派生记忆按来源场次去重，时间来自场次，不能用报告 imported_at 冒充观察时间。过期原文不会恢复，purged / unavailable 继续显式标记。状态历史继续用 superseded / superseded_by / valid_until，未解决竞争陈述用 conflicted / conflicts_with；使用已有去重索引，竞争候选使用规范化陈述键以保留当前 topic head。快照与实时事实在同一 IMMEDIATE 事务写入。
+
+ai_translations / ai_translation_runs 不与 ai_jobs 状态耦合。进度更新中的 undefined 表示省略，不是 SQLite 参数值；显式 null 仍能清除对应可空字段。缓存、报告、Key、设置、客观计数不做迁移或重置。
+
 数据库：`<数据目录>/database/livememory.db`（SQLite，WAL）
 Schema 版本：**16**
 迁移入口：`src/storage/database/migrations/index.mjs`

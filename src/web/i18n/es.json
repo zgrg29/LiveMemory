@@ -955,7 +955,7 @@
         "ANALYSIS_FAILED": "El análisis no pudo completarse.",
         "ANALYSIS_CANCELED": "El análisis se canceló; los resultados completados se conservan.",
         "ANALYSIS_INTERRUPTED": "El análisis se interrumpió. Al reanudar se omiten los lotes completados.",
-        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Este creador ya tiene perfiles a largo plazo de un directo más reciente. Se rechazó la actualización desde un directo más antiguo para que la memoria antigua no pueda sobrescribir la más reciente.",
+        "ANALYSIS_MEMORY_OUT_OF_ORDER": "Esta tarea antigua se detuvo por el orden de las emisiones. Ahora puedes reanudar la integración de recuerdos históricos; los informes guardados se conservan.",
         "ANALYSIS_MEMORY_NO_VIEWERS": "Este directo no tiene espectadores identificados disponibles para crear perfiles a largo plazo.",
         "ANALYSIS_MEMORY_NO_BROADCASTER": "Este directo no tiene una identidad de creador confirmada, por lo que no se pueden crear perfiles a largo plazo.",
         "ANALYSIS_MEMORY_EMPTY": "Este directo no tiene espectadores identificados disponibles para crear perfiles a largo plazo.",
@@ -1488,7 +1488,10 @@
         "PROVIDER_TIMEOUT": "Se agotó el tiempo de espera de la solicitud",
         "PROVIDER_NETWORK_FAILED": "La conexión de red falló",
         "PROVIDER_CONFIG_INVALID": "La configuración de la API no es válida",
-        "PROVIDER_RESPONSE_INVALID": "El formato de la respuesta de la IA no es válido"
+        "PROVIDER_RESPONSE_INVALID": "El formato de la respuesta de la IA no es válido",
+        "TRANSLATION_STORAGE_FAILED": "No se pudo guardar la traducción en caché. El informe original sigue intacto. Reintenta o consulta los detalles técnicos.",
+        "TRANSLATION_INTERNAL_ERROR": "Se produjo un error interno de traducción. El informe original sigue intacto. Consulta los detalles técnicos.",
+        "TRANSLATION_REQUEST_INVALID": "Los parámetros de la solicitud de traducción no son válidos."
       }
     },
     "v13": {

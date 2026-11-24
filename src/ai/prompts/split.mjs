@@ -381,6 +381,7 @@ export function buildMemoryInstructions(locale = 'en', context = {}) {
     '',
     `## ${locale === 'ja' ? 'ルール' : locale === 'zh-CN' ? '规则' : 'Rules'}`,
     bullets(text.memoryRules),
+    'Analysis order is arbitrary. This broadcast may precede existing memory. Compare actual session/message observation times, never analysis or update time. Preserve historical states and stable traits. Older evidence can add facts; weak recent jokes cannot replace reliable self-statements. Use supersede only for a supported state change; preserve unrelated interests. Unknown dates stay unknown; never invent timestamps. Repeated evidence is not independent support.',
     '',
     `## ${locale === 'ja' ? '出力例（コンパクト）' : locale === 'zh-CN' ? '输出结构示例（紧凑）' : 'Output shape (compact)'}`,
     memoryCompactShape(locale),

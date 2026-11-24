@@ -1,5 +1,20 @@
 # AI 分析协议（AI_CONTRACT）
 
+## 2026-11-24 修订：乱序记忆与报告独立性（v0.19.2 本地补丁）
+
+长期记忆必须支持任意分析顺序和历史补录。以真实消息观察时间、来源场次、证据强度及事实性质合并，禁止再以 AI 分析顺序拒绝旧场次。原有顺序 gate 的拒绝规则已被本节替代；保留同主播串行 gate，并把任务创建/打包也放入 gate。
+
+- 复用事实的 firstSeenAt / lastConfirmedAt / validFrom / validUntil、证据 observedAt、sourceSessionId 和版本 appliedAt；createdAt / updatedAt 只表示程序写入时间。观察时间不能证明一句话所述人生经历实际发生的日期；不从当前时间或 AI 自报时间补造日期。
+- 旧事实读取时由证据时间恢复观察区间，其次使用真实来源场次 platform_started_at / started_at；两者均无时使用 0（导出为 null，表示未知）。在下一次正常事务合并时保存兼容后的事实，不清空、不批量重跑 AI、不改语言。
+- 请求提供来源场次/消息时间、现有事实证据、时间、置信度与来源，明确本场可能早于已有画像。新记忆提示词为 v13.4-memory / m7.3；单场提示词仍 v13.3-session，旧任务的语言与提示词快照保留。
+- add 的不同兴趣可以共存；identity 的同 topic 不同状态、update / supersede 使用时间和证据保护：可靠的新状态保留旧状态历史；旧状态补入历史；较弱/时间未知的竞争陈述保留为 conflicted，不直接替换可靠当前状态。明确 conflict 保留双方冲突。
+- stated 优先于 inferred / uncertain；用户核实状态受保护。相同 certainty 下，置信度低于当前超过 0.15 的证据不能仅凭较新时间替换；这是保守保护阈值，不是事实真实性评分器。更早的明确陈述可纠正较新的弱推测，弱推测仍保留为冲突。程序无法判断玩笑的真实语义，AI 提取及 certainty 仍需可靠证据和人工复核。
+- 同一 topic 的同语义 add 为确认；同一真实 event_id 跨 job 去重；没有独立新证据，不提升置信度、certainty 或创建无意义版本。AI 永不累计客观互动/金额。
+- 事实不再仅因经过固定天数自动失效；临时状态的变化需有真实新证据。平台原文保留策略、用户删除/tombstone 和备份规则不变。
+- 事务中重读最新事实并重合并，绝不整份覆盖旧快照。旧 target 已被替换时沿当前 topic 合并；历史链按真实观察时间重建。摘要以已落库语义版本/事实的场次时间为锚点，历史场次不能覆盖较新摘要；所有新增历史事实仍可查看。
+- 单场报告、长期记忆、阅读翻译各自保留状态；记忆失败不得使已保存报告不可读或不可翻译。翻译只写展示缓存，优先复用 hash/version 有效缓存，甚至无可用 Provider 时也可直接返回完整缓存。
+- 旧 ANALYSIS_MEMORY_OUT_OF_ORDER 任务在已有 job/报告有效时提供 resume-memory；已保存批次/观众不重跑。旧 gate 通常在 memory job 创建前就失败，因此常常只能复用已付费的单场报告，剩余记忆阶段仍需一次正常 AI 请求；不伪造不存在的中间结果，不自动付费重跑历史。
+
 版本：**0.15.2（P42 验收轮，协议未变）** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
 结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0；P42 未改任何字段/枚举/required） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.3-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
 AI 输出语言：**十种**（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`），由 `src/shared/locales.mjs` 的 `aiOutput` 能力位驱动；结果 Schema 的 `locale.enum` 是其协议镜像（测试强制同步）。
