@@ -16,7 +16,7 @@
 3. 不同兴趣允许共存。同 topic 身份状态或显式 update/supersede 保留历史；可靠新状态胜出时旧事实 superseded，旧信息后到时补历史，历史链按观察时间重建。较新弱证据、时间未知或用户核实保护命中时保留 competing/conflicted，不无条件覆盖。明确 conflict 保留双方。
 4. stated > inferred > uncertain；同等级、置信度降低超过 0.15 时不因更近就覆盖；更早的明确陈述可纠正较新的弱推测，弱候选仍保留。程序不判断所有自然语言语义，不能把这个保守门槛当作真实性证明。
 5. 固定天数不再自动失效稳定事实；临时状态仍需证据支持变化。没有半衰期分类系统，没有改变客观计数或金额算法。
-6. 证据跨 job 按真实 event_id 去重；无 event 的旧单场派生依据按场次去重。同证据重放不升 confidence/certainty；无实际变化不创建版本。事务重读、旧 target 重合并、IMMEDIATE 事务和原单实例锁共同保护写入。
+6. 证据跨 job 按真实 event_id 去重；无 event 的旧单场派生依据按场次去重，兼容 r:resultId 旧键；旧 evidence.observedAt 若来自报告导入时间，改由真实来源场次恢复。同证据重放不升 confidence/certainty；无实际变化不创建版本。事务重读、旧 target 重合并、IMMEDIATE 事务和原单实例锁共同保护写入。合并读取完整事实集，不沿用 UI 的 500 条分页上限；511 条事实累积回归证明不会在重写时截断旧事实。
 7. 摘要时间锚点来自语义版本/事实来源；不能使用客观账本会提前更新的 last_session_id。历史补录保留新摘要，新增历史事实仍可查看。
 
 ## 旧任务恢复与费用
@@ -62,7 +62,7 @@ Schema **16**，不增加列、不全库重写。旧时间在读取时恢复，�
 
 ## 验证与环境边界
 
-- 专项：memory-temporal **21/21**，包括六排列、历史状态、弱证据、同 event 重复、过期 snapshot、旧时间/purged/unknown、多语言、三场历史链、同证据状态保护、事务回滚、明确历史补录标记。
+- 专项：memory-temporal **23/23**，包括六排列、历史状态、弱证据、同 event 重复、过期 snapshot、旧时间/purged/unknown、多语言、三场历史链、同证据状态保护、事务回滚、明确历史补录标记。
 - 现有翻译测试加独立失败/缓存/参数回归通过；Provider 失败精确断言原因与 unknown usage，不再只验证 failed。
 - 首轮开发中全量 **1,298 pass / 11 fail / 2 skip**，发现并修正逻辑/快照期望问题后重跑。两项 Cookie 清理失败来自受管仓库继承的 Everyone Deny DeleteSubdirectoriesAndFiles；测试辅助允许 `LIVEMEMORY_TEST_TMP_ROOT` 指向独立 OS temp，原有全部 6 条断言通过。生产 ACL 和断言不变，未 skip 掩盖。
 - 后续完整回归一轮 **1,311 pass / 0 fail / 2 skip**（364,520 ms）；新增最终案例的全量结果待填。

@@ -9,14 +9,14 @@
 - 请求提供来源场次/消息时间、现有事实证据、时间、置信度与来源，明确本场可能早于已有画像。新记忆提示词为 v13.4-memory / m7.3；单场提示词仍 v13.3-session，旧任务的语言与提示词快照保留。
 - add 的不同兴趣可以共存；identity 的同 topic 不同状态、update / supersede 使用时间和证据保护：可靠的新状态保留旧状态历史；旧状态补入历史；较弱/时间未知的竞争陈述保留为 conflicted，不直接替换可靠当前状态。明确 conflict 保留双方冲突。
 - stated 优先于 inferred / uncertain；用户核实状态受保护。相同 certainty 下，置信度低于当前超过 0.15 的证据不能仅凭较新时间替换；这是保守保护阈值，不是事实真实性评分器。更早的明确陈述可纠正较新的弱推测，弱推测仍保留为冲突。程序无法判断玩笑的真实语义，AI 提取及 certainty 仍需可靠证据和人工复核。
-- 同一 topic 的同语义 add 为确认；同一真实 event_id 跨 job 去重；没有独立新证据，不提升置信度、certainty 或创建无意义版本。AI 永不累计客观互动/金额。
+- 同一 topic 的同语义 add 为确认；同一真实 event_id 跨 job 去重；旧 r:resultId 派生证据按来源场次规范化（旧 observedAt=导入时间时从场次恢复）；没有独立新证据，不提升置信度、certainty 或创建无意义版本。AI 永不累计客观互动/金额。
 - 事实不再仅因经过固定天数自动失效；临时状态的变化需有真实新证据。平台原文保留策略、用户删除/tombstone 和备份规则不变。
-- 事务中重读最新事实并重合并，绝不整份覆盖旧快照。旧 target 已被替换时沿当前 topic 合并；历史链按真实观察时间重建。摘要以已落库语义版本/事实的场次时间为锚点，历史场次不能覆盖较新摘要；所有新增历史事实仍可查看。
+- 事务中完整读取最新事实并重合并（不能使用 UI 的 500 条分页上限截断事实集），绝不整份覆盖旧快照。旧 target 已被替换时沿当前 topic 合并；历史链按真实观察时间重建。摘要以已落库语义版本/事实的场次时间为锚点，历史场次不能覆盖较新摘要；所有新增历史事实仍可查看。
 - 单场报告、长期记忆、阅读翻译各自保留状态；记忆失败不得使已保存报告不可读或不可翻译。翻译只写展示缓存，优先复用 hash/version 有效缓存，甚至无可用 Provider 时也可直接返回完整缓存。
 - 旧 ANALYSIS_MEMORY_OUT_OF_ORDER 任务在已有 job/报告有效时提供 resume-memory；已保存批次/观众不重跑。旧 gate 通常在 memory job 创建前就失败，因此常常只能复用已付费的单场报告，剩余记忆阶段仍需一次正常 AI 请求；不伪造不存在的中间结果，不自动付费重跑历史。
 
 版本：**0.15.2（P42 验收轮，协议未变）** · 分析包协议 `livememory-analysis-v1` · 结果协议 `livememory-analysis-result-v1`
-结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0；P42 未改任何字段/枚举/required） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.3-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
+结果 Schema 版本 **1.3.0**（新任务；兼容 1.0.0 / 1.1.0 / 1.2.0；P42 未改任何字段/枚举/required） · 提示词版本 **`lm-prompt-v13.3-session-<locale>` / `lm-prompt-v13.4-memory-<locale>`**（旧 combined 保留 `lm-prompt-m6.4-<locale>`；v13.3 之前创建的任务保留原版本号）
 AI 输出语言：**十种**（`zh-CN` / `ja` / `en` / `ko` / `es` / `pt-BR` / `zh-TW` / `fr` / `de` / `id`），由 `src/shared/locales.mjs` 的 `aiOutput` 能力位驱动；结果 Schema 的 `locale.enum` 是其协议镜像（测试强制同步）。
 P42 真实 Provider 验收：十语单场 10/10、十语画像 10/10、跨语言 zh→ko→de→zh 4/4、阅读翻译 5/5 + 失败回退；字段名、枚举、`viewer_id`、`message_id`、`seq`、原文弹幕与证据引用均未翻译/改写。详见 `docs/STATUS.md` §0.50。
 
@@ -808,7 +808,7 @@ result.schema.json
 - 删除匿名免费 Provider 与手动 JSON 往返的**入口**；内部包格式与历史结果读取保留。
 - `POST /api/ai/analyze/run` 必须带 `configId`；无 Key 时返回 `AI_PROVIDER_CONFIG_REQUIRED`，不再回退匿名。
 - 请求调度按 `configId` 隔离；没有统一固定 RPM/TPM。429 按 `Retry-After` 暂停该 config；其他可重试错误指数退避 + 抖动。
-- 长期画像批次可并发，但同一观众只属于一个批次；同一主播跨场次按时间顺序，较旧场次在新场次已导入后被拒绝。
+- 长期画像批次可并发，但同一观众只属于一个批次；同主播串行 gate 只保护并发。2026-11-24 起允许乱序与历史补录，以真实观察时间/证据事务合并，旧 chronology 拒绝规则已废止。
 - 请求统计（请求/完成/失败/并发/排队/模型耗时/排队等待/限流等待/429/p50/p95/token/费用/ETA）只保存在本地状态/UI，不进入模型提示词。
 - 删除的 HTTP 写路由：`POST /api/ai/jobs`、`POST /api/ai/jobs/:id/aggregate`、`POST /api/ai/packages`、`GET /api/ai/packages/:id/download`、`GET /api/ai/instructions`、`POST /api/ai/import/preview`、`POST /api/ai/import`、全部 `/api/ai/auto/*`。
 - 保留只读：`GET /api/ai/jobs`、`GET /api/ai/jobs/:id`、`GET /api/ai/packages`、`GET /api/ai/sessions/:id/report`、`GET /api/ai/results/:id`、`GET /api/ai/results/:id/download`。

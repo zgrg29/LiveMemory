@@ -256,7 +256,8 @@ export function memoryOverview(db, {broadcasterId = null} = {}) {
 /* ------------------------------------------------------------------- facts */
 
 export function listFacts(db, memoryId, {limit = 500} = {}) {
-  const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  // Internal merges must read the complete set; UI callers keep bounded pages.
+  const safeLimit = limit === null ? -1 : Math.min(Math.max(Number(limit) || 500, 1), 2000);
   return db.prepare(`
     SELECT * FROM memory_facts
      WHERE memory_id = ?

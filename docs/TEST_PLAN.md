@@ -2,7 +2,7 @@
 
 ## 2026-11-24：P55 乱序记忆与报告翻译回归
 
-- 新增 `tests/integration/memory-temporal.test.mjs` 20 项：六排列、正倒序状态历史、弱证据、同 event 跨 job、过期 target 重合并、旧时间兼容、purged/unknown 时间、版本去重、三场历史链、重复证据状态保护及事务回滚。
+- 新增 `tests/integration/memory-temporal.test.mjs` 23 项：六排列、正倒序状态历史、弱证据、同 event 跨 job、过期 target 重合并、旧时间兼容、purged/unknown 时间、版本去重、三场历史链、重复证据状态保护及事务回滚。
 - 翻译新增独立记忆失败/缓存无需凭据/非法参数回归；失败原因与 unknown usage 精确断言。既有日语→简中、其他语言、旧 Schema、部分重试、缓存版本、十语言集成继续执行。
 - `scripts/verify-memory-translation-exe.mjs --baseline` 在旧 v0.19.1 EXE 实测 ERR_INVALID_ARG_TYPE；默认模式在新 EXE 验证 7 项（模拟本地 Provider，非真实付费）：记忆失败恢复、401 原因、日→中、缓存、原文、只补 memory、运行身份。随机真实 CredMan 测试凭据自动清理；LOCALAPPDATA/TEMP/data-dir 隔离。
 - 首轮开发中全量 1,298 pass / 11 fail / 2 skip，保留记录，不作为最终通过。修正逻辑与协议/文案快照后重跑；受管工作区继承 Deny DELETE_CHILD 导致 Cookie 清理断言失败，LIVEMEMORY_TEST_TMP_ROOT 使用独立 OS temp 后原断言 6/6 通过。

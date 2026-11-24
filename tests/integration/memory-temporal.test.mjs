@@ -156,3 +156,25 @@ test('memory request explicitly marks historical backfill from real record times
   assert.equal(Date.parse(chronology.known_memory_through), T0 + 4 * DAY + 1000);
   assert.equal(buildMemoryChronology({startedAt: T0}, [{memory: {facts: [{last_confirmed_at: null}]}}]).historical_backfill, null);
 });
+
+
+test('old result-based evidence keys deduplicate across reanalysis without inventing support', (t) => {
+  const f = fixture(t);
+  f.apply(0, [{op: 'add', kind: 'interest', topic: 'music', statement: '音楽', certainty: 'inferred', confidence: .4,
+    evidence: [{sourceKey: 'r:old_result', sessionId: f.sessions[0].id, observedAt: T0, eventId: null}]}]);
+  f.db.prepare("UPDATE memory_fact_evidence SET source_key = 'r:old_result', observed_at = ?").run(T0 + 100 * DAY);
+  assert.equal(f.facts()[0].firstSeenAt, T0, 'legacy result evidence must use session time, not old import time');
+  f.apply(0, [{op: 'add', kind: 'interest', topic: 'music', statement: '音楽', certainty: 'stated', confidence: .99,
+    evidence: [{resultId: 'new_result', sessionId: f.sessions[0].id, observedAt: T0, eventId: null}]}]);
+  assert.equal(f.facts()[0].confidence, .4); assert.equal(f.facts()[0].certainty, 'inferred');
+  assert.equal(f.facts()[0].evidence.length, 1);
+});
+
+
+test('historical accumulation beyond the UI page limit cannot drop existing facts on commit', (t) => {
+  const f = fixture(t);
+  f.apply(0, Array.from({length: 510}, (_, i) => ({op: 'add', kind: 'interest', topic: `topic-${i}`, statement: `fact ${i}`})));
+  f.apply(1, [{op: 'add', kind: 'interest', topic: 'historical-extra', statement: '追加事实'}]);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM memory_facts').get().n, 511);
+  assert.equal(f.facts().length, 511);
+});

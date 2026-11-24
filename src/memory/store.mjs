@@ -14,7 +14,7 @@ import {
   versionForSource
 } from '../storage/repositories/viewer-memory.mjs';
 import {applyOperations, reviewFact} from './engine.mjs';
-import {diffFacts, factSetChecksum, loadMemoryFacts} from './model.mjs';
+import {canonicalEvidenceKey, diffFacts, factSetChecksum, loadMemoryFacts} from './model.mjs';
 import {MEMORY_SOURCE_KIND, MEMORY_VERSIONS_KEPT} from './constants.mjs';
 
 /**
@@ -95,7 +95,8 @@ function observedOperations(operations, source) {
   return operations.map((op) => {
     const times = (op.evidence ?? []).map((e) => e.observedAt).filter((t) => t != null && Number.isFinite(Number(t))).map(Number);
     // AI supplied dates cannot manufacture chronology. Use actual observations.
-    return {...op, validFrom: times.length ? Math.min(...times) : source.observedAt,
+    return {...op, evidence: (op.evidence ?? []).map((entry) => ({...entry, sourceKey: canonicalEvidenceKey(entry)})),
+      validFrom: times.length ? Math.min(...times) : source.observedAt,
       validUntil: times.length ? Math.max(...times) : source.observedAt};
   });
 }

@@ -5,7 +5,7 @@
 本轮变更、兼容性、精确根因及最新验收以 `docs/STATUS.md` §0.66 和 `log/2026-11-24-temporal-memory-translation.md` 为准。旧版按直播时间顺序拒绝任务的规则已正式废止，不能根据下方历史记录恢复该限制。保留同主播并发 gate，使用真实观察时间/证据强度合并与事务重读；单场报告/阅读翻译不依赖记忆成功。Schema 16，无全库迁移、无 Key 重置、无历史报告覆盖，无远程发布。
 
 - v0.19.1 EXE 已准确复现：401 后失败进度写入 usage: undefined，SQLite 抛 ERR_INVALID_ARG_TYPE，覆盖 Provider 错误。新服务保留原因、已完成缓存与 usage。
-- 时间合并 20 项回归、初步 EXE 专项 7 项已通过；冻结源码完整回归与最终构建仍在验收，以 STATUS 更新为准。
+- 时间合并 23 项回归、初步 EXE 专项 7 项已通过；冻结源码完整回归与最终构建仍在验收，以 STATUS 更新为准。
 - 系统临时目录覆盖 `LIVEMEMORY_TEST_TMP_ROOT` 仅用于测试，避免受管工作区删除拒绝 ACL 干扰 Cookie 旧测试；不修改生产权限或跳过断言。
 - 真实 DeepSeek 付费、真实 UAC、干净 Windows 与真实十语 UI 矩阵仍未重测。
 
@@ -2984,7 +2984,7 @@ GET/POST /api/ai/auto/services|status|run|cancel
 5. 所有模型输出必须走 `validateAnalysisImport()` + `importAnalysisResult()`。
 6. 每位可识别观众恰好一条 `viewer_memory_updates`；批次不拆散观众。
 7. 客观历史只由真实记录更新；memory 批次只更新本批观众。
-8. 同一主播跨场次按时间顺序；较旧场次不得覆盖较新记忆。
+8. **2026-11-24 已取代原顺序要求**：同主播按 gate 串行但允许任意场次顺序；旧证据可补历史，不能无条件覆盖可靠新状态。
 9. 调度按 `configId` 隔离；不虚构统一 RPM/TPM；429 按 `Retry-After`。
 10. 初始并发可配置 1–8，默认 3；不得无上限并发。
 11. Key 只存加密凭据库；不进入 JSON/日志/ZIP/DB/HTML。

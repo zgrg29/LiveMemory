@@ -160,9 +160,18 @@ export function evidenceSourceKey({sessionId, batchIndex = null, seq = null, res
   return `s:${sessionId}:b${batchIndex ?? 0}:${seq ?? 0}`;
 }
 
+export function canonicalEvidenceKey(evidence) {
+  const key = evidence.sourceKey;
+  if (evidence.eventId == null && evidence.sessionId
+    && (evidence.resultId || key?.startsWith('r:') || key?.startsWith('session-result:'))) {
+    return `session-result:${evidence.sessionId}`;
+  }
+  return key ?? evidenceSourceKey(evidence);
+}
+
 /** Add an evidence reference once; duplicates are ignored by source key. */
 export function addEvidence(fact, evidence) {
-  const sourceKey = evidence.sourceKey ?? evidenceSourceKey(evidence);
+  const sourceKey = canonicalEvidenceKey(evidence);
   if (fact.evidence.some((entry) => entry.sourceKey === sourceKey
     || (evidence.eventId != null && entry.eventId === evidence.eventId))) return false;
   fact.evidence.push({
@@ -192,18 +201,23 @@ export function recalcEvidence(fact) {
 
 /** Facts of one memory in engine shape, with their evidence attached. */
 export function loadMemoryFacts(db, memoryId) {
-  const facts = listFacts(db, memoryId).map((fact) => ({...fact, evidence: []}));
+  const facts = listFacts(db, memoryId, {limit: null}).map((fact) => ({...fact, evidence: []}));
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   for (const evidence of listEvidence(db, memoryId)) {
     const fact = byId.get(evidence.factId);
     if (!fact) continue;
+    const resultEvidence = evidence.eventId == null
+      && canonicalEvidenceKey(evidence).startsWith('session-result:');
+    const sourceSession = resultEvidence && evidence.sessionId ? db.prepare(
+      'SELECT platform_started_at, started_at FROM sessions WHERE id = ?'
+    ).get(evidence.sessionId) : null;
     addEvidence(fact, {
       sourceKey: evidence.sourceKey,
       sessionId: evidence.sessionId,
       batchIndex: evidence.batchIndex,
       seq: evidence.seq,
       eventId: evidence.eventId,
-      observedAt: evidence.observedAt,
+      observedAt: resultEvidence ? (sourceSession?.platform_started_at ?? sourceSession?.started_at ?? null) : evidence.observedAt,
       available: evidence.available !== false && evidence.contentExists !== false && !evidence.contentPurged
     });
   }
