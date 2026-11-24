@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "Le format de la réponse de l'IA n'est pas valide",
         "TRANSLATION_STORAGE_FAILED": "Impossible d’enregistrer le cache de traduction. Le rapport original est inchangé. Réessayez ou consultez les détails techniques.",
         "TRANSLATION_INTERNAL_ERROR": "Une erreur interne de traduction est survenue. Le rapport original est inchangé. Consultez les détails techniques.",
-        "TRANSLATION_REQUEST_INVALID": "Les paramètres de la demande de traduction sont invalides."
-      }
+        "TRANSLATION_REQUEST_INVALID": "Les paramètres de la demande de traduction sont invalides.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "La limite de sortie a été atteinte. Les paragraphes inachevés sont en pause ; les paragraphes complets sont conservés.",
+        "TRANSLATION_EMPTY_CONTENT": "Le fournisseur a renvoyé une réponse finale vide.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Le contenu de la réponse finale est absent. Le raisonnement ne peut pas servir de traduction.",
+        "TRANSLATION_ID_MISMATCH": "Les identifiants des paragraphes sont dupliqués ou ne correspondent pas. Les paragraphes ambigus ne sont pas enregistrés.",
+        "TRANSLATION_RESPONSE_SHAPE": "La structure renvoyée ne peut pas être associée aux paragraphes originaux.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "Le fournisseur ne prend pas en charge le format de sortie JSON demandé.",
+        "TRANSLATION_ITEM_INVALID": "Certaines traductions ne sont pas du texte valide et ne sont pas mises en cache."
+      },
+      "translationDetails": "Détails techniques de traduction"
     },
     "v13": {
       "scope": {

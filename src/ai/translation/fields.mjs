@@ -283,7 +283,7 @@ export function summarizeTranslation(items, rows, {
   else if (run?.status === 'running') status = 'running';
   else if (translated === total) status = 'complete';
   else if (translated > 0) status = 'partial';
-  else if (failed > 0 && missing === 0) status = 'failed';
+  else if (failed > 0) status = 'failed';
   else status = 'missing';
 
   return {

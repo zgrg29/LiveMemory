@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "El formato de la respuesta de la IA no es válido",
         "TRANSLATION_STORAGE_FAILED": "No se pudo guardar la traducción en caché. El informe original sigue intacto. Reintenta o consulta los detalles técnicos.",
         "TRANSLATION_INTERNAL_ERROR": "Se produjo un error interno de traducción. El informe original sigue intacto. Consulta los detalles técnicos.",
-        "TRANSLATION_REQUEST_INVALID": "Los parámetros de la solicitud de traducción no son válidos."
-      }
+        "TRANSLATION_REQUEST_INVALID": "Los parámetros de la solicitud de traducción no son válidos.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "Se alcanzó el límite de salida. Los párrafos pendientes se pausaron y los completos se conservaron.",
+        "TRANSLATION_EMPTY_CONTENT": "El proveedor devolvió una respuesta final vacía.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Falta el contenido de la respuesta final. El razonamiento no puede usarse como traducción.",
+        "TRANSLATION_ID_MISMATCH": "Los identificadores de párrafo están duplicados o no coinciden. No se guardaron los párrafos ambiguos.",
+        "TRANSLATION_RESPONSE_SHAPE": "La estructura devuelta no puede asociarse con los párrafos originales.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "El proveedor no admite el formato de salida JSON solicitado.",
+        "TRANSLATION_ITEM_INVALID": "Algunas traducciones no son texto válido y no se guardaron en caché."
+      },
+      "translationDetails": "Detalles técnicos de traducción"
     },
     "v13": {
       "scope": {

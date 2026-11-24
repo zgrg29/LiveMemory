@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "AI 响应格式无效",
         "TRANSLATION_STORAGE_FAILED": "翻译缓存写入失败；原报告未改变。请重试或查看技术详情。",
         "TRANSLATION_INTERNAL_ERROR": "翻译程序发生内部错误；原报告未改变。请查看技术详情。",
-        "TRANSLATION_REQUEST_INVALID": "翻译请求参数无效。"
-      }
+        "TRANSLATION_REQUEST_INVALID": "翻译请求参数无效。",
+        "TRANSLATION_OUTPUT_TRUNCATED": "输出达到上限，未完成段落已暂停；完整段落已保留。",
+        "TRANSLATION_EMPTY_CONTENT": "Provider 返回了空的最终回答。",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Provider 未返回最终回答字段；推理内容不能作为译文。",
+        "TRANSLATION_ID_MISMATCH": "译文段落 ID 重复或不匹配；无法确认的段落未保存。",
+        "TRANSLATION_RESPONSE_SHAPE": "返回的翻译结构无法对应原文段落。",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "Provider 不支持请求的 JSON 输出格式。",
+        "TRANSLATION_ITEM_INVALID": "部分译文不是有效文本，未写入缓存。"
+      },
+      "translationDetails": "翻译技术详情"
     },
     "v13": {
       "scope": {

@@ -17,6 +17,7 @@ mkdirSync(root, {recursive: true});
 const exe = prepareTestExe({source: resolve('dist/LiveMemory.exe'), target: join(root, 'LiveMemory-test.exe')});
 const dataDir = join(root, 'data');
 let mode = 'fail', calls = 0, child, store, reference;
+let truncatedInputSize = null, recoveredSource = null, resumedInputSize = null;
 const mock = createServer(async (req, res) => {
   let text = ''; for await (const chunk of req) text += chunk;
   calls++;
@@ -30,6 +31,13 @@ const mock = createServer(async (req, res) => {
     res.end(JSON.stringify({choices: [{message: {content: JSON.stringify({viewers: [...refs.values()].map((r) => ({ref: r.ref, memory: {no_new_information: true, operations: []}}))})}, finish_reason: 'stop'}], usage: {prompt_tokens: 15, completion_tokens: 6}})); return;
   }
   const input = JSON.parse(/Input JSON:\n\n([\s\S]*?)\n\nReturn only/.exec(user)[1]);
+  assert.ok(body.max_tokens > 1200, 'translation budget must include JSON overhead');
+  if (mode === 'truncate') {
+    truncatedInputSize = input.items.length; recoveredSource = input.items[0].text;
+    res.writeHead(200, {'content-type': 'application/json'});
+    res.end(JSON.stringify({choices: [{message: {content: '{"items":[' + JSON.stringify({id: input.items[0].id, text: '已恢复译文'}) + ',{"id":"t2","text":"未完成'}, finish_reason: 'length'}], usage: {prompt_tokens: 12, completion_tokens: 8}})); return;
+  }
+  if (recoveredSource) {assert.ok(input.items.every((item) => item.text !== recoveredSource)); resumedInputSize = input.items.length;}
   res.writeHead(200, {'content-type': 'application/json'});
   res.end(JSON.stringify({choices: [{message: {content: JSON.stringify({items: input.items.map((item) => ({id: item.id, text: `译文 ${item.text}`}))})}, finish_reason: 'stop'}], usage: {prompt_tokens: 12, completion_tokens: 8}}));
 });
@@ -90,10 +98,18 @@ try {
   } else {
     assert.equal(code, 'PROVIDER_AUTH_FAILED'); assert.equal(calls, 1);
     record('401 cause survives progress persistence without parameter error or retry', {code, calls});
+    mode = 'truncate';
+    await json(translatePath, {locale: 'zh-CN', configId: config.id, consent: true});
+    const partial = await wait(async () => {const r = await json(reportPath); return r.translation.status === 'partial' ? r : null;});
+    assert.equal(partial.translation.run.error.code, 'TRANSLATION_OUTPUT_TRUNCATED');
+    assert.equal(partial.translation.translated, 1);
+    record('truncated JSON retains its complete paragraph with precise diagnostics', {code: partial.translation.run.error.code, recovered: partial.translation.translated});
     mode = 'ok';
     await json(translatePath, {locale: 'zh-CN', configId: config.id, consent: true});
     const translated = await wait(async () => { const r = await json(reportPath); return r.translation.status === 'complete' ? r : null; });
     assert.match(translated.report.summary, /译文/); record('Japanese report translates to Chinese despite memory failure', {status: translated.translation.status});
+    assert.equal(resumedInputSize, truncatedInputSize - 1);
+    record('translation retry does not purchase the recovered paragraph again', {before: truncatedInputSize, retried: resumedInputSize});
     const cachedCalls = calls;
     await json(translatePath, {locale: 'zh-CN', configId: config.id, consent: true});
     assert.equal(calls, cachedCalls); record('valid cache sends no extra request', calls);

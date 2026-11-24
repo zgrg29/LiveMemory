@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "AI 回覆格式無效",
         "TRANSLATION_STORAGE_FAILED": "翻譯快取寫入失敗；原報告未變更。請重試或查看技術詳情。",
         "TRANSLATION_INTERNAL_ERROR": "翻譯程式發生內部錯誤；原報告未變更。請查看技術詳情。",
-        "TRANSLATION_REQUEST_INVALID": "翻譯請求參數無效。"
-      }
+        "TRANSLATION_REQUEST_INVALID": "翻譯請求參數無效。",
+        "TRANSLATION_OUTPUT_TRUNCATED": "輸出達到上限，未完成段落已暫停；完整段落已保留。",
+        "TRANSLATION_EMPTY_CONTENT": "Provider 回傳了空的最終回答。",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Provider 未回傳最終回答欄位；推理內容不能作為譯文。",
+        "TRANSLATION_ID_MISMATCH": "譯文段落 ID 重複或不相符；無法確認的段落未儲存。",
+        "TRANSLATION_RESPONSE_SHAPE": "回傳的翻譯結構無法對應原文段落。",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "Provider 不支援要求的 JSON 輸出格式。",
+        "TRANSLATION_ITEM_INVALID": "部分譯文不是有效文字，未寫入快取。"
+      },
+      "translationDetails": "翻譯技術詳情"
     },
     "v13": {
       "scope": {

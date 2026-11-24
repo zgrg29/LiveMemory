@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "The AI response format is invalid",
         "TRANSLATION_STORAGE_FAILED": "The translation cache could not be saved. The original report is unchanged. Retry or view technical details.",
         "TRANSLATION_INTERNAL_ERROR": "An internal translation error occurred. The original report is unchanged. View technical details.",
-        "TRANSLATION_REQUEST_INVALID": "The translation request parameters are invalid."
-      }
+        "TRANSLATION_REQUEST_INVALID": "The translation request parameters are invalid.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "The output limit was reached. Unfinished paragraphs are paused; complete paragraphs were kept.",
+        "TRANSLATION_EMPTY_CONTENT": "The provider returned empty final content.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "The provider did not return final answer content. Reasoning cannot be used as a translation.",
+        "TRANSLATION_ID_MISMATCH": "Translation paragraph ids are duplicated or mismatched. Ambiguous paragraphs were not saved.",
+        "TRANSLATION_RESPONSE_SHAPE": "The returned translation structure cannot be mapped to the source paragraphs.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "The provider does not support the requested JSON output format.",
+        "TRANSLATION_ITEM_INVALID": "Some translations are not valid text and were not cached."
+      },
+      "translationDetails": "Translation technical details"
     },
     "v13": {
       "scope": {

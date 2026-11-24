@@ -76,6 +76,7 @@ const REQUIRED_MODULES = [
   'src/ai/runtime/attempt.mjs',
   'src/ai/runtime/scheduler.mjs',
   'src/ai/translation/service.mjs',
+  'src/ai/translation/protocol.mjs',
   'src/ai/translation/fields.mjs',
   'src/server/auth.mjs',
   'src/server/backup/archive.mjs',

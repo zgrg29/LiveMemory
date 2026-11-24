@@ -1,5 +1,12 @@
 # 测试计划与结果（TEST_PLAN）
 
+## 2026-11-24：v0.19.3 报告翻译真实故障专项
+
+- 新增 `translation-protocol.test.mjs`：18 项，覆盖 JSON/Markdown/BOM/数组/ID 映射/字符串包装、单段纯文本、重复/未知 ID、部分闭合恢复、无效字段、空内容/结构分类、预算、Provider 能力、隐私诊断及明确负能力。
+- `ai-report-translation.test.mjs` 新增 6 项：截断只保留完整条目/局部重试、多块协议错误立即停止、推理-only、格式拒绝一次回退、重启仅补缺失、Anthropic 文本块。另补失败且有 pending 时的状态断言。既有原报告/证据/画像不变、缓存、十语与记忆独立性测试继续运行。
+- 专项冻结运行 34/34（18 协议 + 15 报告集成 + 1 十语翻译）；其他 i18n/缓存/UI 专项也通过。完整回归 **1,344 passed / 0 failed / 2 skipped**，1,346 总计、346,436.1046 ms；最终 EXE 待最终验收。
+- 真实 DeepSeek：授权 3/3 已用完，两次合成基线成功；最后一次指定失败报告字段 40/40、新预算 4,719、实际 output 1,276，stop。原失败 raw/finish_reason 未保存，不能声称历史包已还原；只读真实库，不写回缓存。
+
 ## 2026-11-24：P55 乱序记忆与报告翻译回归
 
 - 新增 `tests/integration/memory-temporal.test.mjs` 23 项：六排列、正倒序状态历史、弱证据、同 event 跨 job、过期 target 重合并、旧时间兼容、purged/unknown 时间、版本去重、三场历史链、重复证据状态保护及事务回滚。

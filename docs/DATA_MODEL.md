@@ -1,5 +1,9 @@
 # 数据模型（DATA_MODEL）
 
+## v0.19.3 翻译兼容（2026-11-24）
+
+Schema 仍 16，无 DDL/数据迁移；`lm-translation-v1` 缓存身份保持不变，成功缓存不失效。`ai_translation_runs.error_json` 可增加 `diagnostics`（内容无关的类型/长度/枚举/计数/预算/位置）和 stopped 标记。完整条目仍写 ai_translations，未尝试条目不伪造失败记录。备份/恢复与数据目录迁移沿用整库流程，没有新凭据或原始响应文件。
+
 ## v0.19.2 兼容补丁（2026-11-24）
 
 Schema 仍为 **16**，无需 DDL 或全库迁移；旧数据库与历史整库备份继续使用同一结构。长期事实 first_seen_at / last_confirmed_at 改为实际观察区间，由 memory_fact_evidence.observed_at、仍在库的事件 occurred_at、真实来源场次时间依次恢复；未知值在现有 INTEGER 列中保存 0，协议输出 null。created_at / updated_at / memory_versions.applied_at 保留分析/写入时间含义。读取兼容不写库，下一次事务合并才保存恢复后的时间。

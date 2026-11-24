@@ -430,6 +430,12 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
       })})));
   }
 
+  if (translation.run?.error?.diagnostics) {
+    nodes.push(el('details', {className: 'translation-diagnostics'},
+      el('summary', {text: t('ai.report.translationDetails')}),
+      el('pre', {text: JSON.stringify(translation.run.error.diagnostics, null, 2)})));
+  }
+
   const providers = (translation.providers ?? []).filter((provider) => provider.hasCredential);
   if (providers.length === 0) {
     nodes.push(el('div', {className: 'callout callout--warn'},

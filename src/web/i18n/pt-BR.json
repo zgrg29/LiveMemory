@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "O formato da resposta da IA é inválido",
         "TRANSLATION_STORAGE_FAILED": "Não foi possível salvar o cache da tradução. O relatório original permanece intacto. Tente novamente ou veja os detalhes técnicos.",
         "TRANSLATION_INTERNAL_ERROR": "Ocorreu um erro interno na tradução. O relatório original permanece intacto. Veja os detalhes técnicos.",
-        "TRANSLATION_REQUEST_INVALID": "Os parâmetros da solicitação de tradução são inválidos."
-      }
+        "TRANSLATION_REQUEST_INVALID": "Os parâmetros da solicitação de tradução são inválidos.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "O limite de saída foi atingido. Os parágrafos pendentes foram pausados e os completos foram mantidos.",
+        "TRANSLATION_EMPTY_CONTENT": "O provedor retornou uma resposta final vazia.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "O conteúdo da resposta final não foi retornado. O raciocínio não pode ser usado como tradução.",
+        "TRANSLATION_ID_MISMATCH": "Os identificadores de parágrafo estão duplicados ou não correspondem. Parágrafos ambíguos não foram salvos.",
+        "TRANSLATION_RESPONSE_SHAPE": "A estrutura retornada não pode ser associada aos parágrafos originais.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "O provedor não aceita o formato de saída JSON solicitado.",
+        "TRANSLATION_ITEM_INVALID": "Algumas traduções não são texto válido e não foram armazenadas em cache."
+      },
+      "translationDetails": "Detalhes técnicos da tradução"
     },
     "v13": {
       "scope": {

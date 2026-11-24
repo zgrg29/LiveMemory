@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "Das Format der KI-Antwort ist ungültig",
         "TRANSLATION_STORAGE_FAILED": "Der Übersetzungscache konnte nicht gespeichert werden. Der Originalbericht bleibt unverändert. Erneut versuchen oder technische Details ansehen.",
         "TRANSLATION_INTERNAL_ERROR": "Ein interner Übersetzungsfehler ist aufgetreten. Der Originalbericht bleibt unverändert. Technische Details ansehen.",
-        "TRANSLATION_REQUEST_INVALID": "Die Parameter der Übersetzungsanfrage sind ungültig."
-      }
+        "TRANSLATION_REQUEST_INVALID": "Die Parameter der Übersetzungsanfrage sind ungültig.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "Das Ausgabelimit wurde erreicht. Unfertige Absätze wurden angehalten; vollständige Absätze bleiben gespeichert.",
+        "TRANSLATION_EMPTY_CONTENT": "Der Anbieter hat eine leere endgültige Antwort zurückgegeben.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Der Inhalt der endgültigen Antwort fehlt. Überlegungen können nicht als Übersetzung verwendet werden.",
+        "TRANSLATION_ID_MISMATCH": "Absatzkennungen sind doppelt oder stimmen nicht überein. Unklare Absätze wurden nicht gespeichert.",
+        "TRANSLATION_RESPONSE_SHAPE": "Die zurückgegebene Struktur lässt sich den Originalabsätzen nicht zuordnen.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "Der Anbieter unterstützt das angeforderte JSON-Ausgabeformat nicht.",
+        "TRANSLATION_ITEM_INVALID": "Einige Übersetzungen sind kein gültiger Text und wurden nicht zwischengespeichert."
+      },
+      "translationDetails": "Technische Übersetzungsdetails"
     },
     "v13": {
       "scope": {

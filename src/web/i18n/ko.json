@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "AI 응답 형식이 유효하지 않습니다",
         "TRANSLATION_STORAGE_FAILED": "번역 캐시를 저장하지 못했습니다. 원본 보고서는 그대로입니다. 다시 시도하거나 기술 세부 정보를 확인하세요.",
         "TRANSLATION_INTERNAL_ERROR": "번역 처리 중 내부 오류가 발생했습니다. 원본 보고서는 그대로입니다. 기술 세부 정보를 확인하세요.",
-        "TRANSLATION_REQUEST_INVALID": "번역 요청 매개변수가 올바르지 않습니다."
-      }
+        "TRANSLATION_REQUEST_INVALID": "번역 요청 매개변수가 올바르지 않습니다.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "출력 한도에 도달했습니다. 미완료 문단은 중지되고 완성된 문단은 저장되었습니다.",
+        "TRANSLATION_EMPTY_CONTENT": "제공자가 빈 최종 답변을 반환했습니다.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "최종 답변 필드가 없습니다. 추론 내용을 번역문으로 사용할 수 없습니다.",
+        "TRANSLATION_ID_MISMATCH": "번역 문단 ID가 중복되거나 일치하지 않습니다. 대응이 불명확한 문단은 저장하지 않았습니다.",
+        "TRANSLATION_RESPONSE_SHAPE": "반환된 번역 구조를 원문 문단에 대응시킬 수 없습니다.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "제공자가 요청한 JSON 출력 형식을 지원하지 않습니다.",
+        "TRANSLATION_ITEM_INVALID": "일부 번역문이 유효한 텍스트가 아니므로 캐시에 저장하지 않았습니다."
+      },
+      "translationDetails": "번역 기술 세부 정보"
     },
     "v13": {
       "scope": {

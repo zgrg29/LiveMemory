@@ -414,3 +414,8 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 ## 14. v0.19.2 本地补丁验收（2026-11-24）
 
 新增 `verify-memory-translation-exe.mjs`：正式 Manifest 断言 requireAdministrator，功能使用测试专用 asInvoker 副本；LOCALAPPDATA / TEMP / TMP / data-dir 全部隔离，测试 Provider 只绑定 127.0.0.1，真实 Windows Credential Manager 仅保存随机测试引用并自动删除。旧 v0.19.1 EXE 的 401 翻译失败复现 ERR_INVALID_ARG_TYPE，新构建保留正确 PROVIDER_AUTH_FAILED、支持独立重试/缓存与已保存报告下的 memory-only 恢复。不代表真实付费 Provider 或真实 UAC 点击验收；最终产物/哈希见 STATUS §0.66。
+
+
+## 15. v0.19.3 翻译协议验收
+
+构建门禁新增 `src/ai/translation/protocol.mjs`，确保 SEA 嵌入预算/解析/诊断代码。`verify-memory-translation-exe` 增加实际 length 响应下完整条目恢复与重试不重复请求该条目的验证。正式 Manifest 仍 requireAdministrator，自动化继续只使用测试专用 asInvoker 副本；真实 Provider 的 3 次 API 验证不冒充 EXE 中的真实付费验收。最终 Build/哈希见 STATUS。

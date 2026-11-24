@@ -3395,3 +3395,11 @@
     font-size: 12px;
   }
 }
+
+
+.translation-diagnostics pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  color: var(--text-secondary);
+}

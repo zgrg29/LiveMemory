@@ -635,3 +635,92 @@ test('invalid translation parameters fail before provider access', async (t) => 
   }
   assert.equal(state.calls, 0);
 });
+
+function syntheticTranslationInput(options) {
+  const body = JSON.parse(options.body);
+  const text = body.messages.at(-1).content;
+  return JSON.parse(/Input JSON:\n\n([\s\S]*?)\n\nReturn only/.exec(text)[1]);
+}
+function translationResponse(content, finishReason = 'stop') {
+  return Response.json({choices: [{message: {content}, finish_reason: finishReason}], usage: {prompt_tokens: 10, completion_tokens: 5}});
+}
+
+test('a truncated reply caches complete ids and retries only the missing remainder', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);
+  let calls=0, firstIds=[];
+  server.translationService.fetchImpl=async (_url,options)=>{
+    calls++;const input=syntheticTranslationInput(options);firstIds=input.items.map(i=>i.id);
+    return translationResponse('{"items":['+JSON.stringify({id:input.items[0].id,text:'完整译文'})+',{"id":"t2","text":"尚未完成', 'length');
+  };
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const partial=await waitForTranslation(server,session.id,'zh-CN');
+  assert.equal(calls,1);assert.equal(partial.translated,1);assert.equal(partial.run.error.code,'TRANSLATION_OUTPUT_TRUNCATED');
+  assert.equal(partial.run.error.diagnostics.finishReason,'length');
+  const firstSource=server.db.prepare("SELECT source_hash FROM ai_translations WHERE status='ok'").get().source_hash;
+  server.translationService.fetchImpl=async(_url,options)=>{
+    calls++;const input=syntheticTranslationInput(options);assert.equal(input.items.length,firstIds.length-1);
+    return translationResponse(JSON.stringify({items:input.items.map(i=>({id:i.id,text:'剩余译文'}))}));
+  };
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const complete=await waitForTranslation(server,session.id,'zh-CN');assert.equal(complete.status,'complete');
+  assert.equal(server.db.prepare("SELECT translated_text FROM ai_translations WHERE source_hash=?").get(firstSource).translated_text,'完整译文');
+});
+
+test('a systemic JSON protocol error stops before buying failures for later chunks', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);
+  server.translationService.chunkChars=25;let calls=0;
+  server.translationService.fetchImpl=async()=>{calls++;return translationResponse('{"items":[');};
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const settled=await waitForTranslation(server,session.id,'zh-CN');
+  assert.equal(calls,1);assert.ok(settled.missing>0);assert.equal(settled.run.error.code,'TRANSLATION_INVALID_JSON');
+  assert.equal(settled.run.error.stopped,true);assert.equal(settled.run.usage.requests,1);
+});
+
+test('reasoning-only output cannot be mistaken for a final translation', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);let calls=0;
+  server.translationService.fetchImpl=async()=>{calls++;return Response.json({choices:[{message:{reasoning_content:'PRIVATE_REASONING'},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:5}});};
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const result=await waitForTranslation(server,session.id,'zh-CN');assert.equal(result.run.error.code,'TRANSLATION_FINAL_CONTENT_MISSING');
+  assert.equal(calls,1);assert.equal(result.translated,0);assert.doesNotMatch(JSON.stringify(result),/PRIVATE_REASONING/);
+});
+
+test('a rejected JSON hint falls back once with the same ids and the prompt contract', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);
+  server.providerConfigStore.recordTest(config.id,{status:'passed',capabilities:{json:true,session:true,memory:true}});
+  let calls=0;let ids;
+  server.translationService.fetchImpl=async(_url,options)=>{
+    calls++;const body=JSON.parse(options.body);const input=syntheticTranslationInput(options);
+    if(calls===1){assert.equal(body.response_format.type,'json_object');ids=input.items.map(i=>i.id);return Response.json({error:{message:'response_format json_object not supported'}},{status:400});}
+    assert.equal(body.response_format,undefined);assert.deepEqual(input.items.map(i=>i.id),ids);
+    return translationResponse(JSON.stringify({items:input.items.map(i=>({id:i.id,text:'成功'}))}));
+  };
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const done=await waitForTranslation(server,session.id,'zh-CN');assert.equal(done.status,'complete');assert.equal(calls,2);
+});
+
+test('cached translation progress survives service restart without repeating successful fields', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);
+  state.mode='omit';state.omitOnce=true;
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const partial=await waitForTranslation(server,session.id,'zh-CN');assert.ok(partial.translated>0);assert.equal(partial.failed,1);
+  const {ReportTranslationService}=await import('../../src/ai/translation/service.mjs');
+  const restarted=new ReportTranslationService({db:server.db,configStore:server.providerConfigStore,maxRetries:0,
+    fetchImpl:async(_url,options)=>{const input=syntheticTranslationInput(options);assert.equal(input.items.length,1);return translationResponse('{"items":[{"id":"t1","text":"恢复译文"}]}');}});
+  t.after(()=>restarted.shutdown());
+  await restarted.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  for(let i=0;i<100;i++){const status=await restarted.getStatus(session.id,'zh-CN');if(status.translation.status==='complete')return;await delay(20);}
+  assert.fail('restarted translation did not complete');
+});
+
+test('Anthropic translation uses text blocks, ignores thinking, and needs no JSON mode parameter', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session}=await setupServer(t,state);
+  const config=server.providerConfigStore.create({providerId:'anthropic',regionId:'global',modelId:'synthetic-claude',apiKey:'test-key'});
+  server.translationService.fetchImpl=async(_url,options)=>{
+    const body=JSON.parse(options.body);assert.equal(body.response_format,undefined);assert.ok(body.max_tokens>=1536);
+    const text=body.messages.at(-1).content;const input=JSON.parse(/Input JSON:\n\n([\s\S]*?)\n\nReturn only/.exec(text)[1]);
+    return Response.json({content:[{type:'thinking',thinking:'PRIVATE_THOUGHT'},{type:'text',text:JSON.stringify({items:input.items.map(i=>({id:i.id,text:'译文'}))})}],stop_reason:'end_turn',usage:{input_tokens:10,output_tokens:5}});
+  };
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const result=await waitForTranslation(server,session.id,'zh-CN');assert.equal(result.status,'complete');
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_THOUGHT/);
+});

@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "AI の応答形式が無効です",
         "TRANSLATION_STORAGE_FAILED": "翻訳キャッシュを保存できませんでした。元のレポートは変更されていません。再試行するか技術詳細を確認してください。",
         "TRANSLATION_INTERNAL_ERROR": "翻訳処理で内部エラーが発生しました。元のレポートは変更されていません。技術詳細を確認してください。",
-        "TRANSLATION_REQUEST_INVALID": "翻訳リクエストのパラメーターが無効です。"
-      }
+        "TRANSLATION_REQUEST_INVALID": "翻訳リクエストのパラメーターが無効です。",
+        "TRANSLATION_OUTPUT_TRUNCATED": "出力上限に達しました。未完了の段落は停止し、完全な段落は保持しました。",
+        "TRANSLATION_EMPTY_CONTENT": "プロバイダーの最終回答が空でした。",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "最終回答のフィールドがありません。推論内容は訳文として使用できません。",
+        "TRANSLATION_ID_MISMATCH": "訳文の段落 ID が重複しているか一致しません。対応を確認できない段落は保存していません。",
+        "TRANSLATION_RESPONSE_SHAPE": "返された翻訳の構造を原文の段落に対応付けられません。",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "プロバイダーは要求された JSON 出力形式に対応していません。",
+        "TRANSLATION_ITEM_INVALID": "一部の訳文は有効なテキストではないため保存していません。"
+      },
+      "translationDetails": "翻訳の技術詳細"
     },
     "v13": {
       "scope": {

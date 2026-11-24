@@ -268,3 +268,9 @@ test('translated text is sanitised as untrusted plain text', () => {
   assert.equal(translationRowKey('memory_fact', 'mfc_1', 'statement', 'abc'), 'memory_fact\u0000mfc_1\u0000statement\u0000abc');
   assert.equal(TRANSLATION_VERSION, 'lm-translation-v1');
 });
+
+test('a stopped failed chunk remains visibly failed while later paragraphs are still pending', () => {
+  const items=collectTranslatableItems(payloadFixture());const first=items[0];
+  const status=summarizeTranslation(items,[{targetKind:first.kind,targetId:first.targetId,itemPath:first.path,sourceHash:first.hash,status:'failed'}],{targetLocale:'zh-CN',sourceLocale:'ja',run:{status:'failed'}});
+  assert.equal(status.status,'failed');assert.equal(status.failed,1);assert.equal(status.missing,items.length-1);
+});

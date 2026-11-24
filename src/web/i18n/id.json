@@ -1491,8 +1491,16 @@
         "PROVIDER_RESPONSE_INVALID": "Format respons AI tidak valid",
         "TRANSLATION_STORAGE_FAILED": "Cache terjemahan tidak dapat disimpan. Laporan asli tidak berubah. Coba lagi atau lihat detail teknis.",
         "TRANSLATION_INTERNAL_ERROR": "Terjadi kesalahan internal penerjemahan. Laporan asli tidak berubah. Lihat detail teknis.",
-        "TRANSLATION_REQUEST_INVALID": "Parameter permintaan terjemahan tidak valid."
-      }
+        "TRANSLATION_REQUEST_INVALID": "Parameter permintaan terjemahan tidak valid.",
+        "TRANSLATION_OUTPUT_TRUNCATED": "Batas keluaran tercapai. Paragraf yang belum selesai dijeda; paragraf lengkap tetap disimpan.",
+        "TRANSLATION_EMPTY_CONTENT": "Penyedia mengembalikan jawaban akhir kosong.",
+        "TRANSLATION_FINAL_CONTENT_MISSING": "Isi jawaban akhir tidak tersedia. Penalaran tidak dapat digunakan sebagai terjemahan.",
+        "TRANSLATION_ID_MISMATCH": "ID paragraf duplikat atau tidak cocok. Paragraf yang ambigu tidak disimpan.",
+        "TRANSLATION_RESPONSE_SHAPE": "Struktur terjemahan yang diterima tidak dapat dipetakan ke paragraf sumber.",
+        "TRANSLATION_FORMAT_UNSUPPORTED": "Penyedia tidak mendukung format keluaran JSON yang diminta.",
+        "TRANSLATION_ITEM_INVALID": "Sebagian terjemahan bukan teks yang valid dan tidak disimpan dalam cache."
+      },
+      "translationDetails": "Detail teknis terjemahan"
     },
     "v13": {
       "scope": {

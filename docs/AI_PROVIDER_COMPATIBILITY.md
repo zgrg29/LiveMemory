@@ -1,5 +1,21 @@
 # AI Provider 兼容性、真实用量与付费验收计划（P0-3）
 
+## 2026-11-24：v0.19.3 真实 DeepSeek 翻译专项（L3）
+
+用户明确授权最多 3 次真实请求，随后授权其中最后 1 次使用指定第一场报告的 40 个失败字段；不含聊天原文和长期画像，只读用户库。已用完 3 次，不继续调用。
+
+| 验证 | 实际响应 |
+| --- | --- |
+| 两次无个人数据合成样本，v0.19.2 旧提示词/参数 | 均 40/40 JSON 可解析；content 为 string，无 reasoning_content；stop；输出各 1,125 tokens。不能据此断言 DeepSeek 有系统性响应字段不兼容 |
+| 指定失败批次，新协议/预算 | 40/40，所有 ID 唯一且对应，stop；输出 1,276 tokens；输入 1,798 tokens；JSON content 2,289 字，无推理；json_object，max_tokens=4,719 |
+| 旧参数缺陷 | 同一批 1,578 原文字符仅给 1,200 输出上限，低于本次完整真实回答所需 1,276；旧解析还忽略 finish_reason，将截断/结构错误合并为 TRANSLATION_INVALID_JSON |
+
+原失败响应未保存，因此不能追溯断言历史那次一定为 length，也不能伪造原始包。已确认预算缺陷并验证目标 40 段在新协议下成功；历史实际运行还已有 97 段成功缓存，不能描述为“所有段落都无法翻译”。原 4 次请求用量为 5,927 input / 3,891 output，程序估算 USD 0.0064473，非官方账单；更早被 SQLite 次生错误覆盖的费用未知。
+
+本轮真实请求合计 input 5,472 / output 3,526；未改 Key/模型/配置、未写真实库。真实 EXE 验收使用本地模拟 Provider，与上述真实 API 验证分开记录。其他 Provider 使用 Mock/既有回归，不宣称本轮逐一付费验收。
+
+官方边界依据：[DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)、[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)：json_object 仍需提示 JSON，max_tokens 需覆盖完整输出；length 可以截断 content，JSON 模式也可能返回空白。
+
 ## 2026-11-24 翻译故障修复边界
 
 v0.19.1 EXE + 隔离本地模拟 Provider 返回 401 时，可复现 ERR_INVALID_ARG_TYPE：失败进度中的 usage: undefined 进入 SQLite 参数绑定，覆盖原始 PROVIDER_AUTH_FAILED。v0.19.2 修复省略值并保存真实错误；不修改 DeepSeek 模型、端点或 Credential Manager 协议。该复现证明存在 Provider 无关的本地缺陷，不证明用户此前真实请求一定返回 401；原始 Provider 错误已被旧版覆盖，不能追溯猜测。真实 DeepSeek 付费复测本轮未执行。
