@@ -57,9 +57,13 @@ v0.19.1 的失败进度将 `usage: undefined` 绑定到 SQLite，触发 `ERR_INV
 
 ## 测试与最终产物
 
-专项冻结运行 **34/34**：18 个纯协议、15 个报告集成、1 个十语翻译；其他字典/UI/缓存专项通过。新增另一条状态断言保证“失败且后续 pending”不被显示成纯 missing。长期记忆与 Provider/存储/平台代码差异检查为空。
+专项冻结运行 **34/34**：19 个纯协议、15 个报告集成；十语翻译另随全量通过；其他字典/UI/缓存专项通过。新增另一条状态断言保证“失败且后续 pending”不被显示成纯 missing。长期记忆与 Provider/存储/平台代码差异检查为空。
 
-最终全量：**1,344 passed / 0 failed / 2 skipped**，总计 1,346，346,436.1046 ms；日志 `tests/.tmp/full-translation-0193.txt`。最终 EXE 验收待填写。
+最终全量：**1,345 passed / 0 failed / 2 skipped**，总计 1,347，359,120.0242 ms；日志 `tests/.tmp/full-translation-0193-final.txt`。最终 EXE **87/87**：启动 11、帮助 14、凭据保存 24、备份迁移 13、AI Token/恢复 16、翻译恢复 9；只使用隔离数据与本地模拟 Provider。凭据验收首次并行运行遇到 5 秒超时，单独重测同一 EXE 后 24/24，无断言/源码修改；随机测试凭据已清理。自动化使用同 Build 的 asInvoker 功能副本，不代表人工 UAC/干净 Windows 或 EXE 内真实付费请求验收。
+
+Build **`f90ab3d39fdf`**，构建源码 `fd88cf722772365d17375f86a3e8a6cf20296a00`，`D:\LiveMemory\dist\LiveMemory.exe`，**99,824,128 B**；SHA-256 `0c56170853c4ebcad61b2ddf4a50901fb047f4ba3b3f1123024a4327ccb5be64`；builtAt `2026-11-24T06:58:17.900Z`，258 assets / 72 required modules，Manifest **requireAdministrator**。
+
+本地主修复 commit `141380ffc3a5f6b79ff06ff53abcdd22c265558d`；格式兼容/最终构建源码 commit `fd88cf722772365d17375f86a3e8a6cf20296a00`；交付记录为后续 docs commit（Git 历史可查）。
 
 ## 限制
 

@@ -419,3 +419,5 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 ## 15. v0.19.3 翻译协议验收
 
 构建门禁新增 `src/ai/translation/protocol.mjs`，确保 SEA 嵌入预算/解析/诊断代码。`verify-memory-translation-exe` 增加实际 length 响应下完整条目恢复与重试不重复请求该条目的验证。正式 Manifest 仍 requireAdministrator，自动化继续只使用测试专用 asInvoker 副本；真实 Provider 的 3 次 API 验证不冒充 EXE 中的真实付费验收。最终 Build/哈希见 STATUS。
+
+最终构建 `f90ab3d39fdf`（源码 `fd88cf7`）通过 87/87 EXE 检查，其中翻译 9/9；详细产物与边界见 STATUS §0.67。

@@ -15,12 +15,12 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.19.3` 本地补丁开发**（最新正式发布仍 `v0.19.1`） |
+| 产品版本 / 当前开发版本 | **`0.19.3` 本地补丁已完成**（最新正式发布仍 `v0.19.1`） |
 | 下一版本 | `0.19.3`（本轮已授权本地修复与 EXE；未授权远程发布） |
 | 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
-| 当前分支 | `main`（本轮本地实现 commit `2f427ed` / `422b781`，未 Push；正式 Tag 仍 `v0.19.1`） |
+| 当前分支 | `main`（本轮构建源码 commit `fd88cf7`；主修复 `141380f`，未 Push；正式 Tag 仍 `v0.19.1`） |
 | 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
 | 当前开发里程碑 | **P56 报告翻译真实 Provider 专项**；见 §0.67 |
@@ -73,12 +73,13 @@
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
 | 全量自动化（2026-11-19 v0.19.1） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
 | 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
+| 当前本地补丁（v0.19.3） | **1,345 passed / 0 failed / 2 skipped**；EXE **87/87**；Build `f90ab3d39fdf`；详 §0.67；未远程发布 |
 | 历史本地补丁（v0.19.2） | **1,319 passed / 0 failed / 2 skipped**；EXE **85/85**；Build `5e9388a8ddb9`；详 §0.66；未远程发布 |
 | 历史 EXE（v0.19.1） | 已发布，Build `b66818d032b5`；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.19.0 发布） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
-| 十语言字典 / UI 矩阵 | 10 × **2,382** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
+| 十语言字典 / UI 矩阵 | 10 × **2,390** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
 | 真实 H5 / 真实 EXE 采集 | **未执行**（无快手书面许可） |
 | 真实付费 Provider（DeepSeek 以外） | **未逐一验收**；需要真实 Key 与费用授权 |
 | 真实 Windows UAC / 干净账户 | **未人工验证**；自动化只断言 Manifest 与 asInvoker 功能副本 |
@@ -132,9 +133,11 @@ v0.19.1 已正式发布；本轮 v0.19.3 翻译修复见 §0.67。远程发布�
 - 新轻量协议区分纯文本值和 JSON 响应；输出预算计入 JSON/ID/语言膨胀。按 Provider/能力使用 json_object 或提示词契约，拒绝格式的 400/422 仅一次兼容回退。不重写 Provider 抽象。
 - 安全兼容 Markdown、BOM、ID 数组/映射/字符串包装；单段可纯文本，多段不按顺序猜测。截断/不完整 JSON 只保留完整且 ID 验证通过的条目，缺失失败；内容/协议错误停止当前 run，后续未请求保持 pending。用户显式重试/重启只补 failed/missing，有效缓存保留。
 - 十语新增 8 键（共 2,390），详情仅显示类型/长度/结束原因/结构/计数/位置/预算，不存 raw 或推理正文。真实验收全程只读源库，未把验证译文写回用户缓存；新 EXE 安装后需在该报告手动重试。
-- 冻结翻译专项 **34/34**；其他缓存/i18n/UI 专项通过。完整回归 **1,344 passed / 0 failed / 2 skipped**（1,346 总计，346,436.1046 ms）；最终 EXE 仍在验收，结果待下方填写。
+- 冻结翻译专项 **34/34**；其他缓存/i18n/UI 专项通过。完整回归 **1,345 passed / 0 failed / 2 skipped**（1,347 总计，359,120.0242 ms）；最终 EXE 结果如下。
 
-最终验收：待完成。
+Build **`f90ab3d39fdf`**，构建源码 `fd88cf722772365d17375f86a3e8a6cf20296a00`，`D:\LiveMemory\dist\LiveMemory.exe`，**99,824,128 B**；SHA-256 `0c56170853c4ebcad61b2ddf4a50901fb047f4ba3b3f1123024a4327ccb5be64`；builtAt `2026-11-24T06:58:17.900Z`，258 assets / 72 required modules，Manifest **requireAdministrator**。
+
+最终 EXE **87/87**：启动 11、帮助 14、凭据保存 24、备份迁移 13、AI Token/恢复 16、翻译恢复 9；只使用隔离数据与本地模拟 Provider。凭据验收首次并行运行遇到 5 秒超时，单独重测同一 EXE 后 24/24，无断言/源码修改；随机测试凭据已清理。自动化使用同 Build 的 asInvoker 功能副本，不代表人工 UAC/干净 Windows 或 EXE 内真实付费请求验收。
 
 ---
 
