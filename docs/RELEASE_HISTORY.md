@@ -15,6 +15,7 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 
 | 版本 | 类型 | Tag / Commit | GitHub Release | 发布资产 | 状态 |
 | --- | --- | --- | --- | --- | --- |
+| `v0.19.4` | 正式补丁（Flexible Memory Updates & Report Translation Fixes） | `v0.19.4` → `90fe50e` | `456754532` · 2026-11-24T12:48:10Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published / latest |
 | `v0.19.1` | 正式补丁（Windows Credential Storage Fix） | `v0.19.1` → `04b30b7` | `450272261` · 2026-11-18T16:43:01Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.19.0` | 正式发布（AI Provider Reliability Update） | `v0.19.0` → `50920d1` | `450031601` · 2026-11-18T13:32:13Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.18.0` | 正式发布（OpenCode AI Provider） | `v0.18.0` → `3149ffc` | `449956670` · 2026-11-18T12:30:18Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
@@ -23,6 +24,29 @@ SHA-256、自动化结果和已知限制。它是历史记录，不是当前发�
 | `v0.15.0` | 正式稳定版（十语言） | `v0.15.0` → `e07233c` | `447343485` · 2026-11-16T17:09:41Z | `LiveMemory.exe` + `SHA256SUMS.txt` | Published |
 | `v0.14.0` | 正式稳定版（五平台） | `v0.14.0` → `d268cf9` | `446701465` · 2026-11-16T07:01:11Z | `LiveMemory-v0.14.0-windows-x64.zip` + `SHA256SUMS.txt` | Published |
 | `v0.13.2-rc.0` | RC0 预发布 | `v0.13.2-rc.0`（lightweight）→ `f14a932`（构建提交 `cb28624`） | `445425123` · 2026-11-14T16:22:25Z | `LiveMemory-v0.13.2-rc.0-windows-x64.zip` + `SHA256SUMS.txt` | Published |
+
+---
+
+## v0.19.4 — Flexible Memory Updates & Report Translation Fixes（2026-11-24）
+
+用户明确授权发布；包含原本仅本地交付的 v0.19.2–v0.19.4 修复。没有更改已验收运行时或重新构建 EXE。
+
+| 项目 | 证据 |
+| --- | --- |
+| Release | [LiveMemory v0.19.4 — Flexible Memory Updates & Report Translation Fixes](https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.4) |
+| Release ID / 状态 | `456754532`；draft=false / prerelease=false / latest=true |
+| 发布时间 | `2026-11-24T12:48:10Z`（北京时间 20:48:10） |
+| Tag | annotated `v0.19.4`；object `03f3f94771e9ac5e0717391669b7a3686090d5ba` → `90fe50e6008946f3ba88c59507b3dbc8de82807d` |
+| 构建 | `818662d4cbe5c7b127eeffad5e6a689657b6cc5b`；Build `3ada1d72c57a`；src/package.json 与 Tag 无差异；Manifest requireAdministrator |
+| EXE | `LiveMemory.exe`（asset 787172944）；99,856,384 B；SHA-256 `db32a085afd02d0854e400b36927d97735a4f4e74fb4e612ba14dab2d45294c4` |
+| 校验文件 | `SHA256SUMS.txt`（asset 787176179）；82 B；SHA-256 `23c7262094b94515d4a959d52ff7bca54314d712f9719f7e250bd36380b2283f` |
+| Release body | 与 Tag 中 docs/release-notes/v0.19.4.md 一致；SHA-256 `a480fa2dad7931951a108a71bf107b69c244eb6979cda94c6718babcc11bfa81` |
+| 重新下载 | EXE 与校验文件均从公开下载地址重新读取，大小和 SHA-256 与本地相同；latest API 指向 456754532 |
+| 全量 / EXE | 1,348 pass / 0 fail / 2 skip（344,365.0507 ms）；EXE 89/89；发布前版本/Manifest/i18n 19/19 |
+| 真实 Provider | 本轮生产服务小合成日语报告多批次完成/重开补齐/再次打开零请求；目标报告只读全缓存验证；不同于 EXE 模拟 Provider |
+| 旧版本 | v0.19.1 Release 450272261 与历史资产未修改 |
+
+**限制**：人工 UAC 同意/拒绝、干净 Windows、SmartScreen、浏览器自动打开/Ctrl+C 未重新人工验收；其他 Provider 未逐一付费。EXE 未签名，快手仍预览/采集禁用，部分平台事件 NOT-OBSERVED。发布说明已如实列出。
 
 ---
 

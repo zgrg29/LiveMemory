@@ -1,9 +1,9 @@
 # 工程状态（STATUS）
 
-最后更新：2026-11-24（**v0.19.4 本地补丁：报告翻译完整生命周期**；最新正式发布仍为 v0.19.1，本轮未远程发布。见 §0.68。）
+最后更新：2026-11-24（**v0.19.4 已正式发布**：Flexible Memory Updates & Report Translation Fixes；Release 456754532，见 §0.69。）
 
 > 本文件是唯一进度来源。只要代码与本文不一致，以代码与实测为准，并立即修正本文。
-> **先读 §0 当前状态快照**；§0.68 是当前本地补丁开发记录；§0.65 为最新正式发布 v0.19.1 的记录；更早是历史记录，
+> **先读 §0 当前状态快照**；§0.69 是最新正式发布记录；§0.68 为本轮本地修复验收，§0.65 为历史 v0.19.1 发布记录；更早是历史记录，
 > 只用于追溯，不代表当前状态。发布证据另见 `docs/RELEASE_HISTORY.md`。
 
 ## 0. 当前状态快照（2026-11-24）
@@ -15,15 +15,15 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.19.4` 本地补丁已完成**（最新正式发布仍 `v0.19.1`） |
-| 下一版本 | `0.19.4`（本轮已授权本地修复与 EXE；未授权远程发布） |
-| 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
-| 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
-| 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
-| 当前分支 | `main`（本轮构建源码 commit `818662d`；主修复 `1d48965`，未 Push；正式 Tag 仍 `v0.19.1`） |
-| 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
-| 数据库 Schema | **16**（v0.19.1 无迁移） |
-| 当前开发里程碑 | **P57 报告翻译完整生命周期**；见 §0.68 |
+| 产品版本 / 当前开发版本 | **`0.19.4` 已正式发布** |
+| 下一版本 | 待规划（本轮正式发布已完成） |
+| 最新正式发布 | **`v0.19.4`** · Release ID `456754532` · Published `2026-11-24T12:48:10Z` |
+| 发布性质 | 正式补丁：包含 v0.19.2–v0.19.4 的乱序记忆、独立报告翻译、缓存/恢复/协议修复；平台状态未变，快手仍预览且采集禁用 |
+| 最新 Release 资产 | `LiveMemory.exe` 99,856,384 B · SHA-256 `db32a085…5294c4`；`SHA256SUMS.txt` 82 B · SHA-256 `23c72620…b2283f` |
+| 当前分支 | `main`（发布目标 `90fe50e` 已 Push；构建源码 `818662d`，发布后证据另行提交） |
+| 当前 Tag | `v0.19.4`（annotated，object `03f3f947` → commit `90fe50e`） |
+| 数据库 Schema | **16**（v0.19.4 无迁移） |
+| 当前开发里程碑 | **P57 已随 v0.19.4 正式发布**；见 §0.68–§0.69 |
 | 最近开发 | 2026-11-24：用户已验收乱序；本轮只修翻译独立文本队列/共享缓存/进度；真实目标全缓存与小报告生命周期通过，见 §0.68 |
 | 最近文档整理 | 2026-11-24：独立报告文本转换原则、共享缓存身份、完整生命周期验收、交接及开发日志 |
 
@@ -73,7 +73,7 @@
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
 | 全量自动化（2026-11-19 v0.19.1） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
 | 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
-| 当前本地补丁（v0.19.4） | **1,348 passed / 0 failed / 2 skipped**；EXE **89/89**；Build `3ada1d72c57a`；详 §0.68；未远程发布 |
+| 当前正式版（v0.19.4） | **1,348 passed / 0 failed / 2 skipped**；EXE **89/89**；Build `3ada1d72c57a`；详 §0.68–§0.69；已正式发布 |
 | 历史本地补丁（v0.19.3） | **1,345 passed / 0 failed / 2 skipped**；EXE **87/87**；Build `f90ab3d39fdf`；详 §0.67；未远程发布 |
 | 历史本地补丁（v0.19.2） | **1,319 passed / 0 failed / 2 skipped**；EXE **85/85**；Build `5e9388a8ddb9`；详 §0.66；未远程发布 |
 | 历史 EXE（v0.19.1） | 已发布，Build `b66818d032b5`；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
@@ -89,7 +89,7 @@
 
 ### 0.6 开放问题与下一步
 
-v0.19.1 已正式发布；本轮 v0.19.4 完整生命周期修复见 §0.68。远程发布仍未授权；其余待办：
+v0.19.4 已按用户明确授权正式发布；本轮修复验收见 §0.68，发布证据见 §0.69。其余待办：
 
 1. **OpenCode 真实付费验收**：需要用户提供真实 Key 与费用授权，验证 Pay-as-you-go 的
    真实 200/429/5xx、真实模型输出、真实账单与 `usage.cost`；Go 还需额外确认套餐真实可用性。
@@ -110,6 +110,7 @@ v0.19.1 已正式发布；本轮 v0.19.4 完整生命周期修复见 §0.68。�
 
 ### 0.7 历史记录
 
+- §0.69：v0.19.4 正式发布与上传/下载校验。
 - §0.68：v0.19.4 完整翻译生命周期与 12 项跨场缓存修复（未远程发布）。
 - §0.67：v0.19.3 报告翻译真实 Provider 专项（未远程发布）。
 - §0.66：v0.19.2 本地补丁开发与验收；用户已确认乱序可用，翻译实际故障由 §0.67 继续处理。
@@ -121,6 +122,20 @@ v0.19.1 已正式发布；本轮 v0.19.4 完整生命周期修复见 §0.68。�
 - §0.59 及更早：历史里程碑、调查与验收记录，**只用于追溯**。
 - 发布资产、Tag、Release ID 与 SHA-256 的归档：`docs/RELEASE_HISTORY.md`。
 - 逐版本变化：`docs/CHANGELOG.md`。
+
+---
+
+## 0.69 v0.19.4 正式发布（2026-11-24）
+
+用户在完成本地补丁后明确授权“准备 release note title 并 release”，并告知已 Push。核对远程 main 为 5106a61 后，准备英/中/日发布说明与 README/CHANGELOG，发布提交 90fe50e；annotated Tag v0.19.4（03f3f947）已 Push。运行时源码与已验收构建 818662d 无差异，发布沿用原始 EXE，不重新打包。
+
+- Release：[LiveMemory v0.19.4 — Flexible Memory Updates & Report Translation Fixes](https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.4)；ID **456754532**；published **2026-11-24T12:48:10Z**（北京时间 20:48:10）；draft=false / prerelease=false，已验证为 latest。
+- 标准资产：LiveMemory.exe **99,856,384 B** / SHA-256 `db32a085afd02d0854e400b36927d97735a4f4e74fb4e612ba14dab2d45294c4`；SHA256SUMS.txt **82 B** / `23c7262094b94515d4a959d52ff7bca54314d712f9719f7e250bd36380b2283f`。均已重新下载比对通过。
+- Build **3ada1d72c57a**、Manifest requireAdministrator；Tag 目标与构建 Commit 不同仅因文档/验收脚本提交，src/package.json 无差异。
+- 正文与 Tag 中 docs/release-notes/v0.19.4.md 完全一致，SHA-256 `a480fa2dad7931951a108a71bf107b69c244eb6979cda94c6718babcc11bfa81`。原 v0.19.1 Release/资产保留，未覆盖历史版本。
+- 复用本轮全量 1,348 pass / 0 fail / 2 skip、EXE 89/89；发布前另跑版本/Manifest/i18n 门禁 19/19。没有新增付费 AI 请求。真实 API 与模拟 EXE、人工 UAC/干净 Windows/其他 Provider 未验证项均写入发布说明。
+
+详细资产与 Tag 证据见 RELEASE_HISTORY；本轮过程见 log/2026-11-24-translation-lifecycle.md 发布追加。
 
 ---
 

@@ -43,3 +43,11 @@
 ## 尚未验证
 
 其他 Provider 真实付费、真实双击 UAC/干净账户、十语人工浏览器布局矩阵未补验。生产库未写回，升级后重新打开报告由缓存派生完成；保留历史失败尝试作为费用审计，不伪造历史记录。未 Push / Tag / Release。
+
+## 后续正式发布（用户明确授权，2026-11-24）
+
+用户表示已 Push，并明确要求准备 release title/notes 后直接发布。远程 main 核对为 5106a61；发布准备 Commit 90fe50e，annotated Tag object 03f3f947 → 90fe50e 已 Push。标题 `LiveMemory v0.19.4 — Flexible Memory Updates & Report Translation Fixes`，发布说明英/中/日覆盖自正式 v0.19.1 后的本地修复与验收限制。运行时 src/package.json 相对已验收 818662d 无差异，未重新打包。
+
+Release `https://github.com/zgrg29/LiveMemory/releases/tag/v0.19.4`，ID 456754532，published_at 2026-11-24T12:48:10Z，draft=false / prerelease=false / latest=true。先草稿上传并核对 digest，再发布；随后公开重新下载两文件校验通过。标准 LiveMemory.exe 99,856,384 B / db32a085…5294c4，SHA256SUMS.txt 82 B / 23c72620…b2283f；正文 hash `a480fa2dad7931951a108a71bf107b69c244eb6979cda94c6718babcc11bfa81`，与 Tag 中发布说明一致。旧发布未覆盖。
+
+发布前版本/Manifest/i18n 19/19，复用全量及 89/89 EXE。发布凭据只通过现有 Git credential helper 在进程内读取，未打印或持久化；不使用 AI Key，无新增付费请求。最终发布事实同步 STATUS §0.69、RELEASE_HISTORY、HANDOFF、ROADMAP 与 TEST_PLAN。
