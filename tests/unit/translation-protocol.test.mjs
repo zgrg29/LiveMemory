@@ -71,3 +71,10 @@ test('an interrupted Markdown JSON reply still recovers only its closed entries'
 test('an explicit negative JSON capability keeps the translation prompt portable',()=>{
  assert.equal(translationResponseOptions({providerId:'openrouter',capabilities:{json:false}}).responseFormat,'none');
 });
+
+test('one prose-wrapped JSON envelope stays compatible with the previous reader',()=>{
+ const r=parseTranslationAnswer('以下为译文：\n```json\n'+JSON.stringify({items:[one,two]})+'\n```',['t1','t2']);
+ assert.equal(r.code,null);assert.equal(r.translations.size,2);
+ const ambiguous='结果：'+JSON.stringify({items:[one]})+'\n'+JSON.stringify({items:[{id:'t1',text:'不同结果'}]});
+ assert.equal(parseTranslationAnswer(ambiguous,['t1']).translations.size,0);
+});

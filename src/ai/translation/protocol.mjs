@@ -53,6 +53,25 @@ function unFence(text) {
   return value;
 }
 
+// Accept a single JSON envelope surrounded by prose/fences, as the previous
+// reader did. Never choose between two competing objects/arrays.
+function singleEnvelope(source) {
+  const start = source.search(/[\[{]/);
+  if (start <= 0) return null;
+  let depth = 0, quoted = false, escaped = false;
+  for (let at = start; at < source.length; at++) {
+    const c = source[at];
+    if (quoted) {if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === '"') quoted = false; continue;}
+    if (c === '"') quoted = true;
+    else if (c === '{' || c === '[') depth++;
+    else if ((c === '}' || c === ']') && --depth === 0) {
+      if (/[\[{]/.test(source.slice(at + 1))) return null;
+      try { return JSON.parse(source.slice(start, at + 1)); } catch {return null;}
+    }
+  }
+  return null;
+}
+
 // Recover only fully closed JSON entries, never invent closing quotes or text.
 function closedItems(source) {
   const prefix = /^\s*(?:\{\s*"items"\s*:\s*\[|\[)/.exec(source);
@@ -93,6 +112,7 @@ export function parseTranslationAnswer(text, ids, {finishReason = null, reasonin
     const position = /position (\d+)/.exec(String(error.message));
     if (position) diagnostics.parsePosition = Number(position[1]);
   }
+  if (syntaxError) {const envelope = singleEnvelope(source); if (envelope) {parsed = envelope; syntaxError = false;}}
   if (typeof parsed === 'string' && /^[\[{]/.test(unFence(parsed))) {
     try {parsed = JSON.parse(unFence(parsed)); syntaxError = false;} catch {parsed = undefined; syntaxError = true;}
   }
@@ -102,7 +122,7 @@ export function parseTranslationAnswer(text, ids, {finishReason = null, reasonin
   else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.translations)) {entries = parsed.translations; diagnostics.shape = 'translations-array';}
   else if (parsed && typeof parsed === 'object' && Object.keys(parsed).length && Object.keys(parsed).every((id) => ids.includes(id))) {
     entries = Object.entries(parsed).map(([id, value]) => ({id, text: value})); diagnostics.shape = 'id-map';
-  } else if (ids.length === 1 && !truncated && (typeof parsed === 'string' || (syntaxError && !/^[\[{"`]/.test(source)))) {
+  } else if (ids.length === 1 && !truncated && (typeof parsed === 'string' || (syntaxError && !/^[\[{"`]/.test(source) && !/[\[{]\s*[\[{"]/.test(source)))) {
     entries = [{id: ids[0], text: typeof parsed === 'string' ? parsed : source}]; diagnostics.shape = 'single-text';
   } else if (syntaxError) {entries = closedItems(source); diagnostics.shape = entries.length ? 'incomplete-items' : 'invalid-json';}
   else {entries = []; diagnostics.shape = 'wrong-shape';}
