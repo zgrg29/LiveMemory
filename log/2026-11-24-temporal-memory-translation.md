@@ -65,12 +65,31 @@ Schema **16**，不增加列、不全库重写。旧时间在读取时恢复，�
 - 专项：memory-temporal **23/23**，包括六排列、历史状态、弱证据、同 event 重复、过期 snapshot、旧时间/purged/unknown、多语言、三场历史链、同证据状态保护、事务回滚、明确历史补录标记。
 - 现有翻译测试加独立失败/缓存/参数回归通过；Provider 失败精确断言原因与 unknown usage，不再只验证 failed。
 - 首轮开发中全量 **1,298 pass / 11 fail / 2 skip**，发现并修正逻辑/快照期望问题后重跑。两项 Cookie 清理失败来自受管仓库继承的 Everyone Deny DeleteSubdirectoriesAndFiles；测试辅助允许 `LIVEMEMORY_TEST_TMP_ROOT` 指向独立 OS temp，原有全部 6 条断言通过。生产 ACL 和断言不变，未 skip 掩盖。
-- 后续完整回归一轮 **1,311 pass / 0 fail / 2 skip**（364,520 ms）；新增最终案例的全量结果待填。
+- 后续完整回归一轮 **1,311 pass / 0 fail / 2 skip**（364,520 ms）；最终交付源码全量为 **1,319 pass / 0 fail / 2 skip**，共 1,321 项、358,961.7754 ms；日志 `tests/.tmp/full-release-check.txt`。
 - 初步新 EXE 专项 **7/7**：旧错误 recovery、401 具体原因、日→中、缓存零额外请求、日语原文保留、只补 memory、运行身份。使用真实 Windows Credential Manager 随机测试引用并自动删除；Provider 为本地模拟，**不是**真实 DeepSeek 付费验收。
 - 正式 EXE Manifest 仍 requireAdministrator；自动化仅使用已验证 Manifest 后生成的 asInvoker 测试副本，不能声称真实 UAC 点击/干净 Windows 已通过。
 
-最终构建、最终回归、Commit 与文件哈希：待验收后更新。
+最终验收（2026-11-24）：**1,319 passed / 0 failed / 2 skipped**，总计 1,321，358,961.7754 ms；skip 为原有 opt-in 真实 CredMan 测试，本轮 EXE 另有随机真实 CredMan 测试并自动清理。时间合并专项 **23/23**。
+
+| 最终 EXE 项目 | 真实结果 |
+| --- | --- |
+| 版本 / Build ID | `0.19.2` / `5e9388a8ddb9` |
+| 构建源码 Commit | `422b781d589a3cf89cc2906b429ee6e678ac88a7` |
+| 路径 / 大小 | `D:\LiveMemory\dist\LiveMemory.exe` / **99,799,552 B** |
+| SHA-256 | `20f674f2390f6f3debd11812dafb9b7d0a5afd73211fc5855b07d0bc7b09f50a` |
+| Manifest | **requireAdministrator**；功能验收使用测试专用 asInvoker 副本，未修改正式 EXE |
+| 标识 / 资源 | 构建 `2026-11-24T05:54:36.408Z`；Node 24.22.1；257 assets，71 个必需模块 |
+| verify-exe | **11/11**：启动、旧库重启、认证、十语资源、CLI |
+| verify-help-exe | **14/14** |
+| verify-provider-save-exe | **24/24**：真实 CredMan 保存/重启/编辑/旧密文迁移；测试引用清理成功 |
+| verify-p0-2-exe | **13/13**：备份→恢复→重启→再次备份，场次/报告/画像与设置保留，凭据不入备份 |
+| verify-ai-token-exe | **16/16**：批次失败/重启/恢复仅重试未完成批次，usage/成本归属保留 |
+| verify-memory-translation-exe | **7/7**：记忆失败时日→中、401 原因、缓存、原文不变、旧任务只补 memory 1 次 |
+| 合计 | **85/85**；Provider 全为本地模拟，不冒充真实付费验收 |
+
+校验文件 `dist/SHA256SUMS.txt` 已同步实际产物。实现本地 Commit：`2f427ed`、`422b781`；后续交付记录 Commit 见 `git log -1`（代码不再修改）。未 Push / Tag / Release。完整开发证据见 `log/2026-11-24-temporal-memory-translation.md`。
+
 
 ## 尚未验证
 
-真实 DeepSeek `deepseek-flash` 付费重测、用户原始失败请求的已丢失原因、真实双击 UAC 同意/拒绝、干净 Windows 账户、真实十语浏览器布局矩阵。未使用真实用户数据库/聊天/Key；没有未经授权的大量付费调用、Push、Tag 或 Release。
+真实 DeepSeek `deepseek-flash` 付费重测、用户原始失败请求的已丢失原因、真实双击 UAC 同意/拒绝、干净 Windows 账户、真实十语浏览器布局矩阵。旧版本若已将重复证据错误提升置信度，缺少当时逐证据评分历史，不能猜测回退到某个数值；本轮会规范化证据并防止继续重复提升。未使用真实用户数据库/聊天/Key；没有未经授权的大量付费调用、Push、Tag 或 Release。

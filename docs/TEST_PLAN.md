@@ -6,7 +6,7 @@
 - 翻译新增独立记忆失败/缓存无需凭据/非法参数回归；失败原因与 unknown usage 精确断言。既有日语→简中、其他语言、旧 Schema、部分重试、缓存版本、十语言集成继续执行。
 - `scripts/verify-memory-translation-exe.mjs --baseline` 在旧 v0.19.1 EXE 实测 ERR_INVALID_ARG_TYPE；默认模式在新 EXE 验证 7 项（模拟本地 Provider，非真实付费）：记忆失败恢复、401 原因、日→中、缓存、原文、只补 memory、运行身份。随机真实 CredMan 测试凭据自动清理；LOCALAPPDATA/TEMP/data-dir 隔离。
 - 首轮开发中全量 1,298 pass / 11 fail / 2 skip，保留记录，不作为最终通过。修正逻辑与协议/文案快照后重跑；受管工作区继承 Deny DELETE_CHILD 导致 Cookie 清理断言失败，LIVEMEMORY_TEST_TMP_ROOT 使用独立 OS temp 后原断言 6/6 通过。
-- 最终冻结源码全量与 EXE 结果待 STATUS §0.66 最终验收填写。真实 Provider、UAC/干净环境、真实浏览器十语矩阵未执行。
+- 最终冻结源码：**1,319 passed / 0 failed / 2 skipped**，1,321 总计、358,961.7754 ms。最终 EXE **85/85**（11 启动/14 帮助/24 凭据/13 备份恢复/16 AI 断点/7 本轮专项），Build `5e9388a8ddb9`，细节见 STATUS §0.66。真实 Provider、UAC/干净环境、真实浏览器十语矩阵未执行。
 
 
 > **本文件是测试策略与历史结果记录，不是当前状态的唯一来源。** 当前版本的测试数量、

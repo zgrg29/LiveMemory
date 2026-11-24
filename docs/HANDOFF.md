@@ -5,7 +5,7 @@
 本轮变更、兼容性、精确根因及最新验收以 `docs/STATUS.md` §0.66 和 `log/2026-11-24-temporal-memory-translation.md` 为准。旧版按直播时间顺序拒绝任务的规则已正式废止，不能根据下方历史记录恢复该限制。保留同主播并发 gate，使用真实观察时间/证据强度合并与事务重读；单场报告/阅读翻译不依赖记忆成功。Schema 16，无全库迁移、无 Key 重置、无历史报告覆盖，无远程发布。
 
 - v0.19.1 EXE 已准确复现：401 后失败进度写入 usage: undefined，SQLite 抛 ERR_INVALID_ARG_TYPE，覆盖 Provider 错误。新服务保留原因、已完成缓存与 usage。
-- 时间合并 23 项回归、初步 EXE 专项 7 项已通过；冻结源码完整回归与最终构建仍在验收，以 STATUS 更新为准。
+- 时间合并 **23/23**、最终全量 **1,319 pass / 0 fail / 2 skip**；最终 EXE **85/85**，Build `5e9388a8ddb9`，源码 commit `422b781`。产物 `dist/LiveMemory.exe`，Schema 16；完整哈希/证据见 STATUS §0.66。
 - 系统临时目录覆盖 `LIVEMEMORY_TEST_TMP_ROOT` 仅用于测试，避免受管工作区删除拒绝 ACL 干扰 Cookie 旧测试；不修改生产权限或跳过断言。
 - 真实 DeepSeek 付费、真实 UAC、干净 Windows 与真实十语 UI 矩阵仍未重测。
 

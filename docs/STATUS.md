@@ -20,12 +20,12 @@
 | 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
-| 当前分支 | `main`（本轮本地修复 commit `2f427ed`，未 Push；正式 Tag 仍 `v0.19.1`） |
+| 当前分支 | `main`（本轮本地实现 commit `2f427ed` / `422b781`，未 Push；正式 Tag 仍 `v0.19.1`） |
 | 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
 | 当前开发里程碑 | **P55 乱序长期记忆与报告翻译故障修复（本地补丁）**；见 §0.66 |
 | 最近开发 | 2026-11-24：乱序记忆、历史证据与状态保护、独立报告翻译故障修复；v0.19.2 本地补丁，见 §0.66 |
-| 最近文档整理 | 2026-11-19：v0.19.1 Release Notes / 检查单 / 发布记录；STATUS、HANDOFF、ROADMAP、CHANGELOG |
+| 最近文档整理 | 2026-11-24：乱序记忆与翻译工程规则、协议、数据模型、验收、交接及开发日志 |
 
 ### 0.2 平台状态
 
@@ -73,11 +73,12 @@
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
 | 全量自动化（2026-11-19 v0.19.1） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
 | 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
-| 本轮 EXE（v0.19.1） | **待最终构建填写**；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
+| 当前本地补丁（v0.19.2） | **1,319 passed / 0 failed / 2 skipped**；EXE **85/85**；Build `5e9388a8ddb9`；详 §0.66；未远程发布 |
+| 历史 EXE（v0.19.1） | 已发布，Build `b66818d032b5`；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.19.0 发布） | Build `252939f4d41b`；99,551,744 B；SHA-256 `901f92fd…64fc9`；`requireAdministrator`；`verify-provider-save-exe` 14/14、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
 | 历史 EXE（v0.18.0 发布） | Build `902109197d8b`；99,503,104 B；SHA-256 `285cfd82…2957f`；`requireAdministrator`；verify-exe 11/11、verify-help-exe 14/14、verify-ai-token-exe 16/16 |
 | 六平台回归 | 全量套件通过；协议未改 |
-| 十语言字典 / UI 矩阵 | 10 × **2,379** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
+| 十语言字典 / UI 矩阵 | 10 × **2,382** 键；键集/占位符门禁通过；真实浏览器 80/80 为 v0.18.0 历史结果，本轮新增文案未做真实浏览器矩阵 |
 | 真实 H5 / 真实 EXE 采集 | **未执行**（无快手书面许可） |
 | 真实付费 Provider（DeepSeek 以外） | **未逐一验收**；需要真实 Key 与费用授权 |
 | 真实 Windows UAC / 干净账户 | **未人工验证**；自动化只断言 Manifest 与 asInvoker 功能副本 |
@@ -127,11 +128,30 @@ v0.19.1 已正式发布；本轮 v0.19.2 本地修复见 §0.66。远程发布�
 - 单场报告完成但记忆失败保持 partial、独立可读/可翻译。旧顺序错误提供 resume-memory；已有报告/批次/观众复用，不自动重跑历史。旧 gate 多在 memory job 创建前失败，这种任务仍需执行缺失的记忆请求，不能假称已有提取结果。
 - **真实根因**：v0.19.1 EXE（b66818d032b5，Node 24.21.0）+ 本地模拟 Provider 401 实际返回 ERR_INVALID_ARG_TYPE；翻译失败进度带 usage: undefined，updateTranslationRun 序列化后仍为 undefined，被 .run(...values) 绑定到 SQLite，掩盖 PROVIDER_AUTH_FAILED。修复省略 undefined、保存准确原因/usage、独立缓存与重试；完整有效缓存不依赖可用 Provider。
 - 新增十语翻译 storage/internal/request 错误；每份 2,382 键。新任务记忆提示词 v13.4-memory / m7.3，单场 v13.3 不变，任务语言快照不变。
-- 专项与初步 EXE：时间合并 23/23；既有相关测试与翻译新增回归通过；新 EXE 初步专项 7/7（本地模拟 Provider + 随机 CredMan 测试凭据自动清理），旧任务只调用缺失 memory 1 次、报告不重跑。正式冻结源码全量与最终 EXE 证据待下方最终验收填入。
+- 专项与初步 EXE：时间合并 23/23；既有相关测试与翻译新增回归通过；新 EXE 初步专项 7/7（本地模拟 Provider + 随机 CredMan 测试凭据自动清理），旧任务只调用缺失 memory 1 次、报告不重跑。最终冻结源码全量与最终 EXE 均通过，见下方最终验收。
 - 首轮开发中全量：1,298 pass / 11 fail / 2 skip（含待修逻辑与旧快照期望，已修正后重跑）。其中 Bilibili Cookie 原断言的 2 个失败来自受管工作区 Everyone Deny DeleteSubdirectoriesAndFiles；通过 LIVEMEMORY_TEST_TMP_ROOT 指向独立 OS 临时目录，6/6 原断言通过；不改变生产权限、不跳过测试。
 - **未验证**：真实 DeepSeek 付费重测、用户原始失败请求（旧版已覆盖其具体原因，不能推测必为 401）、真实 UAC 点击/干净 Windows、真实十语浏览器布局矩阵。
 
-最终验收：待完成（以本节后续更新为准）。
+最终验收（2026-11-24）：**1,319 passed / 0 failed / 2 skipped**，总计 1,321，358,961.7754 ms；skip 为原有 opt-in 真实 CredMan 测试，本轮 EXE 另有随机真实 CredMan 测试并自动清理。时间合并专项 **23/23**。
+
+| 最终 EXE 项目 | 真实结果 |
+| --- | --- |
+| 版本 / Build ID | `0.19.2` / `5e9388a8ddb9` |
+| 构建源码 Commit | `422b781d589a3cf89cc2906b429ee6e678ac88a7` |
+| 路径 / 大小 | `D:\LiveMemory\dist\LiveMemory.exe` / **99,799,552 B** |
+| SHA-256 | `20f674f2390f6f3debd11812dafb9b7d0a5afd73211fc5855b07d0bc7b09f50a` |
+| Manifest | **requireAdministrator**；功能验收使用测试专用 asInvoker 副本，未修改正式 EXE |
+| 标识 / 资源 | 构建 `2026-11-24T05:54:36.408Z`；Node 24.22.1；257 assets，71 个必需模块 |
+| verify-exe | **11/11**：启动、旧库重启、认证、十语资源、CLI |
+| verify-help-exe | **14/14** |
+| verify-provider-save-exe | **24/24**：真实 CredMan 保存/重启/编辑/旧密文迁移；测试引用清理成功 |
+| verify-p0-2-exe | **13/13**：备份→恢复→重启→再次备份，场次/报告/画像与设置保留，凭据不入备份 |
+| verify-ai-token-exe | **16/16**：批次失败/重启/恢复仅重试未完成批次，usage/成本归属保留 |
+| verify-memory-translation-exe | **7/7**：记忆失败时日→中、401 原因、缓存、原文不变、旧任务只补 memory 1 次 |
+| 合计 | **85/85**；Provider 全为本地模拟，不冒充真实付费验收 |
+
+校验文件 `dist/SHA256SUMS.txt` 已同步实际产物。实现本地 Commit：`2f427ed`、`422b781`；后续交付记录 Commit 见 `git log -1`（代码不再修改）。未 Push / Tag / Release。完整开发证据见 `log/2026-11-24-temporal-memory-translation.md`。
+
 
 ---
 
