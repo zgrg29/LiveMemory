@@ -274,14 +274,15 @@ test('a saved Japanese report can be read in Chinese without re-running analysis
   assert.match(translated.payload.report.summary, /【ZH】/);
   assert.match(translated.payload.report.topics[0].title, /【ZH】/);
   assert.match(translated.payload.report.sentiment[0].note, /【ZH】/);
-  // Long-term facts are translated as display text only.
+  // Live long-term profiles are independent: report translation never sends them.
   const profile = translated.payload.longTermProfiles.items[0];
   assert.equal(profile.facts[0].id, memory.factId);
   assert.equal(profile.facts[0].topic, 'ゲーム', 'topic is a stable matching key and must not be translated');
   assert.equal(profile.facts[0].certainty, 'stated');
   assert.equal(profile.version, 2);
-  assert.match(profile.facts[0].statement, /【ZH】/);
-  assert.match(profile.summary, /【ZH】/);
+  assert.equal(profile.facts[0].statement, before.fact.statement);
+  assert.equal(profile.summary, before.memoryHead.summary);
+  assert.equal(state.lastInput.items.some((item) => item.text === before.fact.statement || item.text === before.memoryHead.summary), false);
 
   // The stored original report is unchanged; selecting the source language
   // returns it without using the translation cache.
@@ -723,4 +724,70 @@ test('Anthropic translation uses text blocks, ignores thinking, and needs no JSO
   await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
   const result=await waitForTranslation(server,session.id,'zh-CN');assert.equal(result.status,'complete');
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_THOUGHT/);
+});
+
+test('shared profile cache resolves exact keys across sessions: twelve previously missing fields are all reusable', async (t) => {
+  const {server,session}=await setupServer(t,{calls:0,mode:'ok'});
+  const {upsertTranslationItem,listTranslationItems}=await import('../../src/storage/repositories/ai-translations.mjs');
+  const {collectTranslatableItems,summarizeTranslation}=await import('../../src/ai/translation/fields.mjs');
+  const {buildSessionAnalysisReport}=await import('../../src/analytics/ai/report.mjs');
+  const other=seedSession(server.db,{messageCount:1,viewerCount:1,roomId:'other'});
+  const payload={longTermProfiles:{items:Array.from({length:6},(_,i)=>({memoryId:`shared-${i}`,summary:`要約${i}`,facts:[{id:`fact-${i}`,statement:`事実${i}`}]}))}};
+  const items=collectTranslatableItems(payload,{includeMemory:true});
+  for(const item of items) upsertTranslationItem(server.db,{sessionId:other.id,targetKind:item.kind,targetId:item.targetId,itemPath:item.path,targetLocale:'zh-CN',sourceHash:item.hash,translatedText:'已有译文',translatorVersion:'lm-translation-v1'});
+  const oldRows=listTranslationItems(server.db,{sessionId:session.id,targetLocale:'zh-CN',translatorVersion:'lm-translation-v1'});
+  assert.equal(summarizeTranslation(items,oldRows).missing,12,'reproduce the previous session filter defect');
+  const rows=listTranslationItems(server.db,{sessionId:session.id,targetLocale:'zh-CN',translatorVersion:'lm-translation-v1',items});
+  assert.equal(summarizeTranslation(items,rows).translated,12);
+  assert.equal(summarizeTranslation(items,rows).missing,0);
+  assert.equal(listTranslationItems(server.db,{sessionId:session.id,targetLocale:'en',translatorVersion:'lm-translation-v1',items}).length,0);
+  assert.equal(listTranslationItems(server.db,{sessionId:session.id,targetLocale:'zh-CN',translatorVersion:'lm-translation-v1',items:items.map(i=>({...i,hash:'0'.repeat(64)}))}).length,0);
+  // Input never reads current memory, evidence content, viewer names or task coverage.
+  const forbidden=/\b(events|viewer_memories|memory_facts|viewers|ai_job_memory_viewers|ai_evidence)\b/i;
+  const guarded={prepare(sql){assert.equal(forbidden.test(sql),false,sql);return server.db.prepare(sql);}};
+  const saved=buildSessionAnalysisReport(guarded,session.id,{translationInputOnly:true});
+  assert.ok(saved.report.summary);assert.equal(saved.longTermProfiles,null);
+});
+
+test('many chunks, failed plus pending, restart and final tail converge with exact cache counters', async (t) => {
+  const state={calls:0,mode:'ok'};const {server,session,config}=await setupServer(t,state);
+  const {buildSessionAnalysisReport}=await import('../../src/analytics/ai/report.mjs');
+  const {collectTranslatableItems}=await import('../../src/ai/translation/fields.mjs');
+  const {upsertTranslationItem}=await import('../../src/storage/repositories/ai-translations.mjs');
+  const {ReportTranslationService}=await import('../../src/ai/translation/service.mjs');
+  const result=server.db.prepare('SELECT id,result_json FROM ai_results WHERE session_id=?').get(session.id);
+  const raw=JSON.parse(result.result_json);raw.session_topics.topics[0].key_points=Array.from({length:83},(_,i)=>`項目${i}`);
+  server.db.prepare('UPDATE ai_results SET result_json=? WHERE id=?').run(JSON.stringify(raw),result.id);
+  const items=collectTranslatableItems(buildSessionAnalysisReport(server.db,session.id,{translationInputOnly:true}));
+  const cached=items[0];upsertTranslationItem(server.db,{sessionId:session.id,targetKind:cached.kind,targetId:cached.targetId,itemPath:cached.path,targetLocale:'zh-CN',sourceHash:cached.hash,translatedText:'保留译文',translatorVersion:'lm-translation-v1'});
+  const requested=[];let count=0;
+  server.translationService.fetchImpl=async(_url,options)=>{const input=syntheticTranslationInput(options);requested.push(input.items.map(i=>i.text));count++;
+    if(count===2)return translationResponse('broken');
+    return translationResponse(JSON.stringify({items:input.items.map(i=>({id:i.id,text:`译文${i.text}`}))}));};
+  await server.translationService.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  const partial=await waitForTranslation(server,session.id,'zh-CN');assert.ok(partial.failed>0);assert.ok(partial.missing>0);
+  assert.equal(partial.run.translatedItems,partial.translated);assert.equal(partial.run.pendingItems,partial.missing);
+  await server.translationService.shutdown();
+  const retryInputs=[];const restarted=new ReportTranslationService({db:server.db,configStore:server.providerConfigStore,maxRetries:0,fetchImpl:async(_url,options)=>{const input=syntheticTranslationInput(options);retryInputs.push(...input.items.map(i=>i.text));return translationResponse(JSON.stringify({items:input.items.map(i=>({id:i.id,text:`译文${i.text}`}))}));}});
+  t.after(()=>restarted.shutdown());
+  await restarted.start({sessionId:session.id,targetLocale:'zh-CN',configId:config.id,consent:true});
+  await Promise.all([...restarted.active.values()].map(a=>a.promise));
+  const done=(await restarted.getStatus(session.id,'zh-CN')).translation;
+  assert.equal(done.status,'complete');assert.equal(done.missing,0);assert.equal(done.failed,0);assert.equal(done.translated,items.length);
+  assert.equal(retryInputs.length,partial.failed+partial.missing);
+  for(const text of requested[0])assert.equal(retryInputs.includes(text),false);
+  assert.equal(retryInputs.includes(cached.text),false);
+  assert.ok(retryInputs.includes('項目82'),'the final tail was processed');
+  const before=retryInputs.length;await restarted.start({sessionId:session.id,targetLocale:'zh-CN',consent:true});
+  assert.equal(retryInputs.length,before,'complete cache works without a provider selection');
+});
+
+
+test('interrupted run preserves its remaining count and completed caches', async (t) => {
+  const {server,session}=await setupServer(t,{calls:0,mode:'ok'});
+  const {insertTranslationRun,markRunningTranslationRunsInterrupted,getTranslationRun}=await import('../../src/storage/repositories/ai-translations.mjs');
+  const run=insertTranslationRun(server.db,{sessionId:session.id,targetLocale:'zh-CN',translatorVersion:'lm-translation-v1',totalItems:149,translatedItems:97,failedItems:40,pendingItems:12});
+  markRunningTranslationRunsInterrupted(server.db);
+  const recovered=getTranslationRun(server.db,run.id);
+  assert.equal(recovered.status,'interrupted');assert.equal(recovered.pendingItems,12);
 });

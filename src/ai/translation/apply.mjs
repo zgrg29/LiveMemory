@@ -54,13 +54,16 @@ export function applyReportTranslation(db, payload, {locale = null, providers = 
   const rows = listTranslationItems(db, {
     sessionId,
     targetLocale,
-    translatorVersion: TRANSLATION_VERSION
+    translatorVersion: TRANSLATION_VERSION,
+    items: collectTranslatableItems(payload, {includeMemory: true})
   });
   const run = latestTranslationRun(db, {sessionId, targetLocale});
   // The stored text *is* the original when the requested language matches the
   // report language. Never overwrite it from a cache row, even if one exists.
   if (!sourceLocale || targetLocale !== sourceLocale) {
-    applyCachedTranslations(payload, items, rows);
+    // Legacy profile translations remain readable, but live memory never enters
+    // the report queue or completion condition.
+    applyCachedTranslations(payload, collectTranslatableItems(payload, {includeMemory: true}), rows);
   }
   return {
     items,

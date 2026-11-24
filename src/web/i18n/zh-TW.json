@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…另有 {count} 個批次。",
       "awaitingAggregateAuto": "所有批次結果都已儲存。可在 AI 分析中心點選「繼續」，只補做未完成的批次與最終合併。",
       "languageTitle": "報告語言",
-      "languageHint": "切換閱讀語言只會翻譯顯示文字，不會重新分析直播，也不會改寫長期觀眾記憶。",
+      "languageHint": "只翻譯已儲存的報告文字；即時長期畫像獨立顯示，既有畫像譯文快取仍可重用。不會重新分析直播或改寫原文。",
       "languageOriginalChip": "原文",
       "languageTranslatedChip": "翻譯",
       "languageSource": "報告原文語言：{locale}",

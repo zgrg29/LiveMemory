@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…y {count} lotes más.",
       "awaitingAggregateAuto": "Todos los resultados de lote están guardados. Usa «Continuar» en el centro de análisis con IA para completar solo los lotes que faltan y la fusión final.",
       "languageTitle": "Idioma del informe",
-      "languageHint": "Cambiar el idioma de lectura solo traduce el texto mostrado. No vuelve a analizar el directo ni reescribe la memoria de espectadores a largo plazo.",
+      "languageHint": "Solo se traduce el texto del informe guardado. Los perfiles a largo plazo actuales se muestran por separado y sus traducciones existentes se reutilizan. No se vuelve a analizar ni se modifica el original.",
       "languageOriginalChip": "Original",
       "languageTranslatedChip": "Traducido",
       "languageSource": "Idioma original del informe: {locale}",

@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…e mais {count} lotes.",
       "awaitingAggregateAuto": "Todos os resultados de lote estão salvos. Use Continuar na central de análise com IA para concluir somente os lotes ausentes e a mesclagem final.",
       "languageTitle": "Idioma do relatório",
-      "languageHint": "Mudar o idioma de leitura apenas traduz o texto exibido. Isso não analisa novamente a transmissão nem reescreve a memória de longo prazo dos espectadores.",
+      "languageHint": "Traduz apenas o texto do relatório salvo. Os perfis atuais de longo prazo são separados e as traduções existentes são reutilizadas. Não refaz a análise nem altera o original.",
       "languageOriginalChip": "Original",
       "languageTranslatedChip": "Traduzido",
       "languageSource": "Idioma original do relatório: {locale}",

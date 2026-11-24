@@ -423,14 +423,14 @@ function renderTranslationPanel(ctx, payload, {onTranslate, onOpenSettings, erro
   if (error) {
     nodes.push(el('div', {className: 'callout callout--danger', attrs: {role: 'alert'}},
       el('div', {text: t('ai.report.translationFailed', {reason: error})})));
-  } else if (translation.run?.error?.code) {
+  } else if (!['complete', 'original'].includes(translation.status) && translation.run?.error?.code) {
     nodes.push(el('div', {className: 'callout callout--danger', attrs: {role: 'alert'}},
       el('div', {text: t('ai.report.translationFailed', {
         reason: translationReason(t, translation.run.error.code)
       })})));
   }
 
-  if (translation.run?.error?.diagnostics) {
+  if (!['complete', 'original'].includes(translation.status) && translation.run?.error?.diagnostics) {
     nodes.push(el('details', {className: 'translation-diagnostics'},
       el('summary', {text: t('ai.report.translationDetails')}),
       el('pre', {text: JSON.stringify(translation.run.error.diagnostics, null, 2)})));

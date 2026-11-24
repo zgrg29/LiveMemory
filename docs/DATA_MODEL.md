@@ -1,5 +1,9 @@
 # 数据模型（DATA_MODEL）
 
+## 2026-11-24：v0.19.4 缓存身份一致性
+
+Schema 16，不迁移。ai_translations 的 UNIQUE 为 target_kind/target_id/item_path/target_locale/source_hash/translator_version，不含 session_id；后者是首次写入来源，不能作为共享对象缓存存在性的唯一查询条件。新增按指定 items 完整键逐项读取，范围限定当前展示对象，旧 session 查询签名仍兼容。不转移/复制/清理有效行。旧画像缓存只读应用，报告队列仅含 session_result。运行进度从有效缓存重算，中断保留 total−translated−failed；原有 run 作为尝试历史保留 usage/error，不伪造历史成功。契约见 AI_CONTRACT，实测见 STATUS §0.68。
+
 ## v0.19.3 翻译兼容（2026-11-24）
 
 Schema 仍 16，无 DDL/数据迁移；`lm-translation-v1` 缓存身份保持不变，成功缓存不失效。`ai_translation_runs.error_json` 可增加 `diagnostics`（内容无关的类型/长度/枚举/计数/预算/位置）和 stopped 标记。完整条目仍写 ai_translations，未尝试条目不伪造失败记录。备份/恢复与数据目录迁移沿用整库流程，没有新凭据或原始响应文件。

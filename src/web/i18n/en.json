@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…and {count} more batches.",
       "awaitingAggregateAuto": "All batch results are saved. Use Continue in the AI analysis centre to finish only the missing batches and the final merge.",
       "languageTitle": "Report language",
-      "languageHint": "Changing the reading language only translates display text. It does not re-analyse the broadcast or rewrite long-term viewer memory.",
+      "languageHint": "Translate saved report text only. Live long-term profiles are separate; existing profile translations remain reusable. Original text and analysis stay unchanged.",
       "languageOriginalChip": "Original",
       "languageTranslatedChip": "Translated",
       "languageSource": "Original report language: {locale}",

@@ -155,7 +155,7 @@ export class ReportTranslationService {
     if (!SUPPORTED_LOCALES.includes(targetLocale)) {
       throw new TranslationError(ERROR_CODES.LOCALE_INVALID, {locale: targetLocale});
     }
-    const report = buildSessionAnalysisReport(this.db, sessionId);
+    const report = buildSessionAnalysisReport(this.db, sessionId, {translationInputOnly: true});
     if (!report) throw new TranslationError(ERROR_CODES.SESSION_NOT_FOUND, {sessionId});
     const {translation} = applyReportTranslation(this.db, report, {
       locale: targetLocale,
@@ -181,7 +181,7 @@ export class ReportTranslationService {
       throw new TranslationError(ERROR_CODES.LOCALE_INVALID, {locale: targetLocale});
     }
     if (consent !== true) throw new TranslationError(ERROR_CODES.CONSENT_REQUIRED);
-    const session = buildSessionAnalysisReport(this.db, sessionId);
+    const session = buildSessionAnalysisReport(this.db, sessionId, {translationInputOnly: true});
     if (!session) throw new TranslationError(ERROR_CODES.SESSION_NOT_FOUND, {sessionId});
     const sourceLocale = translationSourceLocale(session);
     if (sourceLocale && targetLocale === sourceLocale) {
@@ -205,7 +205,7 @@ export class ReportTranslationService {
     const cached = listTranslationItems(this.db, {
       sessionId,
       targetLocale,
-      translatorVersion: TRANSLATION_VERSION
+      translatorVersion: TRANSLATION_VERSION, items
     });
     const state = summarizeTranslation(items, cached, {
       targetLocale,
@@ -328,7 +328,7 @@ export class ReportTranslationService {
       pendingItems: pending.length
     });
     let usage = null;
-    let translated = 0;
+    let translated = run.translatedItems;
     let failed = 0;
     let failureCode = null;
     let failureDetails = null;
@@ -456,7 +456,7 @@ export class ReportTranslationService {
         failed += failedCounts.failed;
         progress.chunksDone = index + 1;
         progress.itemsDone += chunk.length;
-        this.#updateRunProgress(run.id, {translated, failed, usage}, progress);
+        this.#updateRunProgress(run.id, {translated, failed, usage}, progress, items);
         // Bounded transport retries have already finished. A content/protocol
         // error is not a reason to buy the same failure for every later chunk.
         this.logger?.warn?.({event: 'ai.translation.stopped', sessionId, targetLocale,
@@ -474,7 +474,7 @@ export class ReportTranslationService {
       failed += counts.failed;
       progress.chunksDone = index + 1;
       progress.itemsDone += chunk.length;
-      this.#updateRunProgress(run.id, {translated, failed, usage}, progress);
+      this.#updateRunProgress(run.id, {translated, failed, usage}, progress, items);
       if (chunkFailure || counts.failed > 0) {
         failureCode = chunkFailure ?? 'TRANSLATION_ITEM_MISSING';
         failureDetails ??= {expectedItems: chunk.length, recoveredItems: counts.ok, missingItems: counts.failed};
@@ -493,7 +493,7 @@ export class ReportTranslationService {
     const rows = listTranslationItems(this.db, {
       sessionId,
       targetLocale,
-      translatorVersion: TRANSLATION_VERSION
+      translatorVersion: TRANSLATION_VERSION, items
     });
     const summary = summarizeTranslation(items, rows, {
       targetLocale,
@@ -589,7 +589,13 @@ export class ReportTranslationService {
     return answer === null ? {ok: 0, failed: chunk.length} : {ok, failed};
   }
 
-  #updateRunProgress(runId, {translated, failed, usage}, progress) {
+  #updateRunProgress(runId, {usage}, progress, items) {
+    const run = getTranslationRun(this.db, runId);
+    const rows = listTranslationItems(this.db, {sessionId: run.sessionId, targetLocale: run.targetLocale,
+      translatorVersion: TRANSLATION_VERSION, items});
+    const state = summarizeTranslation(items, rows, {targetLocale: run.targetLocale});
+    const translated = state.translated;
+    const failed = state.failed;
     updateTranslationRun(this.db, runId, {
       translatedItems: translated,
       failedItems: failed,

@@ -122,7 +122,7 @@ function collectReportItems(items, report, {resultId, sourceLocale}) {
 /**
  * @returns {Array<{kind:string,targetId:string,path:string,text:string,sourceLocale:string|null,hash:string,apply:Function}>}
  */
-export function collectTranslatableItems(payload) {
+export function collectTranslatableItems(payload, {includeMemory = false} = {}) {
   const items = [];
   const sourceLocale = payload?.result?.locale
     ?? payload?.primaryJob?.locale
@@ -166,7 +166,7 @@ export function collectTranslatableItems(payload) {
     });
   });
 
-  (payload?.longTermProfiles?.items ?? []).forEach((profile, index) => {
+  (includeMemory ? payload?.longTermProfiles?.items ?? [] : []).forEach((profile, index) => {
     pushItem(items, {
       kind: 'memory_summary',
       targetId: profile.memoryId ?? null,

@@ -11,6 +11,8 @@ import {importAnalysisResult} from '../src/ai/import/importer.mjs';
 import {readZipEntry} from '../src/shared/zip.mjs';
 import {prepareTestExe} from './test-exe-copy.mjs';
 import {WindowsCredentialStore} from '../src/platforms/shared/credential-store.mjs';
+import {upsertTranslationItem} from '../src/storage/repositories/ai-translations.mjs';
+import {sourceTextHash} from '../src/ai/translation/fields.mjs';
 const baseline = process.argv.includes('--baseline');
 const root = resolve('tests/.tmp', `translation-exe-${Date.now()}`);
 mkdirSync(root, {recursive: true});
@@ -63,6 +65,14 @@ try {
     result.session_topics.summary = '視聴者は新作ゲームについて話した。';
     importAnalysisResult({db: seed.db, text: JSON.stringify(result), source: 'api'});
     resultBefore = seed.db.prepare('SELECT result_json FROM ai_results LIMIT 1').get().result_json;
+    if (!baseline) {
+      const other = seedSession(seed.db, {messageCount: 1, viewerCount: 1, roomId: 'cache-origin'});
+      const viewer = seed.db.prepare('SELECT viewer_id FROM viewer_sessions WHERE session_id=? LIMIT 1').get(session.id).viewer_id;
+      seed.db.prepare(`INSERT INTO viewer_memories (id,broadcaster_id,viewer_id,status,version,summary,summary_certainty,first_memory_at,last_update_at,last_session_id,created_at,updated_at)
+        VALUES ('vm_shared_cache',?,?,'active',1,'共有プロフィール。','stated',1,1,?,1,1)`).run(session.broadcaster_id,viewer,session.id);
+      upsertTranslationItem(seed.db,{sessionId:other.id,targetKind:'memory_summary',targetId:'vm_shared_cache',itemPath:'summary',targetLocale:'zh-CN',sourceHash:sourceTextHash('共有プロフィール。'),translatedText:'跨场缓存画像译文',translatorVersion:'lm-translation-v1'});
+    }
+
     config = seed.providerConfigStore.create({providerId: 'custom', regionId: 'custom', baseUrl: `http://127.0.0.1:${mockPort}/v1`, modelId: 'synthetic-translator', apiKey: 'synthetic-test-key', allowLocalNetwork: true});
     seed.providerConfigStore.recordTest(config.id, {status: 'passed', capabilities: {session: true, memory: true}});
     reference = seed.providerConfigStore.get(config.id).credentialReference;
@@ -71,22 +81,28 @@ try {
   const bootstrap = join(root, 'bootstrap.url');
   const appData = join(root, 'local-appdata'), tempDir = join(root, 'temp');
   mkdirSync(appData, {recursive: true}); mkdirSync(tempDir, {recursive: true});
-  const stdout = openSync(join(root, 'stdout.log'), 'a'), stderr = openSync(join(root, 'stderr.log'), 'a');
   const probe = createServer();
   await new Promise((r) => probe.listen(0, '127.0.0.1', r));
   const appPort = probe.address().port; await new Promise((r) => probe.close(r));
+  let origin, cookie;
+  async function launchExe() {
+    writeFileSync(bootstrap, '');
+    const stdout = openSync(join(root, 'stdout.log'), 'a'), stderr = openSync(join(root, 'stderr.log'), 'a');
   child = spawn(exe, ['--no-open', '--no-wait', '--port', String(appPort), '--data-dir', dataDir, '--lang', 'en'], {windowsHide: true, cwd: root, env: {...process.env, LOCALAPPDATA: appData, TEMP: tempDir, TMP: tempDir, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrap}, stdio: ['ignore', stdout, stderr]});
   closeSync(stdout); closeSync(stderr);
   child.on('error', (e) => console.error(e.code));
   const url = await wait(() => existsSync(bootstrap) && readFileSync(bootstrap, 'utf8').trim());
-  const origin = new URL(url).origin;
+  origin = new URL(url).origin;
   const token = decodeURIComponent(new URL(url).hash.replace(/^#lm_bootstrap=/, ''));
   const auth = await fetch(`${origin}/api/auth/session`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({token})});
-  assert.equal(auth.status, 200); const cookie = auth.headers.get('set-cookie').split(';')[0];
+  assert.equal(auth.status, 200); cookie = auth.headers.get('set-cookie').split(';')[0];
+  }
+  await launchExe();
   async function json(path, body) { const r = await fetch(`${origin}${path}`, {method: body ? 'POST' : 'GET', headers: {cookie, 'content-type': 'application/json'}, body: body && JSON.stringify(body)}); const payload = await r.json(); assert.ok(r.ok, JSON.stringify(payload)); return payload; }
   const reportPath = `/api/ai/sessions/${session.id}/report?locale=zh-CN`;
   const translatePath = `/api/ai/sessions/${session.id}/translation`;
   const before = await json(reportPath); assert.match(before.report.summary, /視聴者/);
+  if (!baseline) {assert.equal(before.longTermProfiles.items[0].summary, '跨场缓存画像译文'); record('shared profile translation reuses another session cache without API', {calls});}
   const status = await json(`/api/ai/analyze/status?sessionId=${session.id}`);
   if (!baseline) { assert.equal(status.recovery?.action, 'resume-memory'); record('legacy out-of-order failure offers memory-only recovery', status.recovery.action); }
   await json(translatePath, {locale: 'zh-CN', configId: config.id, consent: true});
@@ -115,6 +131,11 @@ try {
     assert.equal(calls, cachedCalls); record('valid cache sends no extra request', calls);
     const original = await json(`/api/ai/sessions/${session.id}/report`); assert.match(original.report.summary, /視聴者/);
     record('stored Japanese original remains readable', original.result.locale);
+    const exited = new Promise((resolve) => child.once('exit', resolve)); child.kill(); await exited;
+    await launchExe();
+    const reopened = await json(reportPath);
+    assert.equal(reopened.translation.status, 'complete'); assert.equal(reopened.translation.missing, 0); assert.equal(reopened.translation.failed, 0); assert.equal(calls, cachedCalls);
+    record('translation remains complete after EXE restart without new requests', {status: reopened.translation.status, calls});
     const preRecoveryCalls = calls;
     await json('/api/ai/analyze/resume', {sessionId: session.id, consent: true});
     const recovered = await wait(async () => {const r = await json(`/api/ai/analyze/status?sessionId=${session.id}`);

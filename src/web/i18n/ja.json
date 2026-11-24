@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…他に {count} バッチ未完了。",
       "awaitingAggregateAuto": "全バッチ結果は保存済みです。AI 分析センターで「再開」を押すと、未完了バッチと全体集約だけを再実行します。",
       "languageTitle": "レポート言語",
-      "languageHint": "表示言語を切り替えても、表示テキストを翻訳するだけで、配信の再分析や長期視聴者メモリの書き換えは行いません。",
+      "languageHint": "保存済みレポートの文章のみ翻訳します。現在の長期プロフィールは別に表示し、既存の翻訳キャッシュは再利用します。再分析や原文の変更は行いません。",
       "languageOriginalChip": "原文",
       "languageTranslatedChip": "翻訳",
       "languageSource": "レポート原文の言語：{locale}",

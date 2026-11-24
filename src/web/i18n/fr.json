@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…et {count} autres lots.",
       "awaitingAggregateAuto": "Tous les résultats de lots sont enregistrés. Utilisez \"Reprendre\" dans le centre d'analyse IA pour ne terminer que les lots manquants et la fusion finale.",
       "languageTitle": "Langue du rapport",
-      "languageHint": "Changer la langue de lecture traduit uniquement le texte affiché. Cela ne relance pas l'analyse du direct et ne réécrit pas les profils à long terme des spectateurs.",
+      "languageHint": "Seul le texte du rapport enregistré est traduit. Les profils actuels à long terme sont séparés et leurs traductions existantes restent réutilisables. Aucune nouvelle analyse ni modification du texte original.",
       "languageOriginalChip": "Original",
       "languageTranslatedChip": "Traduit",
       "languageSource": "Langue d'origine du rapport : {locale}",

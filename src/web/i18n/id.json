@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…dan {count} batch lainnya.",
       "awaitingAggregateAuto": "Semua hasil batch tersimpan. Gunakan Lanjutkan di pusat analisis AI untuk menyelesaikan hanya batch yang belum selesai dan penggabungan akhir.",
       "languageTitle": "Bahasa laporan",
-      "languageHint": "Mengubah bahasa baca hanya menerjemahkan teks tampilan. Tindakan ini tidak menganalisis ulang siaran dan tidak menulis ulang memori penonton jangka panjang.",
+      "languageHint": "Hanya teks laporan tersimpan yang diterjemahkan. Profil jangka panjang terkini ditampilkan terpisah; terjemahan profil yang sudah ada tetap digunakan. Tidak menganalisis ulang atau mengubah teks asli.",
       "languageOriginalChip": "Asli",
       "languageTranslatedChip": "Terjemahan",
       "languageSource": "Bahasa asli laporan: {locale}",

@@ -1452,7 +1452,7 @@
       "missingBatchesMore": "…und {count} weitere Stapel.",
       "awaitingAggregateAuto": "Alle Stapelergebnisse sind gespeichert. Mit „Fortsetzen“ im KI-Analysezentrum werden nur die fehlenden Stapel und die abschließende Zusammenführung abgeschlossen.",
       "languageTitle": "Berichtssprache",
-      "languageHint": "Ein Wechsel der Lesesprache übersetzt nur den angezeigten Text. Der Livestream wird nicht erneut analysiert und das Langzeitprofil der Zuschauer nicht umgeschrieben.",
+      "languageHint": "Nur der gespeicherte Berichtstext wird übersetzt. Aktuelle Langzeitprofile werden separat angezeigt; vorhandene Profilübersetzungen bleiben nutzbar. Analyse und Originaltext bleiben unverändert.",
       "languageOriginalChip": "Original",
       "languageTranslatedChip": "Übersetzt",
       "languageSource": "Originalsprache des Berichts: {locale}",

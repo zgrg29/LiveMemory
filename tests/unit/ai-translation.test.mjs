@@ -89,17 +89,17 @@ test('translation only collects natural-language display fields', () => {
   assert.ok(paths.includes('session_result:air_test:disputes.0.viewpoints.1'));
   assert.ok(paths.includes('session_result:air_test:highlights.0.clip_suggestion'));
   assert.ok(paths.includes('session_result:air_test:viewer_profiles.0.summary'));
-  assert.ok(paths.includes('memory_summary:vm_1:summary'));
-  assert.ok(paths.includes('memory_fact:mfc_1:statement'));
+  assert.equal(paths.includes('memory_summary:vm_1:summary'), false);
+  assert.equal(paths.includes('memory_fact:mfc_1:statement'), false);
   // The long-term matching key is never translated.
   assert.equal(items.some((item) => item.path.endsWith('.topic')), false);
   assert.equal(items.some((item) => item.text.includes('"candidate"')), false);
   assert.ok(items.every((item) => item.hash.length === 64));
 });
 
-test('cached translation changes only display text and preserves identity, topic and evidence', () => {
+test('legacy cached profile translation changes only display text and preserves identity, topic and evidence', () => {
   const payload = payloadFixture();
-  const items = collectTranslatableItems(payload);
+  const items = collectTranslatableItems(payload, {includeMemory: true});
   const byPath = new Map(items.map((item) => [`${item.targetId}:${item.path}`, item]));
   const rows = [
     {

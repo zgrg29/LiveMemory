@@ -67,12 +67,12 @@ function resolveEvidence(db, rows, cache, budget) {
   return refs;
 }
 
-function decorate(db, result, evidenceRows) {
+function decorate(db, result, evidenceRows, {resolveRefs = true} = {}) {
   const byItem = evidenceByItem(evidenceRows);
   const cache = new Map();
   const budget = {remaining: MAX_REPORT_EVIDENCE};
   const topics = result.session_topics ?? {};
-  const refsFor = (section, index) => resolveEvidence(db, byItem.get(`${section}:${index}`) ?? [], cache, budget);
+  const refsFor = (section, index) => resolveRefs ? resolveEvidence(db, byItem.get(`${section}:${index}`) ?? [], cache, budget) : [];
   const lowConfidence = (value) => Number(value) < 0.5;
 
   return {
@@ -148,13 +148,13 @@ function resultMeta(result) {
   };
 }
 
-function summarizeViewerProfiles(result, db, limit = 50) {
+function summarizeViewerProfiles(result, db, limit = 50, {resolveNames = true} = {}) {
   const profiles = result.viewer_profiles ?? [];
   return {
     count: profiles.length,
     lowConfidence: profiles.filter((profile) => Number(profile.confidence) < 0.5).length,
     items: profiles.slice(0, limit).map((profile) => {
-      const viewer = getViewer(db, profile.viewer_id);
+      const viewer = resolveNames ? getViewer(db, profile.viewer_id) : null;
       return {
         viewerId: profile.viewer_id,
         nickname: viewer?.nickname ?? null,
@@ -310,12 +310,15 @@ function withTranslationState(db, payload, {locale = null, providers = []} = {})
 export function buildSessionAnalysisReport(db, sessionId, {
   now = Date.now(),
   locale = null,
-  providers = []
+  providers = [],
+  translationInputOnly = false
 } = {}) {
-  const session = getSession(db, sessionId);
+  const session = translationInputOnly
+    ? db.prepare('SELECT id FROM sessions WHERE id = ?').get(String(sessionId))
+    : getSession(db, sessionId);
   if (!session) return null;
   const jobs = listJobs(db, {sessionId, limit: 50});
-  const summaries = jobs.map((job) => jobSummary(db, job, {now}));
+  const summaries = jobs.map((job) => translationInputOnly ? {...job, complete: false, batchesImported: 0, aggregateImported: false, missingBatches: []} : jobSummary(db, job, {now}));
   const byId = new Map(jobs.map((job, index) => [job.id, summaries[index]]));
   // Memory-only jobs are an independent task. Their result JSON has no session
   // report and must never become the primary report (or be mistaken for one).
@@ -324,7 +327,14 @@ export function buildSessionAnalysisReport(db, sessionId, {
 
   // Prefer a complete report job; otherwise the most recent report job that has
   // any result.
-  let primary = summaries.find((summary) => reportIds.has(summary.id) && summary.complete) ?? null;
+  // Select saved text independently of analysis/memory task status. Both the
+  // reading page and translator must select the same immutable result.
+  const saved = reportJobs.map((job) => {
+    const results = listResults(db, job.id);
+    return {job, results, complete: results.some((r) => r.scopeKey === 'final' || (job.batchTotal === 1 && r.batchIndex === 1))};
+  });
+  const chosen = saved.find((entry) => entry.complete) ?? saved.find((entry) => entry.results.length > 0);
+  let primary = chosen ? byId.get(chosen.job.id) : null;
   if (!primary) {
     for (const summary of summaries) {
       if (!reportIds.has(summary.id)) continue;
@@ -358,7 +368,7 @@ export function buildSessionAnalysisReport(db, sessionId, {
       perBatch: [],
       localStats: null,
       viewerProfiles: null,
-      longTermProfiles: summarizeLongTermProfiles(db, session)
+      longTermProfiles: translationInputOnly ? null : summarizeLongTermProfiles(db, session)
     }, {locale, providers});
   }
 
@@ -373,18 +383,18 @@ export function buildSessionAnalysisReport(db, sessionId, {
   const perBatch = [];
   if (finalResult) {
     mode = 'final';
-    report = decorate(db, finalResult.result, listEvidence(db, finalResult.id));
+    report = decorate(db, finalResult.result, translationInputOnly ? [] : listEvidence(db, finalResult.id), {resolveRefs: !translationInputOnly});
   } else if (job.batchTotal === 1 && latestByBatch.has(1)) {
     mode = 'single';
     const result = latestByBatch.get(1);
-    report = decorate(db, result.result, listEvidence(db, result.id));
+    report = decorate(db, result.result, translationInputOnly ? [] : listEvidence(db, result.id), {resolveRefs: !translationInputOnly});
   } else if (latestByBatch.size > 0) {
     mode = 'partial';
     for (const [batchIndex, result] of [...latestByBatch.entries()].sort((a, b) => a[0] - b[0])) {
       perBatch.push({
         batchIndex,
         result: resultMeta(result),
-        report: decorate(db, result.result, listEvidence(db, result.id))
+        report: decorate(db, result.result, translationInputOnly ? [] : listEvidence(db, result.id), {resolveRefs: !translationInputOnly})
       });
     }
   }
@@ -418,8 +428,8 @@ export function buildSessionAnalysisReport(db, sessionId, {
     report,
     perBatch,
     result: displayed ? resultMeta(displayed) : null,
-    viewerProfiles: displayed ? summarizeViewerProfiles(displayed.result, db) : null,
-    longTermProfiles: summarizeLongTermProfiles(db, session),
+    viewerProfiles: displayed ? summarizeViewerProfiles(displayed.result, db, 50, {resolveNames: !translationInputOnly}) : null,
+    longTermProfiles: translationInputOnly ? null : summarizeLongTermProfiles(db, session),
     evidence: displayed
       ? {
         total: displayed.evidenceTotal,

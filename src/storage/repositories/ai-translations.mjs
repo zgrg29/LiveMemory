@@ -167,12 +167,12 @@ export function latestTranslationRun(db, {sessionId, targetLocale}) {
  * The translation rows that were already committed stay valid and reusable.
  */
 export function markRunningTranslationRunsInterrupted(db, {now = Date.now()} = {}) {
-  const rows = db.prepare("SELECT id FROM ai_translation_runs WHERE status = 'running'").all();
+  const rows = db.prepare("SELECT id, total_items, translated_items, failed_items FROM ai_translation_runs WHERE status = 'running'").all();
   for (const row of rows) {
     updateTranslationRun(db, row.id, {
       status: 'interrupted',
       error: {code: 'TRANSLATION_INTERRUPTED', at: Number(now)},
-      pendingItems: 0,
+      pendingItems: Math.max(0, Number(row.total_items) - Number(row.translated_items) - Number(row.failed_items)),
       updatedAt: now,
       completedAt: now
     });
@@ -267,7 +267,18 @@ export function getTranslationItem(db, {
   ));
 }
 
-export function listTranslationItems(db, {sessionId, targetLocale, translatorVersion = null}) {
+export function listTranslationItems(db, {sessionId, targetLocale, translatorVersion = null, items = null}) {
+  // Cache identity is object/path/hash/language/version, not its first session.
+  // Exact key lookups reuse shared display text without exposing unrelated rows.
+  if (items) {
+    const unique = new Map();
+    for (const item of items) {
+      const row = getTranslationItem(db, {targetKind: item.kind, targetId: item.targetId, itemPath: item.path,
+        sourceHash: item.hash, targetLocale, translatorVersion});
+      if (row) unique.set(row.id, row);
+    }
+    return [...unique.values()];
+  }
   const params = [String(sessionId), String(targetLocale)];
   let sql = 'SELECT * FROM ai_translations WHERE session_id = ? AND target_locale = ?';
   if (translatorVersion) {
