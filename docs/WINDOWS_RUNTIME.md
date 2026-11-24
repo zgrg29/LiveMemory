@@ -421,3 +421,7 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 构建门禁新增 `src/ai/translation/protocol.mjs`，确保 SEA 嵌入预算/解析/诊断代码。`verify-memory-translation-exe` 增加实际 length 响应下完整条目恢复与重试不重复请求该条目的验证。正式 Manifest 仍 requireAdministrator，自动化继续只使用测试专用 asInvoker 副本；真实 Provider 的 3 次 API 验证不冒充 EXE 中的真实付费验收。最终 Build/哈希见 STATUS。
 
 最终构建 `f90ab3d39fdf`（源码 `fd88cf7`）通过 87/87 EXE 检查，其中翻译 9/9；详细产物与边界见 STATUS §0.67。
+
+## 16. v0.19.4 翻译完整生命周期
+
+报告翻译 EXE 验收增加跨场画像缓存只读复用、完整翻译后关闭并重启 EXE 再开报告零请求；原有截断局部保留、缺失重试、认证/旧记忆恢复继续验证。用户正在运行旧 EXE 时不强制结束；构建可用 `LIVEMEMORY_BUILD_OUTPUT=dist/LiveMemory-v0.19.4.exe` 指定独立文件，默认输出不变，Manifest 门禁不变。最终身份/测试见 STATUS §0.68；功能测试为 asInvoker 副本，不冒充人工 UAC。

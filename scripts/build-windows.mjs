@@ -231,7 +231,9 @@ const binary = await readFile(process.execPath);
 // manifest, because Application Control refuses a binary that was re-patched
 // after the build. The shipped EXE always stays requireAdministrator.
 const asInvoker = process.argv.includes('--as-invoker');
-const exe = asInvoker ? 'dist/LiveMemory-asInvoker.exe' : 'dist/LiveMemory.exe';
+// A versioned output can be built while the user's previous EXE is running.
+const exe = process.env.LIVEMEMORY_BUILD_OUTPUT || (asInvoker ? 'dist/LiveMemory-asInvoker.exe' : 'dist/LiveMemory.exe');
+await mkdir(path.dirname(exe), {recursive: true});
 const manifestTarget = asInvoker ? 'asInvoker' : 'requireAdministrator';
 
 // RC0-ADMIN-MANIFEST: the user explicitly chose to restore automatic UAC
