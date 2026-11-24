@@ -16,7 +16,7 @@ import {sourceTextHash} from '../src/ai/translation/fields.mjs';
 const baseline = process.argv.includes('--baseline');
 const root = resolve('tests/.tmp', `translation-exe-${Date.now()}`);
 mkdirSync(root, {recursive: true});
-const exe = prepareTestExe({source: resolve('dist/LiveMemory.exe'), target: join(root, 'LiveMemory-test.exe')});
+const exe = prepareTestExe({source: resolve(process.argv.slice(2).find((arg) => !arg.startsWith('--')) ?? 'dist/LiveMemory.exe'), target: join(root, 'LiveMemory-test.exe')});
 const dataDir = join(root, 'data');
 let mode = 'fail', calls = 0, child, store, reference;
 let truncatedInputSize = null, recoveredSource = null, resumedInputSize = null;
@@ -88,14 +88,14 @@ try {
   async function launchExe() {
     writeFileSync(bootstrap, '');
     const stdout = openSync(join(root, 'stdout.log'), 'a'), stderr = openSync(join(root, 'stderr.log'), 'a');
-  child = spawn(exe, ['--no-open', '--no-wait', '--port', String(appPort), '--data-dir', dataDir, '--lang', 'en'], {windowsHide: true, cwd: root, env: {...process.env, LOCALAPPDATA: appData, TEMP: tempDir, TMP: tempDir, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrap}, stdio: ['ignore', stdout, stderr]});
-  closeSync(stdout); closeSync(stderr);
-  child.on('error', (e) => console.error(e.code));
-  const url = await wait(() => existsSync(bootstrap) && readFileSync(bootstrap, 'utf8').trim());
-  origin = new URL(url).origin;
-  const token = decodeURIComponent(new URL(url).hash.replace(/^#lm_bootstrap=/, ''));
-  const auth = await fetch(`${origin}/api/auth/session`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({token})});
-  assert.equal(auth.status, 200); cookie = auth.headers.get('set-cookie').split(';')[0];
+    child = spawn(exe, ['--no-open', '--no-wait', '--port', String(appPort), '--data-dir', dataDir, '--lang', 'en'], {windowsHide: true, cwd: root, env: {...process.env, LOCALAPPDATA: appData, TEMP: tempDir, TMP: tempDir, LIVE_MEMORY_TEST_BOOTSTRAP_FILE: bootstrap}, stdio: ['ignore', stdout, stderr]});
+    closeSync(stdout); closeSync(stderr);
+    child.on('error', (e) => console.error(e.code));
+    const url = await wait(() => existsSync(bootstrap) && readFileSync(bootstrap, 'utf8').trim());
+    origin = new URL(url).origin;
+    const token = decodeURIComponent(new URL(url).hash.replace(/^#lm_bootstrap=/, ''));
+    const auth = await fetch(`${origin}/api/auth/session`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({token})});
+    assert.equal(auth.status, 200); cookie = auth.headers.get('set-cookie').split(';')[0];
   }
   await launchExe();
   async function json(path, body) { const r = await fetch(`${origin}${path}`, {method: body ? 'POST' : 'GET', headers: {cookie, 'content-type': 'application/json'}, body: body && JSON.stringify(body)}); const payload = await r.json(); assert.ok(r.ok, JSON.stringify(payload)); return payload; }

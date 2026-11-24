@@ -6,7 +6,11 @@
 - 既有集成按明确产品决定验证“不请求实时画像”，旧画像译文的只读安全映射仍保留。十语提示文案同步，字典仍 2,390 键。
 - 实际报告只读：149/149 缓存实际映射、报告 72/72 complete、missing 0 / failed 0，零 API、零用户写入。
 - 真实 DeepSeek 3 次合成完整生命周期：空缓存 2 批完成、数据库重开补末项 1 次、再次重开零请求；552 input / 50 output，无用户数据，源表 hash 不变。不是 EXE 内真实付费验收。
-- 全量与最终 EXE：待完成。
+- 完整回归 **1,348 passed / 0 failed / 2 skipped**（1,350 总计，344,365.0507 ms）；skip 为默认关闭的 opt-in 真实 CredMan。构建输出选项随后仅补跑 Manifest 专项 **2/2**，运行时代码未再改。
+
+最终 EXE **89/89**：启动 11、十语帮助 14、凭据保存 24、备份迁移 13、AI 用量/恢复 16、翻译完整生命周期 11。新增跨场缓存零请求与实际 EXE 重启后报告仍 complete；凭据测试随机 target 均清理。Manifest **requireAdministrator**；功能自动化使用相同 Build 的 asInvoker 副本，不代表人工 UAC/干净账户验收。真实 API 为生产服务合成样本，EXE 使用本地模拟 Provider，二者明确区分。
+
+交付文件 `D:\LiveMemory\dist\LiveMemory-v0.19.4.exe`，**99,856,384 B**；Build **`3ada1d72c57a`**；构建源码 **`818662d4cbe5c7b127eeffad5e6a689657b6cc5b`**（核心修复 `1d48965`）；builtAt `2026-11-24T11:17:27.347Z`；258 assets / 72 required modules；SHA-256 `db32a085afd02d0854e400b36927d97735a4f4e74fb4e612ba14dab2d45294c4`。校验文件为 `dist/SHA256SUMS-v0.19.4.txt`。旧 EXE 正在运行导致默认输出 EBUSY，未终止用户进程，改为独立版本文件。
 
 ## 2026-11-24：v0.19.3 报告翻译真实故障专项
 

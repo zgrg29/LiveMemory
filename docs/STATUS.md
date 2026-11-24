@@ -15,17 +15,17 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 产品版本 / 当前开发版本 | **`0.19.4` 本地补丁开发**（最新正式发布仍 `v0.19.1`） |
+| 产品版本 / 当前开发版本 | **`0.19.4` 本地补丁已完成**（最新正式发布仍 `v0.19.1`） |
 | 下一版本 | `0.19.4`（本轮已授权本地修复与 EXE；未授权远程发布） |
 | 最新正式发布 | **`v0.19.1`** · Release ID `450272261` · Published `2026-11-18T16:43:01Z` |
 | 发布性质 | 正式补丁发布：AI Provider API Key 迁移至 Windows Credential Manager，修复部分 Windows 用户的凭据保存权限错误；平台状态未变（快手仍为预览、采集禁用） |
 | 最新 Release 资产 | `LiveMemory.exe` 99,609,088 B · SHA-256 `4d230f5f…369542`；`SHA256SUMS.txt` 81 B · SHA-256 `7ca49114…092284` |
-| 当前分支 | `main`（本轮构建源码 commit `fd88cf7`；主修复 `141380f`，未 Push；正式 Tag 仍 `v0.19.1`） |
+| 当前分支 | `main`（本轮构建源码 commit `818662d`；主修复 `1d48965`，未 Push；正式 Tag 仍 `v0.19.1`） |
 | 当前 Tag | `v0.19.1`（annotated，object `721690b4` → commit `04b30b7`） |
 | 数据库 Schema | **16**（v0.19.1 无迁移） |
 | 当前开发里程碑 | **P57 报告翻译完整生命周期**；见 §0.68 |
-| 最近开发 | 2026-11-24：用户已验收乱序；本轮只修翻译预算/协议/解析/停止/诊断；真实指定失败 40 段 40/40，见 §0.67 |
-| 最近文档整理 | 2026-11-24：乱序记忆与翻译工程规则、协议、数据模型、验收、交接及开发日志 |
+| 最近开发 | 2026-11-24：用户已验收乱序；本轮只修翻译独立文本队列/共享缓存/进度；真实目标全缓存与小报告生命周期通过，见 §0.68 |
+| 最近文档整理 | 2026-11-24：独立报告文本转换原则、共享缓存身份、完整生命周期验收、交接及开发日志 |
 
 ### 0.2 平台状态
 
@@ -73,6 +73,7 @@
 | 全量自动化（2026-11-18 v0.19.0） | **1,269 passed / 0 failed / 0 skipped**（871 unit + 398 integration；单次全量 `--test-isolation=none`，365,726 ms） |
 | 全量自动化（2026-11-19 v0.19.1） | **1,294 passed / 0 failed / 2 skipped**（889 unit + 407 integration；skip 为 opt-in 真实 CredMan） |
 | 真实 CredMan（opt-in） | **2/2 passed**：保存/读取/更新/大 Key 分块/删除/旧 AES 迁移；随机 target 自动清理 |
+| 当前本地补丁（v0.19.4） | **1,348 passed / 0 failed / 2 skipped**；EXE **89/89**；Build `3ada1d72c57a`；详 §0.68；未远程发布 |
 | 历史本地补丁（v0.19.3） | **1,345 passed / 0 failed / 2 skipped**；EXE **87/87**；Build `f90ab3d39fdf`；详 §0.67；未远程发布 |
 | 历史本地补丁（v0.19.2） | **1,319 passed / 0 failed / 2 skipped**；EXE **85/85**；Build `5e9388a8ddb9`；详 §0.66；未远程发布 |
 | 历史 EXE（v0.19.1） | 已发布，Build `b66818d032b5`；`requireAdministrator`；`verify-provider-save-exe` 24/24、`verify-exe` 11/11、`verify-help-exe` 14/14、`verify-ai-token-exe` 16/16 |
@@ -109,6 +110,7 @@ v0.19.1 已正式发布；本轮 v0.19.4 完整生命周期修复见 §0.68。�
 
 ### 0.7 历史记录
 
+- §0.68：v0.19.4 完整翻译生命周期与 12 项跨场缓存修复（未远程发布）。
 - §0.67：v0.19.3 报告翻译真实 Provider 专项（未远程发布）。
 - §0.66：v0.19.2 本地补丁开发与验收；用户已确认乱序可用，翻译实际故障由 §0.67 继续处理。
 - §0.65：v0.19.1 Windows Credential Storage Fix 发布记录（当前正式版本）。
@@ -131,7 +133,11 @@ v0.19.1 已正式发布；本轮 v0.19.4 完整生命周期修复见 §0.68。�
 - **真实 DeepSeek 完整小报告生命周期**：新授权 3/3（15 字合成输入），空缓存 2 批到 complete；关闭重开数据库后只补 1 项到 complete；再次重开零请求。总 usage 552 input / 50 output，估算 USD 0.0002256 非账单，原始各表 hash 不变。真实生产服务/API 与 EXE 本地模拟分开，不代表大报告/其他 Provider 付费验收。
 - Schema 16、缓存 v1、不改 Key/配置；十语仍 2,390 键，languageHint 明确文本范围。AGENTS §6.19 固化产品决定。详见 log/2026-11-24-translation-lifecycle.md。
 
-最终全量与 EXE：待完成。
+完整回归 **1,348 passed / 0 failed / 2 skipped**（1,350 总计，344,365.0507 ms）；skip 为默认关闭的 opt-in 真实 CredMan。构建输出选项随后仅补跑 Manifest 专项 **2/2**，运行时代码未再改。
+
+最终 EXE **89/89**：启动 11、十语帮助 14、凭据保存 24、备份迁移 13、AI 用量/恢复 16、翻译完整生命周期 11。新增跨场缓存零请求与实际 EXE 重启后报告仍 complete；凭据测试随机 target 均清理。Manifest **requireAdministrator**；功能自动化使用相同 Build 的 asInvoker 副本，不代表人工 UAC/干净账户验收。真实 API 为生产服务合成样本，EXE 使用本地模拟 Provider，二者明确区分。
+
+交付文件 `D:\LiveMemory\dist\LiveMemory-v0.19.4.exe`，**99,856,384 B**；Build **`3ada1d72c57a`**；构建源码 **`818662d4cbe5c7b127eeffad5e6a689657b6cc5b`**（核心修复 `1d48965`）；builtAt `2026-11-24T11:17:27.347Z`；258 assets / 72 required modules；SHA-256 `db32a085afd02d0854e400b36927d97735a4f4e74fb4e612ba14dab2d45294c4`。校验文件为 `dist/SHA256SUMS-v0.19.4.txt`。旧 EXE 正在运行导致默认输出 EBUSY，未终止用户进程，改为独立版本文件。
 
 ---
 

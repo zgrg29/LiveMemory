@@ -425,3 +425,5 @@ server restart → 两个 token 全部作废；旧 Cookie/旧 URL 均 401。
 ## 16. v0.19.4 翻译完整生命周期
 
 报告翻译 EXE 验收增加跨场画像缓存只读复用、完整翻译后关闭并重启 EXE 再开报告零请求；原有截断局部保留、缺失重试、认证/旧记忆恢复继续验证。用户正在运行旧 EXE 时不强制结束；构建可用 `LIVEMEMORY_BUILD_OUTPUT=dist/LiveMemory-v0.19.4.exe` 指定独立文件，默认输出不变，Manifest 门禁不变。最终身份/测试见 STATUS §0.68；功能测试为 asInvoker 副本，不冒充人工 UAC。
+
+最终版本化 EXE 为 `dist/LiveMemory-v0.19.4.exe`，Build `3ada1d72c57a`、源码 `818662d`，89/89 通过；默认旧路径未覆盖。完整哈希及边界见 STATUS §0.68。
